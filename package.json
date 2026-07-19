@@ -11,6 +11,7 @@
   "scripts": {
     "test": "node --test",
     "check:syntax": "node scripts/check-syntax.js",
+    "check:onboarding-ui": "electron scripts/check-onboarding-ui.js",
     "security:secrets": "node scripts/check-secrets.js",
     "test:azure-realtime": "node scripts/azure-realtime-probe.js",
     "start": "electron .",

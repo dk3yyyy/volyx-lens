@@ -222,21 +222,41 @@
     </div>
   </div>
 
-  <!-- First-run tutorial / walkthrough -->
+  <!-- First-run setup experience -->
   <div id="onboard-scrim" class="hidden">
-    <div id="onboard" class="glass">
-      <div class="ob-dots" id="ob-dots"></div>
-      <div class="ob-icon" id="ob-icon"></div>
-      <div class="ob-title" id="ob-title"></div>
-      <div class="ob-body" id="ob-body"></div>
-      <div class="ob-buttons" id="ob-buttons"></div>
-      <div class="ob-permission-status hidden" id="ob-permission-status" role="status" aria-live="polite"></div>
-      <div class="ob-actions">
-        <button id="ob-skip" class="ob-ghost">Skip</button>
-        <div class="spacer"></div>
-        <button id="ob-back" class="ob-ghost">Back</button>
-        <button id="ob-next" class="ob-primary">Next</button>
+    <div id="onboard" class="glass" role="dialog" aria-modal="true" aria-labelledby="ob-title" aria-describedby="ob-body">
+      <header class="ob-chrome">
+        <div class="ob-brand">
+          <span id="ob-brand-mark" aria-hidden="true"></span>
+          <span><strong>Volyx Lens</strong><small>Private context assistant</small></span>
+        </div>
+        <div class="ob-step-meta">
+          <span id="ob-step-label">Welcome</span>
+          <span id="ob-step-count">1 of 5</span>
+        </div>
+      </header>
+
+      <div class="ob-main">
+        <aside id="ob-stage" aria-hidden="true">
+          <div class="ob-orbit"><div class="ob-icon" id="ob-icon"></div></div>
+          <div class="ob-stage-copy"><span id="ob-stage-kicker"></span><p id="ob-stage-note"></p></div>
+        </aside>
+        <section id="ob-content" aria-live="polite" aria-atomic="true">
+          <h1 class="ob-title" id="ob-title" tabindex="-1"></h1>
+          <div class="ob-body" id="ob-body"></div>
+          <div class="ob-buttons" id="ob-buttons"></div>
+          <div class="ob-permission-status hidden" id="ob-permission-status" role="status" aria-live="polite"></div>
+        </section>
       </div>
+
+      <footer class="ob-footer">
+        <button id="ob-skip" class="ob-ghost">Skip setup</button>
+        <div class="ob-dots" id="ob-dots" aria-label="Setup progress"></div>
+        <div class="ob-actions">
+          <button id="ob-back" class="ob-ghost">Back</button>
+          <button id="ob-next" class="ob-primary">Continue</button>
+        </div>
+      </footer>
     </div>
   </div>
 

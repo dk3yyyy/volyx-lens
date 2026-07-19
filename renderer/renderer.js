@@ -1424,6 +1424,10 @@
 
   // ---- global keys -------------------------------------------------------
   document.addEventListener('keydown', (e) => {
+    if (!obScrim.classList.contains('hidden')) {
+      handleOnboardKeydown(e);
+      return;
+    }
     if (e.key === 'Escape' && !scrim.classList.contains('hidden')) closeSettings();
     if (e.metaKey && e.key === ',') { e.preventDefault(); openSettings(); }
   });
@@ -1441,16 +1445,29 @@
   // ---- onboarding / first-run tutorial -----------------------------------
   const obScrim = $('#onboard-scrim');
   const obPermissionStatus = $('#ob-permission-status');
+  const permissionStates = { microphone: 'Not requested', screen: 'Not requested' };
+  let obPreviousFocus = null;
+  function setPermissionState(kind, text, className = '') {
+    permissionStates[kind] = text;
+    const state = document.querySelector(`[data-permission-kind="${kind}"] .ob-permission-state`);
+    if (state) {
+      state.textContent = text;
+      state.className = `ob-permission-state ${className}`.trim();
+    }
+  }
   async function requestPermission(kind) {
     const label = kind === 'microphone' ? 'Microphone' : 'Screen Recording';
+    setPermissionState(kind, 'Requesting…', 'pending');
     obPermissionStatus.textContent = 'Requesting ' + label + ' access…';
     obPermissionStatus.className = 'ob-permission-status pending';
     try {
       const result = await volyxLens.requestPermission(kind);
       if (result.granted) {
+        setPermissionState(kind, 'Granted', 'granted');
         obPermissionStatus.textContent = label + ' access granted.';
         obPermissionStatus.className = 'ob-permission-status granted';
       } else if (result.settingsOpened) {
+        setPermissionState(kind, 'Needs settings', 'denied');
         obPermissionStatus.textContent = label + ' access was not granted. Enable Volyx Lens in System Settings, then restart Volyx Lens.';
         const restart = document.createElement('button');
         restart.type = 'button';
@@ -1459,69 +1476,159 @@
         obPermissionStatus.append(' ', restart);
         obPermissionStatus.className = 'ob-permission-status denied';
       } else {
+        setPermissionState(kind, 'Unavailable', 'denied');
         obPermissionStatus.textContent = result.message || (label + ' access is unavailable.');
         obPermissionStatus.className = 'ob-permission-status denied';
       }
     } catch (error) {
+      setPermissionState(kind, 'Request failed', 'denied');
       obPermissionStatus.textContent = 'Could not request ' + label + ' access: ' + ((error && error.message) || 'unknown error');
       obPermissionStatus.className = 'ob-permission-status denied';
     }
   }
   const OB_STEPS = [
     {
-      icon: '👋',
-      title: 'Welcome to Volyx Lens',
-      body: 'Volyx Lens is a private context assistant that floats over your screen. It can <strong>see your screen</strong>, <strong>hear your meetings</strong>, and help you answer questions or work through coding problems. Capture exclusion is best-effort and never guaranteed.<br><br>This quick guide gets you running in about a minute.'
+      stepLabel: 'Welcome',
+      icon: 'logo',
+      kicker: 'Context, your way',
+      note: 'A quiet assistant that stays available without taking over your workspace.',
+      title: 'Meet Volyx Lens.',
+      body: '<p>A private, context-aware assistant for the work already happening on your Mac.</p><div class="ob-feature-grid"><div class="ob-feature"><strong>See</strong><span>Use the screen only when you ask.</span></div><div class="ob-feature"><strong>Hear</strong><span>Keep both sides of a conversation clear.</span></div><div class="ob-feature"><strong>Assist</strong><span>Get focused help without changing apps.</span></div></div><div class="ob-note">Capture exclusion is best-effort and never guaranteed.</div>'
     },
     {
-      icon: '🔐',
-      title: 'Allow Volyx Lens to see & hear',
-      body: 'Volyx Lens needs two macOS permissions. Click each button to trigger the native consent flow.<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen Recording</strong> — to see your screen and hear meeting audio</li></ul><strong>Camera access is not required.</strong> If you previously denied a permission, Volyx Lens will open the correct System Settings pane instead.',
+      stepLabel: 'Permissions',
+      icon: 'mic',
+      kicker: 'You stay in control',
+      note: 'macOS permission prompts come from the system. Volyx Lens cannot bypass them.',
+      title: 'Choose access.',
+      body: '<p>Grant only the inputs you want to use. Each permission is optional, and you can continue without granting either one.</p><div class="ob-note">Camera access is never requested. Change access later in System Settings.</div>',
       buttons: [
-        { label: 'Request Microphone access', action: () => requestPermission('microphone') },
-        { label: 'Request Screen Recording access', action: () => requestPermission('screen') }
+        { kind: 'microphone', icon: 'mic', label: 'Microphone', detail: 'Your voice while listening is on', action: () => requestPermission('microphone') },
+        { kind: 'screen', icon: 'camera', label: 'Screen Recording', detail: 'Screen context and meeting-audio loopback', action: () => requestPermission('screen') }
       ]
     },
     {
-      icon: '🔑',
-      title: 'Connect an AI provider',
-      body: 'Volyx Lens uses <strong>your own</strong> API key — choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, or <span class="hl">DeepSeek</span>. Azure Foundry also needs its <code>/openai/v1</code> endpoint and exact deployment names.<br><br><strong>Tip:</strong> realtime listening supports either a direct OpenAI key or an Azure <code>gpt-realtime-whisper</code> deployment. Configure the realtime provider and exact Azure deployment name in Settings. Gemini remains a batch fallback.',
-      buttons: [{ label: 'Open Volyx Lens Settings', action: () => { finishOnboard(); openSettings(); } }]
+      stepLabel: 'AI provider',
+      icon: 'settings',
+      kicker: 'Bring your own model',
+      note: 'Keys stay in the main process and use macOS Keychain-backed safeStorage when available.',
+      title: 'Connect your AI provider.',
+      body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, or DeepSeek. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
+      buttons: [{ icon: 'settings', label: 'Open provider settings', detail: 'Add a key, endpoint, and model names', action: async () => { await finishOnboard({ restoreFocus: false }); openSettings(); } }]
     },
     {
-      icon: '🫥',
-      title: 'Stay hidden in Zoom',
-      body: 'Volyx Lens is excluded from many screen shares automatically (Google Meet, Teams, QuickTime — nothing to do). <strong>Zoom needs one setting:</strong><br><br>Zoom → <span class="hl">Settings</span> → <span class="hl">Share Screen</span> → <span class="hl">Advanced</span> → <strong>Screen capture mode</strong> → choose <strong>“Advanced capture with window filtering.”</strong><br><br>Avoid “<strong>without</strong> window filtering” — that mode can reveal Volyx Lens.'
+      stepLabel: 'Screen sharing',
+      icon: 'camera',
+      kicker: 'Best-effort privacy',
+      note: 'Content protection reduces accidental exposure; it is not invisibility.',
+      title: 'Know what others can see.',
+      body: '<p>Volyx Lens asks macOS to exclude its window from many captures. Modern capture tools may still ignore that request.</p><div class="permission-card"><span class="permission-mark">Z</span><div><strong>Zoom</strong><span>Choose “Advanced capture with window filtering” in Share Screen settings.</span></div></div><div class="ob-note">Never rely on capture exclusion for proctored, restricted, or consent-sensitive sessions.</div>'
     },
     {
-      icon: '✨',
-      title: 'You’re all set',
-      body: 'How to use Volyx Lens:<ul><li>Choose whether <strong>Assist</strong> uses the screen, conversation, or both</li><li><span class="kbd">⌘</span> <span class="kbd">⇧</span> <span class="kbd">C</span> — save the current screen to Task Context without calling AI</li><li><span class="kbd">⌘</span> <span class="kbd">↵</span> — run Assist with the selected context</li><li><span class="kbd">⌘</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Click <strong>Start Listening</strong> in the top bar for meeting transcription</li><li>Click <strong>New Session</strong> between unrelated conversations</li></ul>Reopen this guide anytime by clicking the <strong>Volyx Lens logo</strong>. Quit with <span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">X</span>.'
+      stepLabel: 'Ready',
+      icon: 'zap',
+      kicker: 'Ready when you are',
+      note: 'Reopen this guide anytime by selecting the Volyx Lens logo in the toolbar.',
+      title: 'Your workspace, now context-aware.',
+      body: '<p>Start with these four controls. Everything else can wait until you need it.</p><div class="ob-shortcuts"><div class="ob-shortcut"><span class="kbd">⌘↵</span><span>Run Assist</span></div><div class="ob-shortcut"><span class="kbd">⌘H</span><span>Solve screen</span></div><div class="ob-shortcut"><span class="kbd">⌘⇧C</span><span>Add context</span></div><div class="ob-shortcut"><span class="kbd">⌘⇧X</span><span>Stop and quit</span></div></div>'
     }
   ];
   let obIndex = 0;
+  $('#ob-brand-mark').innerHTML = icon('logo', { size: 19 });
   function renderOnboard() {
     const step = OB_STEPS[obIndex];
-    $('#ob-icon').textContent = step.icon;
+    $('#ob-icon').innerHTML = icon(step.icon, { size: 30, stroke: 1.7 });
+    $('#ob-step-label').textContent = step.stepLabel;
+    $('#ob-step-count').textContent = `${obIndex + 1} of ${OB_STEPS.length}`;
+    $('#ob-stage-kicker').textContent = step.kicker;
+    $('#ob-stage-note').textContent = step.note;
     $('#ob-title').textContent = step.title;
     $('#ob-body').innerHTML = step.body;
-    const btns = $('#ob-buttons'); btns.innerHTML = '';
+    const btns = $('#ob-buttons'); btns.replaceChildren();
     obPermissionStatus.textContent = '';
     obPermissionStatus.className = 'ob-permission-status hidden';
-    (step.buttons || []).forEach((b) => { const el = document.createElement('button'); el.textContent = b.label; el.addEventListener('click', b.action); btns.appendChild(el); });
-    const dots = $('#ob-dots'); dots.innerHTML = '';
-    OB_STEPS.forEach((_, i) => { const d = document.createElement('span'); if (i === obIndex) d.className = 'on'; dots.appendChild(d); });
+    (step.buttons || []).forEach((definition) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      if (definition.kind) button.dataset.permissionKind = definition.kind;
+      const buttonIcon = document.createElement('span');
+      buttonIcon.className = 'ob-button-icon';
+      buttonIcon.innerHTML = icon(definition.icon, { size: 16, stroke: 1.8 });
+      const copy = document.createElement('span');
+      copy.className = 'ob-button-copy';
+      const label = document.createElement('strong');
+      label.textContent = definition.label;
+      const detail = document.createElement('small');
+      detail.textContent = definition.detail;
+      copy.append(label, detail);
+      const trailing = document.createElement('span');
+      if (definition.kind) {
+        trailing.className = 'ob-permission-state';
+        trailing.textContent = permissionStates[definition.kind];
+      } else {
+        trailing.className = 'ob-button-arrow';
+        trailing.textContent = '›';
+      }
+      button.append(buttonIcon, copy, trailing);
+      button.addEventListener('click', definition.action);
+      btns.appendChild(button);
+    });
+    const dots = $('#ob-dots'); dots.replaceChildren();
+    OB_STEPS.forEach((item, index) => {
+      const dot = document.createElement('span');
+      if (index === obIndex) {
+        dot.className = 'on';
+        dot.setAttribute('aria-current', 'step');
+      }
+      dot.setAttribute('aria-label', `${item.stepLabel}: step ${index + 1}`);
+      dots.appendChild(dot);
+    });
     $('#ob-back').style.visibility = obIndex === 0 ? 'hidden' : 'visible';
-    $('#ob-next').textContent = obIndex === OB_STEPS.length - 1 ? 'Done' : 'Next';
+    $('#ob-next').textContent = obIndex === OB_STEPS.length - 1 ? 'Start using Lens' : 'Continue';
     $('#ob-skip').style.visibility = obIndex === OB_STEPS.length - 1 ? 'hidden' : 'visible';
   }
-  function showOnboard() { obIndex = 0; renderOnboard(); obScrim.classList.remove('hidden'); setIgnore(false); }
-  async function finishOnboard() {
+  function onboardFocusable() {
+    return [...$('#onboard').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden');
+  }
+  function handleOnboardKeydown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      finishOnboard();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = onboardFocusable();
+    if (!focusable.length) { event.preventDefault(); return; }
+    const current = focusable.indexOf(document.activeElement);
+    if (current === -1) {
+      event.preventDefault();
+      focusable[event.shiftKey ? focusable.length - 1 : 0].focus();
+    } else if (!event.shiftKey && current === focusable.length - 1) {
+      event.preventDefault();
+      focusable[0].focus();
+    } else if (event.shiftKey && current === 0) {
+      event.preventDefault();
+      focusable[focusable.length - 1].focus();
+    }
+  }
+  function showOnboard() {
+    obPreviousFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : $('#logo-btn');
+    obIndex = 0;
+    renderOnboard();
+    obScrim.classList.remove('hidden');
+    setIgnore(false);
+    requestAnimationFrame(() => $('#ob-title').focus());
+  }
+  async function finishOnboard({ restoreFocus = true } = {}) {
     obScrim.classList.add('hidden');
+    if (restoreFocus) requestAnimationFrame(() => (obPreviousFocus && obPreviousFocus.isConnected ? obPreviousFocus : $('#logo-btn')).focus());
     if (settings && !settings.onboarded) { settings.onboarded = true; await volyxLens.settingsSet({ onboarded: true }); }
   }
-  $('#ob-next').addEventListener('click', () => { if (obIndex === OB_STEPS.length - 1) finishOnboard(); else { obIndex++; renderOnboard(); } });
-  $('#ob-back').addEventListener('click', () => { if (obIndex > 0) { obIndex--; renderOnboard(); } });
+  $('#ob-next').addEventListener('click', () => { if (obIndex === OB_STEPS.length - 1) finishOnboard(); else { obIndex++; renderOnboard(); $('#ob-title').focus(); } });
+  $('#ob-back').addEventListener('click', () => { if (obIndex > 0) { obIndex--; renderOnboard(); $('#ob-title').focus(); } });
   $('#ob-skip').addEventListener('click', finishOnboard);
   $('#logo-btn').addEventListener('click', showOnboard);
 

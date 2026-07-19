@@ -353,6 +353,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: W,
     height: H,
+    minWidth: 500,
+    minHeight: 480,
     x: Math.round(workArea.x + (workArea.width - W) / 2),
     y: workArea.y + 6,
     title: WINDOW_TITLE,
