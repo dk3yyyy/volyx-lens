@@ -375,6 +375,7 @@ function getSessionDiagnostics() {
     audio: {
       microphoneEnabled: (settings.audio || {}).micEnabled !== false,
       systemEnabled: (settings.audio || {}).systemEnabled !== false,
+      browserMicProcessing: (settings.audio || {}).browserMicProcessing !== false,
     },
     transcript: {
       turns: transcript.length,

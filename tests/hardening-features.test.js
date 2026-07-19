@@ -20,10 +20,14 @@ test('audio capture uses AudioWorklet instead of deprecated ScriptProcessorNode'
   assert.doesNotMatch(renderer, /createScriptProcessor/);
   assert.match(worklet, /registerProcessor\('volyx-lens-pcm-capture'/);
   assert.match(worklet, /new Int16Array/);
+  assert.match(renderer, /const browserProcessing = [^;]*browserMicProcessing !== false/);
+  assert.match(renderer, /echoCancellation: browserProcessing/);
+  assert.match(renderer, /noiseSuppression: browserProcessing/);
+  assert.match(renderer, /autoGainControl: browserProcessing/);
 });
 
 test('UI exposes per-channel audio health, meters, latency, duration, retry, and device controls', () => {
-  for (const id of ['audio-health', 'mic-health', 'system-health', 'mic-meter', 'system-meter', 'connection-count', 'session-duration', 'transcript-latency', 'retry-realtime-btn', 'audio-input-device', 'audio-mic-enabled', 'audio-system-enabled', 'audio-session-count', 'audio-sensitivity', 'audio-silence']) {
+  for (const id of ['audio-health', 'mic-health', 'system-health', 'mic-meter', 'system-meter', 'connection-count', 'session-duration', 'transcript-latency', 'retry-realtime-btn', 'audio-input-device', 'audio-mic-enabled', 'audio-system-enabled', 'audio-browser-processing', 'audio-session-count', 'audio-sensitivity', 'audio-silence']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(renderer, /enumerateDevices\(\)/);

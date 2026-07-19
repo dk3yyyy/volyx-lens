@@ -118,6 +118,7 @@ Under **Settings → Transcription**, choose:
 - **Realtime provider** — choose OpenAI, Azure Foundry, or Deepgram. Azure reuses the response-provider key and endpoint by default, or accepts an optional separate Realtime resource key and endpoint. Deepgram uses its own securely stored key.
 - **Azure deployment** — enter the exact deployment name assigned to your Azure `gpt-realtime-whisper` model.
 - **Deepgram model** — defaults to `nova-3`; keep this unless a tested compatible streaming model is required.
+- **Browser mic processing** — enabled by default and applies Chromium echo cancellation, noise suppression, and automatic gain control. For speaker-bleed diagnosis, replay the same source once enabled and once disabled; restart listening after each change and compare Diagnostics peak correlation/acoustic suppression. Disabling it can increase room noise.
 - **Batch** — uses the configured OpenAI fallback model or Gemini in short chunks.
 - **Language** — leave blank for automatic behavior, or enter a short language hint such as `en`, `fr`, or `de`.
 - **OpenAI/Azure delay** — lower values show text sooner; higher values trade latency for more context. Deepgram uses its explicit streaming endpointing configuration instead.

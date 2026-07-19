@@ -49,6 +49,7 @@ function getDefaultSettings() {
       inputDeviceId: '',
       micEnabled: true,
       systemEnabled: true,
+      browserMicProcessing: true,
       sensitivity: 'balanced',
       silenceMs: 700,
       preRollMs: 250,

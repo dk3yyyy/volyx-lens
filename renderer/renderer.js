@@ -583,9 +583,11 @@
       let stream = null;
       try {
         const deviceId = settings.audio && settings.audio.inputDeviceId;
+        const browserProcessing = !settings.audio || settings.audio.browserMicProcessing !== false;
         stream = await navigator.mediaDevices.getUserMedia({ audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
+          echoCancellation: browserProcessing,
+          noiseSuppression: browserProcessing,
+          autoGainControl: browserProcessing,
           channelCount: 1,
           ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
         } });
@@ -846,7 +848,8 @@
       const acoustic = Number(data.transcription.acousticEchoSuppressed) || 0;
       const delayDropped = Number(data.transcription.micDelayDropped) || 0;
       const correlation = Math.max(0, Math.min(1, Number(data.transcription.maxEchoCorrelation) || 0));
-      $('#diag-cross-talk').textContent = `${suppressed} transcript · ${acoustic} acoustic removed · ${delayDropped} mic queue dropped · peak ${correlation.toFixed(2)}`;
+      const browserProcessing = data.audio.browserMicProcessing === false ? 'browser mic raw' : 'browser mic processed';
+      $('#diag-cross-talk').textContent = `${suppressed} transcript · ${acoustic} acoustic removed · ${delayDropped} mic queue dropped · peak ${correlation.toFixed(2)} · ${browserProcessing}`;
     } catch (error) { showStatus(error && error.message ? error.message : 'Diagnostics are unavailable.'); }
   }
 
@@ -1263,6 +1266,7 @@
     $('#audio-input-device').value = audio.inputDeviceId || '';
     $('#audio-mic-enabled').checked = audio.micEnabled !== false;
     $('#audio-system-enabled').checked = audio.systemEnabled !== false;
+    $('#audio-browser-processing').checked = audio.browserMicProcessing !== false;
     $('#question-detection-enabled').checked = settings.questionDetection !== false;
     updateAudioSessionCount();
     $('#audio-sensitivity').value = audio.sensitivity || 'balanced';
@@ -1404,6 +1408,7 @@
       inputDeviceId: $('#audio-input-device').value,
       micEnabled: $('#audio-mic-enabled').checked,
       systemEnabled: $('#audio-system-enabled').checked,
+      browserMicProcessing: $('#audio-browser-processing').checked,
       sensitivity: $('#audio-sensitivity').value,
       silenceMs: Math.max(300, Math.min(2000, Number($('#audio-silence').value) || 700)),
       preRollMs: 250,

@@ -40,7 +40,7 @@ test('all primary Settings fields have explicit programmatic labels', () => {
     'key-deepgram', 'stt-deepgram-model',
     'stt-language', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model',
     'stt-offline-enabled', 'stt-offline-cloud-fallback', 'audio-input-device', 'audio-mic-enabled',
-    'audio-system-enabled', 'audio-sensitivity', 'audio-silence', 'audio-cost-warning',
+    'audio-system-enabled', 'audio-browser-processing', 'audio-sensitivity', 'audio-silence', 'audio-cost-warning',
     'audio-session-limit', 'question-detection-enabled'
   ];
   for (const id of ids) {

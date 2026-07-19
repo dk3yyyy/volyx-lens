@@ -215,6 +215,8 @@
         <div class="s-field"><label for="audio-input-device">Microphone</label><select id="audio-input-device"><option value="">System default</option></select></div>
         <div class="s-field"><label for="audio-mic-enabled">Capture mic</label><input id="audio-mic-enabled" type="checkbox" checked /></div>
         <div class="s-field"><label for="audio-system-enabled">Capture system</label><input id="audio-system-enabled" type="checkbox" checked /></div>
+        <div class="s-field"><label for="audio-browser-processing">Browser mic processing</label><input id="audio-browser-processing" type="checkbox" checked /></div>
+        <div class="s-note">Controls Chromium echo cancellation, noise suppression, and automatic gain control together. Changes apply after restarting listening. Disable only for the speaker-bleed A/B test; raw mic capture may contain more room noise.</div>
         <div class="s-field"><label for="question-detection-enabled">Detect questions</label><input id="question-detection-enabled" type="checkbox" checked /></div>
         <div id="audio-session-count" class="s-note">2 active Realtime sessions when listening — Mic + System.</div>
         <div class="s-field"><label for="audio-sensitivity">Sensitivity</label><select id="audio-sensitivity"><option value="quiet">Quiet</option><option value="balanced">Balanced</option><option value="noisy">Noisy room</option></select></div>

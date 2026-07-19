@@ -110,6 +110,14 @@ test('at least one audio channel remains enabled', () => {
   assert.equal(loaded.audio.systemEnabled, false);
 });
 
+test('browser microphone processing mode persists as an explicit boolean', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  assert.equal(store.getSettings().audio.browserMicProcessing, true);
+  store.setSettings({ audio: { browserMicProcessing: false } });
+  assert.equal(loadStore(userData).getSettings().audio.browserMicProcessing, false);
+});
+
 test('settings and credential updates commit in one atomic write and roll back together on failure', () => {
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');
