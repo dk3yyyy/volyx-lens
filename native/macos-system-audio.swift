@@ -8,6 +8,31 @@ private let frameSamples = 480
 private let frameBytes = frameSamples * MemoryLayout<Int16>.size
 private let maxQueuedFrames = 100
 
+private final class StopLatch {
+    private let lock = NSLock()
+    private var signaled = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func signal() {
+        lock.lock()
+        if signaled { lock.unlock(); return }
+        signaled = true
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume()
+    }
+
+    func wait() async {
+        await withCheckedContinuation { pending in
+            lock.lock()
+            if signaled { lock.unlock(); pending.resume(); return }
+            continuation = pending
+            lock.unlock()
+        }
+    }
+}
+
 private enum EventCode: String {
     case unsupportedOS = "unsupported_os"
     case permissionDenied = "permission_denied"
@@ -143,7 +168,7 @@ private final class CaptureOutput: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         remainder.append(converted)
         while remainder.count >= frameBytes {
-            writer.pcm(remainder.prefix(frameBytes))
+            writer.pcm(Data(remainder.prefix(frameBytes)))
             remainder.removeFirst(frameBytes)
         }
     }
@@ -156,7 +181,7 @@ private final class CaptureController {
     private var stream: SCStream?
     private var output: CaptureOutput?
     private var stopping = false
-    private let stopped = DispatchSemaphore(value: 0)
+    private let stopped = StopLatch()
 
     func run() async -> Int32 {
         writer.event(["event": "starting", "protocol": 1])
@@ -186,7 +211,7 @@ private final class CaptureController {
                     if line.contains("\"command\":\"stop\"") { self?.stopped.signal(); break }
                 }
             }
-            stopped.wait()
+            await stopped.wait()
             stopping = true
             try? await captureStream.stopCapture()
             writer.event(["event": "stopped", "reason": "requested"])

@@ -35,7 +35,7 @@ async function buildVisionOcr(context = {}) {
   const targetArch = archMap[context.arch] || archMap[process.arch] || 'arm64';
   const audioResult = spawnSync('xcrun', [
     '--sdk', 'macosx', 'swiftc', audioSource,
-    '-O', '-whole-module-optimization', '-warnings-as-errors',
+    '-O', '-whole-module-optimization', '-warnings-as-errors', '-parse-as-library',
     '-target', `${targetArch}-apple-macos13.0`,
     '-framework', 'ScreenCaptureKit', '-framework', 'CoreMedia', '-framework', 'CoreAudio',
     '-o', audioOutput,
