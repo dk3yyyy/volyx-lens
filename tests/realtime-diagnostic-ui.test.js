@@ -25,7 +25,7 @@ test('diagnostic IPC is narrow and credentials never cross from renderer to main
   assert.doesNotMatch(preload, /testRealtime:\s*\([^)]*(key|endpoint|settings)/i);
   assert.match(main, /runRealtimeDiagnostic\(\{ settings: store\.getSettings\(\) \}\)/);
   assert.match(main, /new LiveRealtimeDiagnostic\(\{ settings: store\.getSettings\(\) \}\)/);
-  assert.match(main, /ipcMain\.handle\('transcription:live-test-start', \(\) => startLiveRealtimeDiagnostic\(\)\)/);
+  assert.match(main, /handleTrusted\('transcription:live-test-start', \(\) => startLiveRealtimeDiagnostic\(\)\)/);
 });
 
 test('renderer saves settings, captures five seconds, disables conflicting controls, and renders results as text', () => {

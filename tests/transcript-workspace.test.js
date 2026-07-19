@@ -37,7 +37,7 @@ test('transcript workspace exposes timestamps, speakers, partial state, and boun
 });
 
 test('transcript and diagnostics actions cross narrow IPC boundaries without renderer file access', () => {
-  for (const channel of ['transcript:get', 'transcript:copy', 'transcript:copy-turn', 'transcript:clear', 'transcript:export', 'diagnostics:get', 'diagnostics:copy']) assert.match(main, new RegExp(`ipcMain\\.handle\\('${channel}'`));
+  for (const channel of ['transcript:get', 'transcript:copy', 'transcript:copy-turn', 'transcript:clear', 'transcript:export', 'diagnostics:get', 'diagnostics:copy']) assert.match(main, new RegExp(`handleTrusted\\('${channel}'`));
   assert.match(preload, /transcriptExport: \(format\) => ipcRenderer\.invoke\('transcript:export', format\)/);
   assert.match(preload, /diagnosticsCopy: \(\) => ipcRenderer\.invoke\('diagnostics:copy'\)/);
   assert.doesNotMatch(preload, /writeFile|showSaveDialog|clipboard/);

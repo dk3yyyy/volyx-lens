@@ -26,6 +26,7 @@
   "build": {
     "appId": "ai.volyx.lens",
     "productName": "Volyx Lens",
+    "artifactName": "volyx-lens-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "beforePack": "scripts/build-vision-ocr.js",
     "files": [

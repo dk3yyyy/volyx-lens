@@ -10,7 +10,7 @@ const settings = {
   credentialStatus: { present: { azure: true }, secure: true, backend: 'safeStorage' },
   models: { openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }, anthropic: { fast: '', smart: '' }, gemini: { fast: '', smart: '' }, azure: { fast: 'gpt-5.6-sol', smart: 'gpt-5.6-sol' }, deepseek: { fast: '', smart: '' } },
   endpoints: { azure: 'https://resource.openai.azure.com/openai/v1', azureRealtime: '' },
-  transcription: { mode: 'realtime', realtimeProvider: 'azure', azureRealtimeDeployment: 'gpt-realtime-whisper', fallbackModel: 'gpt-4o-mini-transcribe', offlineEnabled: false, offlineCloudFallback: false, language: '', delay: 'low' },
+  transcription: { mode: 'realtime', realtimeProvider: 'azure', azureRealtimeDeployment: 'gpt-realtime-whisper', fallbackModel: 'gpt-4o-mini-transcribe', geminiFallbackModel: 'gemini-3.5-flash', offlineEnabled: false, offlineCloudFallback: false, language: '', delay: 'low' },
   audio: { inputDeviceId: '', micEnabled: true, systemEnabled: true, sensitivity: 'balanced', silenceMs: 700, costWarningMinutes: 30, maxSessionMinutes: 60 }
 };
 const personalContext = { documents: { resume: { present: false, enabled: false }, jobDescription: { present: false, enabled: false } }, secure: true, locked: false };
@@ -32,6 +32,14 @@ ipcMain.handle('shortcuts:get', () => [
 ipcMain.on('mouse:ignore', () => {});
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function waitFor(win, expression, message, timeoutMs = 2500) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await win.webContents.executeJavaScript(`Boolean(${expression})`)) return;
+    await wait(25);
+  }
+  throw new Error(`Timed out waiting for ${message}`);
+}
 async function capture(win, name) {
   if (!screenshotDir) return;
   fs.mkdirSync(screenshotDir, { recursive: true });
@@ -48,13 +56,14 @@ app.whenReady().then(async () => {
   win.show();
   await wait(450);
   await win.webContents.executeJavaScript("document.querySelector('#more-btn').click()");
-  await wait(350);
+  await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'Settings to open');
 
   const sections = ['providers', 'listening', 'context', 'shortcuts'];
   const heights = new Set();
   for (const section of sections) {
     await win.webContents.executeJavaScript(`document.querySelector('[data-settings-section="${section}"]').click()`);
-    await wait(60);
+    await waitFor(win, `document.activeElement && document.activeElement.id === 'settings-${section}-title'`, `${section} heading focus`);
+    await wait(60); // Allow Chromium to paint the already-verified section before screenshot capture.
     const state = await win.webContents.executeJavaScript(`(() => {
       const dialog = document.querySelector('#settings').getBoundingClientRect();
       const visible = [...document.querySelectorAll('[data-settings-page]')].filter((page) => !page.hidden);
@@ -85,15 +94,15 @@ app.whenReady().then(async () => {
   assert.equal(reverseFromHeading, 'quit', 'Shift+Tab from heading should wrap to the final visible control');
 
   await win.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
-  await wait(80);
+  await waitFor(win, "document.querySelector('#settings-scrim').classList.contains('hidden') && document.activeElement && document.activeElement.id === 'more-btn'", 'Settings close and focus restoration');
   const closed = await win.webContents.executeJavaScript(`({ hidden: document.querySelector('#settings-scrim').classList.contains('hidden'), active: document.activeElement && document.activeElement.id })`);
   assert.equal(closed.hidden, true, 'Escape should close Settings');
   assert.equal(closed.active, 'more-btn', 'closing Settings should restore focus');
 
   await win.webContents.executeJavaScript("document.querySelector('#more-btn').click()");
-  await wait(100);
+  await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'Settings to reopen');
   win.setSize(500, 480);
-  await wait(120);
+  await waitFor(win, 'innerWidth === 500', 'compact viewport');
   const compact = await win.webContents.executeJavaScript(`(() => {
     const dialog = document.querySelector('#settings').getBoundingClientRect();
     return { overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth, dialogRight: dialog.right, width: innerWidth };

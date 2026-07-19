@@ -25,7 +25,9 @@
     <div id="panel-wrap">
       <span id="live-dot" class="off"></span>
       <div id="panel" class="glass no-drag">
-        <div id="messages"></div>
+        <div id="messages" aria-label="Conversation"></div>
+        <div id="assistant-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div id="volyx-lens-status" role="status" aria-live="polite" aria-atomic="true"></div>
 
         <div id="audio-health" class="hidden" aria-live="polite">
           <div class="audio-channel" data-channel="you">
@@ -88,14 +90,14 @@
         </div>
 
         <div id="action-row">
-          <button class="act assist-act" data-mode="assist" type="button" aria-live="polite"><span class="ic"></span><span class="assist-label">Assist</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
+          <button class="act assist-act" data-mode="assist" type="button"><span class="ic"></span><span class="assist-label">Assist</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
           <select id="assist-context" title="Choose what Assist can use" aria-label="Assist context"><option value="both">Screen + conversation</option><option value="conversation">Conversation only</option><option value="screen">Screen only</option></select>
           <span class="sep">•</span>
-          <button class="act" data-mode="say" type="button" aria-live="polite"><span class="ic"></span><span class="action-label">What should I say?</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
+          <button class="act" data-mode="say" type="button"><span class="ic"></span><span class="action-label">What should I say?</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
           <span class="sep">•</span>
-          <button class="act" data-mode="followup" type="button" aria-live="polite"><span class="ic"></span><span class="action-label">Follow-up questions</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
+          <button class="act" data-mode="followup" type="button"><span class="ic"></span><span class="action-label">Follow-up questions</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
           <span class="sep">•</span>
-          <button class="act" data-mode="recap" type="button" aria-live="polite"><span class="ic"></span><span class="action-label">Recap</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
+          <button class="act" data-mode="recap" type="button"><span class="ic"></span><span class="action-label">Recap</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
           <span class="sep">•</span>
           <button class="act" id="task-context-toggle" type="button" aria-expanded="false" aria-controls="task-context-panel"><span class="ic"></span><span>Task Context</span><span id="task-context-action-count" class="hidden">0</span></button>
         </div>
@@ -103,7 +105,7 @@
         <div id="composer">
           <div id="input-area">
             <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Assist</div>
-            <textarea id="input" rows="1" spellcheck="false"></textarea>
+            <textarea id="input" rows="1" spellcheck="false" aria-label="Ask Volyx Lens"></textarea>
           </div>
           <div id="composer-bottom">
             <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
@@ -135,41 +137,43 @@
           <section class="s-page on" data-settings-page="providers" aria-labelledby="settings-providers-title">
             <div class="s-page-head"><h2 tabindex="-1" id="settings-providers-title">AI Providers</h2><p>Choose where Volyx Lens sends requests and which models it uses.</p></div>
         <label class="s-label">Response providers <span class="s-hint">choose a provider to configure</span></label>
-        <div class="s-seg provider-tabs" id="provider-seg">
-          <button data-provider="openai"><span>OpenAI</span><small class="provider-default-mark">Default</small></button>
-          <button data-provider="anthropic"><span>Anthropic</span><small class="provider-default-mark">Default</small></button>
-          <button data-provider="gemini"><span>Gemini</span><small class="provider-default-mark">Default</small></button>
-          <button data-provider="azure"><span>Azure Foundry</span><small class="provider-default-mark">Default</small></button>
-          <button data-provider="deepseek"><span>DeepSeek</span><small class="provider-default-mark">Default</small></button>
+        <div class="s-seg provider-tabs" id="provider-seg" role="tablist" aria-label="Provider configuration">
+          <button id="provider-tab-openai" role="tab" aria-controls="provider-config-panel" data-provider="openai"><span>OpenAI</span><small class="provider-default-mark">Default</small></button>
+          <button id="provider-tab-anthropic" role="tab" aria-controls="provider-config-panel" data-provider="anthropic"><span>Anthropic</span><small class="provider-default-mark">Default</small></button>
+          <button id="provider-tab-gemini" role="tab" aria-controls="provider-config-panel" data-provider="gemini"><span>Gemini</span><small class="provider-default-mark">Default</small></button>
+          <button id="provider-tab-azure" role="tab" aria-controls="provider-config-panel" data-provider="azure"><span>Azure Foundry</span><small class="provider-default-mark">Default</small></button>
+          <button id="provider-tab-deepseek" role="tab" aria-controls="provider-config-panel" data-provider="deepseek"><span>DeepSeek</span><small class="provider-default-mark">Default</small></button>
         </div>
 
+        <div class="provider-config-panel" id="provider-config-panel" role="tabpanel" tabindex="0" aria-labelledby="provider-tab-openai">
         <div class="provider-routing-card">
           <div class="provider-routing-head"><div><strong id="provider-view-title">OpenAI</strong><span id="provider-view-state">Default response provider</span></div><button id="provider-default-btn" type="button">Use as default</button></div>
-          <div class="s-field"><span>Fallback</span><select id="provider-fallback"><option value="">None</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="azure">Azure Foundry</option><option value="deepseek">DeepSeek</option></select></div>
+          <div class="s-field"><label for="provider-fallback">Fallback</label><select id="provider-fallback"><option value="">None</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="azure">Azure Foundry</option><option value="deepseek">DeepSeek</option></select></div>
           <div class="s-note">Volyx Lens uses the default provider for answers. The fallback is tried only when the default is unavailable or fails before producing any text; it never mixes two partial answers. Transcription provider settings remain separate below.</div>
         </div>
 
         <label class="s-label" id="provider-key-label">OpenAI API key <span class="s-hint">safeStorage / macOS Keychain where available</span></label>
-        <div class="s-field key-field provider-config-row" data-provider-config="openai"><span>API key</span><input id="key-openai" type="password" placeholder="sk-..." autocomplete="new-password" /><button class="key-clear" data-key="openai" type="button">Clear</button></div>
-        <div class="s-field key-field provider-config-row hidden" data-provider-config="anthropic"><span>API key</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="new-password" /><button class="key-clear" data-key="anthropic" type="button">Clear</button></div>
-        <div class="s-field key-field provider-config-row hidden" data-provider-config="gemini"><span>API key</span><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="new-password" /><button class="key-clear" data-key="gemini" type="button">Clear</button></div>
-        <div class="s-field key-field provider-config-row hidden" data-provider-config="azure"><span>API key</span><input id="key-azure" type="password" placeholder="Foundry resource key" autocomplete="new-password" /><button class="key-clear" data-key="azure" type="button">Clear</button></div>
-        <div class="s-field key-field provider-config-row hidden" data-provider-config="deepseek"><span>API key</span><input id="key-deepseek" type="password" placeholder="sk-..." autocomplete="new-password" /><button class="key-clear" data-key="deepseek" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row" data-provider-config="openai"><label for="key-openai">API key</label><input id="key-openai" type="password" placeholder="sk-..." autocomplete="new-password" /><button class="key-clear" data-key="openai" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="anthropic"><label for="key-anthropic">API key</label><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="new-password" /><button class="key-clear" data-key="anthropic" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="gemini"><label for="key-gemini">API key</label><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="new-password" /><button class="key-clear" data-key="gemini" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="azure"><label for="key-azure">API key</label><input id="key-azure" type="password" placeholder="Foundry resource key" autocomplete="new-password" /><button class="key-clear" data-key="azure" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="deepseek"><label for="key-deepseek">API key</label><input id="key-deepseek" type="password" placeholder="sk-..." autocomplete="new-password" /><button class="key-clear" data-key="deepseek" type="button">Clear</button></div>
 
         <div class="provider-config-row hidden" data-provider-config="azure">
           <label class="s-label">Azure Foundry endpoint <span class="s-hint">unified OpenAI-compatible endpoint</span></label>
-          <div class="s-field"><span>Endpoint</span><input id="endpoint-azure" type="url" placeholder="https://resource.services.ai.azure.com/openai/v1" autocomplete="off" /></div>
+          <div class="s-field"><label for="endpoint-azure">Endpoint</label><input id="endpoint-azure" type="url" placeholder="https://resource.services.ai.azure.com/openai/v1" autocomplete="off" /></div>
         </div>
 
         <label class="s-label">Models <span class="s-hint" id="provider-model-hint">used by the selected provider</span></label>
-        <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
-        <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
+        <div class="s-field"><label for="model-fast">Fast</label><input id="model-fast" type="text" autocomplete="off" /></div>
+        <div class="s-field"><label for="model-smart">Smart</label><input id="model-smart" type="text" autocomplete="off" /></div>
         <div id="provider-capability-note" class="s-note hidden">DeepSeek is text-only in Volyx Lens. Meeting and transcript modes work; screen-only analysis requires a vision-capable provider.</div>
 
         <div class="provider-test-card">
           <div class="provider-test-copy"><strong>Connection test</strong><span>Sends one minimal text-only request to the selected provider. It never includes screenshots, transcript, or personal context, but a small provider charge may apply.</span></div>
           <div class="provider-test-controls"><select id="provider-test-tier" aria-label="Model tier"><option value="fast">Fast model</option><option value="smart">Smart model</option></select><button id="provider-test-btn" type="button">Test connection</button></div>
           <div id="provider-test-result" class="provider-test-result hidden" role="status" aria-live="polite"></div>
+        </div>
         </div>
           </section>
 
@@ -194,26 +198,27 @@
           <section class="s-page" data-settings-page="listening" aria-labelledby="settings-listening-title" hidden>
             <div class="s-page-head"><h2 tabindex="-1" id="settings-listening-title">Listening</h2><p>Control transcription, audio sources, privacy fallbacks, and session limits.</p></div>
         <label class="s-label">Transcription <span class="s-hint">OpenAI or Azure Realtime with batch fallback</span></label>
-        <div class="s-field"><span>Mode</span><select id="stt-mode"><option value="realtime">Realtime</option><option value="batch">Batch</option></select></div>
-        <div class="s-field"><span>Realtime provider</span><select id="stt-realtime-provider"><option value="openai">OpenAI</option><option value="azure">Azure Foundry</option></select></div>
-        <div class="s-field stt-provider-config" data-stt-provider="azure"><span>Azure deployment</span><input id="stt-azure-deployment" type="text" placeholder="Exact gpt-realtime-whisper deployment name" autocomplete="off" /></div>
-        <div class="s-field key-field stt-provider-config" data-stt-provider="azure"><span>Azure RT key</span><input id="key-azureRealtime" type="password" placeholder="Optional separate Realtime resource key" autocomplete="new-password" /><button class="key-clear" data-key="azureRealtime" type="button">Clear</button></div>
-        <div class="s-field stt-provider-config" data-stt-provider="azure"><span>Azure RT URL</span><input id="endpoint-azure-realtime" type="url" placeholder="Optional separate resource /openai/v1 endpoint" autocomplete="off" /></div>
-        <div class="s-field"><span>Language</span><input id="stt-language" type="text" placeholder="Leave blank for Auto, or use en / fr / de…" autocomplete="off" /></div>
-        <div class="s-field"><span>Delay</span><select id="stt-delay"><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select></div>
-        <div class="s-field"><span>OpenAI fallback</span><input id="stt-fallback-model" type="text" placeholder="gpt-4o-mini-transcribe" autocomplete="off" /></div>
-        <div class="s-field"><span>Offline first</span><input id="stt-offline-enabled" type="checkbox" /></div>
-        <div class="s-field"><span>Cloud fallback</span><input id="stt-offline-cloud-fallback" type="checkbox" /></div>
+        <div class="s-field"><label for="stt-mode">Mode</label><select id="stt-mode"><option value="realtime">Realtime</option><option value="batch">Batch</option></select></div>
+        <div class="s-field"><label for="stt-realtime-provider">Realtime provider</label><select id="stt-realtime-provider"><option value="openai">OpenAI</option><option value="azure">Azure Foundry</option></select></div>
+        <div class="s-field stt-provider-config" data-stt-provider="azure"><label for="stt-azure-deployment">Azure deployment</label><input id="stt-azure-deployment" type="text" placeholder="Exact gpt-realtime-whisper deployment name" autocomplete="off" /></div>
+        <div class="s-field key-field stt-provider-config" data-stt-provider="azure"><label for="key-azureRealtime">Azure RT key</label><input id="key-azureRealtime" type="password" placeholder="Optional separate Realtime resource key" autocomplete="new-password" /><button class="key-clear" data-key="azureRealtime" type="button">Clear</button></div>
+        <div class="s-field stt-provider-config" data-stt-provider="azure"><label for="endpoint-azure-realtime">Azure RT URL</label><input id="endpoint-azure-realtime" type="url" placeholder="Optional separate resource /openai/v1 endpoint" autocomplete="off" /></div>
+        <div class="s-field"><label for="stt-language">Language</label><input id="stt-language" type="text" placeholder="Leave blank for Auto, or use en / fr / de…" autocomplete="off" /></div>
+        <div class="s-field"><label for="stt-delay">Delay</label><select id="stt-delay"><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select></div>
+        <div class="s-field"><label for="stt-fallback-model">OpenAI fallback</label><input id="stt-fallback-model" type="text" placeholder="gpt-4o-mini-transcribe" autocomplete="off" /></div>
+        <div class="s-field"><label for="stt-gemini-fallback-model">Gemini fallback</label><input id="stt-gemini-fallback-model" type="text" placeholder="gemini-3.5-flash" autocomplete="off" /></div>
+        <div class="s-field"><label for="stt-offline-enabled">Offline first</label><input id="stt-offline-enabled" type="checkbox" /></div>
+        <div class="s-field"><label for="stt-offline-cloud-fallback">Cloud fallback</label><input id="stt-offline-cloud-fallback" type="checkbox" /></div>
         <div class="s-note">Optional offline transcription uses a locally installed <code>whisper-cli</code> only when Volyx Lens is launched with absolute <code>VOLYX_LENS_WHISPER_CLI</code> and <code>VOLYX_LENS_WHISPER_MODEL</code> paths. Cloud fallback is separately disabled by default so a local failure cannot silently upload audio. Volyx Lens never downloads or executes a renderer-selected binary.</div>
-        <div class="s-field"><span>Microphone</span><select id="audio-input-device"><option value="">System default</option></select></div>
-        <div class="s-field"><span>Capture mic</span><input id="audio-mic-enabled" type="checkbox" checked /></div>
-        <div class="s-field"><span>Capture system</span><input id="audio-system-enabled" type="checkbox" checked /></div>
-        <div class="s-field"><span>Detect questions</span><input id="question-detection-enabled" type="checkbox" checked /></div>
+        <div class="s-field"><label for="audio-input-device">Microphone</label><select id="audio-input-device"><option value="">System default</option></select></div>
+        <div class="s-field"><label for="audio-mic-enabled">Capture mic</label><input id="audio-mic-enabled" type="checkbox" checked /></div>
+        <div class="s-field"><label for="audio-system-enabled">Capture system</label><input id="audio-system-enabled" type="checkbox" checked /></div>
+        <div class="s-field"><label for="question-detection-enabled">Detect questions</label><input id="question-detection-enabled" type="checkbox" checked /></div>
         <div id="audio-session-count" class="s-note">2 active Realtime sessions when listening — Mic + System.</div>
-        <div class="s-field"><span>Sensitivity</span><select id="audio-sensitivity"><option value="quiet">Quiet</option><option value="balanced">Balanced</option><option value="noisy">Noisy room</option></select></div>
-        <div class="s-field"><span>Silence</span><select id="audio-silence"><option value="450">Short · 450 ms</option><option value="700">Balanced · 700 ms</option><option value="1100">Long · 1100 ms</option></select></div>
-        <div class="s-field"><span>Cost warning</span><input id="audio-cost-warning" type="number" min="5" max="240" step="5" value="30" /></div>
-        <div class="s-field"><span>Session limit</span><input id="audio-session-limit" type="number" min="10" max="480" step="10" value="60" /></div>
+        <div class="s-field"><label for="audio-sensitivity">Sensitivity</label><select id="audio-sensitivity"><option value="quiet">Quiet</option><option value="balanced">Balanced</option><option value="noisy">Noisy room</option></select></div>
+        <div class="s-field"><label for="audio-silence">Silence</label><select id="audio-silence"><option value="450">Short · 450 ms</option><option value="700">Balanced · 700 ms</option><option value="1100">Long · 1100 ms</option></select></div>
+        <div class="s-field"><label for="audio-cost-warning">Cost warning (minutes)</label><input id="audio-cost-warning" type="number" min="5" max="240" step="5" value="30" /></div>
+        <div class="s-field"><label for="audio-session-limit">Session limit (minutes)</label><input id="audio-session-limit" type="number" min="10" max="480" step="10" value="60" /></div>
         <div class="s-note">Azure Realtime uses the optional Azure RT key and URL when supplied; otherwise it reuses the response-provider Azure key and endpoint. The exact deployment name is always required. Microsoft bills <code>gpt-realtime-whisper</code> hourly. Volyx Lens opens separate You/Them sessions, which can count as two concurrent billable sessions. If Realtime fails, Volyx Lens uses OpenAI/Gemini batch transcription when configured.</div>
         <div class="s-diag-row">
           <button id="test-realtime-btn" type="button">Test Connection</button>
@@ -236,7 +241,7 @@
         </div>
           </section>
 
-        <div class="s-status" id="s-status"></div>
+        <div class="s-status" id="s-status" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></div>
         </div>
       </div>
     </div>
@@ -261,11 +266,11 @@
           <div class="ob-orbit"><div class="ob-icon" id="ob-icon"></div></div>
           <div class="ob-stage-copy"><span id="ob-stage-kicker"></span><p id="ob-stage-note"></p></div>
         </aside>
-        <section id="ob-content" aria-live="polite" aria-atomic="true">
+        <section id="ob-content">
           <h1 class="ob-title" id="ob-title" tabindex="-1"></h1>
           <div class="ob-body" id="ob-body"></div>
           <div class="ob-buttons" id="ob-buttons"></div>
-          <div class="ob-permission-status hidden" id="ob-permission-status" role="status" aria-live="polite"></div>
+          <div class="ob-permission-status hidden" id="ob-permission-status" role="status" aria-live="polite" tabindex="-1"></div>
         </section>
       </div>
 

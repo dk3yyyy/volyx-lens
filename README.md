@@ -53,18 +53,13 @@ There are two ways to install Volyx Lens. **If you're not a developer, use Optio
 
 ### Option A — Download the app (easiest)
 
-1. Go to the [**Releases**](../../releases) page and download **`volyx-lens-mac.zip`**.
+1. Go to the [**Releases**](../../releases) page. Download the latest signed archive for your Mac:
+   - **Apple Silicon (M1/M2/M3/M4 or newer):** `volyx-lens-<version>-mac-arm64.zip`
+   - **Intel:** `volyx-lens-<version>-mac-x64.zip`
+   If no release assets are listed yet, use Option B; a public binary has not been published.
 2. Double-click the zip to unzip it. You'll get **`Volyx Lens.app`**.
 3. Drag **`Volyx Lens.app`** into your **Applications** folder.
-4. **First open (important):** because Volyx Lens is a free app without a paid Apple certificate, macOS will refuse to open it normally the first time. Do this once:
-   - **Right-click** `Volyx Lens.app` → **Open** → click **Open** in the dialog.
-   - If macOS instead says **"Volyx Lens is damaged and can't be opened,"** open the **Terminal** app and paste this line, then press Return:
-     ```bash
-     xattr -cr /Applications/Volyx\ Lens.app
-     ```
-     Then double-click Volyx Lens.app again. (This just tells macOS "yes, I trust this app I downloaded." It's safe.)
-
-After that, Volyx Lens opens normally forever.
+4. Open Volyx Lens normally. Public release assets are Developer ID signed, notarized, stapled, checksummed, and accompanied by a CycloneDX SBOM and GitHub build attestation. Do not bypass Gatekeeper for an asset that fails verification.
 
 ### Option B — Run from source (developers)
 
@@ -73,7 +68,7 @@ You need [Node.js](https://nodejs.org) 20+ installed. No Xcode required.
 ```bash
 git clone https://github.com/dk3yyyy/volyx-lens.git
 cd volyx-lens
-npm install
+npm ci
 npm start
 ```
 
@@ -242,10 +237,10 @@ Run `xattr -cr /Applications/Volyx\ Lens.app` in Terminal once (see Install → 
 
 - Renderer processes run with Chromium sandboxing, context isolation, no Node integration, a restrictive CSP, denied popup/navigation requests, and bounded IPC payloads.
 - Packaged application code is stored in ASAR and macOS builds enable Hardened Runtime with the minimum Electron/audio entitlements in `build/entitlements.mac.plist`.
-- CI runs tests, syntax checks, a repository secret scan, a critical dependency audit, and Linux/macOS package builds.
+- CI runs tests, both Electron UI harnesses, syntax checks, a repository secret scan, a low-severity dependency audit, package builds, and a deterministic packaged-renderer readiness check.
 - `npm audit` should report zero known vulnerabilities before release.
 
-Local packaging can be verified with `npm test && npm run check:syntax && npm run security:secrets && npm run release:check && npm run pack`. A publicly distributed macOS build still requires credentials that are not stored in this repository: a Developer ID Application certificate (`CSC_LINK` / `CSC_KEY_PASSWORD`) plus Apple notarization credentials (`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`, or the supported App Store Connect API-key variables). `npm run release:mac` fails closed when these variables are absent and always passes `--publish never`. The manual GitHub workflow targets the protected `macos-release` environment, prevents overlapping notarization runs, extracts the exact ZIP that will be uploaded, and verifies bundle ID, Developer ID signature, notarization staple, and Gatekeeper assessment. Configure required reviewers for that GitHub Environment before using it. No release is published automatically.
+Local packaging can be verified with `npm test && npm run check:syntax && npm run security:secrets && npm run release:check && npm run pack`. A publicly distributed macOS build still requires credentials that are not stored in this repository: a Developer ID Application certificate (`CSC_LINK` / `CSC_KEY_PASSWORD`) plus Apple notarization credentials (`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`, or `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`). `npm run release:mac` fails closed when these variables are absent and always passes `--publish never`. Pushing a version tag such as `v0.2.0` starts the GitHub release workflow: it builds Intel and Apple Silicon archives, verifies renderer readiness, signature, notarization staple, Gatekeeper assessment, and architecture, then generates portable SHA-256 files, CycloneDX SBOMs, and separate provenance/SBOM attestations before publishing the GitHub Release. The workflow references the `macos-release` environment, but required reviewers and deployment restrictions must be configured in the repository’s GitHub Environment settings before any version tag is pushed.
 
 ## License
 

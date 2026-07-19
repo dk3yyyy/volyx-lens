@@ -61,6 +61,7 @@ function getDefaultSettings() {
       realtimeModel: 'gpt-realtime-whisper',
       azureRealtimeDeployment: '',
       fallbackModel: 'gpt-4o-mini-transcribe',
+      geminiFallbackModel: 'gemini-3.5-flash',
       offlineEnabled: false,
       offlineCloudFallback: false,
       language: '',

@@ -22,8 +22,8 @@ test('Settings reports all fixed global shortcuts with explicit in-app fallbacks
 test('shortcut status and retry use narrow IPC and sanitized structured metadata', () => {
   assert.match(preload, /shortcutsGet: \(\) => ipcRenderer\.invoke\('shortcuts:get'\)/);
   assert.match(preload, /shortcutsRetry: \(\) => ipcRenderer\.invoke\('shortcuts:retry'\)/);
-  assert.match(main, /ipcMain\.handle\('shortcuts:get', \(\) => getShortcutStatus\(\)\)/);
-  assert.match(main, /ipcMain\.handle\('shortcuts:retry', \(\) => registerShortcuts\(\)\)/);
+  assert.match(main, /handleTrusted\('shortcuts:get', \(\) => getShortcutStatus\(\)\)/);
+  assert.match(main, /handleTrusted\('shortcuts:retry', \(\) => registerShortcuts\(\)\)/);
   assert.match(main, /shortcuts: getShortcutStatus\(\)/);
   assert.match(renderer, /row\.querySelector\('span'\)\.textContent/);
   assert.doesNotMatch(renderer, /shortcut-status-row[\s\S]{0,500}innerHTML/);

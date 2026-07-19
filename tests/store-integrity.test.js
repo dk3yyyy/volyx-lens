@@ -92,6 +92,36 @@ test('at least one audio channel remains enabled', () => {
   assert.equal(loaded.audio.systemEnabled, false);
 });
 
+test('settings and credential updates commit in one atomic write and roll back together on failure', () => {
+  const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+  const store = loadStore(userData);
+  store.updateSettingsAndApiKeys({ smart: false }, { openai: 'old-key' });
+  const before = fs.readFileSync(file, 'utf8');
+
+  const originalRename = fs.renameSync;
+  let renames = 0;
+  fs.renameSync = (...args) => { renames += 1; return originalRename(...args); };
+  try {
+    store.updateSettingsAndApiKeys({ smart: true }, { openai: 'new-key' });
+  } finally {
+    fs.renameSync = originalRename;
+  }
+  assert.equal(renames, 1);
+  assert.equal(store.getSettings().smart, true);
+
+  const committed = fs.readFileSync(file, 'utf8');
+  fs.renameSync = () => { throw new Error('simulated disk failure'); };
+  try {
+    assert.throws(() => store.updateSettingsAndApiKeys({ smart: false }, { openai: 'third-key' }), /could not be saved/i);
+  } finally {
+    fs.renameSync = originalRename;
+  }
+  assert.equal(fs.readFileSync(file, 'utf8'), committed);
+  assert.equal(store.getSettings().smart, true);
+  assert.notEqual(before, committed);
+});
+
 test('locked secure credentials cannot be overwritten by a partial key update', () => {
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');

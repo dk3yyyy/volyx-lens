@@ -15,7 +15,7 @@ test('unrelated settings writes do not restart active transcription', () => {
   assert.match(main, /function transcriptionSettingsChanged/);
   assert.match(main, /if \(transcriptionSettingsChanged\(previous, updated\)\)/);
   assert.match(main, /if \(state\.capturing\)/);
-  const settingsHandler = main.match(/ipcMain\.handle\('settings:set'[\s\S]*?\n\}\);/)[0];
+  const settingsHandler = main.match(/handleTrusted\('settings:set'[\s\S]*?\n\}\);/)[0];
   assert.doesNotMatch(settingsHandler, /startTranscriptionPipeline\(\)/);
 });
 

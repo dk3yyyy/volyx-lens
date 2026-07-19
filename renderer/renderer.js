@@ -342,11 +342,12 @@
     aiEl.insertBefore(span, caretEl);
   }
 
-  function finalizeAi() {
+  function finalizeAi(announcement = 'Response ready.') {
     if (!aiEl) return;
     const raw = aiEl.dataset.raw || '';
     aiEl.innerHTML = renderMarkdown(raw);
     aiEl = null; caretEl = null;
+    $('#assistant-status').textContent = announcement;
   }
 
   const ACTION_LABELS = Object.freeze({ assist: 'Assist', say: 'What should I say?', followup: 'Follow-up questions', recap: 'Recap' });
@@ -497,7 +498,7 @@
     if (level != null) meterEl.style.width = `${Math.min(100, Math.round(Math.sqrt(Math.max(0, level)) * 100))}%`;
   }
 
-  async function createAudioCapture(stream, channel, sendPcm) {
+  async function createAudioCapture(stream, channel, sendPcm, onEnded = null) {
     const context = new AudioContext();
     let source = null, worklet = null, sink = null;
     try {
@@ -529,8 +530,11 @@
         setAudioHealth(channel, `Receiving · ${formatLabel}`, data.level || 0);
         sendPcm(data.buffer, { ...format, level: data.level || 0 });
       };
-      for (const track of audioTracks) track.addEventListener('ended', () => setAudioHealth(channel, 'Disconnected'), { once: true });
-      return { stream, context, source, worklet, sink, format };
+      const capture = { stream, context, source, worklet, sink, format, closing: false };
+      for (const track of audioTracks) track.addEventListener('ended', () => {
+        if (!capture.closing && onEnded) onEnded();
+      }, { once: true });
+      return capture;
     } catch (error) {
       try { if (source) source.disconnect(); if (worklet) worklet.disconnect(); if (sink) sink.disconnect(); } catch {}
       try { await context.close(); } catch {}
@@ -540,10 +544,28 @@
 
   async function closeAudioCapture(capture) {
     if (!capture) return;
+    capture.closing = true;
     capture.worklet.port.onmessage = null;
     try { capture.source.disconnect(); capture.worklet.disconnect(); capture.sink.disconnect(); } catch {}
     capture.stream.getTracks().forEach((track) => track.stop());
     try { await capture.context.close(); } catch {}
+  }
+
+  let unexpectedTrackEndPromise = null;
+  function handleUnexpectedTrackEnd(channel) {
+    if (unexpectedTrackEndPromise) return unexpectedTrackEndPromise;
+    unexpectedTrackEndPromise = (async () => {
+      captureEpoch += 1;
+      await Promise.all([stopMic(), stopSystemAudio()]);
+      await volyxLens.captureStop();
+      listeningActive = false;
+      $('#live-dot').classList.add('off');
+      updateListeningButton(false);
+      stopSessionClock();
+      setAudioHealth(channel, 'Disconnected', 0);
+      showStatus(`${channel === 'you' ? 'Microphone' : 'System audio'} disconnected. Listening stopped to prevent an idle billable session.`);
+    })().finally(() => { unexpectedTrackEndPromise = null; });
+    return unexpectedTrackEndPromise;
   }
 
   async function startMic() {
@@ -561,7 +583,7 @@
           channelCount: 1,
           ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
         } });
-        const capture = await createAudioCapture(stream, 'you', (buffer) => volyxLens.micPcm(buffer));
+        const capture = await createAudioCapture(stream, 'you', (buffer) => volyxLens.micPcm(buffer), () => handleUnexpectedTrackEnd('you'));
         if (epoch !== captureEpoch) { await closeAudioCapture(capture); return null; }
         micCapture = capture;
         setAudioHealth('you', 'Connected', 0);
@@ -597,7 +619,7 @@
           stream.getTracks().forEach((track) => track.stop());
           throw new Error('No system-audio loopback track was provided.');
         }
-        const capture = await createAudioCapture(stream, 'them', (buffer) => volyxLens.systemPcm(buffer));
+        const capture = await createAudioCapture(stream, 'them', (buffer) => volyxLens.systemPcm(buffer), () => handleUnexpectedTrackEnd('them'));
         if (epoch !== captureEpoch) { await closeAudioCapture(capture); return null; }
         sysCapture = capture;
         setAudioHealth('them', 'Connected', 0);
@@ -891,12 +913,15 @@
   });
   volyxLens.on('llm:token', ({ text }) => appendToken(text));
   volyxLens.on('llm:provider', ({ label, fallback }) => updateResponseProvider(label, fallback));
-  volyxLens.on('llm:done', () => { finalizeAi(); setBusy(false); });
+  volyxLens.on('llm:done', () => { finalizeAi('Response ready.'); setBusy(false); });
   volyxLens.on('llm:canceled', () => {
-    if (aiEl && (aiEl.dataset.raw || '').trim()) finalizeAi();
-    else if (aiEl) { aiEl.remove(); aiEl = null; caretEl = null; }
+    const partialKept = Boolean(aiEl && (aiEl.dataset.raw || '').trim());
+    if (partialKept) finalizeAi('Response canceled. Partial response kept.');
+    else {
+      if (aiEl) { aiEl.remove(); aiEl = null; caretEl = null; }
+      $('#assistant-status').textContent = 'Response canceled.';
+    }
     setBusy(false);
-    showStatus('Answer generation stopped.');
   });
   volyxLens.on('llm:confirm-task-context', (event) => {
     setBusy(false);
@@ -908,17 +933,18 @@
   });
   volyxLens.on('llm:error', ({ message }) => {
     if (!aiEl) startAi(true);
-    aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
+    aiEl.dataset.raw = message; finalizeAi('Response failed.'); setBusy(false);
   });
   let statusTimer = null;
   function showStatus(message) {
-    let el = document.getElementById('volyx-lens-status');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'volyx-lens-status';
-      const panel = document.getElementById('panel');
-      panel.insertBefore(el, document.getElementById('action-row'));
+    const settingsScrim = document.getElementById('settings-scrim');
+    if (settingsScrim && !settingsScrim.classList.contains('hidden')) {
+      const settingsStatus = $('#s-status');
+      settingsStatus.textContent = message;
+      settingsStatus.classList.add('show');
+      return;
     }
+    const el = document.getElementById('volyx-lens-status');
     el.textContent = message;
     el.classList.add('show');
     clearTimeout(statusTimer);
@@ -1034,7 +1060,8 @@
     document.querySelectorAll('[data-settings-section]').forEach((button) => {
       const active = button.dataset.settingsSection === target.dataset.settingsPage;
       button.classList.toggle('on', active);
-      button.setAttribute('aria-selected', String(active));
+      if (active) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
     });
     $('.s-pages').scrollTop = 0;
     if (focus) target.querySelector('h2').focus();
@@ -1067,8 +1094,12 @@
   }
 
   async function openSettings() {
-    settingsPreviousFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
-      ? document.activeElement
+    const activeElement = document.activeElement;
+    settingsPreviousFocus = activeElement instanceof HTMLElement
+      && activeElement !== document.body
+      && activeElement.isConnected
+      && !activeElement.closest('.hidden')
+      ? activeElement
       : $('#more-btn');
     if (!personalContext) {
       try { personalContext = await volyxLens.personalContextGet(); }
@@ -1082,18 +1113,26 @@
     refreshAudioDevices();
     selectSettingsSection('providers');
     scrim.classList.remove('hidden');
+    volyxLens.setModalState(true);
     requestAnimationFrame(() => document.querySelector('[data-settings-page="providers"] h2').focus());
     await refreshShortcutStatus();
   }
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
+  function hideSettingsAndRestoreFocus() {
+    scrim.classList.add('hidden');
+    volyxLens.setModalState(false);
+    const target = settingsPreviousFocus && settingsPreviousFocus.isConnected ? settingsPreviousFocus : $('#more-btn');
+    target.focus({ preventScroll: true });
+    if (document.activeElement !== target) setTimeout(() => target.focus({ preventScroll: true }), 0);
+  }
   async function closeSettings() {
-    if (providerTestActive) { showStatus('Wait for the response-provider test to finish.'); return; }
+    if (providerTestActive) { showStatus('Wait for the response-provider test to finish.'); $('#s-status').focus(); return; }
     try {
       await saveSettings();
-      scrim.classList.add('hidden');
-      requestAnimationFrame(() => (settingsPreviousFocus && settingsPreviousFocus.isConnected ? settingsPreviousFocus : $('#more-btn')).focus());
+      hideSettingsAndRestoreFocus();
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Settings could not be saved.');
+      $('#s-status').focus();
     }
   }
   $('#more-btn').addEventListener('click', openSettings);
@@ -1106,7 +1145,7 @@
     if (busy && (action === 'assist' || action === 'solve')) { showStatus('Stop the active answer before starting another one.'); return; }
     try {
       await saveSettings();
-      scrim.classList.add('hidden');
+      hideSettingsAndRestoreFocus();
       if (action === 'assist') runMode('assist', '');
       else if (action === 'solve') runMode('leetcode', '');
       else if (action === 'task-context') await captureTaskContext();
@@ -1148,9 +1187,13 @@
     const label = PROVIDER_LABELS[providerView] || providerView;
     const present = (settings.credentialStatus && settings.credentialStatus.present) || {};
     document.querySelectorAll('#provider-seg button').forEach((button) => {
-      button.classList.toggle('on', button.dataset.provider === providerView);
+      const selected = button.dataset.provider === providerView;
+      button.classList.toggle('on', selected);
       button.classList.toggle('default-provider', button.dataset.provider === settings.provider);
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
     });
+    $('#provider-config-panel').setAttribute('aria-labelledby', `provider-tab-${providerView}`);
     document.querySelectorAll('[data-provider-config]').forEach((row) => row.classList.toggle('hidden', row.dataset.providerConfig !== providerView));
     $('#provider-view-title').textContent = label;
     const isDefault = providerView === settings.provider;
@@ -1194,6 +1237,7 @@
     $('#stt-language').value = transcription.language || '';
     $('#stt-delay').value = transcription.delay || 'low';
     $('#stt-fallback-model').value = transcription.fallbackModel || 'gpt-4o-mini-transcribe';
+    $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || 'gemini-3.5-flash';
     $('#stt-offline-enabled').checked = transcription.offlineEnabled === true;
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     const audio = settings.audio || {};
@@ -1233,6 +1277,19 @@
     clearProviderTestResult();
     renderProviderConfig();
   }));
+  $('#provider-seg').addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = [...document.querySelectorAll('#provider-seg [role="tab"]')];
+    const current = Math.max(0, tabs.indexOf(document.activeElement));
+    let next = current;
+    if (event.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
+    if (event.key === 'ArrowRight') next = (current + 1) % tabs.length;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = tabs.length - 1;
+    event.preventDefault();
+    tabs[next].click();
+    tabs[next].focus();
+  });
   $('#provider-default-btn').addEventListener('click', () => {
     stashCurrentModels();
     settings.provider = providerView;
@@ -1315,6 +1372,7 @@
       realtimeModel: 'gpt-realtime-whisper',
       azureRealtimeDeployment: $('#stt-azure-deployment').value.trim(),
       fallbackModel: $('#stt-fallback-model').value.trim() || 'gpt-4o-mini-transcribe',
+      geminiFallbackModel: $('#stt-gemini-fallback-model').value.trim() || 'gemini-3.5-flash',
       offlineEnabled: $('#stt-offline-enabled').checked,
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
       language: ['auto', 'automatic'].includes($('#stt-language').value.trim().toLowerCase()) ? '' : $('#stt-language').value.trim().toLowerCase(),
@@ -1462,6 +1520,11 @@
     }
   });
 
+  // Prevent dropped files or links from navigating the privileged renderer.
+  for (const eventName of ['dragover', 'drop']) {
+    document.addEventListener(eventName, (event) => event.preventDefault());
+  }
+
   // ---- global keys -------------------------------------------------------
   document.addEventListener('keydown', (e) => {
     if (!obScrim.classList.contains('hidden')) {
@@ -1485,10 +1548,13 @@
   // ---- onboarding / first-run tutorial -----------------------------------
   const obScrim = $('#onboard-scrim');
   const obPermissionStatus = $('#ob-permission-status');
-  const permissionStates = { microphone: 'Not requested', screen: 'Not requested' };
+  const permissionStates = {
+    microphone: { text: 'Not requested', className: '' },
+    screen: { text: 'Not requested', className: '' }
+  };
   let obPreviousFocus = null;
   function setPermissionState(kind, text, className = '') {
-    permissionStates[kind] = text;
+    permissionStates[kind] = { text, className };
     const state = document.querySelector(`[data-permission-kind="${kind}"] .ob-permission-state`);
     if (state) {
       state.textContent = text;
@@ -1526,6 +1592,19 @@
       obPermissionStatus.className = 'ob-permission-status denied';
     }
   }
+  async function refreshPermissionStates() {
+    const results = await Promise.all(['microphone', 'screen'].map(async (kind) => {
+      try { return await volyxLens.permissionStatus(kind); }
+      catch { return { kind, status: 'unknown', granted: false }; }
+    }));
+    for (const result of results) {
+      if (result.granted) setPermissionState(result.kind, 'Granted', 'granted');
+      else if (['denied', 'restricted'].includes(result.status)) setPermissionState(result.kind, 'Needs settings', 'denied');
+      else if (result.status === 'unsupported') setPermissionState(result.kind, 'Unavailable', 'denied');
+      else setPermissionState(result.kind, 'Not requested', '');
+    }
+    if (obIndex === 1) renderOnboard();
+  }
   const OB_STEPS = [
     {
       stepLabel: 'Welcome',
@@ -1554,7 +1633,9 @@
       note: 'Keys stay in the main process and use macOS Keychain-backed safeStorage when available.',
       title: 'Connect your AI provider.',
       body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, or DeepSeek. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
-      buttons: [{ icon: 'settings', label: 'Open provider settings', detail: 'Add a key, endpoint, and model names', action: async () => { await finishOnboard({ restoreFocus: false }); openSettings(); } }]
+      buttons: [{ icon: 'settings', label: 'Open provider settings', detail: 'Add a key, endpoint, and model names', action: async () => {
+        if (await finishOnboard({ restoreFocus: false, keepModalState: true })) await openSettings();
+      } }]
     },
     {
       stepLabel: 'Screen sharing',
@@ -1603,8 +1684,9 @@
       copy.append(label, detail);
       const trailing = document.createElement('span');
       if (definition.kind) {
-        trailing.className = 'ob-permission-state';
-        trailing.textContent = permissionStates[definition.kind];
+        const state = permissionStates[definition.kind];
+        trailing.className = `ob-permission-state ${state.className}`.trim();
+        trailing.textContent = state.text;
       } else {
         trailing.className = 'ob-button-arrow';
         trailing.textContent = '›';
@@ -1659,13 +1741,28 @@
     obIndex = 0;
     renderOnboard();
     obScrim.classList.remove('hidden');
+    volyxLens.setModalState(true);
     setIgnore(false);
     requestAnimationFrame(() => $('#ob-title').focus());
+    void refreshPermissionStates();
   }
-  async function finishOnboard({ restoreFocus = true } = {}) {
+  async function finishOnboard({ restoreFocus = true, keepModalState = false } = {}) {
+    if (settings && !settings.onboarded) {
+      try {
+        await volyxLens.settingsSet({ onboarded: true });
+        settings.onboarded = true;
+      } catch {
+        $('#ob-permission-status').textContent = 'Setup could not be saved. Review your local storage permissions and try again.';
+        $('#ob-permission-status').classList.remove('hidden');
+        $('#ob-permission-status').focus?.();
+        volyxLens.setModalState(true);
+        return false;
+      }
+    }
     obScrim.classList.add('hidden');
+    if (!keepModalState) volyxLens.setModalState(false);
     if (restoreFocus) requestAnimationFrame(() => (obPreviousFocus && obPreviousFocus.isConnected ? obPreviousFocus : $('#logo-btn')).focus());
-    if (settings && !settings.onboarded) { settings.onboarded = true; await volyxLens.settingsSet({ onboarded: true }); }
+    return true;
   }
   $('#ob-next').addEventListener('click', () => { if (obIndex === OB_STEPS.length - 1) finishOnboard(); else { obIndex++; renderOnboard(); $('#ob-title').focus(); } });
   $('#ob-back').addEventListener('click', () => { if (obIndex > 0) { obIndex--; renderOnboard(); $('#ob-title').focus(); } });
@@ -1688,5 +1785,7 @@
     $('#live-dot').classList.toggle('off', !st.active);
     updateListeningButton(st.active);
     if (!settings.onboarded) showOnboard();
+    else volyxLens.setModalState(false);
+    volyxLens.rendererReady();
   })();
 })();

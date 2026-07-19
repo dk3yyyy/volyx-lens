@@ -20,11 +20,20 @@ function buildRealtimeConnection({ provider = 'openai', endpoint, apiKey, model 
 }
 
 function cleanError(error, channel) {
-  return {
-    code: (error && error.code) || 'realtime_error',
-    message: (error && error.message) || 'Realtime transcription failed.',
-    channel,
-  };
+  const candidate = String(error && error.code || '').toLowerCase();
+  if (/(auth|api.?key|401|403)/.test(candidate)) {
+    return { code: 'realtime_authentication_failed', message: 'Realtime transcription authentication failed.', channel };
+  }
+  if (candidate.includes('timeout')) {
+    return { code: 'realtime_connection_timeout', message: 'Realtime transcription connection timed out.', channel };
+  }
+  if (/(audio|transcription)/.test(candidate)) {
+    return { code: 'realtime_audio_failed', message: 'Realtime transcription could not process this audio segment.', channel };
+  }
+  if (/(network|socket|transport|connect|closed|backpressure|ws_)/.test(candidate)) {
+    return { code: 'realtime_transport_failed', message: 'Realtime transcription connection failed.', channel };
+  }
+  return { code: 'realtime_failed', message: 'Realtime transcription failed.', channel };
 }
 
 class OpenAIRealtimeChannel {

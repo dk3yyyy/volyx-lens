@@ -33,7 +33,8 @@ test('onboarding uses an accessible split setup layout with clear progress and p
 
 test('onboarding dialog declares and implements keyboard focus containment and restoration', () => {
   assert.match(html, /id="ob-title"[^>]*tabindex="-1"/);
-  assert.match(html, /id="ob-content"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
+  assert.doesNotMatch(html, /id="ob-content"[^>]*aria-live/);
+  assert.match(html, /id="ob-permission-status"[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(renderer, /function handleOnboardKeydown\(event\)/);
   assert.match(renderer, /event\.key !== 'Tab'/);
   assert.match(renderer, /event\.key === 'Escape'/);
@@ -56,7 +57,8 @@ test('onboarding honors reduced motion and constrains resizable compact layouts'
 
 test('permission actions expose optionality and visible text states', () => {
   assert.match(renderer, /Each permission is optional/);
-  assert.match(renderer, /permissionStates = \{ microphone: 'Not requested', screen: 'Not requested' \}/);
+  assert.match(renderer, /permissionStates = \{[\s\S]*microphone: \{ text: 'Not requested', className: '' \}[\s\S]*screen: \{ text: 'Not requested', className: '' \}/);
+  assert.match(renderer, /trailing\.className = `ob-permission-state \$\{state\.className\}`/);
   for (const state of ['Requesting…', 'Granted', 'Needs settings', 'Unavailable', 'Request failed']) {
     assert.match(renderer, new RegExp(state));
   }
@@ -66,7 +68,7 @@ test('permission actions expose optionality and visible text states', () => {
 
 test('permission request crosses a narrow invoke IPC boundary', () => {
   assert.match(preload, /requestPermission:\s*\(kind\)\s*=>\s*ipcRenderer\.invoke\('permissions:request', kind\)/);
-  assert.match(main, /ipcMain\.handle\('permissions:request'/);
+  assert.match(main, /handleTrusted\('permissions:request'/);
 });
 
 test('application declares only permissions it actually requests', () => {

@@ -11,7 +11,7 @@ const settings = {
   credentialStatus: { present: {}, secure: true, backend: 'safeStorage' },
   models: { openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }, anthropic: {}, gemini: {}, azure: {}, deepseek: {} },
   endpoints: { azure: '', azureRealtime: '' },
-  transcription: { mode: 'realtime', realtimeProvider: 'openai', fallbackModel: 'gpt-4o-mini-transcribe', offlineEnabled: false, offlineCloudFallback: false, language: '', delay: 'low' },
+  transcription: { mode: 'realtime', realtimeProvider: 'openai', fallbackModel: 'gpt-4o-mini-transcribe', geminiFallbackModel: 'gemini-3.5-flash', offlineEnabled: false, offlineCloudFallback: false, language: '', delay: 'low' },
   audio: { inputDeviceId: '', micEnabled: true, systemEnabled: true, sensitivity: 'balanced', silenceMs: 700, costWarningMinutes: 30, maxSessionMinutes: 60 }
 };
 
@@ -24,9 +24,18 @@ ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offs
 ipcMain.handle('capture:state', () => ({ active: false, transitioning: false }));
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('permissions:request', (_event, kind) => ({ kind, granted: true }));
+ipcMain.handle('permissions:status', (_event, kind) => ({ kind, status: 'not-determined', granted: false }));
 ipcMain.on('mouse:ignore', () => {});
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function waitFor(win, expression, message, timeoutMs = 2500) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await win.webContents.executeJavaScript(`Boolean(${expression})`)) return;
+    await wait(25);
+  }
+  throw new Error(`Timed out waiting for ${message}`);
+}
 async function capture(win, name) {
   if (!screenshotDir) return;
   fs.mkdirSync(screenshotDir, { recursive: true });
@@ -86,7 +95,7 @@ app.whenReady().then(async () => {
   assert.equal(forwardFromLast, 'ob-back', 'Tab from the last control should wrap to the first visible control');
 
   await win.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
-  await wait(40);
+  await waitFor(win, "document.querySelector('#onboard-scrim').classList.contains('hidden') && document.activeElement && document.activeElement.id === 'logo-btn'", 'onboarding close and focus restoration');
   const escaped = await win.webContents.executeJavaScript(`({ hidden: document.querySelector('#onboard-scrim').classList.contains('hidden'), active: document.activeElement && document.activeElement.id })`);
   assert.equal(escaped.hidden, true, 'Escape should close onboarding');
   assert.equal(escaped.active, 'logo-btn', 'closing onboarding should restore focus');
@@ -96,7 +105,7 @@ app.whenReady().then(async () => {
   const modalIsolation = await win.webContents.executeJavaScript(`({ onboardOpen: !document.querySelector('#onboard-scrim').classList.contains('hidden'), settingsOpen: !document.querySelector('#settings-scrim').classList.contains('hidden') })`);
   assert.deepEqual(modalIsolation, { onboardOpen: true, settingsOpen: false }, 'global Settings shortcut must be suppressed while onboarding is open');
   await win.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
-  await wait(40);
+  await waitFor(win, "document.querySelector('#onboard-scrim').classList.contains('hidden')", 'onboarding dismissal');
 
   settings.onboarded = false;
   await win.webContents.executeJavaScript("document.querySelector('#logo-btn').click(); document.querySelector('#ob-next').click()");

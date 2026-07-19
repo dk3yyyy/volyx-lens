@@ -154,7 +154,7 @@ test('API error events are sanitized and reported without leaking the key', asyn
 
   socket.emit('message', Buffer.from(JSON.stringify({ type: 'error', error: { code: 'invalid_api_key', message: 'bad key' } })));
   assert.equal(events.errors.length, 1);
-  assert.deepEqual(events.errors[0], { code: 'invalid_api_key', message: 'bad key', channel: 'them' });
+  assert.deepEqual(events.errors[0], { code: 'realtime_authentication_failed', message: 'Realtime transcription authentication failed.', channel: 'them' });
   assert.doesNotMatch(JSON.stringify(events.errors), /test-secret-key/);
 });
 
@@ -171,7 +171,7 @@ test('item-level transcription failures are nonfatal so later audio can continue
     error: { code: 'audio_invalid', message: 'Audio could not be processed.' },
   })));
   assert.deepEqual(events.itemFailures[0], {
-    code: 'audio_invalid', message: 'Audio could not be processed.', channel: 'them', itemId: 'silent-item',
+    code: 'realtime_audio_failed', message: 'Realtime transcription could not process this audio segment.', channel: 'them', itemId: 'silent-item',
   });
   assert.equal(events.errors.length, 0);
   assert.equal(socket.readyState, FakeWebSocket.OPEN);
@@ -203,7 +203,7 @@ test('socket backpressure is bounded and fails closed', async () => {
   socket.bufferedAmount = 8;
 
   channel.append(Buffer.from([1, 2]));
-  assert.equal(events.errors[0].code, 'realtime_backpressure');
+  assert.equal(events.errors[0].code, 'realtime_transport_failed');
   assert.equal(socket.sent.some((event) => event.type === 'input_audio_buffer.append'), false);
 });
 
@@ -215,7 +215,7 @@ test('connection timeout rejects and closes a socket that never opens', async ()
   await assert.rejects(connecting, /timed out/i);
   assert.equal(socket.terminated, true);
   assert.equal(events.errors.length, 1);
-  assert.equal(events.errors[0].code, 'realtime_connect_timeout');
+  assert.equal(events.errors[0].code, 'realtime_connection_timeout');
 });
 
 test('unexpected normal socket closure triggers fallback error handling', async () => {
@@ -227,7 +227,7 @@ test('unexpected normal socket closure triggers fallback error handling', async 
 
   socket.remoteClose(1000);
   assert.equal(events.errors.length, 1);
-  assert.equal(events.errors[0].code, 'ws_close_1000');
+  assert.equal(events.errors[0].code, 'realtime_transport_failed');
 });
 
 test('manager opens only enabled audio channels and reports the correct total', async () => {
