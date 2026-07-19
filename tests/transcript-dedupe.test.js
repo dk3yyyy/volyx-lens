@@ -6,6 +6,7 @@ const {
   fuzzyShortFragmentOverlap,
   areCrossTalkDuplicates,
   findCrossTalkDuplicate,
+  findCrossTalkDuplicateAcrossCandidateWindow,
 } = require('../src/transcript-dedupe');
 
 const video = 'Basis vectors are what those scalars actually, you know, scale.';
@@ -115,4 +116,28 @@ test('rolling opposite-channel segments catch native system finals split differe
   const match = findCrossTalkDuplicate(leakedMicSegments, directSystem, arrivals, 9000);
   assert.ok(match);
   assert.deepEqual(match.turns.map((entry) => entry.id), [31, 32]);
+});
+
+test('authoritative Them finals remove a leaked You phrase spanning their boundary', () => {
+  const segments = [
+    { id: 40, channel: 'them', text: 'Luckily linear algebra limits itself to transformations that are easier to understand called', ts: 1000 },
+    { id: 41, channel: 'you', text: 'to understand called linear transformations', ts: 2000 },
+  ];
+  const arrivals = new Map([[40, 1000], [41, 2000]]);
+  const candidate = { channel: 'them', text: 'Linear transformations. Visually speaking, a transformation is linear if it has two properties.' };
+  assert.equal(findCrossTalkDuplicate(segments, candidate, arrivals, 3000), null);
+  const match = findCrossTalkDuplicateAcrossCandidateWindow(segments, candidate, arrivals, 3000);
+  assert.ok(match);
+  assert.deepEqual(match.turns.map((entry) => entry.id), [41]);
+  assert.ok(['phrase_overlap', 'fuzzy_fragment'].includes(match.match));
+});
+
+test('authoritative boundary matching preserves unrelated real You speech', () => {
+  const segments = [
+    { id: 50, channel: 'them', text: 'The origin must remain fixed in place and all straight lines remain straight', ts: 1000 },
+    { id: 51, channel: 'you', text: 'Could you explain why that restriction matters for rotations?', ts: 2000 },
+  ];
+  const arrivals = new Map([[50, 1000], [51, 2000]]);
+  const candidate = { channel: 'them', text: 'For example, this transformation moves the basis vectors while keeping the origin fixed.' };
+  assert.equal(findCrossTalkDuplicateAcrossCandidateWindow(segments, candidate, arrivals, 3000), null);
 });

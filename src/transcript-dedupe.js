@@ -196,6 +196,35 @@ function findCrossTalkDuplicate(turns, candidate, arrivalTimes, now = Date.now()
   return best;
 }
 
+function findCrossTalkDuplicateAcrossCandidateWindow(turns, candidate, arrivalTimes, now = Date.now(), windowMs = DEFAULT_WINDOW_MS) {
+  if (!candidate || candidate.channel !== 'them') return null;
+  const authoritative = [candidate];
+  let nextArrival = now;
+  for (let index = turns.length - 1; index >= 0 && authoritative.length < MAX_ROLLING_SEGMENTS; index -= 1) {
+    const prior = turns[index];
+    if (!prior || prior.channel !== 'them') continue;
+    const priorArrival = arrivalTimes instanceof Map ? arrivalTimes.get(prior.id) : prior.ts;
+    if (!Number.isFinite(priorArrival) || now - priorArrival > windowMs || nextArrival - priorArrival > MAX_ROLLING_GAP_MS) break;
+    authoritative.unshift(prior);
+    nextArrival = priorArrival;
+  }
+  let best = null;
+  for (let start = authoritative.length - 2; start >= 0; start -= 1) {
+    const candidateWindow = authoritative.slice(start);
+    const combinedText = candidateWindow.map((entry) => entry.text).join(' ');
+    const match = findCrossTalkDuplicate(turns, { ...candidate, text: combinedText }, arrivalTimes, now, windowMs);
+    if (!match) continue;
+    const leakedText = (match.turns || [match.turn]).map((entry) => entry.text).join(' ');
+    const leakedCoverage = tokenRecall(combinedText, leakedText);
+    if (leakedCoverage < 0.8) continue;
+    if (!best || leakedCoverage > best.leakedCoverage
+      || (leakedCoverage === best.leakedCoverage && candidateWindow.length < best.candidateWindow.length)) {
+      best = { ...match, candidateWindow, leakedCoverage };
+    }
+  }
+  return best;
+}
+
 module.exports = {
   DEFAULT_WINDOW_MS,
   MIN_TOKENS,
@@ -221,4 +250,5 @@ module.exports = {
   crossTalkScore,
   areCrossTalkDuplicates,
   findCrossTalkDuplicate,
+  findCrossTalkDuplicateAcrossCandidateWindow,
 };

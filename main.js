@@ -26,7 +26,7 @@ const { createPersonalContextStore, KINDS: PERSONAL_CONTEXT_KINDS } = require('.
 const { parseContextDocument, MAX_FILE_BYTES } = require('./src/document-context');
 const { buildPersonalContext } = require('./src/personal-context');
 const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
-const { findCrossTalkDuplicate } = require('./src/transcript-dedupe');
+const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
 const { detectQuestion } = require('./src/question-detection');
 const { planMeetingRecap } = require('./src/meeting-recap');
@@ -282,7 +282,8 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
   const timestamp = Number.isFinite(ts) ? ts : Date.now();
   const receivedAt = Date.now();
   const candidate = { channel: normalizedChannel, text: clean, ts: timestamp };
-  const duplicate = findCrossTalkDuplicate(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt);
+  const duplicate = findCrossTalkDuplicate(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt)
+    || findCrossTalkDuplicateAcrossCandidateWindow(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt);
   if (duplicate) {
     transcriptionDiagnostics.crossTalkSuppressed += 1;
     transcriptionDiagnostics.lastStatus = 'cross_talk_suppressed';
