@@ -38,7 +38,8 @@ test('onboarding dialog declares and implements keyboard focus containment and r
   assert.match(renderer, /function handleOnboardKeydown\(event\)/);
   assert.match(renderer, /event\.key !== 'Tab'/);
   assert.match(renderer, /event\.key === 'Escape'/);
-  assert.match(renderer, /requestAnimationFrame\(\(\) => \$\('#ob-title'\)\.focus\(\)\)/);
+  assert.match(renderer, /requestAnimationFrame\(\(\) => \{/);
+  assert.match(renderer, /document\.activeElement !== title/);
   assert.match(renderer, /obPreviousFocus && obPreviousFocus\.isConnected/);
   assert.match(styles, /button:focus-visible[\s\S]*outline:\s*2px solid var\(--cyan\)/);
   assert.doesNotMatch(styles, /button:focus\s*\{\s*outline:\s*none/);

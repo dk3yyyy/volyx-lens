@@ -158,6 +158,17 @@ test('API error events are sanitized and reported without leaking the key', asyn
   assert.doesNotMatch(JSON.stringify(events.errors), /test-secret-key/);
 });
 
+test('realtime errors without a code are classified from type and message fields', async () => {
+  const { channel, events } = buildChannel();
+  const connecting = channel.connect();
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  await connecting;
+
+  socket.emit('message', Buffer.from(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'API key rejected' } })));
+  assert.deepEqual(events.errors[0], { code: 'realtime_authentication_failed', message: 'Realtime transcription authentication failed.', channel: 'them' });
+});
+
 test('item-level transcription failures are nonfatal so later audio can continue', async () => {
   const { channel, events } = buildChannel();
   const connecting = channel.connect();

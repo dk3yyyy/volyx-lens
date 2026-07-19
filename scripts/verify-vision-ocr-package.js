@@ -31,7 +31,7 @@ for (const check of checks) {
   fs.accessSync(helper, fs.constants.X_OK);
   const stat = fs.statSync(helper);
   if (!stat.isFile() || (stat.mode & 0o002)) throw new Error(`Packaged macOS helper permissions are unsafe: ${check.name}.`);
-  const result = spawnSync(helper, ['--self-test'], { encoding: 'utf8', timeout: 10000, maxBuffer: 64 * 1024, env: { PATH: process.env.PATH || '' } });
+  const result = spawnSync(helper, ['--self-test'], { encoding: 'utf8', timeout: 10000, maxBuffer: 64 * 1024, env: { ...process.env, PATH: process.env.PATH || '/usr/bin:/bin' } });
   if (result.status !== 0) throw new Error(`Packaged macOS helper self-test failed: ${check.name} (exit ${result.status}).`);
   const payload = JSON.parse(String(result.stdout || '').trim());
   if (!check.validate(payload)) throw new Error(`Packaged macOS helper returned an invalid self-test payload: ${check.name}.`);

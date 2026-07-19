@@ -1759,7 +1759,13 @@
     obScrim.classList.remove('hidden');
     volyxLens.setModalState(true);
     setIgnore(false);
-    requestAnimationFrame(() => $('#ob-title').focus());
+    requestAnimationFrame(() => {
+      const title = $('#ob-title');
+      title.focus();
+      setTimeout(() => {
+        if (!obScrim.classList.contains('hidden') && document.activeElement !== title) title.focus();
+      }, 0);
+    });
     void refreshPermissionStates();
   }
   async function finishOnboard({ restoreFocus = true, keepModalState = false } = {}) {

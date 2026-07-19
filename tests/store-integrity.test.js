@@ -111,6 +111,8 @@ test('settings and credential updates commit in one atomic write and roll back t
   assert.equal(store.getSettings().smart, true);
 
   const committed = fs.readFileSync(file, 'utf8');
+  const externallyHeldSettings = store.getSettings();
+  const externallyHeldSnapshot = JSON.stringify(externallyHeldSettings);
   fs.renameSync = () => { throw new Error('simulated disk failure'); };
   try {
     assert.throws(() => store.updateSettingsAndApiKeys({ smart: false }, { openai: 'third-key' }), /could not be saved/i);
@@ -119,6 +121,7 @@ test('settings and credential updates commit in one atomic write and roll back t
   }
   assert.equal(fs.readFileSync(file, 'utf8'), committed);
   assert.equal(store.getSettings().smart, true);
+  assert.equal(JSON.stringify(externallyHeldSettings), externallyHeldSnapshot);
   assert.notEqual(before, committed);
 });
 

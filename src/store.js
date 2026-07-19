@@ -183,7 +183,8 @@ function sanitizeSettingsPatch(patch = {}) {
 
 function setSettings(patch) {
   load();
-  const previous = clone(data);
+  const previous = data;
+  data = clone(data);
   try {
     data = deepMerge(data, sanitizeSettingsPatch(patch));
     if (data.fallbackProvider === data.provider) data.fallbackProvider = '';
@@ -208,7 +209,8 @@ function applyApiKeyUpdates(updates) {
 
 function updateSettingsAndApiKeys(patch, updates) {
   load();
-  const previous = clone(data);
+  const previous = data;
+  data = clone(data);
   try {
     applyApiKeyUpdates(updates);
     data = deepMerge(data, sanitizeSettingsPatch(patch));
