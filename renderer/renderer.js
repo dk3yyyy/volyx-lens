@@ -497,6 +497,12 @@
     stateEl.dataset.state = status.toLowerCase();
     if (level != null) meterEl.style.width = `${Math.min(100, Math.round(Math.sqrt(Math.max(0, level)) * 100))}%`;
   }
+  volyxLens.on('audio:level', (event) => {
+    if (!event || event.channel !== 'them') return;
+    const level = Number(event.level);
+    if (!Number.isFinite(level)) return;
+    $('#system-meter').style.width = `${Math.min(100, Math.round(Math.sqrt(Math.max(0, level)) * 100))}%`;
+  });
 
   async function createAudioCapture(stream, channel, sendPcm, onEnded = null) {
     const context = new AudioContext();

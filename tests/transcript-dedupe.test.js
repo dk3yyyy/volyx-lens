@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   speechSimilarity,
   substantialPhraseOverlap,
+  fuzzyShortFragmentOverlap,
   areCrossTalkDuplicates,
   findCrossTalkDuplicate,
 } = require('../src/transcript-dedupe');
@@ -40,7 +41,7 @@ test('duplicate search is bounded by recent opposite-channel arrivals', () => {
   const arrivals = new Map([[7, 10_000]]);
   const recent = findCrossTalkDuplicate(turns, { channel: 'you', text: leakedMic }, arrivals, 15_000);
   assert.equal(recent.turn.id, 7);
-  const expired = findCrossTalkDuplicate(turns, { channel: 'you', text: leakedMic }, arrivals, 19_000);
+  const expired = findCrossTalkDuplicate(turns, { channel: 'you', text: leakedMic }, arrivals, 26_000);
   assert.equal(expired, null);
 });
 
@@ -74,4 +75,28 @@ test('brief generic overlap and simultaneous independent speech remain intact', 
     { channel: 'them', text: 'Could you explain the vector coordinates in this example?' },
     { channel: 'you', text: 'Yes, I understand the vector coordinates, but I have another question.' },
   ), false);
+});
+
+test('short microphone echo with STT substitutions is suppressed across the observed delay', () => {
+  const direct = {
+    id: 20,
+    channel: 'them',
+    text: "The vector that these coordinates describe is the sum of two scaled vectors. That's a concept, this idea of adding together two scaled vectors. Those two vectors I have",
+    ts: 1000,
+  };
+  const leaked = { channel: 'you', text: 'Those two vectors I had', ts: 14000 };
+  assert.ok(fuzzyShortFragmentOverlap(direct.text, leaked.text) >= 0.86);
+  assert.equal(areCrossTalkDuplicates(direct, leaked), true);
+  const match = findCrossTalkDuplicate([direct], leaked, new Map([[20, 1000]]), 14000);
+  assert.equal(match.match, 'fuzzy_fragment');
+});
+
+test('short fuzzy echo matching expires and does not erase a later real response', () => {
+  const direct = { id: 21, channel: 'them', text: 'Those two vectors I have', ts: 1000 };
+  const repeatedLater = { channel: 'you', text: 'Those two vectors I had', ts: 17000 };
+  assert.equal(findCrossTalkDuplicate([direct], repeatedLater, new Map([[21, 1000]]), 17000), null);
+  assert.equal(fuzzyShortFragmentOverlap(
+    'Could you explain the vector coordinates in this example?',
+    'I understand the vector coordinates but have another question',
+  ), 0);
 });

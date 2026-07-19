@@ -45,10 +45,25 @@ const taskContext = createTaskContext({
   scoreRelevance: scoreTextRelevance,
 });
 const localOcr = createLocalOcr({ app });
+let lastSystemAudioLevelAt = 0;
+function publishSystemAudioLevel(pcm, now = Date.now()) {
+  if (!Buffer.isBuffer(pcm) || pcm.length < 2 || now - lastSystemAudioLevelAt < 100) return;
+  lastSystemAudioLevelAt = now;
+  const sampleCount = Math.floor(pcm.length / 2);
+  let sumSquares = 0;
+  for (let offset = 0; offset < sampleCount * 2; offset += 2) {
+    const normalized = pcm.readInt16LE(offset) / 32768;
+    sumSquares += normalized * normalized;
+  }
+  send('audio:level', { channel: 'them', level: Math.min(1, sumSquares / sampleCount) });
+}
 const systemAudioCapture = createSystemAudioCapture({
   app,
-  onPcm: (pcm) => acceptPcm('them', pcm),
-  onState: ({ state: sourceState, reason }) => send('transcription:state', { status: 'source', channel: 'them', sourceState, ...(reason ? { reason } : {}) }),
+  onPcm: (pcm) => { publishSystemAudioLevel(pcm); acceptPcm('them', pcm); },
+  onState: ({ state: sourceState, reason }) => {
+    if (sourceState !== 'ready') send('audio:level', { channel: 'them', level: 0 });
+    send('transcription:state', { status: 'source', channel: 'them', sourceState, ...(reason ? { reason } : {}) });
+  },
   onUnexpectedExit: () => {
     if (state.capturing || desiredCapturing) setCapturing(false, { immediate: true, reason: 'system-audio-disconnected' });
   },
