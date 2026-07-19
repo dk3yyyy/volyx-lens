@@ -34,6 +34,7 @@ const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
 const { createLocalOcr } = require('./src/local-ocr');
 const { createSystemAudioCapture } = require('./src/system-audio-capture');
+const { createAcousticEchoFilter } = require('./src/acoustic-echo-filter');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 
@@ -45,6 +46,7 @@ const taskContext = createTaskContext({
   scoreRelevance: scoreTextRelevance,
 });
 const localOcr = createLocalOcr({ app });
+const acousticEchoFilter = createAcousticEchoFilter({ sampleRate: AUDIO_SAMPLE_RATE });
 let lastSystemAudioLevelAt = 0;
 function publishSystemAudioLevel(pcm, now = Date.now()) {
   if (!Buffer.isBuffer(pcm) || pcm.length < 2 || now - lastSystemAudioLevelAt < 100) return;
@@ -131,6 +133,9 @@ const transcriptionDiagnostics = {
   lastStatus: 'idle',
   lastStatusAt: null,
   crossTalkSuppressed: 0,
+  acousticEchoSuppressed: 0,
+  lastEchoCorrelation: 0,
+  maxEchoCorrelation: 0,
 };
 
 function send(channel, data) {
@@ -355,6 +360,9 @@ function getSessionDiagnostics() {
       lastStatus: transcriptionDiagnostics.lastStatus,
       lastStatusAt: transcriptionDiagnostics.lastStatusAt ? new Date(transcriptionDiagnostics.lastStatusAt).toISOString() : null,
       crossTalkSuppressed: transcriptionDiagnostics.crossTalkSuppressed,
+      acousticEchoSuppressed: transcriptionDiagnostics.acousticEchoSuppressed,
+      lastEchoCorrelation: Number(transcriptionDiagnostics.lastEchoCorrelation.toFixed(3)),
+      maxEchoCorrelation: Number(transcriptionDiagnostics.maxEchoCorrelation.toFixed(3)),
     },
     audio: {
       microphoneEnabled: (settings.audio || {}).micEnabled !== false,
@@ -641,6 +649,20 @@ function acceptPcm(channel, arrayBuffer) {
   let pcm;
   try { pcm = Buffer.from(arrayBuffer); } catch { return; }
   if (!pcm.length || pcm.length > AUDIO_SAMPLE_RATE * 2 * 2) return;
+  if (channel === 'them') {
+    acousticEchoFilter.observeSystem(pcm);
+  } else {
+    const audio = store.getSettings().audio || {};
+    if (audio.micEnabled !== false && audio.systemEnabled !== false) {
+      const echo = acousticEchoFilter.inspectMicrophone(pcm);
+      transcriptionDiagnostics.lastEchoCorrelation = echo.correlation;
+      transcriptionDiagnostics.maxEchoCorrelation = Math.max(transcriptionDiagnostics.maxEchoCorrelation, echo.correlation);
+      if (echo.suppress) {
+        transcriptionDiagnostics.acousticEchoSuppressed += 1;
+        return;
+      }
+    }
+  }
   if (transcriptionMode === 'realtime' && realtimeManager && realtimeManager.append(channel, pcm)) return;
   buffers[channel].push(pcm);
   if (buffers[channel].length > MAX_BATCH_CHUNKS) buffers[channel].splice(0, buffers[channel].length - MAX_BATCH_CHUNKS);
@@ -675,6 +697,10 @@ async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
   if (active) {
     const audio = store.getSettings().audio || {};
+    acousticEchoFilter.reset();
+    transcriptionDiagnostics.acousticEchoSuppressed = 0;
+    transcriptionDiagnostics.lastEchoCorrelation = 0;
+    transcriptionDiagnostics.maxEchoCorrelation = 0;
     if (process.platform === 'darwin' && audio.systemEnabled !== false) {
       const source = await systemAudioCapture.start();
       if (!source.ok) {
@@ -699,6 +725,7 @@ async function applyCaptureState(active) {
     return true;
   }
   await systemAudioCapture.stop({ immediate: pendingStopImmediate });
+  acousticEchoFilter.reset();
   state.capturing = false;
   lastCaptureEndedAt = Date.now();
   captureStartedAt = null;

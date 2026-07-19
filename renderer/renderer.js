@@ -843,7 +843,9 @@
       $('#diag-transcript').textContent = `${data.transcript.turns} turns · ${data.transcript.characters} chars`;
       $('#diag-last-state').textContent = data.transcription.lastStatus;
       const suppressed = Number(data.transcription.crossTalkSuppressed) || 0;
-      $('#diag-cross-talk').textContent = `${suppressed} ${suppressed === 1 ? 'duplicate' : 'duplicates'} removed`;
+      const acoustic = Number(data.transcription.acousticEchoSuppressed) || 0;
+      const correlation = Math.max(0, Math.min(1, Number(data.transcription.maxEchoCorrelation) || 0));
+      $('#diag-cross-talk').textContent = `${suppressed} transcript · ${acoustic} acoustic removed · peak ${correlation.toFixed(2)}`;
     } catch (error) { showStatus(error && error.message ? error.message : 'Diagnostics are unavailable.'); }
   }
 

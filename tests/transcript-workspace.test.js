@@ -67,6 +67,11 @@ test('cross-talk suppression prefers direct system audio and removes only the le
   assert.match(renderer, /volyxLens\.on\('transcript:suppressed', clearSuppressedPartial\)/);
   assert.match(html, /id="diag-cross-talk"/);
   assert.match(renderer, /crossTalkSuppressed/);
+  assert.match(main, /createAcousticEchoFilter/);
+  assert.match(main, /acousticEchoFilter\.observeSystem\(pcm\)/);
+  assert.match(main, /acousticEchoFilter\.inspectMicrophone\(pcm\)/);
+  assert.match(main, /acousticEchoSuppressed \+= 1/);
+  assert.match(renderer, /acousticEchoSuppressed/);
 });
 
 test('sanitized diagnostics omit credentials, endpoints, transcript text, audio, and images', () => {
