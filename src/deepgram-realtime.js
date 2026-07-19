@@ -18,6 +18,7 @@ function buildDeepgramOptions({ model = DEFAULT_MODEL, language = '', sampleRate
     endpointing: String(DEFAULT_ENDPOINTING_MS),
     utterance_end_ms: String(DEFAULT_UTTERANCE_END_MS),
     vad_events: 'true',
+    reconnectAttempts: 0,
   };
   const normalizedLanguage = String(language || '').trim().toLowerCase();
   if (normalizedLanguage && !['auto', 'automatic'].includes(normalizedLanguage)) options.language = normalizedLanguage;
@@ -73,8 +74,14 @@ class DeepgramRealtimeChannel {
     this.onState = onState;
     this.onLatency = onLatency;
     this.connection = null;
+    this.opened = false;
     this.client = null;
     this.connectPromise = null;
+    this.cancelConnect = null;
+    this.cancelPromise = null;
+    this.pendingAudio = [];
+    this.pendingAudioBytes = 0;
+    this.disposedConnections = new WeakSet();
     this.keepAliveTimer = null;
     this.lastMediaAt = 0;
     this.streamStartedAt = 0;
@@ -87,6 +94,13 @@ class DeepgramRealtimeChannel {
   connect() {
     if (this.connectPromise) return this.connectPromise;
     this.onState({ channel: this.channel, state: 'connecting' });
+    this.cancelPromise = new Promise((_, reject) => {
+      this.cancelConnect = () => {
+        const error = new Error('Deepgram connection cancelled.');
+        error.code = 'connection_cancelled';
+        reject(error);
+      };
+    });
     this.connectPromise = this._connect();
     return this.connectPromise;
   }
@@ -95,11 +109,27 @@ class DeepgramRealtimeChannel {
     const Client = this.DeepgramClientImpl || require('@deepgram/sdk').DeepgramClient;
     this.client = new Client({ apiKey: this.apiKey, reconnect: false });
     this.apiKey = '';
-    const connection = await this.client.listen.v1.connect(buildDeepgramOptions({
+    const connectionPromise = this.client.listen.v1.connect(buildDeepgramOptions({
       model: this.model,
       language: this.language,
       sampleRate: this.sampleRate,
     }));
+    void connectionPromise.then((lateConnection) => {
+      if (this.intentionalClose) this._disposeConnection(lateConnection, false);
+    }).catch(() => {});
+    let connection;
+    try {
+      connection = await Promise.race([connectionPromise, this.cancelPromise]);
+    } catch (error) {
+      if (this.intentionalClose || error.code === 'connection_cancelled') throw new Error('Deepgram connection cancelled.');
+      const clean = sanitizeDeepgramError(error, this.channel);
+      this._reportError(clean);
+      throw new Error(clean.message);
+    }
+    if (this.intentionalClose) {
+      this._disposeConnection(connection, false);
+      throw new Error('Deepgram connection cancelled.');
+    }
     this.connection = connection;
     connection.on('open', () => this.onState({ channel: this.channel, state: 'connected' }));
     connection.on('message', (event) => this._handleMessage(event));
@@ -114,11 +144,16 @@ class DeepgramRealtimeChannel {
     try {
       await Promise.race([
         connection.waitForOpen(),
+        this.cancelPromise,
         new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error('Deepgram connection timeout.')), this.connectTimeoutMs);
         }),
       ]);
     } catch (error) {
+      if (this.intentionalClose || error.code === 'connection_cancelled') {
+        this._disposeConnection(connection, false);
+        throw new Error('Deepgram connection cancelled.');
+      }
       const clean = sanitizeDeepgramError(error, this.channel);
       this._reportError(clean);
       this.close();
@@ -126,14 +161,43 @@ class DeepgramRealtimeChannel {
     } finally {
       if (timer) clearTimeout(timer);
     }
+    if (this.intentionalClose) {
+      this._disposeConnection(connection, false);
+      throw new Error('Deepgram connection cancelled.');
+    }
+    this.opened = true;
     this.streamStartedAt = Date.now();
     this.lastMediaAt = this.streamStartedAt;
     this._startKeepAlive();
+    const pending = this.pendingAudio;
+    this.pendingAudio = [];
+    this.pendingAudioBytes = 0;
+    for (const buffer of pending) {
+      if (!this._sendMedia(buffer)) break;
+    }
   }
 
   append(pcm) {
     const buffer = Buffer.isBuffer(pcm) ? pcm : Buffer.from(pcm || []);
-    if (!buffer.length || !this.connection || this.intentionalClose) return false;
+    if (!buffer.length || this.intentionalClose) return false;
+    if (!this.opened || !this.connection) {
+      if (!this.connectPromise) return false;
+      if (this.pendingAudioBytes + buffer.length > this.maxBufferedBytes) {
+        this._reportError({
+          code: 'realtime_transport_failed',
+          message: 'Deepgram transcription pre-connect buffer exceeded its safety limit.',
+          channel: this.channel,
+        });
+        return false;
+      }
+      this.pendingAudio.push(Buffer.from(buffer));
+      this.pendingAudioBytes += buffer.length;
+      return true;
+    }
+    return this._sendMedia(buffer);
+  }
+
+  _sendMedia(buffer) {
     const bufferedAmount = Number((this.connection.socket && this.connection.socket.bufferedAmount) || 0);
     if (bufferedAmount + buffer.length > this.maxBufferedBytes) {
       this._reportError({
@@ -163,15 +227,26 @@ class DeepgramRealtimeChannel {
   close() {
     if (this.intentionalClose) return;
     this.intentionalClose = true;
+    if (this.cancelConnect) this.cancelConnect();
+    this.cancelConnect = null;
     this._clearKeepAlive();
     const connection = this.connection;
     this.connection = null;
-    if (connection) {
-      try { connection.sendCloseStream({ type: 'CloseStream' }); } catch {}
-      try { connection.close(); } catch {}
-    }
+    this.opened = false;
+    if (connection) this._disposeConnection(connection, true);
     this.client = null;
+    this.pendingAudio = [];
+    this.pendingAudioBytes = 0;
     this.completed.clear();
+  }
+
+  _disposeConnection(connection, sendCloseStream) {
+    if (!connection || this.disposedConnections.has(connection)) return;
+    this.disposedConnections.add(connection);
+    if (sendCloseStream) {
+      try { connection.sendCloseStream({ type: 'CloseStream' }); } catch {}
+    }
+    try { connection.close(); } catch {}
   }
 
   _handleMessage(event) {

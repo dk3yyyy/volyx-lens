@@ -40,7 +40,35 @@ class FakeDeepgramClient {
   }
 }
 
-test.beforeEach(() => { FakeDeepgramClient.instances = []; });
+class DelayedConnection extends FakeConnection {
+  constructor() {
+    super();
+    this.connectCalls = 0;
+    this.openPromise = new Promise((resolve) => { this.resolveOpen = resolve; });
+  }
+  connect() { this.connectCalls += 1; }
+  waitForOpen() { return this.openPromise; }
+  open() { this.emit('open'); this.resolveOpen(); }
+}
+
+class DelayedDeepgramClient {
+  static connection = null;
+  static resolveFactory = null;
+  constructor() {
+    this.listen = { v1: { connect: () => new Promise((resolve) => {
+      DelayedDeepgramClient.resolveFactory = () => {
+        DelayedDeepgramClient.connection = new DelayedConnection();
+        resolve(DelayedDeepgramClient.connection);
+      };
+    }) } };
+  }
+}
+
+test.beforeEach(() => {
+  FakeDeepgramClient.instances = [];
+  DelayedDeepgramClient.connection = null;
+  DelayedDeepgramClient.resolveFactory = null;
+});
 
 test('Deepgram options use Nova-3 with continuous 24 kHz linear PCM and bounded endpointing', () => {
   assert.deepEqual(buildDeepgramOptions({ model: 'nova-3', language: 'en', sampleRate: 24000 }), {
@@ -55,6 +83,7 @@ test('Deepgram options use Nova-3 with continuous 24 kHz linear PCM and bounded 
     endpointing: '300',
     utterance_end_ms: '1000',
     vad_events: 'true',
+    reconnectAttempts: 0,
   });
   assert.equal('language' in buildDeepgramOptions({ model: 'nova-3', language: '', sampleRate: 24000 }), false);
 });
@@ -154,6 +183,42 @@ test('Deepgram channel fails closed on SDK socket backpressure', async () => {
   assert.equal(channel.append(Buffer.alloc(20)), false);
   assert.equal(failures[0].code, 'realtime_transport_failed');
   channel.close();
+});
+
+test('Deepgram channel queues bounded PCM until the socket is open', async () => {
+  const failures = [];
+  const channel = new DeepgramRealtimeChannel({
+    apiKey: 'deepgram-secret', channel: 'you', maxBufferedBytes: 100,
+    DeepgramClientImpl: DelayedDeepgramClient,
+    onError: (error) => failures.push(error),
+  });
+  const connecting = channel.connect();
+  await new Promise((resolve) => setImmediate(resolve));
+  DelayedDeepgramClient.resolveFactory();
+  await new Promise((resolve) => setImmediate(resolve));
+  const connection = DelayedDeepgramClient.connection;
+  assert.equal(channel.append(Buffer.alloc(60, 1)), true);
+  assert.equal(connection.media.length, 0);
+  assert.equal(channel.append(Buffer.alloc(50, 2)), false);
+  assert.equal(failures[0].code, 'realtime_transport_failed');
+  connection.open();
+  await connecting;
+  assert.deepEqual(connection.media, [Buffer.alloc(60, 1)]);
+  channel.close();
+});
+
+test('closing during asynchronous SDK connection creation cannot open a leaked socket', async () => {
+  const channel = new DeepgramRealtimeChannel({
+    apiKey: 'deepgram-secret', channel: 'you',
+    DeepgramClientImpl: DelayedDeepgramClient,
+  });
+  const connecting = channel.connect();
+  await new Promise((resolve) => setImmediate(resolve));
+  channel.close();
+  DelayedDeepgramClient.resolveFactory();
+  await assert.rejects(connecting, /cancelled/i);
+  assert.equal(DelayedDeepgramClient.connection.connectCalls, 0);
+  assert.equal(DelayedDeepgramClient.connection.closed, 1);
 });
 
 test('manager sends continuous Deepgram audio without waiting for a local VAD commit', async () => {

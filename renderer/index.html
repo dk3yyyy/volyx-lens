@@ -221,7 +221,7 @@
         <div class="s-field"><label for="audio-silence">Silence</label><select id="audio-silence"><option value="450">Short · 450 ms</option><option value="700">Balanced · 700 ms</option><option value="1100">Long · 1100 ms</option></select></div>
         <div class="s-field"><label for="audio-cost-warning">Cost warning (minutes)</label><input id="audio-cost-warning" type="number" min="5" max="240" step="5" value="30" /></div>
         <div class="s-field"><label for="audio-session-limit">Session limit (minutes)</label><input id="audio-session-limit" type="number" min="10" max="480" step="10" value="60" /></div>
-        <div class="s-note">Azure Realtime uses the optional Azure RT key and URL when supplied; otherwise it reuses the response-provider Azure key and endpoint. Deepgram uses Nova-3 streaming with interim results and 300 ms endpointing. Volyx Lens opens separate You/Them sessions, which can count as two concurrent billable streams. If Realtime fails, Volyx Lens uses OpenAI/Gemini batch transcription when configured.</div>
+        <div class="s-note">Azure Realtime uses the optional Azure RT key and URL when supplied; otherwise it reuses the response-provider Azure key and endpoint. Deepgram uses Nova-3 streaming with interim results and 300 ms endpointing. Deepgram receives continuous PCM, including silence, while listening is active. Volyx Lens opens separate You/Them sessions, which can count as two concurrent billable streams. If Realtime fails, Volyx Lens uses OpenAI/Gemini batch transcription when configured.</div>
         <div class="s-diag-row">
           <button id="test-realtime-btn" type="button">Test Connection</button>
           <button id="test-live-transcription-btn" type="button">Test Live Mic</button>

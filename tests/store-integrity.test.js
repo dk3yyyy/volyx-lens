@@ -53,6 +53,24 @@ test('partial nested settings patches preserve omitted preferences', () => {
   assert.equal(updated.audio.maxSessionMinutes, 90);
 });
 
+test('Deepgram realtime provider, model, and credential survive the atomic Settings save', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  const updated = store.updateSettingsAndApiKeys({
+    transcription: { realtimeProvider: 'deepgram', deepgramModel: 'nova-3' },
+  }, { deepgram: 'saved-deepgram-key' });
+  assert.equal(updated.transcription.realtimeProvider, 'deepgram');
+  assert.equal(updated.transcription.deepgramModel, 'nova-3');
+  assert.equal(updated.credentialStatus.present.deepgram, true);
+  assert.equal(updated.apiKeys.deepgram, '');
+  assert.doesNotMatch(JSON.stringify(updated), /saved-deepgram-key/);
+
+  const reloaded = loadStore(userData).getSettings();
+  assert.equal(reloaded.transcription.realtimeProvider, 'deepgram');
+  assert.equal(reloaded.transcription.deepgramModel, 'nova-3');
+  assert.equal(reloaded.apiKeys.deepgram, 'saved-deepgram-key');
+});
+
 test('legacy bundled model defaults migrate without replacing custom model names', () => {
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');
