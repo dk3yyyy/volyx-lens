@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+native/systemaudio
+native-bin/
+*.log
+.DS_Store
+cue-data.json

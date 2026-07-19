@@ -1,0 +1,54 @@
+name: Signed macOS release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: volyx-lens-macos-release
+  cancel-in-progress: false
+
+jobs:
+  build-sign-notarize:
+    runs-on: macos-14
+    timeout-minutes: 30
+    environment: macos-release
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:syntax
+      - run: npm run security:secrets
+      - run: npm run dist
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Verify signature and notarization ticket
+        run: |
+          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -n "$ZIP_PATH"
+          VERIFY_DIR="$(mktemp -d)"
+          ditto -x -k "$ZIP_PATH" "$VERIFY_DIR"
+          APP_PATH="$(find "$VERIFY_DIR" -type d -name 'Volyx Lens.app' -print -quit)"
+          test -n "$APP_PATH"
+          test "$(defaults read "$APP_PATH/Contents/Info" CFBundleIdentifier)" = "ai.volyx.lens"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -q "Authority=Developer ID Application"
+          xcrun stapler validate "$APP_PATH"
+          spctl --assess --verbose --type exec "$APP_PATH"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: volyx-lens-macos-signed
+          path: dist/*.zip
+          if-no-files-found: error

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feat/azure-foundry-deepseek]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:syntax
+      - run: npm run security:secrets
+      - name: Reject critical dependency vulnerabilities
+        run: npm audit --audit-level=critical
+      - run: npm run pack
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+  macos-package:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run pack
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - run: npm run verify:vision-ocr-package

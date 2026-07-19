@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; img-src 'self' data:; connect-src 'self';" />
+  <title>Utility</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Top-center floating pill toolbar (drag handle) -->
+    <div id="toolbar">
+      <button class="tb-logo" id="logo-btn" title="Volyx Lens"></button>
+      <div class="tb-divider"></div>
+      <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
+      <div class="tb-divider"></div>
+      <button class="tb-new" id="new-session-btn" title="Start a fresh conversation" aria-label="New Session"><span class="new-icon"></span><span>New Session</span></button>
+      <div class="tb-divider"></div>
+      <button class="tb-stop" id="stop-btn" title="Start Listening" aria-label="Start Listening"><span class="listen-icon"></span><span class="listen-label">Start Listening</span></button>
+      <div class="tb-divider"></div>
+      <button class="tb-kill" id="kill-btn" title="Stop all capture and quit Volyx Lens" aria-label="Stop all capture and quit Volyx Lens"></button>
+    </div>
+
+    <!-- Main assistant panel -->
+    <div id="panel-wrap">
+      <span id="live-dot" class="off"></span>
+      <div id="panel" class="glass no-drag">
+        <div id="messages"></div>
+
+        <div id="audio-health" class="hidden" aria-live="polite">
+          <div class="audio-channel" data-channel="you">
+            <span class="audio-name">You · Mic</span><span class="audio-state" id="mic-health">Idle</span>
+            <span class="audio-meter"><span id="mic-meter"></span></span>
+          </div>
+          <div class="audio-channel" data-channel="them">
+            <span class="audio-name">Them · System</span><span class="audio-state" id="system-health">Idle</span>
+            <span class="audio-meter"><span id="system-meter"></span></span>
+          </div>
+          <div class="audio-session"><span id="connection-count">0/2 connections</span><span id="session-duration">00:00</span><span id="transcript-latency">Latency —</span><button id="retry-realtime-btn" type="button">Retry</button></div>
+        </div>
+
+        <section id="transcript-workspace" class="hidden" aria-label="Session transcript">
+          <div class="transcript-head">
+            <div><strong>Transcript</strong><span id="transcript-count">0 turns</span></div>
+            <div class="transcript-actions">
+              <button id="transcript-copy" type="button">Copy</button>
+              <select id="transcript-export-format" aria-label="Transcript export format"><option value="txt">TXT</option><option value="md">Markdown</option><option value="json">JSON</option></select>
+              <button id="transcript-export" type="button">Export</button>
+              <button id="transcript-clear" type="button">Clear</button>
+              <button id="diagnostics-toggle" type="button" aria-expanded="false">Diagnostics</button>
+            </div>
+          </div>
+          <div id="transcript-list" role="log" aria-live="polite"></div>
+          <div id="transcript-empty">Listening transcript will appear here.</div>
+          <div id="session-diagnostics" class="hidden">
+            <div class="diagnostics-grid">
+              <span>Session</span><strong id="diag-session">Idle</strong>
+              <span>Transcription</span><strong id="diag-transcription">Idle</strong>
+              <span>Connections</span><strong id="diag-connections">0/0</strong>
+              <span>Latency</span><strong id="diag-latency">—</strong>
+              <span>Response</span><strong id="diag-response">—</strong>
+              <span>Transcript</span><strong id="diag-transcript">0 turns</strong>
+              <span>Last state</span><strong id="diag-last-state">idle</strong>
+              <span>Cross-talk</span><strong id="diag-cross-talk">0 duplicates removed</strong>
+            </div>
+            <div class="diagnostics-foot"><span>Sanitized: no API keys, endpoints, raw audio, screen images, or transcript text.</span><button id="diagnostics-copy" type="button">Copy diagnostics</button></div>
+          </div>
+        </section>
+
+        <div id="question-suggestion" class="hidden" role="status" aria-live="polite">
+          <div><strong>Question detected</strong><span id="question-suggestion-text"></span></div>
+          <button id="question-answer" type="button">Draft answer</button>
+          <button id="question-dismiss" type="button" aria-label="Dismiss detected question">×</button>
+        </div>
+
+        <div id="task-context-panel" class="hidden" aria-label="Task context">
+          <div class="task-context-copy"><div><strong>Task Context</strong><span id="task-context-count">0 screens · 0 MB</span></div><p>Save visible problems, files, and test output without calling AI. Screens and locally recognized text stay in main-process memory; only status and counts are listed here.</p><small id="task-context-request-note">A single request uses a bounded visual window; Volyx Lens discloses if saved screens are omitted.</small></div>
+          <div class="task-context-actions">
+            <button id="task-context-capture" type="button" title="Add current screen to task context (Command+Shift+C)">Add screen <kbd>⌘⇧C</kbd></button>
+            <button id="task-context-undo" type="button" disabled>Undo last</button>
+            <button id="task-context-clear" type="button" disabled>Clear</button>
+          </div>
+          <div id="task-context-eviction" class="hidden" role="status" aria-live="polite"></div>
+          <div class="task-context-manager">
+            <div id="task-context-list" role="list" aria-label="Saved Task Context screens"><div class="task-context-empty">No saved screens.</div></div>
+            <div id="task-context-pages" class="hidden"><button id="task-context-prev" type="button">Previous</button><span id="task-context-page-label">0–0 of 0</span><button id="task-context-next" type="button">Next</button></div>
+          </div>
+        </div>
+
+        <div id="action-row">
+          <button class="act assist-act" data-mode="assist" type="button" aria-live="polite"><span class="ic"></span><span class="assist-label">Assist</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
+          <select id="assist-context" title="Choose what Assist can use" aria-label="Assist context"><option value="both">Screen + conversation</option><option value="conversation">Conversation only</option><option value="screen">Screen only</option></select>
+          <span class="sep">•</span>
+          <button class="act" data-mode="say" type="button" aria-live="polite"><span class="ic"></span><span class="action-label">What should I say?</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
+          <span class="sep">•</span>
+          <button class="act" data-mode="followup" type="button" aria-live="polite"><span class="ic"></span><span class="action-label">Follow-up questions</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
+          <span class="sep">•</span>
+          <button class="act" data-mode="recap" type="button" aria-live="polite"><span class="ic"></span><span class="action-label">Recap</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
+          <span class="sep">•</span>
+          <button class="act" id="task-context-toggle" type="button" aria-expanded="false" aria-controls="task-context-panel"><span class="ic"></span><span>Task Context</span><span id="task-context-action-count" class="hidden">0</span></button>
+        </div>
+
+        <div id="composer">
+          <div id="input-area">
+            <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Assist</div>
+            <textarea id="input" rows="1" spellcheck="false"></textarea>
+          </div>
+          <div id="composer-bottom">
+            <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
+            <button id="more-btn" class="more-btn" title="Settings"></button>
+            <div class="spacer"></div>
+            <button id="cancel-response" class="hidden" type="button" title="Stop generating">Stop</button>
+            <button id="send-btn" title="Send"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="settings-scrim" class="hidden">
+    <div id="settings" class="glass">
+      <div class="s-head">
+        <div class="s-title">Settings</div>
+        <button id="s-close" class="s-close">Done</button>
+      </div>
+      <div class="s-body">
+        <label class="s-label">Response providers <span class="s-hint">choose a provider to configure</span></label>
+        <div class="s-seg provider-tabs" id="provider-seg">
+          <button data-provider="openai"><span>OpenAI</span><small class="provider-default-mark">Default</small></button>
+          <button data-provider="anthropic"><span>Anthropic</span><small class="provider-default-mark">Default</small></button>
+          <button data-provider="gemini"><span>Gemini</span><small class="provider-default-mark">Default</small></button>
+          <button data-provider="azure"><span>Azure Foundry</span><small class="provider-default-mark">Default</small></button>
+          <button data-provider="deepseek"><span>DeepSeek</span><small class="provider-default-mark">Default</small></button>
+        </div>
+
+        <div class="provider-routing-card">
+          <div class="provider-routing-head"><div><strong id="provider-view-title">OpenAI</strong><span id="provider-view-state">Default response provider</span></div><button id="provider-default-btn" type="button">Use as default</button></div>
+          <div class="s-field"><span>Fallback</span><select id="provider-fallback"><option value="">None</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="azure">Azure Foundry</option><option value="deepseek">DeepSeek</option></select></div>
+          <div class="s-note">Volyx Lens uses the default provider for answers. The fallback is tried only when the default is unavailable or fails before producing any text; it never mixes two partial answers. Transcription provider settings remain separate below.</div>
+        </div>
+
+        <label class="s-label" id="provider-key-label">OpenAI API key <span class="s-hint">safeStorage / macOS Keychain where available</span></label>
+        <div class="s-field key-field provider-config-row" data-provider-config="openai"><span>API key</span><input id="key-openai" type="password" placeholder="sk-..." autocomplete="new-password" /><button class="key-clear" data-key="openai" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="anthropic"><span>API key</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="new-password" /><button class="key-clear" data-key="anthropic" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="gemini"><span>API key</span><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="new-password" /><button class="key-clear" data-key="gemini" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="azure"><span>API key</span><input id="key-azure" type="password" placeholder="Foundry resource key" autocomplete="new-password" /><button class="key-clear" data-key="azure" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="deepseek"><span>API key</span><input id="key-deepseek" type="password" placeholder="sk-..." autocomplete="new-password" /><button class="key-clear" data-key="deepseek" type="button">Clear</button></div>
+
+        <div class="provider-config-row hidden" data-provider-config="azure">
+          <label class="s-label">Azure Foundry endpoint <span class="s-hint">unified OpenAI-compatible endpoint</span></label>
+          <div class="s-field"><span>Endpoint</span><input id="endpoint-azure" type="url" placeholder="https://resource.services.ai.azure.com/openai/v1" autocomplete="off" /></div>
+        </div>
+
+        <label class="s-label">Models <span class="s-hint" id="provider-model-hint">used by the selected provider</span></label>
+        <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
+        <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
+        <div id="provider-capability-note" class="s-note hidden">DeepSeek is text-only in Volyx Lens. Meeting and transcript modes work; screen-only analysis requires a vision-capable provider.</div>
+
+        <div class="provider-test-card">
+          <div class="provider-test-copy"><strong>Connection test</strong><span>Sends one minimal text-only request to the selected provider. It never includes screenshots, transcript, or personal context, but a small provider charge may apply.</span></div>
+          <div class="provider-test-controls"><select id="provider-test-tier" aria-label="Model tier"><option value="fast">Fast model</option><option value="smart">Smart model</option></select><button id="provider-test-btn" type="button">Test connection</button></div>
+          <div id="provider-test-result" class="provider-test-result hidden" role="status" aria-live="polite"></div>
+        </div>
+
+        <label class="s-label">Personal context <span class="s-hint">local resume and job description</span></label>
+        <div class="context-document" data-kind="resume">
+          <div class="context-document-head"><strong>Resume / CV</strong><label class="context-enable"><input id="context-resume-enabled" type="checkbox" disabled /> Use</label></div>
+          <div id="context-resume-meta" class="context-meta">No resume imported.</div>
+          <pre id="context-resume-preview" class="context-preview hidden"></pre>
+          <div class="context-actions"><button class="context-import" data-kind="resume" type="button">Import Resume</button><button class="context-remove hidden" data-kind="resume" type="button">Remove</button></div>
+        </div>
+        <div class="context-document" data-kind="jobDescription">
+          <div class="context-document-head"><strong>Job description</strong><label class="context-enable"><input id="context-jobDescription-enabled" type="checkbox" disabled /> Use</label></div>
+          <div id="context-jobDescription-meta" class="context-meta">No job description imported.</div>
+          <pre id="context-jobDescription-preview" class="context-preview hidden"></pre>
+          <div class="context-actions"><button class="context-import" data-kind="jobDescription" type="button">Import Job Description</button><button class="context-remove hidden" data-kind="jobDescription" type="button">Remove</button></div>
+        </div>
+        <div id="context-storage-status" class="s-note">PDF, DOCX, TXT, or Markdown · 5 MB maximum. Extracted text is stored locally and protected by safeStorage/Keychain where available. Relevant excerpts are sent only when you request an answer.</div>
+
+        <label class="s-label">Transcription <span class="s-hint">OpenAI or Azure Realtime with batch fallback</span></label>
+        <div class="s-field"><span>Mode</span><select id="stt-mode"><option value="realtime">Realtime</option><option value="batch">Batch</option></select></div>
+        <div class="s-field"><span>Realtime provider</span><select id="stt-realtime-provider"><option value="openai">OpenAI</option><option value="azure">Azure Foundry</option></select></div>
+        <div class="s-field stt-provider-config" data-stt-provider="azure"><span>Azure deployment</span><input id="stt-azure-deployment" type="text" placeholder="Exact gpt-realtime-whisper deployment name" autocomplete="off" /></div>
+        <div class="s-field key-field stt-provider-config" data-stt-provider="azure"><span>Azure RT key</span><input id="key-azureRealtime" type="password" placeholder="Optional separate Realtime resource key" autocomplete="new-password" /><button class="key-clear" data-key="azureRealtime" type="button">Clear</button></div>
+        <div class="s-field stt-provider-config" data-stt-provider="azure"><span>Azure RT URL</span><input id="endpoint-azure-realtime" type="url" placeholder="Optional separate resource /openai/v1 endpoint" autocomplete="off" /></div>
+        <div class="s-field"><span>Language</span><input id="stt-language" type="text" placeholder="Leave blank for Auto, or use en / fr / de…" autocomplete="off" /></div>
+        <div class="s-field"><span>Delay</span><select id="stt-delay"><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select></div>
+        <div class="s-field"><span>OpenAI fallback</span><input id="stt-fallback-model" type="text" placeholder="gpt-4o-mini-transcribe" autocomplete="off" /></div>
+        <div class="s-field"><span>Offline first</span><input id="stt-offline-enabled" type="checkbox" /></div>
+        <div class="s-field"><span>Cloud fallback</span><input id="stt-offline-cloud-fallback" type="checkbox" /></div>
+        <div class="s-note">Optional offline transcription uses a locally installed <code>whisper-cli</code> only when Volyx Lens is launched with absolute <code>VOLYX_LENS_WHISPER_CLI</code> and <code>VOLYX_LENS_WHISPER_MODEL</code> paths. Cloud fallback is separately disabled by default so a local failure cannot silently upload audio. Volyx Lens never downloads or executes a renderer-selected binary.</div>
+        <div class="s-field"><span>Microphone</span><select id="audio-input-device"><option value="">System default</option></select></div>
+        <div class="s-field"><span>Capture mic</span><input id="audio-mic-enabled" type="checkbox" checked /></div>
+        <div class="s-field"><span>Capture system</span><input id="audio-system-enabled" type="checkbox" checked /></div>
+        <div class="s-field"><span>Detect questions</span><input id="question-detection-enabled" type="checkbox" checked /></div>
+        <div id="audio-session-count" class="s-note">2 active Realtime sessions when listening — Mic + System.</div>
+        <div class="s-field"><span>Sensitivity</span><select id="audio-sensitivity"><option value="quiet">Quiet</option><option value="balanced">Balanced</option><option value="noisy">Noisy room</option></select></div>
+        <div class="s-field"><span>Silence</span><select id="audio-silence"><option value="450">Short · 450 ms</option><option value="700">Balanced · 700 ms</option><option value="1100">Long · 1100 ms</option></select></div>
+        <div class="s-field"><span>Cost warning</span><input id="audio-cost-warning" type="number" min="5" max="240" step="5" value="30" /></div>
+        <div class="s-field"><span>Session limit</span><input id="audio-session-limit" type="number" min="10" max="480" step="10" value="60" /></div>
+        <div class="s-note">Azure Realtime uses the optional Azure RT key and URL when supplied; otherwise it reuses the response-provider Azure key and endpoint. The exact deployment name is always required. Microsoft bills <code>gpt-realtime-whisper</code> hourly. Volyx Lens opens separate You/Them sessions, which can count as two concurrent billable sessions. If Realtime fails, Volyx Lens uses OpenAI/Gemini batch transcription when configured.</div>
+        <div class="s-diag-row">
+          <button id="test-realtime-btn" type="button">Test Connection</button>
+          <button id="test-live-transcription-btn" type="button">Test Live Mic</button>
+          <div id="realtime-test-result" class="s-diag-result" role="status" aria-live="polite"></div>
+        </div>
+        <div class="s-note">Connection test opens one short no-audio session. Live Mic records and streams five seconds, requires an actual transcript, reports sanitized audio telemetry, and immediately discards the audio. Provider session billing may apply. Credentials remain in the main process.</div>
+
+        <div class="shortcut-status-card">
+          <div class="shortcut-status-head"><div><strong>Keyboard shortcuts</strong><span>Global registration is checked at launch. Unavailable features remain accessible through these buttons.</span></div><button id="shortcuts-retry" type="button">Retry unavailable</button></div>
+          <div id="shortcut-status-list">
+            <div class="shortcut-status-row" data-shortcut="assist"><kbd>⌘↵</kbd><div><strong>Assist</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="assist">Use Assist</button></div>
+            <div class="shortcut-status-row" data-shortcut="solve"><kbd>⌘H</kbd><div><strong>Solve screen</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="solve">Use Solve</button></div>
+            <div class="shortcut-status-row" data-shortcut="task-context"><kbd>⌘⇧C</kbd><div><strong>Add screen</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="task-context">Add screen</button></div>
+            <div class="shortcut-status-row" data-shortcut="quit"><kbd>⌘⇧X</kbd><div><strong>Stop all and quit</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="quit">Quit now</button></div>
+          </div>
+        </div>
+
+        <div class="s-status" id="s-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- First-run tutorial / walkthrough -->
+  <div id="onboard-scrim" class="hidden">
+    <div id="onboard" class="glass">
+      <div class="ob-dots" id="ob-dots"></div>
+      <div class="ob-icon" id="ob-icon"></div>
+      <div class="ob-title" id="ob-title"></div>
+      <div class="ob-body" id="ob-body"></div>
+      <div class="ob-buttons" id="ob-buttons"></div>
+      <div class="ob-permission-status hidden" id="ob-permission-status" role="status" aria-live="polite"></div>
+      <div class="ob-actions">
+        <button id="ob-skip" class="ob-ghost">Skip</button>
+        <div class="spacer"></div>
+        <button id="ob-back" class="ob-ghost">Back</button>
+        <button id="ob-next" class="ob-primary">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="icons.js"></script>
+  <script src="plain-math.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

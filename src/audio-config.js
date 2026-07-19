@@ -1,0 +1,4 @@
+const AUDIO_SAMPLE_RATE = 24000;
+const PCM_BYTES_PER_SAMPLE = 2;
+
+module.exports = { AUDIO_SAMPLE_RATE, PCM_BYTES_PER_SAMPLE };

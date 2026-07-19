@@ -1,0 +1,55 @@
+const { contextBridge, ipcRenderer } = require('electron');
+const AUDIO_SAMPLE_RATE = 24000;
+
+contextBridge.exposeInMainWorld('volyxLens', {
+  audioConfig: Object.freeze({ sampleRate: AUDIO_SAMPLE_RATE }),
+  settingsGet: () => ipcRenderer.invoke('settings:get'),
+  settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
+  clearCredential: (provider) => ipcRenderer.invoke('credentials:clear', provider),
+  personalContextGet: () => ipcRenderer.invoke('personal-context:get'),
+  personalContextImport: (kind) => ipcRenderer.invoke('personal-context:import', kind),
+  personalContextRemove: (kind) => ipcRenderer.invoke('personal-context:remove', kind),
+  personalContextSetEnabled: (kind, enabled) => ipcRenderer.invoke('personal-context:set-enabled', kind, enabled),
+  ask: (payload) => ipcRenderer.send('ask', payload),
+  cancelResponse: () => ipcRenderer.send('llm:cancel'),
+  captureToggle: () => ipcRenderer.invoke('capture:toggle'),
+  captureStop: () => ipcRenderer.invoke('capture:stop'),
+  captureState: () => ipcRenderer.invoke('capture:state'),
+  newSession: () => ipcRenderer.invoke('session:new'),
+  taskContextGet: () => ipcRenderer.invoke('task-context:get'),
+  taskContextList: (offset = 0, limit = 50) => ipcRenderer.invoke('task-context:list', { offset, limit }),
+  taskContextCapture: () => ipcRenderer.invoke('task-context:capture'),
+  taskContextUndo: () => ipcRenderer.invoke('task-context:undo'),
+  taskContextRemove: (id) => ipcRenderer.invoke('task-context:remove', id),
+  taskContextPin: (id, pinned) => ipcRenderer.invoke('task-context:pin', { id, pinned: pinned === true }),
+  taskContextClear: () => ipcRenderer.invoke('task-context:clear'),
+  transcriptGet: () => ipcRenderer.invoke('transcript:get'),
+  recapPlan: () => ipcRenderer.invoke('recap:plan'),
+  transcriptCopy: () => ipcRenderer.invoke('transcript:copy'),
+  transcriptCopyTurn: (id) => ipcRenderer.invoke('transcript:copy-turn', id),
+  transcriptClear: () => ipcRenderer.invoke('transcript:clear'),
+  transcriptExport: (format) => ipcRenderer.invoke('transcript:export', format),
+  diagnosticsGet: () => ipcRenderer.invoke('diagnostics:get'),
+  shortcutsGet: () => ipcRenderer.invoke('shortcuts:get'),
+  shortcutsRetry: () => ipcRenderer.invoke('shortcuts:retry'),
+  testResponseProvider: (provider, tier) => ipcRenderer.invoke('provider:test-response', { provider, tier }),
+  diagnosticsCopy: () => ipcRenderer.invoke('diagnostics:copy'),
+  testRealtime: () => ipcRenderer.invoke('transcription:test'),
+  startLiveTranscriptionTest: () => ipcRenderer.invoke('transcription:live-test-start'),
+  finishLiveTranscriptionTest: () => ipcRenderer.invoke('transcription:live-test-finish'),
+  liveTranscriptionPcm: (arrayBuffer, metadata) => ipcRenderer.send('transcription:live-test-audio', arrayBuffer, metadata),
+  retryRealtime: () => ipcRenderer.invoke('transcription:retry'),
+  requestPermission: (kind) => ipcRenderer.invoke('permissions:request', kind),
+  micPcm: (arrayBuffer) => ipcRenderer.send('mic:pcm', arrayBuffer),
+  systemPcm: (arrayBuffer) => ipcRenderer.send('system:pcm', arrayBuffer),
+  setIgnoreMouse: (v) => ipcRenderer.send('mouse:ignore', v),
+  openPane: (url) => ipcRenderer.send('open-pane', url),
+  quit: () => ipcRenderer.send('app:quit'),
+  relaunch: () => ipcRenderer.send('app:relaunch'),
+  log: (msg) => ipcRenderer.send('log', msg),
+  on: (channel, cb) => {
+    const allowed = ['capture:state', 'session:cleared', 'task-context:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcription:state'];
+    if (!allowed.includes(channel)) return;
+    ipcRenderer.on(channel, (_e, data) => cb(data));
+  }
+});

@@ -1,0 +1,87 @@
+{
+  "name": "volyx-lens",
+  "version": "0.2.0",
+  "description": "Private macOS context assistant for screen, voice, meetings, and coding workflows.",
+  "author": "VolyxAI",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "main.js",
+  "scripts": {
+    "test": "node --test",
+    "check:syntax": "node scripts/check-syntax.js",
+    "security:secrets": "node scripts/check-secrets.js",
+    "test:azure-realtime": "node scripts/azure-realtime-probe.js",
+    "start": "electron .",
+    "pack": "electron-builder --dir --config.mac.notarize=false",
+    "release:check": "node scripts/check-macos-release.js",
+    "verify:vision-ocr-package": "node scripts/verify-vision-ocr-package.js",
+    "release:mac": "node scripts/check-macos-release.js --require-credentials && electron-builder --mac zip --publish never && node scripts/verify-vision-ocr-package.js",
+    "release:verify": "node scripts/verify-macos-release.js",
+    "dist": "npm run release:mac"
+  },
+  "build": {
+    "appId": "ai.volyx.lens",
+    "productName": "Volyx Lens",
+    "asar": true,
+    "beforePack": "scripts/build-vision-ocr.js",
+    "files": [
+      "main.js",
+      "preload.js",
+      "LICENSE.md",
+      "src/**/*",
+      "renderer/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "native-bin",
+        "to": "native",
+        "filter": [
+          "volyx-lens-vision-ocr"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "binaries": [
+        "Contents/Resources/native/volyx-lens-vision-ocr"
+      ],
+      "notarize": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSMicrophoneUsageDescription": "Volyx Lens transcribes your microphone so it can help you in conversations.",
+        "NSAudioCaptureUsageDescription": "Volyx Lens captures system audio to transcribe the other participant in a call."
+      }
+    }
+  },
+  "keywords": [
+    "electron",
+    "overlay",
+    "ai",
+    "assistant",
+    "screencapturekit",
+    "macos"
+  ],
+  "devDependencies": {
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@google/genai": "^2.12.0",
+    "jszip": "^3.10.1",
+    "lucide-static": "^0.468.0",
+    "mammoth": "^1.12.0",
+    "openai": "^4.73.0",
+    "pdfjs-dist": "^4.10.38",
+    "ws": "^8.21.1"
+  }
+}
