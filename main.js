@@ -279,8 +279,10 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
       send('transcript:suppressed', { channel: 'you', duplicateOf: duplicate.turn.turnId, reason: 'cross_talk' });
       return;
     }
-    removeRecentTranscriptSegment(duplicate.turn.id);
-    removeTranscriptSegment(duplicate.turn);
+    for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
+      removeRecentTranscriptSegment(leakedSegment.id);
+      removeTranscriptSegment(leakedSegment);
+    }
   }
 
   const segment = { id: ++transcriptSegmentSequence, channel: normalizedChannel, text: clean, ts: timestamp };

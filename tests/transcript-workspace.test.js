@@ -58,8 +58,9 @@ test('consecutive STT segments update one stable speaker turn until the channel 
 test('cross-talk suppression prefers direct system audio and removes only the leaked raw segment', () => {
   assert.match(main, /findCrossTalkDuplicate\(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt\)/);
   assert.match(main, /normalizedChannel === 'you'[\s\S]*transcript:suppressed[\s\S]*return/);
-  assert.match(main, /removeRecentTranscriptSegment\(duplicate\.turn\.id\)/);
-  assert.match(main, /removeTranscriptSegment\(duplicate\.turn\)/);
+  assert.match(main, /for \(const leakedSegment of duplicate\.turns \|\| \[duplicate\.turn\]\)/);
+  assert.match(main, /removeRecentTranscriptSegment\(leakedSegment\.id\)/);
+  assert.match(main, /removeTranscriptSegment\(leakedSegment\)/);
   assert.match(preload, /'transcript:remove'/);
   assert.match(preload, /'transcript:suppressed'/);
   assert.match(renderer, /volyxLens\.on\('transcript:remove', removeTranscriptTurn\)/);

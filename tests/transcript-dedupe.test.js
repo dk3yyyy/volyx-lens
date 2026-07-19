@@ -100,3 +100,19 @@ test('short fuzzy echo matching expires and does not erase a later real response
     'I understand the vector coordinates but have another question',
   ), 0);
 });
+
+test('rolling opposite-channel segments catch native system finals split differently from microphone echo', () => {
+  const leakedMicSegments = [
+    { id: 30, channel: 'you', text: 'The answer is that you can reach every possible two-dimensional vector', ts: 1000 },
+    { id: 31, channel: 'you', text: 'and I think it is a good puzzle to contemplate why', ts: 4000 },
+    { id: 32, channel: 'you', text: 'a new pair of basis vectors like this still gives us a valid way to go back and forth', ts: 7000 },
+  ];
+  const arrivals = new Map([[30, 1000], [31, 4000], [32, 7000]]);
+  const directSystem = {
+    channel: 'them',
+    text: 'I think it is a good puzzle to contemplate why a new pair of basis vectors like this still gives us a valid way to go back and forth.',
+  };
+  const match = findCrossTalkDuplicate(leakedMicSegments, directSystem, arrivals, 9000);
+  assert.ok(match);
+  assert.deepEqual(match.turns.map((entry) => entry.id), [31, 32]);
+});

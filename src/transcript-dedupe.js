@@ -10,6 +10,8 @@ const MIN_FUZZY_FRAGMENT_TOKENS = 4;
 const MAX_FUZZY_FRAGMENT_TOKENS = 8;
 const MIN_FUZZY_FRAGMENT_CHARACTERS = 18;
 const MIN_FUZZY_FRAGMENT_SIMILARITY = 0.86;
+const MAX_ROLLING_SEGMENTS = 4;
+const MAX_ROLLING_GAP_MS = 6000;
 
 function normalizeSpeech(text) {
   return String(text || '')
@@ -32,6 +34,23 @@ function tokenDice(leftTokens, rightTokens) {
     else remaining.set(token, count - 1);
   }
   return (2 * overlap) / (leftTokens.length + rightTokens.length);
+}
+
+function tokenRecall(left, right) {
+  const leftTokens = normalizeSpeech(left).split(' ').filter(Boolean);
+  const rightTokens = normalizeSpeech(right).split(' ').filter(Boolean);
+  if (!rightTokens.length) return 0;
+  const remaining = new Map();
+  for (const token of leftTokens) remaining.set(token, (remaining.get(token) || 0) + 1);
+  let overlap = 0;
+  for (const token of rightTokens) {
+    const count = remaining.get(token) || 0;
+    if (!count) continue;
+    overlap += 1;
+    if (count === 1) remaining.delete(token);
+    else remaining.set(token, count - 1);
+  }
+  return overlap / rightTokens.length;
 }
 
 function longestContiguousTokenOverlap(leftTokens, rightTokens) {
@@ -133,6 +152,18 @@ function areCrossTalkDuplicates(left, right) {
     || fuzzyShortFragmentOverlap(left.text, right.text) > 0;
 }
 
+function crossTalkScore(left, right) {
+  const similarity = speechSimilarity(left, right);
+  const phraseOverlap = substantialPhraseOverlap(left, right);
+  const fuzzyOverlap = fuzzyShortFragmentOverlap(left, right);
+  const score = Math.max(similarity, phraseOverlap, fuzzyOverlap);
+  const candidateCoverage = tokenRecall(left, right);
+  if (similarity >= MIN_SIMILARITY) return { score, match: 'similarity', candidateCoverage };
+  if (phraseOverlap > 0) return { score, match: 'phrase_overlap', candidateCoverage };
+  if (fuzzyOverlap > 0) return { score, match: 'fuzzy_fragment', candidateCoverage };
+  return null;
+}
+
 function findCrossTalkDuplicate(turns, candidate, arrivalTimes, now = Date.now(), windowMs = DEFAULT_WINDOW_MS) {
   let best = null;
   for (let index = turns.length - 1; index >= 0 && index >= turns.length - 20; index -= 1) {
@@ -140,13 +171,26 @@ function findCrossTalkDuplicate(turns, candidate, arrivalTimes, now = Date.now()
     if (!turn || turn.channel === candidate.channel) continue;
     const arrivedAt = arrivalTimes instanceof Map ? arrivalTimes.get(turn.id) : turn.ts;
     if (!Number.isFinite(arrivedAt) || Math.abs(now - arrivedAt) > windowMs) continue;
-    const similarity = speechSimilarity(turn.text, candidate.text);
-    const phraseOverlap = substantialPhraseOverlap(turn.text, candidate.text);
-    const fuzzyOverlap = fuzzyShortFragmentOverlap(turn.text, candidate.text);
-    const score = Math.max(similarity, phraseOverlap, fuzzyOverlap);
-    if ((similarity >= MIN_SIMILARITY || phraseOverlap > 0 || fuzzyOverlap > 0) && (!best || score > best.similarity)) {
-      const match = similarity >= MIN_SIMILARITY ? 'similarity' : (phraseOverlap > 0 ? 'phrase_overlap' : 'fuzzy_fragment');
-      best = { turn, index, similarity: score, match };
+    const group = [turn];
+    let previousArrival = arrivedAt;
+    for (let earlier = index - 1; earlier >= 0 && group.length < MAX_ROLLING_SEGMENTS; earlier -= 1) {
+      const prior = turns[earlier];
+      if (!prior || prior.channel !== turn.channel) continue;
+      const priorArrival = arrivalTimes instanceof Map ? arrivalTimes.get(prior.id) : prior.ts;
+      if (!Number.isFinite(priorArrival) || now - priorArrival > windowMs || previousArrival - priorArrival > MAX_ROLLING_GAP_MS) break;
+      group.unshift(prior);
+      previousArrival = priorArrival;
+    }
+    for (let start = 0; start < group.length; start += 1) {
+      const window = group.slice(start);
+      const result = crossTalkScore(window.map((entry) => entry.text).join(' '), candidate.text);
+      const improvesScore = result && (!best || result.score > best.similarity);
+      const improvesCoverage = result && best && result.score === best.similarity && result.candidateCoverage > best.candidateCoverage;
+      const narrowsEqualMatch = result && best && result.score === best.similarity
+        && result.candidateCoverage === best.candidateCoverage && window.length < best.turns.length;
+      if (improvesScore || improvesCoverage || narrowsEqualMatch) {
+        best = { turn: window[window.length - 1], turns: window, index, similarity: result.score, candidateCoverage: result.candidateCoverage, match: result.match };
+      }
     }
   }
   return best;
@@ -165,12 +209,16 @@ module.exports = {
   MAX_FUZZY_FRAGMENT_TOKENS,
   MIN_FUZZY_FRAGMENT_CHARACTERS,
   MIN_FUZZY_FRAGMENT_SIMILARITY,
+  MAX_ROLLING_SEGMENTS,
+  MAX_ROLLING_GAP_MS,
   normalizeSpeech,
+  tokenRecall,
   speechSimilarity,
   longestContiguousTokenOverlap,
   substantialPhraseOverlap,
   editSimilarity,
   fuzzyShortFragmentOverlap,
+  crossTalkScore,
   areCrossTalkDuplicates,
   findCrossTalkDuplicate,
 };
