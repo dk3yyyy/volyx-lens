@@ -1024,7 +1024,52 @@
     }
   }
 
+  function selectSettingsSection(section, { focus = false } = {}) {
+    const target = document.querySelector(`[data-settings-page="${section}"]`) || document.querySelector('[data-settings-page="providers"]');
+    document.querySelectorAll('[data-settings-page]').forEach((page) => {
+      const active = page === target;
+      page.hidden = !active;
+      page.classList.toggle('on', active);
+    });
+    document.querySelectorAll('[data-settings-section]').forEach((button) => {
+      const active = button.dataset.settingsSection === target.dataset.settingsPage;
+      button.classList.toggle('on', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    $('.s-pages').scrollTop = 0;
+    if (focus) target.querySelector('h2').focus();
+  }
+  document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', () => {
+    selectSettingsSection(button.dataset.settingsSection, { focus: true });
+  }));
+
+  let settingsPreviousFocus = null;
+  function settingsFocusable() {
+    return [...$('#settings').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden');
+  }
+  function handleSettingsKeydown(event) {
+    if (event.key === 'Escape') { event.preventDefault(); closeSettings(); return; }
+    if (event.key !== 'Tab') return;
+    const focusable = settingsFocusable();
+    if (!focusable.length) { event.preventDefault(); return; }
+    const current = focusable.indexOf(document.activeElement);
+    if (current === -1) {
+      event.preventDefault();
+      focusable[event.shiftKey ? focusable.length - 1 : 0].focus();
+    } else if (!event.shiftKey && current === focusable.length - 1) {
+      event.preventDefault();
+      focusable[0].focus();
+    } else if (event.shiftKey && current === 0) {
+      event.preventDefault();
+      focusable[focusable.length - 1].focus();
+    }
+  }
+
   async function openSettings() {
+    settingsPreviousFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : $('#more-btn');
     if (!personalContext) {
       try { personalContext = await volyxLens.personalContextGet(); }
       catch (error) { showStatus(error && error.message ? error.message : 'Personal context could not be loaded.'); }
@@ -1035,7 +1080,9 @@
     $('#provider-test-tier').value = settings.smart ? 'smart' : 'fast';
     renderPersonalContext();
     refreshAudioDevices();
+    selectSettingsSection('providers');
     scrim.classList.remove('hidden');
+    requestAnimationFrame(() => document.querySelector('[data-settings-page="providers"] h2').focus());
     await refreshShortcutStatus();
   }
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
@@ -1044,6 +1091,7 @@
     try {
       await saveSettings();
       scrim.classList.add('hidden');
+      requestAnimationFrame(() => (settingsPreviousFocus && settingsPreviousFocus.isConnected ? settingsPreviousFocus : $('#more-btn')).focus());
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Settings could not be saved.');
     }
@@ -1163,14 +1211,6 @@
   }
   function statusText() {
     const present = (settings.credentialStatus && settings.credentialStatus.present) || {};
-    const has = [
-      present.openai && 'OpenAI',
-      present.anthropic && 'Anthropic',
-      present.gemini && 'Gemini',
-      present.azure && 'Azure Foundry',
-      present.deepseek && 'DeepSeek',
-      present.azureRealtime && 'Azure Realtime'
-    ].filter(Boolean);
     const transcription = settings.transcription || {};
     let stt = 'none';
     if (transcription.mode === 'batch') stt = present.openai ? 'OpenAI batch' : (present.gemini ? 'Gemini batch' : 'none');
@@ -1180,7 +1220,7 @@
     const storage = settings.credentialStatus && settings.credentialStatus.secure ? 'secure storage' : (backend === 'locked-safeStorage' ? 'secure storage locked' : 'plaintext fallback');
     const defaultLabel = PROVIDER_LABELS[settings.provider] || settings.provider;
     const fallbackLabel = settings.fallbackProvider ? (PROVIDER_LABELS[settings.fallbackProvider] || settings.fallbackProvider) : 'none';
-    return `Default: ${defaultLabel} · fallback: ${fallbackLabel} · keys: ${has.join(', ') || 'none set'} · transcription: ${stt} · ${storage}`;
+    return `${defaultLabel} default · ${fallbackLabel} fallback · ${stt} · ${storage}`;
   }
   function stashCurrentModels() {
     if (!settings.models[providerView]) settings.models[providerView] = {};
@@ -1424,7 +1464,7 @@
 
   // ---- global keys -------------------------------------------------------
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !scrim.classList.contains('hidden')) closeSettings();
+    if (!scrim.classList.contains('hidden')) { handleSettingsKeydown(e); return; }
     if (e.metaKey && e.key === ',') { e.preventDefault(); openSettings(); }
   });
 
