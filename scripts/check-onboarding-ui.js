@@ -50,7 +50,7 @@ app.whenReady().then(async () => {
   });
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
   win.show();
-  await wait(500);
+  await waitFor(win, "document.activeElement && document.activeElement.id === 'ob-title'", 'initial onboarding heading focus');
 
   const names = ['welcome', 'permissions', 'provider', 'sharing', 'ready'];
   const heights = new Set();
@@ -74,7 +74,7 @@ app.whenReady().then(async () => {
     await capture(win, names[index]);
     if (index < names.length - 1) {
       await win.webContents.executeJavaScript("document.querySelector('#ob-next').click()");
-      await wait(80);
+      await waitFor(win, `document.activeElement && document.activeElement.id === 'ob-title' && document.querySelector('#ob-step-count').textContent === '${index + 2} of 5'`, `${names[index + 1]} heading focus`);
     }
   }
   assert.equal(heights.size, 1, 'all onboarding steps should keep a stable shell height');
