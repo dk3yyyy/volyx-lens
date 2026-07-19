@@ -35,6 +35,7 @@ const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-
 const { createLocalOcr } = require('./src/local-ocr');
 const { createSystemAudioCapture } = require('./src/system-audio-capture');
 const { createAcousticEchoFilter } = require('./src/acoustic-echo-filter');
+const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 
@@ -47,6 +48,11 @@ const taskContext = createTaskContext({
 });
 const localOcr = createLocalOcr({ app });
 const acousticEchoFilter = createAcousticEchoFilter({ sampleRate: AUDIO_SAMPLE_RATE });
+const micEchoCoordinator = createMicEchoCoordinator({
+  filter: acousticEchoFilter,
+  maxBytes: AUDIO_SAMPLE_RATE * 2 * 4,
+  onMicrophone: (pcm) => processMicrophonePcm(pcm),
+});
 let lastSystemAudioLevelAt = 0;
 function publishSystemAudioLevel(pcm, now = Date.now()) {
   if (!Buffer.isBuffer(pcm) || pcm.length < 2 || now - lastSystemAudioLevelAt < 100) return;
@@ -136,6 +142,7 @@ const transcriptionDiagnostics = {
   acousticEchoSuppressed: 0,
   lastEchoCorrelation: 0,
   maxEchoCorrelation: 0,
+  micDelayDropped: 0,
 };
 
 function send(channel, data) {
@@ -363,6 +370,7 @@ function getSessionDiagnostics() {
       acousticEchoSuppressed: transcriptionDiagnostics.acousticEchoSuppressed,
       lastEchoCorrelation: Number(transcriptionDiagnostics.lastEchoCorrelation.toFixed(3)),
       maxEchoCorrelation: Number(transcriptionDiagnostics.maxEchoCorrelation.toFixed(3)),
+      micDelayDropped: transcriptionDiagnostics.micDelayDropped,
     },
     audio: {
       microphoneEnabled: (settings.audio || {}).micEnabled !== false,
@@ -620,6 +628,8 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   realtimeManager = null;
 
   if (immediate) {
+    micEchoCoordinator.clear();
+    acousticEchoFilter.reset();
     if (manager) manager.stop();
     for (const draining of drainingRealtimeManagers) draining.stop();
     drainingRealtimeManagers.clear();
@@ -644,28 +654,42 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   send('transcription:state', { mode: 'idle', status: 'stopped' });
 }
 
+function routePcm(channel, pcm) {
+  if (transcriptionMode === 'realtime' && realtimeManager && realtimeManager.append(channel, pcm)) return;
+  buffers[channel].push(pcm);
+  if (buffers[channel].length > MAX_BATCH_CHUNKS) buffers[channel].splice(0, buffers[channel].length - MAX_BATCH_CHUNKS);
+}
+
+function processMicrophonePcm(pcm) {
+  const audio = store.getSettings().audio || {};
+  if (audio.micEnabled !== false && audio.systemEnabled !== false) {
+    const echo = acousticEchoFilter.inspectMicrophone(pcm);
+    transcriptionDiagnostics.lastEchoCorrelation = echo.correlation;
+    transcriptionDiagnostics.maxEchoCorrelation = Math.max(transcriptionDiagnostics.maxEchoCorrelation, echo.correlation);
+    if (echo.suppress) {
+      transcriptionDiagnostics.acousticEchoSuppressed += 1;
+      return;
+    }
+  }
+  routePcm('you', pcm);
+}
+
 function acceptPcm(channel, arrayBuffer) {
   if (!state.capturing || !['you', 'them'].includes(channel)) return;
   let pcm;
   try { pcm = Buffer.from(arrayBuffer); } catch { return; }
   if (!pcm.length || pcm.length > AUDIO_SAMPLE_RATE * 2 * 2) return;
   if (channel === 'them') {
-    acousticEchoFilter.observeSystem(pcm);
-  } else {
-    const audio = store.getSettings().audio || {};
-    if (audio.micEnabled !== false && audio.systemEnabled !== false) {
-      const echo = acousticEchoFilter.inspectMicrophone(pcm);
-      transcriptionDiagnostics.lastEchoCorrelation = echo.correlation;
-      transcriptionDiagnostics.maxEchoCorrelation = Math.max(transcriptionDiagnostics.maxEchoCorrelation, echo.correlation);
-      if (echo.suppress) {
-        transcriptionDiagnostics.acousticEchoSuppressed += 1;
-        return;
-      }
-    }
+    micEchoCoordinator.observeSystem(pcm);
+    routePcm('them', pcm);
+    return;
   }
-  if (transcriptionMode === 'realtime' && realtimeManager && realtimeManager.append(channel, pcm)) return;
-  buffers[channel].push(pcm);
-  if (buffers[channel].length > MAX_BATCH_CHUNKS) buffers[channel].splice(0, buffers[channel].length - MAX_BATCH_CHUNKS);
+  const audio = store.getSettings().audio || {};
+  if (audio.micEnabled !== false && audio.systemEnabled !== false) {
+    if (!micEchoCoordinator.enqueueMicrophone(pcm)) transcriptionDiagnostics.micDelayDropped += 1;
+    return;
+  }
+  processMicrophonePcm(pcm);
 }
 
 // -------- capture toggle --------
@@ -697,10 +721,12 @@ async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
   if (active) {
     const audio = store.getSettings().audio || {};
+    micEchoCoordinator.clear();
     acousticEchoFilter.reset();
     transcriptionDiagnostics.acousticEchoSuppressed = 0;
     transcriptionDiagnostics.lastEchoCorrelation = 0;
     transcriptionDiagnostics.maxEchoCorrelation = 0;
+    transcriptionDiagnostics.micDelayDropped = 0;
     if (process.platform === 'darwin' && audio.systemEnabled !== false) {
       const source = await systemAudioCapture.start();
       if (!source.ok) {
@@ -725,6 +751,8 @@ async function applyCaptureState(active) {
     return true;
   }
   await systemAudioCapture.stop({ immediate: pendingStopImmediate });
+  if (pendingStopImmediate) micEchoCoordinator.clear();
+  else micEchoCoordinator.drain();
   acousticEchoFilter.reset();
   state.capturing = false;
   lastCaptureEndedAt = Date.now();

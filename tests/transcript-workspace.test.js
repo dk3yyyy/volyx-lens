@@ -68,7 +68,11 @@ test('cross-talk suppression prefers direct system audio and removes only the le
   assert.match(html, /id="diag-cross-talk"/);
   assert.match(renderer, /crossTalkSuppressed/);
   assert.match(main, /createAcousticEchoFilter/);
-  assert.match(main, /acousticEchoFilter\.observeSystem\(pcm\)/);
+  assert.match(main, /createMicEchoCoordinator/);
+  assert.match(main, /micEchoCoordinator\.observeSystem\(pcm\)/);
+  assert.match(main, /micEchoCoordinator\.enqueueMicrophone\(pcm\)/);
+  assert.match(main, /micEchoCoordinator\.drain\(\)/);
+  assert.match(main, /micEchoCoordinator\.clear\(\)/);
   assert.match(main, /acousticEchoFilter\.inspectMicrophone\(pcm\)/);
   assert.match(main, /acousticEchoSuppressed \+= 1/);
   assert.match(renderer, /acousticEchoSuppressed/);

@@ -114,7 +114,7 @@ The response provider and transcription provider are independent. Realtime liste
 
 Under **Settings → Transcription**, choose:
 
-- **Realtime** (recommended) — streams 24 kHz PCM. OpenAI commits turns using local voice activity detection; Azure streams continuously and commits fixed three-second windows; Deepgram streams continuously and returns interim/final Nova-3 results.
+- **Realtime** (recommended) — streams 24 kHz PCM. OpenAI commits turns using local voice activity detection; Azure streams continuously and commits fixed three-second windows; Deepgram streams continuously and returns interim/final Nova-3 results. When microphone and system audio are both enabled, Volyx Lens holds mic PCM for 250 ms before echo inspection so the native system-audio reference can catch up.
 - **Realtime provider** — choose OpenAI, Azure Foundry, or Deepgram. Azure reuses the response-provider key and endpoint by default, or accepts an optional separate Realtime resource key and endpoint. Deepgram uses its own securely stored key.
 - **Azure deployment** — enter the exact deployment name assigned to your Azure `gpt-realtime-whisper` model.
 - **Deepgram model** — defaults to `nova-3`; keep this unless a tested compatible streaming model is required.
