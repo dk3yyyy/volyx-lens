@@ -119,12 +119,21 @@
 
   <!-- Settings -->
   <div id="settings-scrim" class="hidden">
-    <div id="settings" class="glass">
+    <div id="settings" class="glass" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="s-head">
-        <div class="s-title">Settings</div>
+        <div class="s-title" id="settings-title">Settings</div>
         <button id="s-close" class="s-close">Done</button>
       </div>
-      <div class="s-body">
+      <div class="s-layout">
+        <nav class="s-nav" aria-label="Settings sections">
+          <button type="button" class="on" data-settings-section="providers"><strong>Providers</strong><span>Models and keys</span></button>
+          <button type="button" data-settings-section="listening"><strong>Listening</strong><span>Audio and transcript</span></button>
+          <button type="button" data-settings-section="context"><strong>Context</strong><span>Resume and role</span></button>
+          <button type="button" data-settings-section="shortcuts"><strong>Shortcuts</strong><span>Keyboard status</span></button>
+        </nav>
+        <div class="s-pages">
+          <section class="s-page on" data-settings-page="providers" aria-labelledby="settings-providers-title">
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-providers-title">AI Providers</h2><p>Choose where Volyx Lens sends requests and which models it uses.</p></div>
         <label class="s-label">Response providers <span class="s-hint">choose a provider to configure</span></label>
         <div class="s-seg provider-tabs" id="provider-seg">
           <button data-provider="openai"><span>OpenAI</span><small class="provider-default-mark">Default</small></button>
@@ -162,7 +171,10 @@
           <div class="provider-test-controls"><select id="provider-test-tier" aria-label="Model tier"><option value="fast">Fast model</option><option value="smart">Smart model</option></select><button id="provider-test-btn" type="button">Test connection</button></div>
           <div id="provider-test-result" class="provider-test-result hidden" role="status" aria-live="polite"></div>
         </div>
+          </section>
 
+          <section class="s-page" data-settings-page="context" aria-labelledby="settings-context-title" hidden>
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-context-title">Personal Context</h2><p>Optional local documents that help tailor answers to your work.</p></div>
         <label class="s-label">Personal context <span class="s-hint">local resume and job description</span></label>
         <div class="context-document" data-kind="resume">
           <div class="context-document-head"><strong>Resume / CV</strong><label class="context-enable"><input id="context-resume-enabled" type="checkbox" disabled /> Use</label></div>
@@ -177,7 +189,10 @@
           <div class="context-actions"><button class="context-import" data-kind="jobDescription" type="button">Import Job Description</button><button class="context-remove hidden" data-kind="jobDescription" type="button">Remove</button></div>
         </div>
         <div id="context-storage-status" class="s-note">PDF, DOCX, TXT, or Markdown · 5 MB maximum. Extracted text is stored locally and protected by safeStorage/Keychain where available. Relevant excerpts are sent only when you request an answer.</div>
+          </section>
 
+          <section class="s-page" data-settings-page="listening" aria-labelledby="settings-listening-title" hidden>
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-listening-title">Listening</h2><p>Control transcription, audio sources, privacy fallbacks, and session limits.</p></div>
         <label class="s-label">Transcription <span class="s-hint">OpenAI or Azure Realtime with batch fallback</span></label>
         <div class="s-field"><span>Mode</span><select id="stt-mode"><option value="realtime">Realtime</option><option value="batch">Batch</option></select></div>
         <div class="s-field"><span>Realtime provider</span><select id="stt-realtime-provider"><option value="openai">OpenAI</option><option value="azure">Azure Foundry</option></select></div>
@@ -206,7 +221,10 @@
           <div id="realtime-test-result" class="s-diag-result" role="status" aria-live="polite"></div>
         </div>
         <div class="s-note">Connection test opens one short no-audio session. Live Mic records and streams five seconds, requires an actual transcript, reports sanitized audio telemetry, and immediately discards the audio. Provider session billing may apply. Credentials remain in the main process.</div>
+          </section>
 
+          <section class="s-page" data-settings-page="shortcuts" aria-labelledby="settings-shortcuts-title" hidden>
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-shortcuts-title">Keyboard Shortcuts</h2><p>Check global shortcut availability and use safe in-app alternatives.</p></div>
         <div class="shortcut-status-card">
           <div class="shortcut-status-head"><div><strong>Keyboard shortcuts</strong><span>Global registration is checked at launch. Unavailable features remain accessible through these buttons.</span></div><button id="shortcuts-retry" type="button">Retry unavailable</button></div>
           <div id="shortcut-status-list">
@@ -216,8 +234,10 @@
             <div class="shortcut-status-row" data-shortcut="quit"><kbd>⌘⇧X</kbd><div><strong>Stop all and quit</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="quit">Quit now</button></div>
           </div>
         </div>
+          </section>
 
         <div class="s-status" id="s-status"></div>
+        </div>
       </div>
     </div>
   </div>

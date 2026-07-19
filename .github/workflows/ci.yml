@@ -23,6 +23,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run check:syntax
+      - run: xvfb-run -a npm run check:settings-ui -- --no-sandbox
       - run: npm run security:secrets
       - name: Reject critical dependency vulnerabilities
         run: npm audit --audit-level=critical
