@@ -32,7 +32,9 @@ test('renderer saves settings, captures five seconds, disables conflicting contr
   assert.match(renderer, /#test-realtime-btn/);
   assert.match(renderer, /#test-live-transcription-btn/);
   assert.match(renderer, /await saveSettings\(\)/);
+  assert.match(renderer, /await volyxLens\.requestPermission\('microphone'\)/);
   assert.match(renderer, /await volyxLens\.startLiveTranscriptionTest\(\)/);
+  assert.ok(renderer.indexOf("await volyxLens.requestPermission('microphone')") < renderer.indexOf('await volyxLens.startLiveTranscriptionTest()'));
   assert.match(renderer, /volyxLens\.liveTranscriptionPcm\(buffer, metadata\)/);
   assert.match(renderer, /await volyxLens\.finishLiveTranscriptionTest\(\)/);
   assert.match(renderer, /for \(let remaining = 5/);

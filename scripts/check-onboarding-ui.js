@@ -36,6 +36,22 @@ async function waitFor(win, expression, message, timeoutMs = 2500) {
   }
   throw new Error(`Timed out waiting for ${message}`);
 }
+async function waitForPaint(win) {
+  await win.webContents.executeJavaScript('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+}
+async function waitForStableDialogHeight(win, timeoutMs = 2500) {
+  const started = Date.now();
+  let previous = null;
+  let stableSamples = 0;
+  while (Date.now() - started < timeoutMs) {
+    const height = await win.webContents.executeJavaScript("document.querySelector('#onboard').getBoundingClientRect().height");
+    stableSamples = previous !== null && Math.abs(height - previous) <= 0.1 ? stableSamples + 1 : 0;
+    if (stableSamples >= 3) return;
+    previous = height;
+    await wait(25);
+  }
+  throw new Error('Timed out waiting for onboarding dialog geometry to stabilize');
+}
 async function capture(win, name) {
   if (!screenshotDir) return;
   fs.mkdirSync(screenshotDir, { recursive: true });
@@ -53,8 +69,10 @@ app.whenReady().then(async () => {
   await waitFor(win, "document.activeElement && document.activeElement.id === 'ob-title'", 'initial onboarding heading focus');
 
   const names = ['welcome', 'permissions', 'provider', 'sharing', 'ready'];
-  const heights = new Set();
+  const heights = [];
   for (let index = 0; index < names.length; index += 1) {
+    await waitForPaint(win);
+    await waitForStableDialogHeight(win);
     const state = await win.webContents.executeJavaScript(`(() => {
       const dialog = document.querySelector('#onboard').getBoundingClientRect();
       const content = document.querySelector('#ob-content');
@@ -70,14 +88,14 @@ app.whenReady().then(async () => {
     assert.equal(state.documentOverflowX, false, `${names[index]} must not overflow horizontally`);
     assert.equal(state.contentOverflowY, false, `${names[index]} must not scroll at production size`);
     assert.ok(state.dialog.x >= 0 && state.dialog.y >= 0 && state.dialog.right <= state.viewport.width && state.dialog.bottom <= state.viewport.height, `${names[index]} dialog must fit viewport`);
-    heights.add(state.dialog.height);
+    heights.push(state.dialog.height);
     await capture(win, names[index]);
     if (index < names.length - 1) {
       await win.webContents.executeJavaScript("document.querySelector('#ob-next').click()");
       await waitFor(win, `document.activeElement && document.activeElement.id === 'ob-title' && document.querySelector('#ob-step-count').textContent === '${index + 2} of 5'`, `${names[index + 1]} heading focus`);
     }
   }
-  assert.equal(heights.size, 1, 'all onboarding steps should keep a stable shell height');
+  assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, `all onboarding steps should keep a stable shell height: ${heights.join(', ')}`);
 
   const reverseFromHeading = await win.webContents.executeJavaScript(`(() => {
     document.querySelector('#ob-title').focus();

@@ -1467,9 +1467,16 @@
     listenButton.disabled = true;
     button.textContent = 'Connecting…';
     resultEl.className = 's-diag-result running';
-    resultEl.textContent = 'Opening a one-channel Realtime session…';
+    resultEl.textContent = 'Checking microphone permission…';
     try {
       await saveSettings();
+      const permission = await volyxLens.requestPermission('microphone');
+      if (!permission || permission.granted !== true) {
+        resultEl.className = 's-diag-result error';
+        resultEl.textContent = 'microphone · permission_denied: Allow Volyx Lens in System Settings → Privacy & Security → Microphone, then restart the app.';
+        return;
+      }
+      resultEl.textContent = 'Opening a one-channel Realtime session…';
       const started = await volyxLens.startLiveTranscriptionTest();
       if (!started.ok) {
         resultEl.className = 's-diag-result error';
@@ -1506,7 +1513,10 @@
         : `${result.stage} · ${result.code}: ${result.message} · ${telemetry}`;
     } catch (error) {
       resultEl.className = 's-diag-result error';
-      resultEl.textContent = `live diagnostic · ipc_error: ${error && error.message ? error.message : 'The live microphone test could not run.'}`;
+      const permissionDenied = error && (error.name === 'NotAllowedError' || /permission denied/i.test(error.message || ''));
+      resultEl.textContent = permissionDenied
+        ? 'microphone · permission_denied: macOS or Electron denied microphone capture. Restart Volyx Lens after granting access.'
+        : 'live diagnostic · ipc_error: The live microphone test could not run.';
     } finally {
       if (capture) await closeAudioCapture(capture);
       if (stream) stream.getTracks().forEach((track) => track.stop());

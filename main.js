@@ -364,6 +364,12 @@ function isTrustedRenderer(webContents, frame = webContents && webContents.mainF
   return Boolean(win && !win.isDestroyed() && webContents === win.webContents && frame === win.webContents.mainFrame && frame && frame.url === APP_ENTRY_URL);
 }
 
+function isTrustedFileOrigin(value, { optional = false } = {}) {
+  if (!value) return optional;
+  try { return new URL(value).protocol === 'file:'; }
+  catch { return value === 'file://' || value === 'file:///'; }
+}
+
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   const W = 700, H = 600;
@@ -1234,13 +1240,13 @@ app.whenReady().then(() => {
   };
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const trustedMainFrame = details && details.isMainFrame === true && details.requestingUrl === APP_ENTRY_URL
-      && (!details.securityOrigin || details.securityOrigin === 'file://')
+      && isTrustedFileOrigin(details.securityOrigin, { optional: true })
       && isTrustedRenderer(webContents, webContents && webContents.mainFrame);
     callback(Boolean(trustedMainFrame && allowMedia(permission, details)));
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-    const trustedMainFrame = requestingOrigin === 'file://' && details && details.isMainFrame === true
-      && details.requestingUrl === APP_ENTRY_URL && (!details.securityOrigin || details.securityOrigin === 'file://')
+    const trustedMainFrame = isTrustedFileOrigin(requestingOrigin) && details && details.isMainFrame === true
+      && details.requestingUrl === APP_ENTRY_URL && isTrustedFileOrigin(details.securityOrigin, { optional: true })
       && isTrustedRenderer(webContents, webContents && webContents.mainFrame);
     return Boolean(trustedMainFrame && allowMedia(permission, details));
   });
@@ -1250,7 +1256,7 @@ app.whenReady().then(() => {
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     const trustedRequest = () => Boolean(win && !win.isDestroyed() && request.frame
       && isTrustedRenderer(win.webContents, request.frame));
-    if (!trustedRequest() || request.securityOrigin !== 'file://' || request.userGesture !== true || request.videoRequested !== true || request.audioRequested !== true) {
+    if (!trustedRequest() || !isTrustedFileOrigin(request.securityOrigin) || request.userGesture !== true || request.videoRequested !== true || request.audioRequested !== true) {
       callback({});
       return;
     }

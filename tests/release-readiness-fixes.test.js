@@ -76,7 +76,9 @@ test('privileged IPC, navigation, and media permission paths are bound to the ex
   assert.match(main, /isTrustedRenderer\(win\.webContents, request\.frame\)/);
   assert.match(main, /details\.isMainFrame === true/);
   assert.match(main, /request\.userGesture !== true/);
-  assert.match(main, /request\.securityOrigin !== 'file:\/\/'/);
+  assert.match(main, /function isTrustedFileOrigin/);
+  assert.match(main, /new URL\(value\)\.protocol === 'file:'/);
+  assert.match(main, /isTrustedFileOrigin\(request\.securityOrigin\)/);
   assert.match(main, /request\.videoRequested !== true/);
   assert.doesNotMatch(main, /\|\| sources\[0\]/);
   assert.match(renderer, /\['dragover', 'drop'\]/);
