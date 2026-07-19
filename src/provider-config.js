@@ -59,6 +59,7 @@ function getDefaultSettings() {
       mode: 'realtime',
       realtimeProvider: 'openai',
       realtimeModel: 'gpt-realtime-whisper',
+      deepgramModel: 'nova-3',
       azureRealtimeDeployment: '',
       fallbackModel: 'gpt-4o-mini-transcribe',
       geminiFallbackModel: 'gemini-3.5-flash',
@@ -152,17 +153,18 @@ function resolveRealtimeTranscription(settings) {
   const transcription = settings.transcription || {};
   const provider = transcription.realtimeProvider || 'openai';
   const isAzure = provider === 'azure';
-  const label = isAzure ? 'Azure Foundry' : 'OpenAI';
+  const isDeepgram = provider === 'deepgram';
+  const label = isAzure ? 'Azure Foundry' : (isDeepgram ? 'Deepgram' : 'OpenAI');
   const keys = settings.apiKeys || {};
   const endpoints = settings.endpoints || {};
   const apiKey = String(isAzure ? (keys.azureRealtime || keys.azure || '') : (keys[provider] || '')).trim();
   const model = String(isAzure
     ? (transcription.azureRealtimeDeployment || '')
-    : (transcription.realtimeModel || 'gpt-realtime-whisper')).trim();
+    : (isDeepgram ? (transcription.deepgramModel || 'nova-3') : (transcription.realtimeModel || 'gpt-realtime-whisper'))).trim();
   let endpoint = null;
   let configurationError = null;
 
-  if (!['openai', 'azure'].includes(provider)) {
+  if (!['openai', 'azure', 'deepgram'].includes(provider)) {
     configurationError = `Unsupported realtime transcription provider: ${provider}`;
   } else if (isAzure) {
     try { endpoint = normalizeAzureEndpoint((endpoints.azureRealtime || endpoints.azure || '')); }

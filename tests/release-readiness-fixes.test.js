@@ -37,6 +37,7 @@ test('all primary Settings fields have explicit programmatic labels', () => {
     'provider-fallback', 'key-openai', 'key-anthropic', 'key-gemini', 'key-azure', 'key-deepseek',
     'endpoint-azure', 'model-fast', 'model-smart', 'provider-test-tier', 'stt-mode',
     'stt-realtime-provider', 'key-azureRealtime', 'endpoint-azure-realtime', 'stt-azure-deployment',
+    'key-deepgram', 'stt-deepgram-model',
     'stt-language', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model',
     'stt-offline-enabled', 'stt-offline-cloud-fallback', 'audio-input-device', 'audio-mic-enabled',
     'audio-system-enabled', 'audio-sensitivity', 'audio-silence', 'audio-cost-warning',

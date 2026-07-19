@@ -4,7 +4,7 @@
 
 **A private, context-aware macOS assistant for your screen, voice, meetings, and coding workflows.**
 
-Bring your own AI key and keep control of the providers you use (OpenAI · Anthropic · Google Gemini · Azure Foundry · DeepSeek).
+Bring your own AI key and keep control of the providers you use (OpenAI · Anthropic · Google Gemini · Azure Foundry · DeepSeek · Deepgram transcription).
 
 <img src="docs/tutorial.png" width="620" alt="Volyx Lens first-run tutorial" />
 
@@ -104,21 +104,23 @@ Volyx Lens uses **your own** API key, so it's free to run (you only pay your AI 
 | **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Defaults to stable `gemini-3.5-flash` and `gemini-2.5-pro`. One key handles chat and batch transcription. |
 | **Azure Foundry** | [ai.azure.com](https://ai.azure.com) | Enter the resource key, resource endpoint (Volyx Lens adds `/openai/v1` when needed), and exact deployment names. Azure `gpt-realtime-whisper` deployments are supported for listening. |
 | **DeepSeek** | [platform.deepseek.com](https://platform.deepseek.com) | Uses the official `https://api.deepseek.com` endpoint. Defaults to `deepseek-v4-flash` and `deepseek-v4-pro`. DeepSeek is text-only here, so meeting/transcript modes work without screenshots; screen-only analysis needs a vision-capable provider. |
+| **Deepgram** | [console.deepgram.com](https://console.deepgram.com) | Realtime transcription only. Uses pinned `@deepgram/sdk` with Nova-3, interim results, continuous 24 kHz PCM, and 300 ms endpointing. The key remains in the Electron main process. |
 
 You can also choose one optional **Fallback** response provider. Volyx Lens uses it when the default is not configured, cannot satisfy a required screen request, or fails before emitting any answer text. Volyx Lens does **not** switch providers after partial text has appeared, preventing mixed or duplicated answers. The response panel identifies the provider actually used. A fallback must have its own valid key and model configuration.
 
 Each response-provider tab includes an explicit **Test connection** action for either the Fast or Smart model. The test saves the current settings and sends one minimal text-only request capped at 64 output tokens; it never includes screenshots, transcript, Task Context, resume, job description, or fallback routing, but a small provider charge may apply. Results report the tested provider, tier, model/deployment, vision capability, latency, and—in Azure's case—whether the configured URL is a Foundry resource, Azure OpenAI resource, or project-scoped endpoint. Credentials and endpoint names are never returned to the renderer.
 
-The response provider and transcription provider are independent. Realtime listening can use either direct OpenAI or an Azure Foundry `gpt-realtime-whisper` deployment. Batch fallback uses OpenAI Audio or Gemini when configured.
+The response provider and transcription provider are independent. Realtime listening can use direct OpenAI, an Azure Foundry `gpt-realtime-whisper` deployment, or Deepgram Nova-3. Batch fallback uses OpenAI Audio or Gemini when configured.
 
 Under **Settings → Transcription**, choose:
 
-- **Realtime** (recommended) — streams 24 kHz PCM to `gpt-realtime-whisper`. OpenAI commits turns using local voice activity detection; Azure streams continuously and commits fixed three-second windows as required by Microsoft's current example.
-- **Realtime provider** — choose OpenAI or Azure Foundry. Azure reuses the response-provider key and endpoint by default, or accepts an optional separate Realtime resource key and endpoint.
+- **Realtime** (recommended) — streams 24 kHz PCM. OpenAI commits turns using local voice activity detection; Azure streams continuously and commits fixed three-second windows; Deepgram streams continuously and returns interim/final Nova-3 results.
+- **Realtime provider** — choose OpenAI, Azure Foundry, or Deepgram. Azure reuses the response-provider key and endpoint by default, or accepts an optional separate Realtime resource key and endpoint. Deepgram uses its own securely stored key.
 - **Azure deployment** — enter the exact deployment name assigned to your Azure `gpt-realtime-whisper` model.
+- **Deepgram model** — defaults to `nova-3`; keep this unless a tested compatible streaming model is required.
 - **Batch** — uses the configured OpenAI fallback model or Gemini in short chunks.
 - **Language** — leave blank for automatic behavior, or enter a short language hint such as `en`, `fr`, or `de`.
-- **Delay** — lower values show text sooner; higher values trade latency for more context.
+- **OpenAI/Azure delay** — lower values show text sooner; higher values trade latency for more context. Deepgram uses its explicit streaming endpointing configuration instead.
 - **Microphone / sensitivity / silence** — select the input device and tune local speech boundaries.
 - **Cost warning / session limit** — warn on long sessions and stop automatically at the configured limit.
 

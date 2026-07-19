@@ -1105,6 +1105,7 @@ async function retryTranscription() {
 function transcriptionSettingsChanged(previous, updated) {
   const relevant = (settings) => ({
     openai: ((settings.apiKeys || {}).openai || ''),
+    deepgram: ((settings.apiKeys || {}).deepgram || ''),
     azure: ((settings.apiKeys || {}).azure || ''),
     azureRealtime: ((settings.apiKeys || {}).azureRealtime || ''),
     gemini: ((settings.apiKeys || {}).gemini || ''),

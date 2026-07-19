@@ -1228,12 +1228,15 @@
 
   function renderTranscriptionProviderConfig() {
     const selected = $('#stt-realtime-provider').value;
-    document.querySelectorAll('.stt-provider-config').forEach((row) => row.classList.toggle('hidden', row.dataset.sttProvider !== selected));
+    document.querySelectorAll('.stt-provider-config').forEach((row) => {
+      const providers = String(row.dataset.sttProvider || '').split(/\s+/).filter(Boolean);
+      row.classList.toggle('hidden', !providers.includes(selected));
+    });
   }
 
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
-    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', azureRealtime: 'Optional separate Realtime resource key' };
+    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key' };
     for (const provider of Object.keys(keyPlaceholders)) {
       const input = $(`#key-${provider}`);
       input.value = '';
@@ -1248,6 +1251,7 @@
     $('#stt-realtime-provider').value = transcription.realtimeProvider || 'openai';
     renderTranscriptionProviderConfig();
     $('#stt-azure-deployment').value = transcription.azureRealtimeDeployment || '';
+    $('#stt-deepgram-model').value = transcription.deepgramModel || 'nova-3';
     $('#stt-language').value = transcription.language || '';
     $('#stt-delay').value = transcription.delay || 'low';
     $('#stt-fallback-model').value = transcription.fallbackModel || 'gpt-4o-mini-transcribe';
@@ -1273,6 +1277,7 @@
     let stt = 'none';
     if (transcription.mode === 'batch') stt = present.openai ? 'OpenAI batch' : (present.gemini ? 'Gemini batch' : 'none');
     else if (transcription.realtimeProvider === 'azure') stt = (present.azureRealtime || present.azure) ? 'Azure Realtime' : 'Azure Realtime (key missing)';
+    else if (transcription.realtimeProvider === 'deepgram') stt = present.deepgram ? 'Deepgram Realtime' : 'Deepgram Realtime (key missing)';
     else stt = present.openai ? 'OpenAI Realtime' : 'OpenAI Realtime (key missing)';
     const backend = settings.credentialStatus && settings.credentialStatus.backend;
     const storage = settings.credentialStatus && settings.credentialStatus.secure ? 'secure storage' : (backend === 'locked-safeStorage' ? 'secure storage locked' : 'plaintext fallback');
@@ -1370,7 +1375,7 @@
 
   async function saveSettings() {
     const apiKeyUpdates = {};
-    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'azureRealtime']) {
+    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'deepgram', 'azureRealtime']) {
       const value = $(`#key-${provider}`).value.trim();
       if (value) apiKeyUpdates[provider] = value;
     }
@@ -1384,6 +1389,7 @@
       mode: $('#stt-mode').value,
       realtimeProvider: $('#stt-realtime-provider').value,
       realtimeModel: 'gpt-realtime-whisper',
+      deepgramModel: $('#stt-deepgram-model').value.trim() || 'nova-3',
       azureRealtimeDeployment: $('#stt-azure-deployment').value.trim(),
       fallbackModel: $('#stt-fallback-model').value.trim() || 'gpt-4o-mini-transcribe',
       geminiFallbackModel: $('#stt-gemini-fallback-model').value.trim() || 'gemini-3.5-flash',
