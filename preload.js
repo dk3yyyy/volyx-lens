@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const AUDIO_SAMPLE_RATE = 24000;
 
 contextBridge.exposeInMainWorld('volyxLens', {
+  platform: process.platform,
   audioConfig: Object.freeze({ sampleRate: AUDIO_SAMPLE_RATE }),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),

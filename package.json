@@ -41,7 +41,8 @@
         "from": "native-bin",
         "to": "native",
         "filter": [
-          "volyx-lens-vision-ocr"
+          "volyx-lens-vision-ocr",
+          "volyx-lens-system-audio"
         ]
       }
     ],
@@ -52,7 +53,8 @@
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
       "binaries": [
-        "Contents/Resources/native/volyx-lens-vision-ocr"
+        "Contents/Resources/native/volyx-lens-vision-ocr",
+        "Contents/Resources/native/volyx-lens-system-audio"
       ],
       "notarize": true,
       "gatekeeperAssess": false,

@@ -33,6 +33,7 @@ const { planMeetingRecap } = require('./src/meeting-recap');
 const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
 const { createLocalOcr } = require('./src/local-ocr');
+const { createSystemAudioCapture } = require('./src/system-audio-capture');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 
@@ -44,6 +45,14 @@ const taskContext = createTaskContext({
   scoreRelevance: scoreTextRelevance,
 });
 const localOcr = createLocalOcr({ app });
+const systemAudioCapture = createSystemAudioCapture({
+  app,
+  onPcm: (pcm) => acceptPcm('them', pcm),
+  onState: ({ state: sourceState, reason }) => send('transcription:state', { status: 'source', channel: 'them', sourceState, ...(reason ? { reason } : {}) }),
+  onUnexpectedExit: () => {
+    if (state.capturing || desiredCapturing) setCapturing(false, { immediate: true, reason: 'system-audio-disconnected' });
+  },
+});
 const MAX_SAVED_TASK_IMAGES_PER_REQUEST = 39;
 const LARGE_TASK_CONTEXT_CONFIRM_THRESHOLD = 8;
 const FEATURE_REQUEST_TIMEOUT_MS = 120000;
@@ -647,8 +656,17 @@ function scheduleCaptureTimers() {
 
 async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
-  state.capturing = active;
   if (active) {
+    const audio = store.getSettings().audio || {};
+    if (process.platform === 'darwin' && audio.systemEnabled !== false) {
+      const source = await systemAudioCapture.start();
+      if (!source.ok) {
+        desiredCapturing = false;
+        send('status', { message: `Listening did not start because macOS system audio is unavailable (${source.reason}).` });
+        return false;
+      }
+    }
+    state.capturing = true;
     captureStartedAt = Date.now();
     lastCaptureStartedAt = captureStartedAt;
     lastCaptureEndedAt = null;
@@ -663,6 +681,8 @@ async function applyCaptureState(active) {
     send('capture:state', { active: true });
     return true;
   }
+  await systemAudioCapture.stop({ immediate: pendingStopImmediate });
+  state.capturing = false;
   lastCaptureEndedAt = Date.now();
   captureStartedAt = null;
   clearCaptureTimers();

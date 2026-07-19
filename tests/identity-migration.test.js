@@ -19,8 +19,9 @@ test('Volyx Lens identity is complete across package and release metadata', () =
   assert.equal(pkg.build.productName, 'Volyx Lens');
   assert.equal(pkg.build.appId, 'ai.volyx.lens');
   assert.equal(pkg.build.artifactName, 'volyx-lens-${version}-${os}-${arch}.${ext}');
-  assert.deepEqual(pkg.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr'] }]);
+  assert.deepEqual(pkg.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr', 'volyx-lens-system-audio'] }]);
   assert.ok(pkg.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-vision-ocr'));
+  assert.ok(pkg.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-system-audio'));
   assert.match(workflow, /Volyx Lens\.app/);
   assert.match(workflow, /ai\.volyx\.lens/);
   assert.match(workflow, /volyx-lens-macos-\$\{\{ matrix\.arch \}\}/);

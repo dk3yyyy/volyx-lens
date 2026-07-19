@@ -474,7 +474,7 @@
     const turningOn = !button.classList.contains('active');
     button.disabled = true;
     try {
-      if (turningOn && systemEnabled()) startSystemAudio();
+      if (turningOn && systemEnabled() && volyxLens.platform !== 'darwin') startSystemAudio();
       await volyxLens.captureToggle();
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Listening state could not be changed.');
@@ -893,11 +893,13 @@
     if (active) {
       startSessionClock();
       if (micEnabled()) startMic(); else setAudioHealth('you', 'Disabled', 0);
-      if (systemEnabled()) startSystemAudio(); else setAudioHealth('them', 'Disabled', 0);
+      if (!systemEnabled()) setAudioHealth('them', 'Disabled', 0);
+      else if (volyxLens.platform !== 'darwin') startSystemAudio();
     } else {
       captureEpoch += 1;
       stopSessionClock();
-      stopMic(); stopSystemAudio();
+      stopMic();
+      if (volyxLens.platform !== 'darwin') stopSystemAudio();
       partialTranscript.you = null; partialTranscript.them = null; renderTranscriptWorkspace();
       $('#connection-count').textContent = `0/${activeChannelCount()} connections`;
       $('#transcript-latency').textContent = 'Latency —';
@@ -962,6 +964,10 @@
   volyxLens.on('question:clear', clearQuestionSuggestion);
   volyxLens.on('transcript:cleared', clearTranscriptWorkspace);
   volyxLens.on('transcription:state', (event) => {
+    if (event.status === 'source' && event.channel === 'them') {
+      const labels = { connecting: 'Connecting', connected: 'Connected', failed: 'Failed', stopped: 'Idle' };
+      setAudioHealth('them', labels[event.sourceState] || 'Idle', 0);
+    }
     if (event.status === 'channel') {
       $('#connection-count').textContent = `${event.connectedChannels}/${event.totalChannels || 2} connections`;
     }
