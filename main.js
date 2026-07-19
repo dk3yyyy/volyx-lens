@@ -745,6 +745,7 @@ function stopAllAndQuit() {
   captureStartedAt = null;
   clearCaptureTimers();
   cancelLiveRealtimeDiagnostic();
+  systemAudioCapture.stop({ immediate: true });
   stopTranscriptionPipeline({ immediate: true });
   send('capture:state', { active: false });
   resetTranscriptData();
@@ -759,6 +760,7 @@ function relaunchApp() {
   state.capturing = false;
   clearCaptureTimers();
   cancelLiveRealtimeDiagnostic();
+  systemAudioCapture.stop({ immediate: true });
   stopTranscriptionPipeline({ immediate: true });
   clearTaskContext();
   app.relaunch();
@@ -1297,6 +1299,7 @@ app.whenReady().then(() => {
   powerMonitor.on('unlock-screen', () => send('status', { message: 'Mac unlocked. Listening remains off until you start it again.' }));
   powerMonitor.on('shutdown', () => {
     clearCaptureTimers();
+    systemAudioCapture.stop({ immediate: true });
     stopTranscriptionPipeline({ immediate: true });
   });
 
@@ -1305,6 +1308,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   clearCaptureTimers();
+  systemAudioCapture.stop({ immediate: true });
   stopTranscriptionPipeline({ immediate: true });
   localOcr.cancelAll();
   taskContext.clear();

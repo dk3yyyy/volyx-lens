@@ -96,6 +96,10 @@ test('renderer keeps macOS system PCM out of the preload boundary', () => {
   const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
   assert.match(main, /createSystemAudioCapture/);
   assert.match(main, /onPcm: \(pcm\) => acceptPcm\('them', pcm\)/);
+  assert.ok((main.match(/systemAudioCapture\.stop\(\{ immediate: true \}\)/g) || []).length >= 4);
   assert.match(renderer, /volyxLens\.platform !== 'darwin'/);
   assert.match(preload, /platform: process\.platform/);
+  const swift = fs.readFileSync(path.join(root, 'native', 'macos-system-audio.swift'), 'utf8');
+  assert.match(swift, /bundleIdentifier == "ai\.volyx\.lens"/);
+  assert.match(swift, /self\?\.stopped\.signal\(\)/);
 });

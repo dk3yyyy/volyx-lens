@@ -191,7 +191,7 @@ private final class CaptureController {
                 writer.event(["event": "error", "code": EventCode.noDisplay.rawValue, "fatal": true]); return 3
             }
             let ownPID = ProcessInfo.processInfo.processIdentifier
-            let excluded = content.applications.filter { $0.processID == ownPID }
+            let excluded = content.applications.filter { $0.processID == ownPID || $0.bundleIdentifier == "ai.volyx.lens" }
             let filter = SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
             let configuration = SCStreamConfiguration()
             configuration.capturesAudio = true
@@ -210,6 +210,7 @@ private final class CaptureController {
                 while let line = readLine() {
                     if line.contains("\"command\":\"stop\"") { self?.stopped.signal(); break }
                 }
+                self?.stopped.signal()
             }
             await stopped.wait()
             stopping = true
