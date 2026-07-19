@@ -3,6 +3,9 @@ const MIN_TOKENS = 5;
 const MIN_CHARACTERS = 24;
 const MIN_LENGTH_RATIO = 0.65;
 const MIN_SIMILARITY = 0.82;
+const MIN_PHRASE_TOKENS = 4;
+const MIN_PHRASE_CHARACTERS = 20;
+const MIN_PHRASE_COVERAGE = 0.5;
 
 function normalizeSpeech(text) {
   return String(text || '')
@@ -27,6 +30,42 @@ function tokenDice(leftTokens, rightTokens) {
   return (2 * overlap) / (leftTokens.length + rightTokens.length);
 }
 
+function longestContiguousTokenOverlap(leftTokens, rightTokens) {
+  let bestLength = 0;
+  let bestEnd = 0;
+  let previous = new Uint16Array(rightTokens.length + 1);
+  for (let leftIndex = 1; leftIndex <= leftTokens.length; leftIndex += 1) {
+    const current = new Uint16Array(rightTokens.length + 1);
+    for (let rightIndex = 1; rightIndex <= rightTokens.length; rightIndex += 1) {
+      if (leftTokens[leftIndex - 1] !== rightTokens[rightIndex - 1]) continue;
+      current[rightIndex] = previous[rightIndex - 1] + 1;
+      if (current[rightIndex] > bestLength) {
+        bestLength = current[rightIndex];
+        bestEnd = leftIndex;
+      }
+    }
+    previous = current;
+  }
+  return leftTokens.slice(bestEnd - bestLength, bestEnd);
+}
+
+function substantialPhraseOverlap(left, right) {
+  const normalizedLeft = normalizeSpeech(left);
+  const normalizedRight = normalizeSpeech(right);
+  const leftTokens = normalizedLeft ? normalizedLeft.split(' ') : [];
+  const rightTokens = normalizedRight ? normalizedRight.split(' ') : [];
+  if (!leftTokens.length || !rightTokens.length) return 0;
+  const phrase = longestContiguousTokenOverlap(leftTokens, rightTokens);
+  const phraseCharacters = phrase.join(' ').length;
+  const coverage = phrase.length / Math.min(leftTokens.length, rightTokens.length);
+  if (
+    phrase.length < MIN_PHRASE_TOKENS ||
+    phraseCharacters < MIN_PHRASE_CHARACTERS ||
+    coverage < MIN_PHRASE_COVERAGE
+  ) return 0;
+  return coverage;
+}
+
 function speechSimilarity(left, right) {
   const normalizedLeft = normalizeSpeech(left);
   const normalizedRight = normalizeSpeech(right);
@@ -45,7 +84,7 @@ function speechSimilarity(left, right) {
 function areCrossTalkDuplicates(left, right) {
   if (!left || !right || left.channel === right.channel) return false;
   if (!['you', 'them'].includes(left.channel) || !['you', 'them'].includes(right.channel)) return false;
-  return speechSimilarity(left.text, right.text) >= MIN_SIMILARITY;
+  return speechSimilarity(left.text, right.text) >= MIN_SIMILARITY || substantialPhraseOverlap(left.text, right.text) > 0;
 }
 
 function findCrossTalkDuplicate(turns, candidate, arrivalTimes, now = Date.now(), windowMs = DEFAULT_WINDOW_MS) {
@@ -56,7 +95,11 @@ function findCrossTalkDuplicate(turns, candidate, arrivalTimes, now = Date.now()
     const arrivedAt = arrivalTimes instanceof Map ? arrivalTimes.get(turn.id) : turn.ts;
     if (!Number.isFinite(arrivedAt) || Math.abs(now - arrivedAt) > windowMs) continue;
     const similarity = speechSimilarity(turn.text, candidate.text);
-    if (similarity >= MIN_SIMILARITY && (!best || similarity > best.similarity)) best = { turn, index, similarity };
+    const phraseOverlap = substantialPhraseOverlap(turn.text, candidate.text);
+    const score = Math.max(similarity, phraseOverlap);
+    if ((similarity >= MIN_SIMILARITY || phraseOverlap > 0) && (!best || score > best.similarity)) {
+      best = { turn, index, similarity: score, match: similarity >= MIN_SIMILARITY ? 'similarity' : 'phrase_overlap' };
+    }
   }
   return best;
 }
@@ -67,8 +110,13 @@ module.exports = {
   MIN_CHARACTERS,
   MIN_LENGTH_RATIO,
   MIN_SIMILARITY,
+  MIN_PHRASE_TOKENS,
+  MIN_PHRASE_CHARACTERS,
+  MIN_PHRASE_COVERAGE,
   normalizeSpeech,
   speechSimilarity,
+  longestContiguousTokenOverlap,
+  substantialPhraseOverlap,
   areCrossTalkDuplicates,
   findCrossTalkDuplicate,
 };

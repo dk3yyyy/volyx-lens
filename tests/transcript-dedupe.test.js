@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   speechSimilarity,
+  substantialPhraseOverlap,
   areCrossTalkDuplicates,
   findCrossTalkDuplicate,
 } = require('../src/transcript-dedupe');
@@ -50,4 +51,27 @@ test('a substantial containment match tolerates one channel missing a few edge w
     { channel: 'them', text: full },
     { channel: 'you', text: clipped },
   ), true);
+});
+
+test('staggered speaker bleed is suppressed when STT splits the same phrase at different boundaries', () => {
+  const directFirst = { id: 10, channel: 'them', text: "Gribbed vector coordinates where there's this back and forth", ts: 1000 };
+  const leakedFirst = { channel: 'you', text: "Where there's this back and forth between, for example", ts: 4000 };
+  assert.ok(substantialPhraseOverlap(directFirst.text, leakedFirst.text) >= 0.5);
+  assert.equal(areCrossTalkDuplicates(directFirst, leakedFirst), true);
+
+  const leakedSecond = { id: 11, channel: 'you', text: 'members and two-dimensional vectors. Now', ts: 7000 };
+  const directSecond = { channel: 'them', text: 'two-dimensional vectors Now, I imagine the vector', ts: 7100 };
+  assert.ok(substantialPhraseOverlap(leakedSecond.text, directSecond.text) >= 0.5);
+  assert.equal(areCrossTalkDuplicates(leakedSecond, directSecond), true);
+});
+
+test('brief generic overlap and simultaneous independent speech remain intact', () => {
+  assert.equal(areCrossTalkDuplicates(
+    { channel: 'them', text: 'I think that is the important part of this design.' },
+    { channel: 'you', text: 'That is the important question, but my concern is latency.' },
+  ), false);
+  assert.equal(areCrossTalkDuplicates(
+    { channel: 'them', text: 'Could you explain the vector coordinates in this example?' },
+    { channel: 'you', text: 'Yes, I understand the vector coordinates, but I have another question.' },
+  ), false);
 });
