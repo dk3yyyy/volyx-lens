@@ -21,6 +21,7 @@
   // ---- state -------------------------------------------------------------
   let settings = null;
   let personalContext = null;
+  let legacyData = { presentCount: 0, protectedCount: 0, canDelete: false };
   let taskContext = { count: 0, maxCaptures: null, maxTotalBytes: 96 * 1024 * 1024, totalBytes: 0, pinnedCount: 0, lastCapturedAt: null, revision: 0, lastEviction: null, nearDuplicatesRejected: 0, fingerprintFailures: 0, ocrBytes: 0, ocrReadyCount: 0, ocrPendingCount: 0, ocrUnavailableCount: 0, ocrFailedCount: 0, ocrEvictedCount: 0, overlapLinkedCount: 0 };
   const taskContextPage = { offset: 0, limit: 50, total: 0, captures: [], revision: -1 };
   let taskContextListRequest = 0;
@@ -1038,6 +1039,21 @@
     const storage = state.locked ? 'Secure storage is locked; documents cannot be read or changed.'
       : (state.secure ? 'Extracted text is encrypted with safeStorage / macOS Keychain.' : 'Warning: safeStorage is unavailable; extracted text uses a local 0600 plaintext fallback.');
     $('#context-storage-status').textContent = `PDF, DOCX, TXT, or Markdown · 5 MB maximum. ${storage} Relevant excerpts are sent only when you request an answer.`;
+
+    const legacyCard = $('#legacy-data-card');
+    const legacyStatus = $('#legacy-data-status');
+    const legacyDelete = $('#legacy-data-delete');
+    const presentCount = Math.max(0, Number(legacyData && legacyData.presentCount) || 0);
+    const protectedCount = Math.max(0, Number(legacyData && legacyData.protectedCount) || 0);
+    legacyCard.classList.toggle('hidden', presentCount === 0);
+    legacyDelete.disabled = !(legacyData && legacyData.canDelete === true);
+    legacyStatus.textContent = presentCount === 0
+      ? 'No legacy local data copies were found.'
+      : (legacyData.canDelete
+        ? `${presentCount} older local data ${presentCount === 1 ? 'copy is' : 'copies are'} ready for explicit deletion; current copies are protected by safeStorage.`
+        : (legacyData.secureStorageReady === false && protectedCount === presentCount
+          ? 'Current copies are encrypted, but safeStorage is unavailable or locked. Cleanup is disabled until they can be read and verified.'
+          : `${presentCount} older local data ${presentCount === 1 ? 'copy remains' : 'copies remain'}, but only ${protectedCount} current ${protectedCount === 1 ? 'copy is' : 'copies are'} protected. Cleanup is disabled.`));
   }
 
   function renderShortcutStatus(value) {
@@ -1123,6 +1139,8 @@
       try { personalContext = await volyxLens.personalContextGet(); }
       catch (error) { showStatus(error && error.message ? error.message : 'Personal context could not be loaded.'); }
     }
+    try { legacyData = await volyxLens.legacyDataStatus(); }
+    catch (error) { showStatus(error && error.message ? error.message : 'Legacy data status could not be loaded.'); }
     providerView = settings.provider || 'openai';
     fillSettings();
     clearProviderTestResult();
@@ -1365,6 +1383,21 @@
       showStatus(`${label} removed from Volyx Lens.`);
     } catch (error) { showStatus(error && error.message ? error.message : 'The document could not be removed.'); }
   }));
+  $('#legacy-data-delete').addEventListener('click', async () => {
+    if (!(legacyData && legacyData.canDelete)) return;
+    if (!window.confirm('Before continuing, verify your current API keys and personal documents are available. Delete the protected legacy Volyx Lens copies? Only the two known older settings/context files will be removed. This cannot be undone.')) return;
+    const button = $('#legacy-data-delete');
+    button.disabled = true;
+    try {
+      legacyData = await volyxLens.legacyDataDelete();
+      renderPersonalContext();
+      showStatus(`Deleted ${Number(legacyData.deletedCount) || 0} protected legacy data ${Number(legacyData.deletedCount) === 1 ? 'copy' : 'copies'}.`);
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'Legacy data could not be deleted.');
+      try { legacyData = await volyxLens.legacyDataStatus(); } catch {}
+      renderPersonalContext();
+    }
+  });
   for (const kind of ['resume', 'jobDescription']) {
     $(`#context-${kind}-enabled`).addEventListener('change', async (event) => {
       event.target.disabled = true;
@@ -1814,7 +1847,13 @@
   // ---- boot --------------------------------------------------------------
   (async function boot() {
     let existingTranscript;
-    [settings, personalContext, existingTranscript, taskContext] = await Promise.all([volyxLens.settingsGet(), volyxLens.personalContextGet(), volyxLens.transcriptGet(), volyxLens.taskContextGet()]);
+    [settings, personalContext, legacyData, existingTranscript, taskContext] = await Promise.all([
+      volyxLens.settingsGet(),
+      volyxLens.personalContextGet(),
+      volyxLens.legacyDataStatus(),
+      volyxLens.transcriptGet(),
+      volyxLens.taskContextGet(),
+    ]);
     transcriptTurns = (Array.isArray(existingTranscript) ? existingTranscript : []).map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
     renderTaskContext(taskContext);
     smartBtn.classList.toggle('on', !!settings.smart);

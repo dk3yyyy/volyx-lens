@@ -234,6 +234,7 @@ Do not bypass Gatekeeper for an unverified download. Delete the copy, download t
 
 - No accounts, no servers, no telemetry. Volyx Lens collects nothing.
 - API keys are protected with Electron `safeStorage` (macOS Keychain on macOS); `volyx-lens-data.json` stores encrypted blobs rather than renderer-readable values. Settings warns when only a plaintext fallback is available.
+- Older local settings or personal-context copies are never deleted automatically. When every current replacement is a readable `safeStorage` record, **Settings → Context → Legacy data cleanup** offers a confirmed, explicit deletion action limited to the two known legacy files; unrelated files are preserved. Verify that your current keys and documents are available before deleting because Volyx Lens does not assume encrypted records contain identical content.
 - Resume/job-description imports persist only bounded extracted text plus the original filename, never the original path or raw file. `personal-context.json` is encrypted with safeStorage when available and mode `0600`; Settings warns before use when only plaintext fallback storage is available.
 - Enabled personal documents are not uploaded at import time. Relevant bounded excerpts are sent to the selected response provider only when an answer-oriented action runs, and the UI identifies the source and destination provider.
 - Screenshots and response prompts go to the selected LLM provider only when a feature runs.

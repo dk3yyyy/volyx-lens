@@ -131,19 +131,32 @@ class DeepgramRealtimeChannel {
       throw new Error('Deepgram connection cancelled.');
     }
     this.connection = connection;
+    let rejectPreOpen = null;
+    let opening = true;
+    const preOpenFailure = new Promise((_, reject) => { rejectPreOpen = reject; });
+    const failPreOpen = (clean) => {
+      this._reportError(clean);
+      if (!opening || !rejectPreOpen || this.intentionalClose) return;
+      const error = new Error(clean.message);
+      error.code = clean.code;
+      const reject = rejectPreOpen;
+      rejectPreOpen = null;
+      reject(error);
+    };
     connection.on('open', () => this.onState({ channel: this.channel, state: 'connected' }));
     connection.on('message', (event) => this._handleMessage(event));
-    connection.on('error', (error) => this._reportError(sanitizeDeepgramError(error, this.channel)));
+    connection.on('error', (error) => failPreOpen(sanitizeDeepgramError(error, this.channel)));
     connection.on('close', () => {
       this._clearKeepAlive();
       this.onState({ channel: this.channel, state: this.intentionalClose ? 'stopped' : 'disconnected' });
-      if (!this.intentionalClose) this._reportError(sanitizeDeepgramError({ code: 'socket_closed' }, this.channel));
+      if (!this.intentionalClose) failPreOpen(sanitizeDeepgramError({ code: 'socket_closed' }, this.channel));
     });
     connection.connect();
     let timer = null;
     try {
       await Promise.race([
         connection.waitForOpen(),
+        preOpenFailure,
         this.cancelPromise,
         new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error('Deepgram connection timeout.')), this.connectTimeoutMs);
@@ -159,6 +172,8 @@ class DeepgramRealtimeChannel {
       this.close();
       throw new Error(clean.message);
     } finally {
+      opening = false;
+      rejectPreOpen = null;
       if (timer) clearTimeout(timer);
     }
     if (this.intentionalClose) {
