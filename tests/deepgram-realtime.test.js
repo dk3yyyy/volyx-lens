@@ -192,6 +192,27 @@ test('Deepgram channel sanitizes failures and never includes the API key', async
   channel.close();
 });
 
+test('unexpected post-open Deepgram closure reports one transport failure, intentional close reports none', async () => {
+  const unexpectedFailures = [];
+  const unexpected = new DeepgramRealtimeChannel({
+    apiKey: 'deepgram-secret', channel: 'them', DeepgramClientImpl: FakeDeepgramClient,
+    onError: (error) => unexpectedFailures.push(error),
+  });
+  await unexpected.connect();
+  FakeDeepgramClient.instances[0].connection.emit('close', 1000, 'server closed');
+  assert.equal(unexpectedFailures.length, 1);
+  assert.equal(unexpectedFailures[0].code, 'realtime_transport_failed');
+
+  const intentionalFailures = [];
+  const intentional = new DeepgramRealtimeChannel({
+    apiKey: 'deepgram-secret', channel: 'you', DeepgramClientImpl: FakeDeepgramClient,
+    onError: (error) => intentionalFailures.push(error),
+  });
+  await intentional.connect();
+  intentional.close();
+  assert.equal(intentionalFailures.length, 0);
+});
+
 test('Deepgram channel fails closed on SDK socket backpressure', async () => {
   const failures = [];
   const channel = new DeepgramRealtimeChannel({

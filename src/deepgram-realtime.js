@@ -134,7 +134,7 @@ class DeepgramRealtimeChannel {
     let rejectPreOpen = null;
     let opening = true;
     const preOpenFailure = new Promise((_, reject) => { rejectPreOpen = reject; });
-    const failPreOpen = (clean) => {
+    const handleTransportFailure = (clean) => {
       if (opening && rejectPreOpen && !this.intentionalClose) {
         const error = new Error(clean.message);
         error.code = clean.code;
@@ -146,11 +146,11 @@ class DeepgramRealtimeChannel {
     };
     connection.on('open', () => this.onState({ channel: this.channel, state: 'connected' }));
     connection.on('message', (event) => this._handleMessage(event));
-    connection.on('error', (error) => failPreOpen(sanitizeDeepgramError(error, this.channel)));
+    connection.on('error', (error) => handleTransportFailure(sanitizeDeepgramError(error, this.channel)));
     connection.on('close', () => {
       this._clearKeepAlive();
       this.onState({ channel: this.channel, state: this.intentionalClose ? 'stopped' : 'disconnected' });
-      if (!this.intentionalClose) failPreOpen(sanitizeDeepgramError({ code: 'socket_closed' }, this.channel));
+      if (!this.intentionalClose) handleTransportFailure(sanitizeDeepgramError({ code: 'socket_closed' }, this.channel));
     });
     connection.connect();
     let timer = null;
