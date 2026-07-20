@@ -25,14 +25,16 @@ test('diagnostic IPC is narrow and credentials never cross from renderer to main
   assert.doesNotMatch(preload, /testRealtime:\s*\([^)]*(key|endpoint|settings)/i);
   assert.match(main, /runRealtimeDiagnostic\(\{ settings: store\.getSettings\(\) \}\)/);
   assert.match(main, /new LiveRealtimeDiagnostic\(\{ settings: store\.getSettings\(\) \}\)/);
-  assert.match(main, /ipcMain\.handle\('transcription:live-test-start', \(\) => startLiveRealtimeDiagnostic\(\)\)/);
+  assert.match(main, /handleTrusted\('transcription:live-test-start', \(\) => startLiveRealtimeDiagnostic\(\)\)/);
 });
 
 test('renderer saves settings, captures five seconds, disables conflicting controls, and renders results as text', () => {
   assert.match(renderer, /#test-realtime-btn/);
   assert.match(renderer, /#test-live-transcription-btn/);
   assert.match(renderer, /await saveSettings\(\)/);
+  assert.match(renderer, /await volyxLens\.requestPermission\('microphone'\)/);
   assert.match(renderer, /await volyxLens\.startLiveTranscriptionTest\(\)/);
+  assert.ok(renderer.indexOf("await volyxLens.requestPermission('microphone')") < renderer.indexOf('await volyxLens.startLiveTranscriptionTest()'));
   assert.match(renderer, /volyxLens\.liveTranscriptionPcm\(buffer, metadata\)/);
   assert.match(renderer, /await volyxLens\.finishLiveTranscriptionTest\(\)/);
   assert.match(renderer, /for \(let remaining = 5/);

@@ -342,11 +342,12 @@
     aiEl.insertBefore(span, caretEl);
   }
 
-  function finalizeAi() {
+  function finalizeAi(announcement = 'Response ready.') {
     if (!aiEl) return;
     const raw = aiEl.dataset.raw || '';
     aiEl.innerHTML = renderMarkdown(raw);
     aiEl = null; caretEl = null;
+    $('#assistant-status').textContent = announcement;
   }
 
   const ACTION_LABELS = Object.freeze({ assist: 'Assist', say: 'What should I say?', followup: 'Follow-up questions', recap: 'Recap' });
@@ -473,7 +474,7 @@
     const turningOn = !button.classList.contains('active');
     button.disabled = true;
     try {
-      if (turningOn && systemEnabled()) startSystemAudio();
+      if (turningOn && systemEnabled() && volyxLens.platform !== 'darwin') startSystemAudio();
       await volyxLens.captureToggle();
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Listening state could not be changed.');
@@ -496,8 +497,14 @@
     stateEl.dataset.state = status.toLowerCase();
     if (level != null) meterEl.style.width = `${Math.min(100, Math.round(Math.sqrt(Math.max(0, level)) * 100))}%`;
   }
+  volyxLens.on('audio:level', (event) => {
+    if (!event || event.channel !== 'them') return;
+    const level = Number(event.level);
+    if (!Number.isFinite(level)) return;
+    $('#system-meter').style.width = `${Math.min(100, Math.round(Math.sqrt(Math.max(0, level)) * 100))}%`;
+  });
 
-  async function createAudioCapture(stream, channel, sendPcm) {
+  async function createAudioCapture(stream, channel, sendPcm, onEnded = null) {
     const context = new AudioContext();
     let source = null, worklet = null, sink = null;
     try {
@@ -529,8 +536,11 @@
         setAudioHealth(channel, `Receiving · ${formatLabel}`, data.level || 0);
         sendPcm(data.buffer, { ...format, level: data.level || 0 });
       };
-      for (const track of audioTracks) track.addEventListener('ended', () => setAudioHealth(channel, 'Disconnected'), { once: true });
-      return { stream, context, source, worklet, sink, format };
+      const capture = { stream, context, source, worklet, sink, format, closing: false };
+      for (const track of audioTracks) track.addEventListener('ended', () => {
+        if (!capture.closing && onEnded) onEnded();
+      }, { once: true });
+      return capture;
     } catch (error) {
       try { if (source) source.disconnect(); if (worklet) worklet.disconnect(); if (sink) sink.disconnect(); } catch {}
       try { await context.close(); } catch {}
@@ -540,10 +550,28 @@
 
   async function closeAudioCapture(capture) {
     if (!capture) return;
+    capture.closing = true;
     capture.worklet.port.onmessage = null;
     try { capture.source.disconnect(); capture.worklet.disconnect(); capture.sink.disconnect(); } catch {}
     capture.stream.getTracks().forEach((track) => track.stop());
     try { await capture.context.close(); } catch {}
+  }
+
+  let unexpectedTrackEndPromise = null;
+  function handleUnexpectedTrackEnd(channel) {
+    if (unexpectedTrackEndPromise) return unexpectedTrackEndPromise;
+    unexpectedTrackEndPromise = (async () => {
+      captureEpoch += 1;
+      await Promise.all([stopMic(), stopSystemAudio()]);
+      await volyxLens.captureStop();
+      listeningActive = false;
+      $('#live-dot').classList.add('off');
+      updateListeningButton(false);
+      stopSessionClock();
+      setAudioHealth(channel, 'Disconnected', 0);
+      showStatus(`${channel === 'you' ? 'Microphone' : 'System audio'} disconnected. Listening stopped to prevent an idle billable session.`);
+    })().finally(() => { unexpectedTrackEndPromise = null; });
+    return unexpectedTrackEndPromise;
   }
 
   async function startMic() {
@@ -555,13 +583,15 @@
       let stream = null;
       try {
         const deviceId = settings.audio && settings.audio.inputDeviceId;
+        const browserProcessing = !settings.audio || settings.audio.browserMicProcessing !== false;
         stream = await navigator.mediaDevices.getUserMedia({ audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
+          echoCancellation: browserProcessing,
+          noiseSuppression: browserProcessing,
+          autoGainControl: browserProcessing,
           channelCount: 1,
           ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
         } });
-        const capture = await createAudioCapture(stream, 'you', (buffer) => volyxLens.micPcm(buffer));
+        const capture = await createAudioCapture(stream, 'you', (buffer) => volyxLens.micPcm(buffer), () => handleUnexpectedTrackEnd('you'));
         if (epoch !== captureEpoch) { await closeAudioCapture(capture); return null; }
         micCapture = capture;
         setAudioHealth('you', 'Connected', 0);
@@ -597,7 +627,7 @@
           stream.getTracks().forEach((track) => track.stop());
           throw new Error('No system-audio loopback track was provided.');
         }
-        const capture = await createAudioCapture(stream, 'them', (buffer) => volyxLens.systemPcm(buffer));
+        const capture = await createAudioCapture(stream, 'them', (buffer) => volyxLens.systemPcm(buffer), () => handleUnexpectedTrackEnd('them'));
         if (epoch !== captureEpoch) { await closeAudioCapture(capture); return null; }
         sysCapture = capture;
         setAudioHealth('them', 'Connected', 0);
@@ -815,7 +845,11 @@
       $('#diag-transcript').textContent = `${data.transcript.turns} turns · ${data.transcript.characters} chars`;
       $('#diag-last-state').textContent = data.transcription.lastStatus;
       const suppressed = Number(data.transcription.crossTalkSuppressed) || 0;
-      $('#diag-cross-talk').textContent = `${suppressed} ${suppressed === 1 ? 'duplicate' : 'duplicates'} removed`;
+      const acoustic = Number(data.transcription.acousticEchoSuppressed) || 0;
+      const delayDropped = Number(data.transcription.micDelayDropped) || 0;
+      const correlation = Math.max(0, Math.min(1, Number(data.transcription.maxEchoCorrelation) || 0));
+      const browserProcessing = data.audio.browserMicProcessing === false ? 'browser mic raw' : 'browser mic processed';
+      $('#diag-cross-talk').textContent = `${suppressed} transcript · ${acoustic} acoustic removed · ${delayDropped} mic queue dropped · peak ${correlation.toFixed(2)} · ${browserProcessing}`;
     } catch (error) { showStatus(error && error.message ? error.message : 'Diagnostics are unavailable.'); }
   }
 
@@ -871,11 +905,13 @@
     if (active) {
       startSessionClock();
       if (micEnabled()) startMic(); else setAudioHealth('you', 'Disabled', 0);
-      if (systemEnabled()) startSystemAudio(); else setAudioHealth('them', 'Disabled', 0);
+      if (!systemEnabled()) setAudioHealth('them', 'Disabled', 0);
+      else if (volyxLens.platform !== 'darwin') startSystemAudio();
     } else {
       captureEpoch += 1;
       stopSessionClock();
-      stopMic(); stopSystemAudio();
+      stopMic();
+      if (volyxLens.platform !== 'darwin') stopSystemAudio();
       partialTranscript.you = null; partialTranscript.them = null; renderTranscriptWorkspace();
       $('#connection-count').textContent = `0/${activeChannelCount()} connections`;
       $('#transcript-latency').textContent = 'Latency —';
@@ -891,12 +927,15 @@
   });
   volyxLens.on('llm:token', ({ text }) => appendToken(text));
   volyxLens.on('llm:provider', ({ label, fallback }) => updateResponseProvider(label, fallback));
-  volyxLens.on('llm:done', () => { finalizeAi(); setBusy(false); });
+  volyxLens.on('llm:done', () => { finalizeAi('Response ready.'); setBusy(false); });
   volyxLens.on('llm:canceled', () => {
-    if (aiEl && (aiEl.dataset.raw || '').trim()) finalizeAi();
-    else if (aiEl) { aiEl.remove(); aiEl = null; caretEl = null; }
+    const partialKept = Boolean(aiEl && (aiEl.dataset.raw || '').trim());
+    if (partialKept) finalizeAi('Response canceled. Partial response kept.');
+    else {
+      if (aiEl) { aiEl.remove(); aiEl = null; caretEl = null; }
+      $('#assistant-status').textContent = 'Response canceled.';
+    }
     setBusy(false);
-    showStatus('Answer generation stopped.');
   });
   volyxLens.on('llm:confirm-task-context', (event) => {
     setBusy(false);
@@ -908,17 +947,18 @@
   });
   volyxLens.on('llm:error', ({ message }) => {
     if (!aiEl) startAi(true);
-    aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
+    aiEl.dataset.raw = message; finalizeAi('Response failed.'); setBusy(false);
   });
   let statusTimer = null;
   function showStatus(message) {
-    let el = document.getElementById('volyx-lens-status');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'volyx-lens-status';
-      const panel = document.getElementById('panel');
-      panel.insertBefore(el, document.getElementById('action-row'));
+    const settingsScrim = document.getElementById('settings-scrim');
+    if (settingsScrim && !settingsScrim.classList.contains('hidden')) {
+      const settingsStatus = $('#s-status');
+      settingsStatus.textContent = message;
+      settingsStatus.classList.add('show');
+      return;
     }
+    const el = document.getElementById('volyx-lens-status');
     el.textContent = message;
     el.classList.add('show');
     clearTimeout(statusTimer);
@@ -936,6 +976,10 @@
   volyxLens.on('question:clear', clearQuestionSuggestion);
   volyxLens.on('transcript:cleared', clearTranscriptWorkspace);
   volyxLens.on('transcription:state', (event) => {
+    if (event.status === 'source' && event.channel === 'them') {
+      const labels = { connecting: 'Connecting', connected: 'Connected', failed: 'Failed', stopped: 'Idle' };
+      setAudioHealth('them', labels[event.sourceState] || 'Idle', 0);
+    }
     if (event.status === 'channel') {
       $('#connection-count').textContent = `${event.connectedChannels}/${event.totalChannels || 2} connections`;
     }
@@ -1024,7 +1068,57 @@
     }
   }
 
+  function selectSettingsSection(section, { focus = false } = {}) {
+    const target = document.querySelector(`[data-settings-page="${section}"]`) || document.querySelector('[data-settings-page="providers"]');
+    document.querySelectorAll('[data-settings-page]').forEach((page) => {
+      const active = page === target;
+      page.hidden = !active;
+      page.classList.toggle('on', active);
+    });
+    document.querySelectorAll('[data-settings-section]').forEach((button) => {
+      const active = button.dataset.settingsSection === target.dataset.settingsPage;
+      button.classList.toggle('on', active);
+      if (active) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    });
+    $('.s-pages').scrollTop = 0;
+    if (focus) target.querySelector('h2').focus();
+  }
+  document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', () => {
+    selectSettingsSection(button.dataset.settingsSection, { focus: true });
+  }));
+
+  let settingsPreviousFocus = null;
+  function settingsFocusable() {
+    return [...$('#settings').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden');
+  }
+  function handleSettingsKeydown(event) {
+    if (event.key === 'Escape') { event.preventDefault(); closeSettings(); return; }
+    if (event.key !== 'Tab') return;
+    const focusable = settingsFocusable();
+    if (!focusable.length) { event.preventDefault(); return; }
+    const current = focusable.indexOf(document.activeElement);
+    if (current === -1) {
+      event.preventDefault();
+      focusable[event.shiftKey ? focusable.length - 1 : 0].focus();
+    } else if (!event.shiftKey && current === focusable.length - 1) {
+      event.preventDefault();
+      focusable[0].focus();
+    } else if (event.shiftKey && current === 0) {
+      event.preventDefault();
+      focusable[focusable.length - 1].focus();
+    }
+  }
+
   async function openSettings() {
+    const activeElement = document.activeElement;
+    settingsPreviousFocus = activeElement instanceof HTMLElement
+      && activeElement !== document.body
+      && activeElement.isConnected
+      && !activeElement.closest('.hidden')
+      ? activeElement
+      : $('#more-btn');
     if (!personalContext) {
       try { personalContext = await volyxLens.personalContextGet(); }
       catch (error) { showStatus(error && error.message ? error.message : 'Personal context could not be loaded.'); }
@@ -1035,17 +1129,28 @@
     $('#provider-test-tier').value = settings.smart ? 'smart' : 'fast';
     renderPersonalContext();
     refreshAudioDevices();
+    selectSettingsSection('providers');
     scrim.classList.remove('hidden');
+    volyxLens.setModalState(true);
+    requestAnimationFrame(() => document.querySelector('[data-settings-page="providers"] h2').focus());
     await refreshShortcutStatus();
   }
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
+  function hideSettingsAndRestoreFocus() {
+    scrim.classList.add('hidden');
+    volyxLens.setModalState(false);
+    const target = settingsPreviousFocus && settingsPreviousFocus.isConnected ? settingsPreviousFocus : $('#more-btn');
+    target.focus({ preventScroll: true });
+    if (document.activeElement !== target) setTimeout(() => target.focus({ preventScroll: true }), 0);
+  }
   async function closeSettings() {
-    if (providerTestActive) { showStatus('Wait for the response-provider test to finish.'); return; }
+    if (providerTestActive) { showStatus('Wait for the response-provider test to finish.'); $('#s-status').focus(); return; }
     try {
       await saveSettings();
-      scrim.classList.add('hidden');
+      hideSettingsAndRestoreFocus();
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Settings could not be saved.');
+      $('#s-status').focus();
     }
   }
   $('#more-btn').addEventListener('click', openSettings);
@@ -1058,7 +1163,7 @@
     if (busy && (action === 'assist' || action === 'solve')) { showStatus('Stop the active answer before starting another one.'); return; }
     try {
       await saveSettings();
-      scrim.classList.add('hidden');
+      hideSettingsAndRestoreFocus();
       if (action === 'assist') runMode('assist', '');
       else if (action === 'solve') runMode('leetcode', '');
       else if (action === 'task-context') await captureTaskContext();
@@ -1100,9 +1205,13 @@
     const label = PROVIDER_LABELS[providerView] || providerView;
     const present = (settings.credentialStatus && settings.credentialStatus.present) || {};
     document.querySelectorAll('#provider-seg button').forEach((button) => {
-      button.classList.toggle('on', button.dataset.provider === providerView);
+      const selected = button.dataset.provider === providerView;
+      button.classList.toggle('on', selected);
       button.classList.toggle('default-provider', button.dataset.provider === settings.provider);
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
     });
+    $('#provider-config-panel').setAttribute('aria-labelledby', `provider-tab-${providerView}`);
     document.querySelectorAll('[data-provider-config]').forEach((row) => row.classList.toggle('hidden', row.dataset.providerConfig !== providerView));
     $('#provider-view-title').textContent = label;
     const isDefault = providerView === settings.provider;
@@ -1123,12 +1232,15 @@
 
   function renderTranscriptionProviderConfig() {
     const selected = $('#stt-realtime-provider').value;
-    document.querySelectorAll('.stt-provider-config').forEach((row) => row.classList.toggle('hidden', row.dataset.sttProvider !== selected));
+    document.querySelectorAll('.stt-provider-config').forEach((row) => {
+      const providers = String(row.dataset.sttProvider || '').split(/\s+/).filter(Boolean);
+      row.classList.toggle('hidden', !providers.includes(selected));
+    });
   }
 
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
-    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', azureRealtime: 'Optional separate Realtime resource key' };
+    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key' };
     for (const provider of Object.keys(keyPlaceholders)) {
       const input = $(`#key-${provider}`);
       input.value = '';
@@ -1143,15 +1255,18 @@
     $('#stt-realtime-provider').value = transcription.realtimeProvider || 'openai';
     renderTranscriptionProviderConfig();
     $('#stt-azure-deployment').value = transcription.azureRealtimeDeployment || '';
+    $('#stt-deepgram-model').value = transcription.deepgramModel || 'nova-3';
     $('#stt-language').value = transcription.language || '';
     $('#stt-delay').value = transcription.delay || 'low';
     $('#stt-fallback-model').value = transcription.fallbackModel || 'gpt-4o-mini-transcribe';
+    $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || 'gemini-3.5-flash';
     $('#stt-offline-enabled').checked = transcription.offlineEnabled === true;
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     const audio = settings.audio || {};
     $('#audio-input-device').value = audio.inputDeviceId || '';
     $('#audio-mic-enabled').checked = audio.micEnabled !== false;
     $('#audio-system-enabled').checked = audio.systemEnabled !== false;
+    $('#audio-browser-processing').checked = audio.browserMicProcessing !== false;
     $('#question-detection-enabled').checked = settings.questionDetection !== false;
     updateAudioSessionCount();
     $('#audio-sensitivity').value = audio.sensitivity || 'balanced';
@@ -1163,24 +1278,17 @@
   }
   function statusText() {
     const present = (settings.credentialStatus && settings.credentialStatus.present) || {};
-    const has = [
-      present.openai && 'OpenAI',
-      present.anthropic && 'Anthropic',
-      present.gemini && 'Gemini',
-      present.azure && 'Azure Foundry',
-      present.deepseek && 'DeepSeek',
-      present.azureRealtime && 'Azure Realtime'
-    ].filter(Boolean);
     const transcription = settings.transcription || {};
     let stt = 'none';
     if (transcription.mode === 'batch') stt = present.openai ? 'OpenAI batch' : (present.gemini ? 'Gemini batch' : 'none');
     else if (transcription.realtimeProvider === 'azure') stt = (present.azureRealtime || present.azure) ? 'Azure Realtime' : 'Azure Realtime (key missing)';
+    else if (transcription.realtimeProvider === 'deepgram') stt = present.deepgram ? 'Deepgram Realtime' : 'Deepgram Realtime (key missing)';
     else stt = present.openai ? 'OpenAI Realtime' : 'OpenAI Realtime (key missing)';
     const backend = settings.credentialStatus && settings.credentialStatus.backend;
     const storage = settings.credentialStatus && settings.credentialStatus.secure ? 'secure storage' : (backend === 'locked-safeStorage' ? 'secure storage locked' : 'plaintext fallback');
     const defaultLabel = PROVIDER_LABELS[settings.provider] || settings.provider;
     const fallbackLabel = settings.fallbackProvider ? (PROVIDER_LABELS[settings.fallbackProvider] || settings.fallbackProvider) : 'none';
-    return `Default: ${defaultLabel} · fallback: ${fallbackLabel} · keys: ${has.join(', ') || 'none set'} · transcription: ${stt} · ${storage}`;
+    return `${defaultLabel} default · ${fallbackLabel} fallback · ${stt} · ${storage}`;
   }
   function stashCurrentModels() {
     if (!settings.models[providerView]) settings.models[providerView] = {};
@@ -1193,6 +1301,19 @@
     clearProviderTestResult();
     renderProviderConfig();
   }));
+  $('#provider-seg').addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = [...document.querySelectorAll('#provider-seg [role="tab"]')];
+    const current = Math.max(0, tabs.indexOf(document.activeElement));
+    let next = current;
+    if (event.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
+    if (event.key === 'ArrowRight') next = (current + 1) % tabs.length;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = tabs.length - 1;
+    event.preventDefault();
+    tabs[next].click();
+    tabs[next].focus();
+  });
   $('#provider-default-btn').addEventListener('click', () => {
     stashCurrentModels();
     settings.provider = providerView;
@@ -1259,7 +1380,7 @@
 
   async function saveSettings() {
     const apiKeyUpdates = {};
-    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'azureRealtime']) {
+    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'deepgram', 'azureRealtime']) {
       const value = $(`#key-${provider}`).value.trim();
       if (value) apiKeyUpdates[provider] = value;
     }
@@ -1273,8 +1394,10 @@
       mode: $('#stt-mode').value,
       realtimeProvider: $('#stt-realtime-provider').value,
       realtimeModel: 'gpt-realtime-whisper',
+      deepgramModel: $('#stt-deepgram-model').value.trim() || 'nova-3',
       azureRealtimeDeployment: $('#stt-azure-deployment').value.trim(),
       fallbackModel: $('#stt-fallback-model').value.trim() || 'gpt-4o-mini-transcribe',
+      geminiFallbackModel: $('#stt-gemini-fallback-model').value.trim() || 'gemini-3.5-flash',
       offlineEnabled: $('#stt-offline-enabled').checked,
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
       language: ['auto', 'automatic'].includes($('#stt-language').value.trim().toLowerCase()) ? '' : $('#stt-language').value.trim().toLowerCase(),
@@ -1285,6 +1408,7 @@
       inputDeviceId: $('#audio-input-device').value,
       micEnabled: $('#audio-mic-enabled').checked,
       systemEnabled: $('#audio-system-enabled').checked,
+      browserMicProcessing: $('#audio-browser-processing').checked,
       sensitivity: $('#audio-sensitivity').value,
       silenceMs: Math.max(300, Math.min(2000, Number($('#audio-silence').value) || 700)),
       preRollMs: 250,
@@ -1369,9 +1493,16 @@
     listenButton.disabled = true;
     button.textContent = 'Connecting…';
     resultEl.className = 's-diag-result running';
-    resultEl.textContent = 'Opening a one-channel Realtime session…';
+    resultEl.textContent = 'Checking microphone permission…';
     try {
       await saveSettings();
+      const permission = await volyxLens.requestPermission('microphone');
+      if (!permission || permission.granted !== true) {
+        resultEl.className = 's-diag-result error';
+        resultEl.textContent = 'microphone · permission_denied: Allow Volyx Lens in System Settings → Privacy & Security → Microphone, then restart the app.';
+        return;
+      }
+      resultEl.textContent = 'Opening a one-channel Realtime session…';
       const started = await volyxLens.startLiveTranscriptionTest();
       if (!started.ok) {
         resultEl.className = 's-diag-result error';
@@ -1408,7 +1539,10 @@
         : `${result.stage} · ${result.code}: ${result.message} · ${telemetry}`;
     } catch (error) {
       resultEl.className = 's-diag-result error';
-      resultEl.textContent = `live diagnostic · ipc_error: ${error && error.message ? error.message : 'The live microphone test could not run.'}`;
+      const permissionDenied = error && (error.name === 'NotAllowedError' || /permission denied/i.test(error.message || ''));
+      resultEl.textContent = permissionDenied
+        ? 'microphone · permission_denied: macOS or Electron denied microphone capture. Restart Volyx Lens after granting access.'
+        : 'live diagnostic · ipc_error: The live microphone test could not run.';
     } finally {
       if (capture) await closeAudioCapture(capture);
       if (stream) stream.getTracks().forEach((track) => track.stop());
@@ -1422,9 +1556,18 @@
     }
   });
 
+  // Prevent dropped files or links from navigating the privileged renderer.
+  for (const eventName of ['dragover', 'drop']) {
+    document.addEventListener(eventName, (event) => event.preventDefault());
+  }
+
   // ---- global keys -------------------------------------------------------
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !scrim.classList.contains('hidden')) closeSettings();
+    if (!obScrim.classList.contains('hidden')) {
+      handleOnboardKeydown(e);
+      return;
+    }
+    if (!scrim.classList.contains('hidden')) { handleSettingsKeydown(e); return; }
     if (e.metaKey && e.key === ',') { e.preventDefault(); openSettings(); }
   });
 
@@ -1441,16 +1584,32 @@
   // ---- onboarding / first-run tutorial -----------------------------------
   const obScrim = $('#onboard-scrim');
   const obPermissionStatus = $('#ob-permission-status');
+  const permissionStates = {
+    microphone: { text: 'Not requested', className: '' },
+    screen: { text: 'Not requested', className: '' }
+  };
+  let obPreviousFocus = null;
+  function setPermissionState(kind, text, className = '') {
+    permissionStates[kind] = { text, className };
+    const state = document.querySelector(`[data-permission-kind="${kind}"] .ob-permission-state`);
+    if (state) {
+      state.textContent = text;
+      state.className = `ob-permission-state ${className}`.trim();
+    }
+  }
   async function requestPermission(kind) {
     const label = kind === 'microphone' ? 'Microphone' : 'Screen Recording';
+    setPermissionState(kind, 'Requesting…', 'pending');
     obPermissionStatus.textContent = 'Requesting ' + label + ' access…';
     obPermissionStatus.className = 'ob-permission-status pending';
     try {
       const result = await volyxLens.requestPermission(kind);
       if (result.granted) {
+        setPermissionState(kind, 'Granted', 'granted');
         obPermissionStatus.textContent = label + ' access granted.';
         obPermissionStatus.className = 'ob-permission-status granted';
       } else if (result.settingsOpened) {
+        setPermissionState(kind, 'Needs settings', 'denied');
         obPermissionStatus.textContent = label + ' access was not granted. Enable Volyx Lens in System Settings, then restart Volyx Lens.';
         const restart = document.createElement('button');
         restart.type = 'button';
@@ -1459,69 +1618,196 @@
         obPermissionStatus.append(' ', restart);
         obPermissionStatus.className = 'ob-permission-status denied';
       } else {
+        setPermissionState(kind, 'Unavailable', 'denied');
         obPermissionStatus.textContent = result.message || (label + ' access is unavailable.');
         obPermissionStatus.className = 'ob-permission-status denied';
       }
     } catch (error) {
+      setPermissionState(kind, 'Request failed', 'denied');
       obPermissionStatus.textContent = 'Could not request ' + label + ' access: ' + ((error && error.message) || 'unknown error');
       obPermissionStatus.className = 'ob-permission-status denied';
     }
   }
+  async function refreshPermissionStates() {
+    const results = await Promise.all(['microphone', 'screen'].map(async (kind) => {
+      try { return await volyxLens.permissionStatus(kind); }
+      catch { return { kind, status: 'unknown', granted: false }; }
+    }));
+    for (const result of results) {
+      if (result.granted) setPermissionState(result.kind, 'Granted', 'granted');
+      else if (['denied', 'restricted'].includes(result.status)) setPermissionState(result.kind, 'Needs settings', 'denied');
+      else if (result.status === 'unsupported') setPermissionState(result.kind, 'Unavailable', 'denied');
+      else setPermissionState(result.kind, 'Not requested', '');
+    }
+    if (obIndex === 1) renderOnboard();
+  }
   const OB_STEPS = [
     {
-      icon: '👋',
-      title: 'Welcome to Volyx Lens',
-      body: 'Volyx Lens is a private context assistant that floats over your screen. It can <strong>see your screen</strong>, <strong>hear your meetings</strong>, and help you answer questions or work through coding problems. Capture exclusion is best-effort and never guaranteed.<br><br>This quick guide gets you running in about a minute.'
+      stepLabel: 'Welcome',
+      icon: 'logo',
+      kicker: 'Context, your way',
+      note: 'A quiet assistant that stays available without taking over your workspace.',
+      title: 'Meet Volyx Lens.',
+      body: '<p>A private, context-aware assistant for the work already happening on your Mac.</p><div class="ob-feature-grid"><div class="ob-feature"><strong>See</strong><span>Use the screen only when you ask.</span></div><div class="ob-feature"><strong>Hear</strong><span>Keep both sides of a conversation clear.</span></div><div class="ob-feature"><strong>Assist</strong><span>Get focused help without changing apps.</span></div></div><div class="ob-note">Capture exclusion is best-effort and never guaranteed.</div>'
     },
     {
-      icon: '🔐',
-      title: 'Allow Volyx Lens to see & hear',
-      body: 'Volyx Lens needs two macOS permissions. Click each button to trigger the native consent flow.<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen Recording</strong> — to see your screen and hear meeting audio</li></ul><strong>Camera access is not required.</strong> If you previously denied a permission, Volyx Lens will open the correct System Settings pane instead.',
+      stepLabel: 'Permissions',
+      icon: 'mic',
+      kicker: 'You stay in control',
+      note: 'macOS permission prompts come from the system. Volyx Lens cannot bypass them.',
+      title: 'Choose access.',
+      body: '<p>Grant only the inputs you want to use. Each permission is optional, and you can continue without granting either one.</p><div class="ob-note">Camera access is never requested. Change access later in System Settings.</div>',
       buttons: [
-        { label: 'Request Microphone access', action: () => requestPermission('microphone') },
-        { label: 'Request Screen Recording access', action: () => requestPermission('screen') }
+        { kind: 'microphone', icon: 'mic', label: 'Microphone', detail: 'Your voice while listening is on', action: () => requestPermission('microphone') },
+        { kind: 'screen', icon: 'camera', label: 'Screen Recording', detail: 'Screen context and meeting-audio loopback', action: () => requestPermission('screen') }
       ]
     },
     {
-      icon: '🔑',
-      title: 'Connect an AI provider',
-      body: 'Volyx Lens uses <strong>your own</strong> API key — choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, or <span class="hl">DeepSeek</span>. Azure Foundry also needs its <code>/openai/v1</code> endpoint and exact deployment names.<br><br><strong>Tip:</strong> realtime listening supports either a direct OpenAI key or an Azure <code>gpt-realtime-whisper</code> deployment. Configure the realtime provider and exact Azure deployment name in Settings. Gemini remains a batch fallback.',
-      buttons: [{ label: 'Open Volyx Lens Settings', action: () => { finishOnboard(); openSettings(); } }]
+      stepLabel: 'AI provider',
+      icon: 'settings',
+      kicker: 'Bring your own model',
+      note: 'Keys stay in the main process and use macOS Keychain-backed safeStorage when available.',
+      title: 'Connect your AI provider.',
+      body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, or DeepSeek. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
+      buttons: [{ icon: 'settings', label: 'Open provider settings', detail: 'Add a key, endpoint, and model names', action: async () => {
+        if (await finishOnboard({ restoreFocus: false, keepModalState: true })) await openSettings();
+      } }]
     },
     {
-      icon: '🫥',
-      title: 'Stay hidden in Zoom',
-      body: 'Volyx Lens is excluded from many screen shares automatically (Google Meet, Teams, QuickTime — nothing to do). <strong>Zoom needs one setting:</strong><br><br>Zoom → <span class="hl">Settings</span> → <span class="hl">Share Screen</span> → <span class="hl">Advanced</span> → <strong>Screen capture mode</strong> → choose <strong>“Advanced capture with window filtering.”</strong><br><br>Avoid “<strong>without</strong> window filtering” — that mode can reveal Volyx Lens.'
+      stepLabel: 'Screen sharing',
+      icon: 'camera',
+      kicker: 'Best-effort privacy',
+      note: 'Content protection reduces accidental exposure; it is not invisibility.',
+      title: 'Know what others can see.',
+      body: '<p>Volyx Lens asks macOS to exclude its window from many captures. Modern capture tools may still ignore that request.</p><div class="permission-card"><span class="permission-mark">Z</span><div><strong>Zoom</strong><span>Choose “Advanced capture with window filtering” in Share Screen settings.</span></div></div><div class="ob-note">Never rely on capture exclusion for proctored, restricted, or consent-sensitive sessions.</div>'
     },
     {
-      icon: '✨',
-      title: 'You’re all set',
-      body: 'How to use Volyx Lens:<ul><li>Choose whether <strong>Assist</strong> uses the screen, conversation, or both</li><li><span class="kbd">⌘</span> <span class="kbd">⇧</span> <span class="kbd">C</span> — save the current screen to Task Context without calling AI</li><li><span class="kbd">⌘</span> <span class="kbd">↵</span> — run Assist with the selected context</li><li><span class="kbd">⌘</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Click <strong>Start Listening</strong> in the top bar for meeting transcription</li><li>Click <strong>New Session</strong> between unrelated conversations</li></ul>Reopen this guide anytime by clicking the <strong>Volyx Lens logo</strong>. Quit with <span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">X</span>.'
+      stepLabel: 'Ready',
+      icon: 'zap',
+      kicker: 'Ready when you are',
+      note: 'Reopen this guide anytime by selecting the Volyx Lens logo in the toolbar.',
+      title: 'Your workspace, now context-aware.',
+      body: '<p>Start with these four controls. Everything else can wait until you need it.</p><div class="ob-shortcuts"><div class="ob-shortcut"><span class="kbd">⌘↵</span><span>Run Assist</span></div><div class="ob-shortcut"><span class="kbd">⌘H</span><span>Solve screen</span></div><div class="ob-shortcut"><span class="kbd">⌘⇧C</span><span>Add context</span></div><div class="ob-shortcut"><span class="kbd">⌘⇧X</span><span>Stop and quit</span></div></div>'
     }
   ];
   let obIndex = 0;
+  $('#ob-brand-mark').innerHTML = icon('logo', { size: 19 });
   function renderOnboard() {
     const step = OB_STEPS[obIndex];
-    $('#ob-icon').textContent = step.icon;
+    $('#ob-icon').innerHTML = icon(step.icon, { size: 30, stroke: 1.7 });
+    $('#ob-step-label').textContent = step.stepLabel;
+    $('#ob-step-count').textContent = `${obIndex + 1} of ${OB_STEPS.length}`;
+    $('#ob-stage-kicker').textContent = step.kicker;
+    $('#ob-stage-note').textContent = step.note;
     $('#ob-title').textContent = step.title;
     $('#ob-body').innerHTML = step.body;
-    const btns = $('#ob-buttons'); btns.innerHTML = '';
+    const btns = $('#ob-buttons'); btns.replaceChildren();
     obPermissionStatus.textContent = '';
     obPermissionStatus.className = 'ob-permission-status hidden';
-    (step.buttons || []).forEach((b) => { const el = document.createElement('button'); el.textContent = b.label; el.addEventListener('click', b.action); btns.appendChild(el); });
-    const dots = $('#ob-dots'); dots.innerHTML = '';
-    OB_STEPS.forEach((_, i) => { const d = document.createElement('span'); if (i === obIndex) d.className = 'on'; dots.appendChild(d); });
+    (step.buttons || []).forEach((definition) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      if (definition.kind) button.dataset.permissionKind = definition.kind;
+      const buttonIcon = document.createElement('span');
+      buttonIcon.className = 'ob-button-icon';
+      buttonIcon.innerHTML = icon(definition.icon, { size: 16, stroke: 1.8 });
+      const copy = document.createElement('span');
+      copy.className = 'ob-button-copy';
+      const label = document.createElement('strong');
+      label.textContent = definition.label;
+      const detail = document.createElement('small');
+      detail.textContent = definition.detail;
+      copy.append(label, detail);
+      const trailing = document.createElement('span');
+      if (definition.kind) {
+        const state = permissionStates[definition.kind];
+        trailing.className = `ob-permission-state ${state.className}`.trim();
+        trailing.textContent = state.text;
+      } else {
+        trailing.className = 'ob-button-arrow';
+        trailing.textContent = '›';
+      }
+      button.append(buttonIcon, copy, trailing);
+      button.addEventListener('click', definition.action);
+      btns.appendChild(button);
+    });
+    const dots = $('#ob-dots'); dots.replaceChildren();
+    OB_STEPS.forEach((item, index) => {
+      const dot = document.createElement('span');
+      if (index === obIndex) {
+        dot.className = 'on';
+        dot.setAttribute('aria-current', 'step');
+      }
+      dot.setAttribute('aria-label', `${item.stepLabel}: step ${index + 1}`);
+      dots.appendChild(dot);
+    });
     $('#ob-back').style.visibility = obIndex === 0 ? 'hidden' : 'visible';
-    $('#ob-next').textContent = obIndex === OB_STEPS.length - 1 ? 'Done' : 'Next';
+    $('#ob-next').textContent = obIndex === OB_STEPS.length - 1 ? 'Start using Lens' : 'Continue';
     $('#ob-skip').style.visibility = obIndex === OB_STEPS.length - 1 ? 'hidden' : 'visible';
   }
-  function showOnboard() { obIndex = 0; renderOnboard(); obScrim.classList.remove('hidden'); setIgnore(false); }
-  async function finishOnboard() {
-    obScrim.classList.add('hidden');
-    if (settings && !settings.onboarded) { settings.onboarded = true; await volyxLens.settingsSet({ onboarded: true }); }
+  function onboardFocusable() {
+    return [...$('#onboard').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden');
   }
-  $('#ob-next').addEventListener('click', () => { if (obIndex === OB_STEPS.length - 1) finishOnboard(); else { obIndex++; renderOnboard(); } });
-  $('#ob-back').addEventListener('click', () => { if (obIndex > 0) { obIndex--; renderOnboard(); } });
+  function handleOnboardKeydown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      finishOnboard();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = onboardFocusable();
+    if (!focusable.length) { event.preventDefault(); return; }
+    const current = focusable.indexOf(document.activeElement);
+    if (current === -1) {
+      event.preventDefault();
+      focusable[event.shiftKey ? focusable.length - 1 : 0].focus();
+    } else if (!event.shiftKey && current === focusable.length - 1) {
+      event.preventDefault();
+      focusable[0].focus();
+    } else if (event.shiftKey && current === 0) {
+      event.preventDefault();
+      focusable[focusable.length - 1].focus();
+    }
+  }
+  function showOnboard() {
+    obPreviousFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : $('#logo-btn');
+    obIndex = 0;
+    renderOnboard();
+    obScrim.classList.remove('hidden');
+    volyxLens.setModalState(true);
+    setIgnore(false);
+    requestAnimationFrame(() => {
+      const title = $('#ob-title');
+      title.focus();
+      setTimeout(() => {
+        if (!obScrim.classList.contains('hidden') && document.activeElement !== title) title.focus();
+      }, 0);
+    });
+    void refreshPermissionStates();
+  }
+  async function finishOnboard({ restoreFocus = true, keepModalState = false } = {}) {
+    if (settings && !settings.onboarded) {
+      try {
+        await volyxLens.settingsSet({ onboarded: true });
+        settings.onboarded = true;
+      } catch {
+        $('#ob-permission-status').textContent = 'Setup could not be saved. Review your local storage permissions and try again.';
+        $('#ob-permission-status').classList.remove('hidden');
+        $('#ob-permission-status').focus?.();
+        volyxLens.setModalState(true);
+        return false;
+      }
+    }
+    obScrim.classList.add('hidden');
+    if (!keepModalState) volyxLens.setModalState(false);
+    if (restoreFocus) requestAnimationFrame(() => (obPreviousFocus && obPreviousFocus.isConnected ? obPreviousFocus : $('#logo-btn')).focus());
+    return true;
+  }
+  $('#ob-next').addEventListener('click', () => { if (obIndex === OB_STEPS.length - 1) finishOnboard(); else { obIndex++; renderOnboard(); $('#ob-title').focus(); } });
+  $('#ob-back').addEventListener('click', () => { if (obIndex > 0) { obIndex--; renderOnboard(); $('#ob-title').focus(); } });
   $('#ob-skip').addEventListener('click', finishOnboard);
   $('#logo-btn').addEventListener('click', showOnboard);
 
@@ -1541,5 +1827,7 @@
     $('#live-dot').classList.toggle('off', !st.active);
     updateListeningButton(st.active);
     if (!settings.onboarded) showOnboard();
+    else volyxLens.setModalState(false);
+    volyxLens.rendererReady();
   })();
 })();

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/azure-foundry-deepseek]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -23,12 +23,25 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run check:syntax
+      - run: xvfb-run -a npm run check:onboarding-ui -- --no-sandbox
+      - run: xvfb-run -a npm run check:settings-ui -- --no-sandbox
       - run: npm run security:secrets
-      - name: Reject critical dependency vulnerabilities
-        run: npm audit --audit-level=critical
+      - name: Reject dependency vulnerabilities
+        run: npm audit --audit-level=low
       - run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Smoke launch packaged application
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          result = subprocess.run(
+              ['xvfb-run', '-a', 'dist/linux-unpacked/volyx-lens', '--no-sandbox', '--smoke-test'],
+              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
+          print(result.stdout)
+          if result.returncode != 0 or 'VOLYX_LENS_RENDERER_READY' not in result.stdout:
+              raise SystemExit('Packaged application did not report renderer readiness.')
+          PY
 
   macos-package:
     runs-on: macos-14

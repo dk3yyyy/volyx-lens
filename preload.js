@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const AUDIO_SAMPLE_RATE = 24000;
 
 contextBridge.exposeInMainWorld('volyxLens', {
+  platform: process.platform,
   audioConfig: Object.freeze({ sampleRate: AUDIO_SAMPLE_RATE }),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
@@ -40,15 +41,18 @@ contextBridge.exposeInMainWorld('volyxLens', {
   liveTranscriptionPcm: (arrayBuffer, metadata) => ipcRenderer.send('transcription:live-test-audio', arrayBuffer, metadata),
   retryRealtime: () => ipcRenderer.invoke('transcription:retry'),
   requestPermission: (kind) => ipcRenderer.invoke('permissions:request', kind),
+  permissionStatus: (kind) => ipcRenderer.invoke('permissions:status', kind),
   micPcm: (arrayBuffer) => ipcRenderer.send('mic:pcm', arrayBuffer),
   systemPcm: (arrayBuffer) => ipcRenderer.send('system:pcm', arrayBuffer),
   setIgnoreMouse: (v) => ipcRenderer.send('mouse:ignore', v),
+  setModalState: (open) => ipcRenderer.send('ui:modal-state', open === true),
+  rendererReady: () => ipcRenderer.send('app:renderer-ready'),
   openPane: (url) => ipcRenderer.send('open-pane', url),
   quit: () => ipcRenderer.send('app:quit'),
   relaunch: () => ipcRenderer.send('app:relaunch'),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['capture:state', 'session:cleared', 'task-context:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcription:state'];
+    const allowed = ['audio:level', 'capture:state', 'session:cleared', 'task-context:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcription:state'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

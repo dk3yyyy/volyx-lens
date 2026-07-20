@@ -16,7 +16,7 @@ test('answer generation is user-cancellable and hard-time-bounded across the IPC
   assert.match(main, /FEATURE_REQUEST_TIMEOUT_MS = 120000/);
   assert.match(main, /new AbortController\(\)/);
   assert.match(main, /featureRequest\.controller\.abort\(\)/);
-  assert.match(main, /ipcMain\.on\('llm:cancel'/);
+  assert.match(main, /onTrusted\('llm:cancel'/);
   assert.match(renderer, /volyxLens\.cancelResponse\(\)/);
   assert.match(renderer, /volyxLens\.on\('llm:canceled'/);
 });

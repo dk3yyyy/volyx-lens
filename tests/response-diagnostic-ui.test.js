@@ -25,7 +25,7 @@ test('Settings discloses and explicitly triggers a minimal response-provider tes
 
 test('response-provider diagnostic crosses a narrow structured IPC boundary', () => {
   assert.match(preload, /testResponseProvider: \(provider, tier\) => ipcRenderer\.invoke\('provider:test-response', \{ provider, tier \}\)/);
-  assert.match(main, /ipcMain\.handle\('provider:test-response'/);
+  assert.match(main, /handleTrusted\('provider:test-response'/);
   assert.match(main, /runResponseDiagnostic\(\{/);
   assert.match(main, /if \(responseDiagnosticPromise\)/);
   assert.match(diagnostic, /fallbackProvider = ''/);

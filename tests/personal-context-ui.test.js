@@ -26,7 +26,7 @@ test('personal-context IPC is narrow and file paths remain in the main process',
   assert.doesNotMatch(preload, /personalContextImport: \([^)]*path/i);
   assert.match(main, /dialog\.showOpenDialog\(win/);
   assert.match(main, /parseContextDocument\(\{ filePath, buffer: await fs\.promises\.readFile\(filePath\) \}\)/);
-  assert.match(main, /ipcMain\.handle\('personal-context:remove'/);
+  assert.match(main, /handleTrusted\('personal-context:remove'/);
 });
 
 test('answer generation discloses and safely injects only selected personal context', () => {

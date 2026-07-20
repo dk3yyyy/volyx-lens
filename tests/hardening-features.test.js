@@ -20,15 +20,19 @@ test('audio capture uses AudioWorklet instead of deprecated ScriptProcessorNode'
   assert.doesNotMatch(renderer, /createScriptProcessor/);
   assert.match(worklet, /registerProcessor\('volyx-lens-pcm-capture'/);
   assert.match(worklet, /new Int16Array/);
+  assert.match(renderer, /const browserProcessing = [^;]*browserMicProcessing !== false/);
+  assert.match(renderer, /echoCancellation: browserProcessing/);
+  assert.match(renderer, /noiseSuppression: browserProcessing/);
+  assert.match(renderer, /autoGainControl: browserProcessing/);
 });
 
 test('UI exposes per-channel audio health, meters, latency, duration, retry, and device controls', () => {
-  for (const id of ['audio-health', 'mic-health', 'system-health', 'mic-meter', 'system-meter', 'connection-count', 'session-duration', 'transcript-latency', 'retry-realtime-btn', 'audio-input-device', 'audio-mic-enabled', 'audio-system-enabled', 'audio-session-count', 'audio-sensitivity', 'audio-silence']) {
+  for (const id of ['audio-health', 'mic-health', 'system-health', 'mic-meter', 'system-meter', 'connection-count', 'session-duration', 'transcript-latency', 'retry-realtime-btn', 'audio-input-device', 'audio-mic-enabled', 'audio-system-enabled', 'audio-browser-processing', 'audio-session-count', 'audio-sensitivity', 'audio-silence']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(renderer, /enumerateDevices\(\)/);
   assert.match(renderer, /volyxLens\.retryRealtime\(\)/);
-  assert.match(main, /ipcMain\.handle\('transcription:retry'/);
+  assert.match(main, /handleTrusted\('transcription:retry'/);
   assert.match(main, /async function retryTranscription\(\)[\s\S]*await stopTranscriptionPipeline\(\{ immediate: true \}\)[\s\S]*startTranscriptionPipeline\(\)/);
   assert.match(main, /powerMonitor\.on\('suspend'/);
 });
@@ -47,7 +51,7 @@ test('Assist context is explicit and maps screen, conversation, and combined mod
 
 test('renderer never receives saved credential values and supports explicit replacement or removal', () => {
   assert.match(main, /store\.getPublicSettings\(\)/);
-  assert.match(main, /store\.updateApiKeys\(updates\)/);
+  assert.match(main, /store\.updateSettingsAndApiKeys\(patch, updates/);
   assert.match(html, /safeStorage \/ macOS Keychain/);
   assert.match(html, /class="key-clear"/);
   assert.match(renderer, /apiKeyUpdates/);
@@ -56,7 +60,7 @@ test('renderer never receives saved credential values and supports explicit repl
 
 test('session limits use a serialized idempotent main-process capture stop', () => {
   assert.match(preload, /captureStop: \(\) => ipcRenderer\.invoke\('capture:stop'\)/);
-  assert.match(main, /ipcMain\.handle\('capture:stop', \(\) => setCapturing\(false\)\)/);
+  assert.match(main, /handleTrusted\('capture:stop', \(\) => setCapturing\(false\)\)/);
   assert.match(main, /captureLimitTimer = setTimeout[\s\S]*setCapturing\(false\)/);
   assert.match(main, /captureTransition = captureTransition\.then\(reconcileCaptureState/);
 });

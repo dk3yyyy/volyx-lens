@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, systemPreferences, powerMonitor, dialog, safeStorage, clipboard, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { migrateLegacyUserData } = require('./src/identity-migration');
 const currentUserDataPath = app.getPath('userData');
 const legacyUserDataPath = path.join(path.dirname(currentUserDataPath), 'volyx-lens-legacy');
@@ -25,13 +26,16 @@ const { createPersonalContextStore, KINDS: PERSONAL_CONTEXT_KINDS } = require('.
 const { parseContextDocument, MAX_FILE_BYTES } = require('./src/document-context');
 const { buildPersonalContext } = require('./src/personal-context');
 const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
-const { findCrossTalkDuplicate } = require('./src/transcript-dedupe');
+const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
 const { detectQuestion } = require('./src/question-detection');
 const { planMeetingRecap } = require('./src/meeting-recap');
 const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
 const { createLocalOcr } = require('./src/local-ocr');
+const { createSystemAudioCapture } = require('./src/system-audio-capture');
+const { createAcousticEchoFilter } = require('./src/acoustic-echo-filter');
+const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 
@@ -43,6 +47,35 @@ const taskContext = createTaskContext({
   scoreRelevance: scoreTextRelevance,
 });
 const localOcr = createLocalOcr({ app });
+const acousticEchoFilter = createAcousticEchoFilter({ sampleRate: AUDIO_SAMPLE_RATE });
+const micEchoCoordinator = createMicEchoCoordinator({
+  filter: acousticEchoFilter,
+  maxBytes: AUDIO_SAMPLE_RATE * 2 * 4,
+  onMicrophone: (pcm) => processMicrophonePcm(pcm),
+});
+let lastSystemAudioLevelAt = 0;
+function publishSystemAudioLevel(pcm, now = Date.now()) {
+  if (!Buffer.isBuffer(pcm) || pcm.length < 2 || now - lastSystemAudioLevelAt < 100) return;
+  lastSystemAudioLevelAt = now;
+  const sampleCount = Math.floor(pcm.length / 2);
+  let sumSquares = 0;
+  for (let offset = 0; offset < sampleCount * 2; offset += 2) {
+    const normalized = pcm.readInt16LE(offset) / 32768;
+    sumSquares += normalized * normalized;
+  }
+  send('audio:level', { channel: 'them', level: Math.min(1, sumSquares / sampleCount) });
+}
+const systemAudioCapture = createSystemAudioCapture({
+  app,
+  onPcm: (pcm) => { publishSystemAudioLevel(pcm); acceptPcm('them', pcm); },
+  onState: ({ state: sourceState, reason }) => {
+    if (sourceState !== 'ready') send('audio:level', { channel: 'them', level: 0 });
+    send('transcription:state', { status: 'source', channel: 'them', sourceState, ...(reason ? { reason } : {}) });
+  },
+  onUnexpectedExit: () => {
+    if (state.capturing || desiredCapturing) setCapturing(false, { immediate: true, reason: 'system-audio-disconnected' });
+  },
+});
 const MAX_SAVED_TASK_IMAGES_PER_REQUEST = 39;
 const LARGE_TASK_CONTEXT_CONFIRM_THRESHOLD = 8;
 const FEATURE_REQUEST_TIMEOUT_MS = 120000;
@@ -52,6 +85,15 @@ let taskContextOcrGeneration = 0;
 const pendingTaskContextOcr = new Set();
 
 let win = null;
+// Fail closed until the trusted renderer finishes booting and reports whether
+// onboarding or Settings is visible.
+let uiModalOpen = true;
+let rendererModalStateReported = false;
+
+function activeDisplayId() {
+  if (win && !win.isDestroyed()) return screen.getDisplayMatching(win.getBounds()).id;
+  return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id;
+}
 
 // -------- capture / transcript state --------
 const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
@@ -79,6 +121,7 @@ let realtimeManager = null;
 const drainingRealtimeManagers = new Set();
 let transcriptionMode = 'idle';
 let sessionGeneration = 0;
+let transcriptEpoch = 0;
 let featureRunId = 0;
 let activeFeatureRequest = null;
 let responseDiagnosticPromise = null;
@@ -96,6 +139,10 @@ const transcriptionDiagnostics = {
   lastStatus: 'idle',
   lastStatusAt: null,
   crossTalkSuppressed: 0,
+  acousticEchoSuppressed: 0,
+  lastEchoCorrelation: 0,
+  maxEchoCorrelation: 0,
+  micDelayDropped: 0,
 };
 
 function send(channel, data) {
@@ -131,7 +178,7 @@ async function captureTaskContextScreen() {
   if (taskContextCapturePromise) return taskContextCapturePromise;
   taskContextCapturePromise = (async () => {
     const generation = taskContextGeneration;
-    const dataUrl = await captureScreenshot({ maxWidth: 1920, format: 'jpeg', quality: 80 });
+    const dataUrl = await captureScreenshot({ maxWidth: 1920, format: 'jpeg', quality: 80, displayId: activeDisplayId() });
     if (generation !== taskContextGeneration) return taskContextState({ added: false, canceled: true });
     if (!dataUrl) throw new Error('No screen image was available. Check macOS Screen Recording permission.');
     const ocrAvailable = localOcr.availability().available;
@@ -227,15 +274,16 @@ function resetTranscriptData() {
   transcriptionDiagnostics.crossTalkSuppressed = 0;
 }
 
-function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration) {
-  if (generation !== sessionGeneration) return;
+function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch) {
+  if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
   const clean = String(text || '').trim().slice(0, 12000);
   if (!clean) return;
   const normalizedChannel = channel === 'you' ? 'you' : 'them';
   const timestamp = Number.isFinite(ts) ? ts : Date.now();
   const receivedAt = Date.now();
   const candidate = { channel: normalizedChannel, text: clean, ts: timestamp };
-  const duplicate = findCrossTalkDuplicate(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt);
+  const duplicate = findCrossTalkDuplicate(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt)
+    || findCrossTalkDuplicateAcrossCandidateWindow(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt);
   if (duplicate) {
     transcriptionDiagnostics.crossTalkSuppressed += 1;
     transcriptionDiagnostics.lastStatus = 'cross_talk_suppressed';
@@ -244,8 +292,10 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
       send('transcript:suppressed', { channel: 'you', duplicateOf: duplicate.turn.turnId, reason: 'cross_talk' });
       return;
     }
-    removeRecentTranscriptSegment(duplicate.turn.id);
-    removeTranscriptSegment(duplicate.turn);
+    for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
+      removeRecentTranscriptSegment(leakedSegment.id);
+      removeTranscriptSegment(leakedSegment);
+    }
   }
 
   const segment = { id: ++transcriptSegmentSequence, channel: normalizedChannel, text: clean, ts: timestamp };
@@ -318,10 +368,15 @@ function getSessionDiagnostics() {
       lastStatus: transcriptionDiagnostics.lastStatus,
       lastStatusAt: transcriptionDiagnostics.lastStatusAt ? new Date(transcriptionDiagnostics.lastStatusAt).toISOString() : null,
       crossTalkSuppressed: transcriptionDiagnostics.crossTalkSuppressed,
+      acousticEchoSuppressed: transcriptionDiagnostics.acousticEchoSuppressed,
+      lastEchoCorrelation: Number(transcriptionDiagnostics.lastEchoCorrelation.toFixed(3)),
+      maxEchoCorrelation: Number(transcriptionDiagnostics.maxEchoCorrelation.toFixed(3)),
+      micDelayDropped: transcriptionDiagnostics.micDelayDropped,
     },
     audio: {
       microphoneEnabled: (settings.audio || {}).micEnabled !== false,
       systemEnabled: (settings.audio || {}).systemEnabled !== false,
+      browserMicProcessing: (settings.audio || {}).browserMicProcessing !== false,
     },
     transcript: {
       turns: transcript.length,
@@ -346,6 +401,18 @@ async function exportTranscript(format) {
 
 // -------- window --------
 const WINDOW_TITLE = 'Utility';
+const APP_ENTRY_PATH = path.join(__dirname, 'renderer', 'index.html');
+const APP_ENTRY_URL = pathToFileURL(APP_ENTRY_PATH).href;
+
+function isTrustedRenderer(webContents, frame = webContents && webContents.mainFrame) {
+  return Boolean(win && !win.isDestroyed() && webContents === win.webContents && frame === win.webContents.mainFrame && frame && frame.url === APP_ENTRY_URL);
+}
+
+function isTrustedFileOrigin(value, { optional = false } = {}) {
+  if (!value) return optional;
+  try { return new URL(value).protocol === 'file:'; }
+  catch { return value === 'file://' || value === 'file:///'; }
+}
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
@@ -353,6 +420,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: W,
     height: H,
+    minWidth: 500,
+    minHeight: 480,
     x: Math.round(workArea.x + (workArea.width - W) / 2),
     y: workArea.y + 6,
     title: WINDOW_TITLE,
@@ -378,14 +447,20 @@ function createWindow() {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   if (typeof win.setHiddenInMissionControl === 'function') win.setHiddenInMissionControl(true);
 
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.loadURL(APP_ENTRY_URL);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://')) event.preventDefault();
-  });
+  win.webContents.on('will-navigate', (event, url) => { if (url !== APP_ENTRY_URL) event.preventDefault(); });
+  win.webContents.on('will-redirect', (event, url) => { if (url !== APP_ENTRY_URL) event.preventDefault(); });
+  win.webContents.on('will-attach-webview', (event) => event.preventDefault());
 
+  win.webContents.on('did-start-loading', () => {
+    uiModalOpen = true;
+    rendererModalStateReported = false;
+  });
   win.webContents.on('did-finish-load', () => win.showInactive());
   win.webContents.on('render-process-gone', (_e, d) => {
+    uiModalOpen = true;
+    rendererModalStateReported = false;
     console.log('[volyx-lens] renderer gone', JSON.stringify(d));
     if (state.capturing) setCapturing(false);
   });
@@ -396,6 +471,7 @@ async function flushChannel(channel) {
   if (flushPromises[channel]) return flushPromises[channel];
   const task = (async () => {
     const generation = sessionGeneration;
+    const epoch = transcriptEpoch;
     if (sttDisabled) { buffers[channel] = []; return; }
     const chunks = buffers[channel];
     if (!chunks.length) return;
@@ -418,12 +494,12 @@ async function flushChannel(channel) {
       const res = await stt.transcribe(pcm);
       if (res.error) {
         if (res.error.code === 'offline_cancelled') return;
-        handleSttError(res.error, settings);
+        handleSttError(res.error);
         return;
       }
-      if (res.text && res.text.trim()) recordTranscript({ channel, text: res.text }, generation);
+      if (res.text && res.text.trim()) recordTranscript({ channel, text: res.text }, generation, epoch);
     } catch (e) {
-      console.log('[stt] error', e && e.message);
+      console.log('[stt] unexpected error', String(e && e.code || 'unknown').slice(0, 80));
     } finally {
       state.transcribing[channel] = false;
     }
@@ -439,15 +515,18 @@ async function drainBatchBuffers() {
   }));
 }
 
-function handleSttError(err, settings) {
-  console.log('[stt] error', err.provider, err.status, err.code, err.message);
+function handleSttError(err) {
+  const provider = ['openai', 'gemini', 'offline'].includes(err && err.provider) ? err.provider : 'configured provider';
+  const status = Number(err && err.status) || 0;
+  const code = String((err && err.code) || '').slice(0, 80);
+  console.log('[stt] error', provider, status || 'no-status', code || 'unknown');
   if (sttDisabled) return;
-  const noAccess = err.status === 403 || err.status === 401 || err.code === 'model_not_found';
+  const noAccess = status === 403 || status === 401 || code === 'model_not_found';
   sttDisabled = true; // stop hammering the API every few seconds
   if (noAccess) {
-    send('status', { message: 'Transcription off: your ' + err.provider + ' key has no access to the configured speech-to-text model. Screen features still work. Enable Realtime/audio access or add a Gemini key, then restart listening.' });
+    send('status', { message: `Transcription off: your ${provider} credential cannot access the configured speech-to-text model. Screen features still work. Check Listening settings, then restart listening.` });
   } else {
-    send('status', { message: 'Transcription error (' + err.provider + '): ' + err.message });
+    send('status', { message: `Transcription stopped after a ${provider} error. Check Listening settings and retry.` });
   }
 }
 
@@ -490,6 +569,7 @@ function startTranscriptionPipeline() {
   const realtime = resolveRealtimeTranscription(settings);
   const enabledChannels = [audio.micEnabled !== false ? 'you' : null, audio.systemEnabled !== false ? 'them' : null].filter(Boolean);
   const generation = sessionGeneration;
+  const epoch = transcriptEpoch;
 
   if (transcription.mode === 'realtime' && realtime.ready) {
     transcriptionMode = 'realtime';
@@ -505,9 +585,9 @@ function startTranscriptionPipeline() {
       enabledChannels,
       vad: resolveVadSettings(audio),
       preRollMs: Math.max(0, Math.min(1000, Number(audio.preRollMs) || 250)),
-      onPartial: (event) => { if (generation === sessionGeneration && realtimeManager === manager) send('transcript:partial', event); },
+      onPartial: (event) => { if (generation === sessionGeneration && epoch === transcriptEpoch && realtimeManager === manager) send('transcript:partial', event); },
       onFinal: (event) => {
-        if (generation === sessionGeneration && (realtimeManager === manager || drainingRealtimeManagers.has(manager))) recordTranscript(event, generation);
+        if (generation === sessionGeneration && epoch === transcriptEpoch && (realtimeManager === manager || drainingRealtimeManagers.has(manager))) recordTranscript(event, generation, epoch);
       },
       onState: (event) => {
         if (generation !== sessionGeneration || realtimeManager !== manager) return;
@@ -522,13 +602,13 @@ function startTranscriptionPipeline() {
       },
       onError: (error) => {
         if (realtimeManager !== manager) return;
-        console.log('[stt:realtime] error', error.code, error.message);
-        activateBatchTranscription(error.message);
+        console.log('[stt:realtime] error', String(error && error.code || 'unknown').slice(0, 80));
+        activateBatchTranscription('the Realtime connection failed');
       }
     });
     realtimeManager = manager;
-    manager.start().catch((error) => {
-      if (realtimeManager === manager) activateBatchTranscription(error.message);
+    manager.start().catch(() => {
+      if (realtimeManager === manager) activateBatchTranscription('the Realtime connection could not start');
     });
     return;
   }
@@ -550,6 +630,8 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   realtimeManager = null;
 
   if (immediate) {
+    micEchoCoordinator.clear();
+    acousticEchoFilter.reset();
     if (manager) manager.stop();
     for (const draining of drainingRealtimeManagers) draining.stop();
     drainingRealtimeManagers.clear();
@@ -574,14 +656,42 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   send('transcription:state', { mode: 'idle', status: 'stopped' });
 }
 
+function routePcm(channel, pcm) {
+  if (transcriptionMode === 'realtime' && realtimeManager && realtimeManager.append(channel, pcm)) return;
+  buffers[channel].push(pcm);
+  if (buffers[channel].length > MAX_BATCH_CHUNKS) buffers[channel].splice(0, buffers[channel].length - MAX_BATCH_CHUNKS);
+}
+
+function processMicrophonePcm(pcm) {
+  const audio = store.getSettings().audio || {};
+  if (audio.micEnabled !== false && audio.systemEnabled !== false) {
+    const echo = acousticEchoFilter.inspectMicrophone(pcm);
+    transcriptionDiagnostics.lastEchoCorrelation = echo.correlation;
+    transcriptionDiagnostics.maxEchoCorrelation = Math.max(transcriptionDiagnostics.maxEchoCorrelation, echo.correlation);
+    if (echo.suppress) {
+      transcriptionDiagnostics.acousticEchoSuppressed += 1;
+      return;
+    }
+  }
+  routePcm('you', pcm);
+}
+
 function acceptPcm(channel, arrayBuffer) {
   if (!state.capturing || !['you', 'them'].includes(channel)) return;
   let pcm;
   try { pcm = Buffer.from(arrayBuffer); } catch { return; }
   if (!pcm.length || pcm.length > AUDIO_SAMPLE_RATE * 2 * 2) return;
-  if (transcriptionMode === 'realtime' && realtimeManager && realtimeManager.append(channel, pcm)) return;
-  buffers[channel].push(pcm);
-  if (buffers[channel].length > MAX_BATCH_CHUNKS) buffers[channel].splice(0, buffers[channel].length - MAX_BATCH_CHUNKS);
+  if (channel === 'them') {
+    micEchoCoordinator.observeSystem(pcm);
+    routePcm('them', pcm);
+    return;
+  }
+  const audio = store.getSettings().audio || {};
+  if (audio.micEnabled !== false && audio.systemEnabled !== false) {
+    if (!micEchoCoordinator.enqueueMicrophone(pcm)) transcriptionDiagnostics.micDelayDropped += 1;
+    return;
+  }
+  processMicrophonePcm(pcm);
 }
 
 // -------- capture toggle --------
@@ -611,8 +721,23 @@ function scheduleCaptureTimers() {
 
 async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
-  state.capturing = active;
   if (active) {
+    const audio = store.getSettings().audio || {};
+    micEchoCoordinator.clear();
+    acousticEchoFilter.reset();
+    transcriptionDiagnostics.acousticEchoSuppressed = 0;
+    transcriptionDiagnostics.lastEchoCorrelation = 0;
+    transcriptionDiagnostics.maxEchoCorrelation = 0;
+    transcriptionDiagnostics.micDelayDropped = 0;
+    if (process.platform === 'darwin' && audio.systemEnabled !== false) {
+      const source = await systemAudioCapture.start();
+      if (!source.ok) {
+        desiredCapturing = false;
+        send('status', { message: `Listening did not start because macOS system audio is unavailable (${source.reason}).` });
+        return false;
+      }
+    }
+    state.capturing = true;
     captureStartedAt = Date.now();
     lastCaptureStartedAt = captureStartedAt;
     lastCaptureEndedAt = null;
@@ -627,6 +752,11 @@ async function applyCaptureState(active) {
     send('capture:state', { active: true });
     return true;
   }
+  await systemAudioCapture.stop({ immediate: pendingStopImmediate });
+  if (pendingStopImmediate) micEchoCoordinator.clear();
+  else micEchoCoordinator.drain();
+  acousticEchoFilter.reset();
+  state.capturing = false;
   lastCaptureEndedAt = Date.now();
   captureStartedAt = null;
   clearCaptureTimers();
@@ -689,6 +819,7 @@ function stopAllAndQuit() {
   captureStartedAt = null;
   clearCaptureTimers();
   cancelLiveRealtimeDiagnostic();
+  systemAudioCapture.stop({ immediate: true });
   stopTranscriptionPipeline({ immediate: true });
   send('capture:state', { active: false });
   resetTranscriptData();
@@ -703,6 +834,7 @@ function relaunchApp() {
   state.capturing = false;
   clearCaptureTimers();
   cancelLiveRealtimeDiagnostic();
+  systemAudioCapture.stop({ immediate: true });
   stopTranscriptionPipeline({ immediate: true });
   clearTaskContext();
   app.relaunch();
@@ -860,7 +992,7 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
     if (screenNotice && isCurrent()) send('status', { message: screenNotice });
     if (screenPlan.capture) {
       let currentScreen = null;
-      try { currentScreen = await captureScreenshot(); }
+      try { currentScreen = await captureScreenshot({ displayId: activeDisplayId() }); }
       catch (e) {
         if (isCurrent()) send('status', { message: 'Screen capture needs permission — grant Screen Recording to Volyx Lens in System Settings.' });
       }
@@ -1003,6 +1135,7 @@ async function retryTranscription() {
 function transcriptionSettingsChanged(previous, updated) {
   const relevant = (settings) => ({
     openai: ((settings.apiKeys || {}).openai || ''),
+    deepgram: ((settings.apiKeys || {}).deepgram || ''),
     azure: ((settings.apiKeys || {}).azure || ''),
     azureRealtime: ((settings.apiKeys || {}).azureRealtime || ''),
     gemini: ((settings.apiKeys || {}).gemini || ''),
@@ -1015,12 +1148,32 @@ function transcriptionSettingsChanged(previous, updated) {
 }
 
 // -------- IPC --------
-ipcMain.handle('settings:get', () => store.getPublicSettings());
-ipcMain.handle('settings:set', (_e, patch) => {
+function assertTrustedIpc(event) {
+  if (!event || !isTrustedRenderer(event.sender, event.senderFrame)) throw new Error('Untrusted IPC sender.');
+}
+function handleTrusted(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    assertTrustedIpc(event);
+    return handler(event, ...args);
+  });
+}
+function onTrusted(channel, handler) {
+  ipcMain.on(channel, (event, ...args) => {
+    try {
+      assertTrustedIpc(event);
+      return handler(event, ...args);
+    } catch (error) {
+      console.warn(`[ipc] rejected ${channel}: ${error.message}`);
+      return undefined;
+    }
+  });
+}
+
+handleTrusted('settings:get', () => store.getPublicSettings());
+handleTrusted('settings:set', (_e, patch) => {
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
   const updates = patch && patch.apiKeyUpdates;
-  if (updates && typeof updates === 'object') store.updateApiKeys(updates);
-  const updated = store.setSettings(patch);
+  const updated = store.updateSettingsAndApiKeys(patch, updates && typeof updates === 'object' ? updates : {});
   if (transcriptionSettingsChanged(previous, updated)) {
     sttDisabled = false;
     if (state.capturing) {
@@ -1029,7 +1182,7 @@ ipcMain.handle('settings:set', (_e, patch) => {
   }
   return store.getPublicSettings();
 });
-ipcMain.handle('credentials:clear', (_e, provider) => {
+handleTrusted('credentials:clear', (_e, provider) => {
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
   const result = store.clearApiKey(String(provider || ''));
   if (transcriptionSettingsChanged(previous, store.getSettings())) {
@@ -1038,82 +1191,101 @@ ipcMain.handle('credentials:clear', (_e, provider) => {
   }
   return result;
 });
-ipcMain.handle('personal-context:get', () => personalContextStore.getSummary());
-ipcMain.handle('personal-context:import', (_e, kind) => importPersonalContextDocument(String(kind || '')));
-ipcMain.handle('personal-context:remove', (_e, kind) => personalContextStore.removeDocument(String(kind || '')));
-ipcMain.handle('personal-context:set-enabled', (_e, kind, enabled) => personalContextStore.setEnabled(String(kind || ''), enabled === true));
-ipcMain.handle('capture:toggle', () => setCapturing(!desiredCapturing));
-ipcMain.handle('capture:stop', () => setCapturing(false));
-ipcMain.handle('capture:state', () => ({ active: state.capturing, transitioning: state.capturing !== desiredCapturing }));
-ipcMain.handle('session:new', () => startNewSession());
-ipcMain.handle('task-context:get', () => taskContextState());
-ipcMain.handle('task-context:list', (_event, payload = {}) => taskContext.list({ offset: Number(payload.offset), limit: Number(payload.limit) }));
-ipcMain.handle('task-context:capture', () => captureTaskContextScreen());
-ipcMain.handle('task-context:undo', () => undoTaskContext());
-ipcMain.handle('task-context:remove', (_event, id) => removeTaskContextCapture(id));
-ipcMain.handle('task-context:pin', (_event, payload = {}) => pinTaskContextCapture(payload.id, payload.pinned));
-ipcMain.handle('task-context:clear', () => clearTaskContext());
-ipcMain.handle('transcript:get', () => transcript.map(publicTranscriptTurn));
-ipcMain.handle('recap:plan', () => {
+handleTrusted('personal-context:get', () => personalContextStore.getSummary());
+handleTrusted('personal-context:import', (_e, kind) => importPersonalContextDocument(String(kind || '')));
+handleTrusted('personal-context:remove', (_e, kind) => personalContextStore.removeDocument(String(kind || '')));
+handleTrusted('personal-context:set-enabled', (_e, kind, enabled) => personalContextStore.setEnabled(String(kind || ''), enabled === true));
+handleTrusted('capture:toggle', () => setCapturing(!desiredCapturing));
+handleTrusted('capture:stop', () => setCapturing(false));
+handleTrusted('capture:state', () => ({ active: state.capturing, transitioning: state.capturing !== desiredCapturing }));
+handleTrusted('session:new', () => startNewSession());
+handleTrusted('task-context:get', () => taskContextState());
+handleTrusted('task-context:list', (_event, payload = {}) => taskContext.list({ offset: Number(payload.offset), limit: Number(payload.limit) }));
+handleTrusted('task-context:capture', () => captureTaskContextScreen());
+handleTrusted('task-context:undo', () => undoTaskContext());
+handleTrusted('task-context:remove', (_event, id) => removeTaskContextCapture(id));
+handleTrusted('task-context:pin', (_event, payload = {}) => pinTaskContextCapture(payload.id, payload.pinned));
+handleTrusted('task-context:clear', () => clearTaskContext());
+handleTrusted('transcript:get', () => transcript.map(publicTranscriptTurn));
+handleTrusted('recap:plan', () => {
   const plan = planMeetingRecap(transcript);
   return { requiresChunking: plan.requiresChunking, sourceCharacters: plan.sourceCharacters, parts: plan.chunks.length, requestCount: plan.requestCount, sampled: plan.sampled };
 });
-ipcMain.handle('transcript:copy', () => {
+handleTrusted('transcript:copy', () => {
   if (!transcript.length) throw new Error('There is no transcript to copy.');
   const text = formatTranscript(transcript, 'txt');
   clipboard.writeText(text);
   return { copied: true, turns: transcript.length, characters: text.length };
 });
-ipcMain.handle('transcript:copy-turn', (_event, id) => {
+handleTrusted('transcript:copy-turn', (_event, id) => {
   const turn = transcript.find((entry) => entry.id === Number(id));
   if (!turn) throw new Error('That transcript turn is no longer available.');
   const text = formatTranscript([turn], 'txt');
   clipboard.writeText(text);
   return { copied: true, id: turn.id, characters: text.length };
 });
-ipcMain.handle('transcript:clear', () => {
+handleTrusted('transcript:clear', () => {
   const cleared = transcript.length;
+  transcriptEpoch += 1;
   resetTranscriptData();
+  buffers.you = []; buffers.them = [];
+  if (state.capturing) startTranscriptionPipeline();
   send('transcript:cleared', {});
   return { cleared };
 });
-ipcMain.handle('transcript:export', (_event, format) => exportTranscript(String(format || 'txt')));
-ipcMain.handle('diagnostics:get', () => getSessionDiagnostics());
-ipcMain.handle('shortcuts:get', () => getShortcutStatus());
-ipcMain.handle('shortcuts:retry', () => registerShortcuts());
-ipcMain.handle('provider:test-response', (_event, payload) => testResponseConfiguration(payload));
-ipcMain.handle('diagnostics:copy', () => {
+handleTrusted('transcript:export', (_event, format) => exportTranscript(String(format || 'txt')));
+handleTrusted('diagnostics:get', () => getSessionDiagnostics());
+handleTrusted('shortcuts:get', () => getShortcutStatus());
+handleTrusted('shortcuts:retry', () => registerShortcuts());
+handleTrusted('provider:test-response', (_event, payload) => testResponseConfiguration(payload));
+handleTrusted('diagnostics:copy', () => {
   const text = JSON.stringify(getSessionDiagnostics(), null, 2) + '\n';
   clipboard.writeText(text);
   return { copied: true, characters: text.length };
 });
-ipcMain.handle('transcription:test', () => testRealtimeConfiguration());
-ipcMain.handle('transcription:live-test-start', () => startLiveRealtimeDiagnostic());
-ipcMain.handle('transcription:live-test-finish', () => finishLiveRealtimeDiagnostic());
-ipcMain.handle('transcription:retry', () => retryTranscription());
-ipcMain.handle('permissions:request', (_e, kind) => requestMediaPermission(kind, {
+handleTrusted('transcription:test', () => testRealtimeConfiguration());
+handleTrusted('transcription:live-test-start', () => startLiveRealtimeDiagnostic());
+handleTrusted('transcription:live-test-finish', () => finishLiveRealtimeDiagnostic());
+handleTrusted('transcription:retry', () => retryTranscription());
+handleTrusted('permissions:request', (_e, kind) => requestMediaPermission(kind, {
   systemPreferences,
   desktopCapturer,
   openExternal: (url) => shell.openExternal(url)
 }));
-ipcMain.on('ask', (_e, payload = {}) => runFeature(payload.mode, String(payload.text || '').slice(0, 12000), {
+handleTrusted('permissions:status', (_event, kind) => {
+  const permission = String(kind || '');
+  if (!['microphone', 'screen'].includes(permission)) throw new Error('Unsupported permission type.');
+  if (process.platform !== 'darwin') return { kind: permission, status: 'unsupported', granted: false };
+  const status = systemPreferences.getMediaAccessStatus(permission);
+  return { kind: permission, status, granted: status === 'granted' };
+});
+onTrusted('ask', (_e, payload = {}) => runFeature(payload.mode, String(payload.text || '').slice(0, 12000), {
   confirmedLongRecap: payload.confirmedLongRecap === true,
   confirmedTaskContext: payload.confirmedTaskContext === true,
 }));
-ipcMain.on('llm:cancel', () => cancelActiveFeature('user', { notify: true, invalidate: true }));
-ipcMain.on('mic:pcm', (_e, arrayBuffer) => acceptPcm('you', arrayBuffer));
-ipcMain.on('transcription:live-test-audio', (_e, arrayBuffer, metadata) => appendLiveRealtimeDiagnostic(arrayBuffer, metadata));
-ipcMain.on('system:pcm', (_e, arrayBuffer) => acceptPcm('them', arrayBuffer));
-ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
-ipcMain.on('open-pane', (_e, value) => {
+onTrusted('llm:cancel', () => cancelActiveFeature('user', { notify: true, invalidate: true }));
+onTrusted('mic:pcm', (_e, arrayBuffer) => acceptPcm('you', arrayBuffer));
+onTrusted('transcription:live-test-audio', (_e, arrayBuffer, metadata) => appendLiveRealtimeDiagnostic(arrayBuffer, metadata));
+onTrusted('system:pcm', (_e, arrayBuffer) => acceptPcm('them', arrayBuffer));
+onTrusted('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
+onTrusted('open-pane', (_e, value) => {
   try {
     const url = new URL(String(value || ''));
     if (url.protocol === 'https:') shell.openExternal(url.toString()).catch(() => {});
   } catch {}
 });
-ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
-ipcMain.on('app:quit', stopAllAndQuit);
-ipcMain.on('app:relaunch', relaunchApp);
+onTrusted('log', (_e, msg) => console.log('[renderer]', msg));
+onTrusted('ui:modal-state', (_e, open) => {
+  uiModalOpen = open === true;
+  rendererModalStateReported = true;
+});
+onTrusted('app:renderer-ready', () => {
+  if (!rendererModalStateReported) uiModalOpen = true;
+  console.log('VOLYX_LENS_RENDERER_READY');
+  if (process.argv.includes('--smoke-test')) setTimeout(() => app.quit(), 50);
+});
+onTrusted('app:quit', stopAllAndQuit);
+onTrusted('app:relaunch', relaunchApp);
 
 // -------- shortcuts --------
 function configuredAssistMode() {
@@ -1122,12 +1294,19 @@ function configuredAssistMode() {
 }
 
 function shortcutDefinitions() {
+  const whileUnblocked = (handler) => () => {
+    if (uiModalOpen) {
+      send('status', { message: 'Close the open dialog before using this shortcut.' });
+      return;
+    }
+    return handler();
+  };
   return [
-    { id: 'assist', accelerator: 'CommandOrControl+Return', mac: '⌘↵', other: 'Ctrl+Enter', feature: 'Assist', fallback: 'Use Assist button', handler: () => runFeature(configuredAssistMode(), '') },
-    { id: 'solve', accelerator: 'CommandOrControl+H', mac: '⌘H', other: 'Ctrl+H', feature: 'Solve screen', fallback: 'Use Solve button', handler: () => runFeature('leetcode', '') },
-    { id: 'task-context', accelerator: 'CommandOrControl+Shift+C', mac: '⌘⇧C', other: 'Ctrl+Shift+C', feature: 'Add screen', fallback: 'Use Add screen button', handler: () => {
+    { id: 'assist', accelerator: 'CommandOrControl+Return', mac: '⌘↵', other: 'Ctrl+Enter', feature: 'Assist', fallback: 'Use Assist button', handler: whileUnblocked(() => runFeature(configuredAssistMode(), '')) },
+    { id: 'solve', accelerator: 'CommandOrControl+H', mac: '⌘H', other: 'Ctrl+H', feature: 'Solve screen', fallback: 'Use Solve button', handler: whileUnblocked(() => runFeature('leetcode', '')) },
+    { id: 'task-context', accelerator: 'CommandOrControl+Shift+C', mac: '⌘⇧C', other: 'Ctrl+Shift+C', feature: 'Add screen', fallback: 'Use Add screen button', handler: whileUnblocked(() => {
       captureTaskContextScreen().catch((error) => send('status', { message: error && error.message ? error.message : 'Task context could not capture the screen.' }));
-    } },
+    }) },
     { id: 'quit', accelerator: 'CommandOrControl+Shift+X', mac: '⌘⇧X', other: 'Ctrl+Shift+X', feature: 'Stop all and quit', fallback: 'Use power button', handler: stopAllAndQuit },
   ];
 }
@@ -1148,17 +1327,43 @@ app.whenReady().then(() => {
     app.setActivationPolicy('accessory');
   }
 
-  const allowMedia = (permission) => permission === 'media' || permission === 'microphone' || permission === 'audioCapture' || permission === 'display-capture';
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowMedia(permission)));
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
+  const audioOnlyMediaRequest = (details = {}) => {
+    const types = Array.isArray(details.mediaTypes) ? details.mediaTypes : (details.mediaType ? [details.mediaType] : []);
+    return types.length > 0 && types.every((type) => type === 'audio' || type === 'microphone');
+  };
+  const allowMedia = (permission, details = {}) => {
+    if (permission === 'media') return audioOnlyMediaRequest(details);
+    return permission === 'microphone' || permission === 'audioCapture' || permission === 'display-capture';
+  };
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const trustedMainFrame = details && details.isMainFrame === true && details.requestingUrl === APP_ENTRY_URL
+      && isTrustedFileOrigin(details.securityOrigin, { optional: true })
+      && isTrustedRenderer(webContents, webContents && webContents.mainFrame);
+    callback(Boolean(trustedMainFrame && allowMedia(permission, details)));
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    const trustedMainFrame = isTrustedFileOrigin(requestingOrigin) && details && details.isMainFrame === true
+      && details.requestingUrl === APP_ENTRY_URL && isTrustedFileOrigin(details.securityOrigin, { optional: true })
+      && isTrustedRenderer(webContents, webContents && webContents.mainFrame);
+    return Boolean(trustedMainFrame && allowMedia(permission, details));
+  });
 
-  // System-audio loopback for getDisplayMedia: hand back a screen source with 'loopback'
-  // audio so the renderer can capture what's playing (Zoom/Meet) using Volyx Lens's own grant.
+  // System-audio loopback for getDisplayMedia. Requests are accepted only from
+  // the exact top-level application renderer and use the display containing Lens.
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    const trustedRequest = () => Boolean(win && !win.isDestroyed() && request.frame
+      && isTrustedRenderer(win.webContents, request.frame));
+    if (!trustedRequest() || !isTrustedFileOrigin(request.securityOrigin) || request.userGesture !== true || request.videoRequested !== true || request.audioRequested !== true) {
+      callback({});
+      return;
+    }
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      if (sources.length) callback({ video: sources[0], audio: 'loopback' });
-      else callback();
-    }).catch(() => callback());
+      if (!trustedRequest()) { callback({}); return; }
+      const targetDisplay = screen.getDisplayMatching(win.getBounds());
+      const source = sources.find((item) => String(item.display_id) === String(targetDisplay.id));
+      if (source) callback({ video: source, audio: 'loopback' });
+      else callback({});
+    }).catch(() => callback({}));
   }, { useSystemPicker: false });
 
   createWindow();
@@ -1169,6 +1374,7 @@ app.whenReady().then(() => {
   powerMonitor.on('unlock-screen', () => send('status', { message: 'Mac unlocked. Listening remains off until you start it again.' }));
   powerMonitor.on('shutdown', () => {
     clearCaptureTimers();
+    systemAudioCapture.stop({ immediate: true });
     stopTranscriptionPipeline({ immediate: true });
   });
 
@@ -1177,6 +1383,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   clearCaptureTimers();
+  systemAudioCapture.stop({ immediate: true });
   stopTranscriptionPipeline({ immediate: true });
   localOcr.cancelAll();
   taskContext.clear();

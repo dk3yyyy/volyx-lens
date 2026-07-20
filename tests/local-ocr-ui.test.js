@@ -18,12 +18,16 @@ const ci = fs.readFileSync(path.join(root, '.github', 'workflows', 'ci.yml'), 'u
 
 test('macOS Vision helper is compiled, packaged, signed as a nested binary, and self-tested in CI', () => {
   assert.equal(packageJson.build.beforePack, 'scripts/build-vision-ocr.js');
-  assert.deepEqual(packageJson.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr'] }]);
+  assert.deepEqual(packageJson.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr', 'volyx-lens-system-audio'] }]);
   assert.ok(packageJson.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-vision-ocr'));
+  assert.ok(packageJson.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-system-audio'));
   assert.match(packageJson.scripts['verify:vision-ocr-package'], /verify-vision-ocr-package/);
   assert.match(packageJson.scripts['release:mac'], /verify-vision-ocr-package/);
   assert.match(build, /xcrun/);
   assert.match(build, /swiftc/);
+  assert.match(build, /macos-system-audio\.swift/);
+  assert.match(build, /ScreenCaptureKit/);
+  assert.match(verify, /volyx-lens-system-audio/);
   assert.match(build, /-framework', 'Vision'/);
   assert.match(verify, /--self-test/);
   assert.match(ci, /npm run verify:vision-ocr-package/);
