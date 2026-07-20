@@ -23,7 +23,7 @@ test('main-process reset invalidates old async work and clears all conversation 
   assert.match(main, /sessionGeneration \+= 1/);
   assert.match(main, /transcript\.length = 0/);
   assert.match(main, /buffers\.you = \[\]; buffers\.them = \[\]/);
-  assert.match(main, /ipcMain\.handle\('session:new'/);
+  assert.match(main, /handleTrusted\('session:new'/);
   assert.match(main, /generation !== sessionGeneration/);
 });
 

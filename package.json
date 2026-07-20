@@ -11,8 +11,11 @@
   "scripts": {
     "test": "node --test",
     "check:syntax": "node scripts/check-syntax.js",
+    "check:onboarding-ui": "electron scripts/check-onboarding-ui.js",
+    "check:settings-ui": "electron scripts/check-settings-ui.js",
     "security:secrets": "node scripts/check-secrets.js",
     "test:azure-realtime": "node scripts/azure-realtime-probe.js",
+    "prestart": "node scripts/build-native.js",
     "start": "electron .",
     "pack": "electron-builder --dir --config.mac.notarize=false",
     "release:check": "node scripts/check-macos-release.js",
@@ -24,6 +27,7 @@
   "build": {
     "appId": "ai.volyx.lens",
     "productName": "Volyx Lens",
+    "artifactName": "volyx-lens-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "beforePack": "scripts/build-vision-ocr.js",
     "files": [
@@ -38,7 +42,8 @@
         "from": "native-bin",
         "to": "native",
         "filter": [
-          "volyx-lens-vision-ocr"
+          "volyx-lens-vision-ocr",
+          "volyx-lens-system-audio"
         ]
       }
     ],
@@ -49,7 +54,8 @@
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
       "binaries": [
-        "Contents/Resources/native/volyx-lens-vision-ocr"
+        "Contents/Resources/native/volyx-lens-vision-ocr",
+        "Contents/Resources/native/volyx-lens-system-audio"
       ],
       "notarize": true,
       "gatekeeperAssess": false,
@@ -76,6 +82,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@deepgram/sdk": "5.6.0",
     "@google/genai": "^2.12.0",
     "jszip": "^3.10.1",
     "lucide-static": "^0.468.0",

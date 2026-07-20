@@ -87,17 +87,27 @@ function save() {
   serialized.credentials = credentialRecordLocked && persistedCredentialRecord
     ? persistedCredentialRecord
     : vault.seal(data.apiKeys);
-  persistedCredentialRecord = serialized.credentials;
-  credentialRecordLocked = credentialRecordLocked
-    || (serialized.credentials.mode === 'safeStorage' && !vault.isSecure());
+  const nextCredentialRecord = serialized.credentials;
+  const nextCredentialLocked = credentialRecordLocked
+    || (nextCredentialRecord.mode === 'safeStorage' && !vault.isSecure());
+  const temporary = `${FILE}.tmp`;
+  let fd = null;
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    const temporary = `${FILE}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify(serialized, null, 2), { mode: 0o600 });
+    fd = fs.openSync(temporary, 'w', 0o600);
+    fs.writeFileSync(fd, JSON.stringify(serialized, null, 2));
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
     fs.renameSync(temporary, FILE);
     try { fs.chmodSync(FILE, 0o600); } catch {}
+    persistedCredentialRecord = nextCredentialRecord;
+    credentialRecordLocked = nextCredentialLocked;
   } catch (error) {
-    console.log('[store] settings save failed', error && error.message);
+    if (fd !== null) try { fs.closeSync(fd); } catch {}
+    try { fs.unlinkSync(temporary); } catch {}
+    console.log('[store] settings save failed', error && error.code ? error.code : 'unknown');
+    throw new Error('Settings could not be saved to disk. Check available storage and file permissions.');
   }
 }
 
@@ -144,10 +154,12 @@ function sanitizeSettingsPatch(patch = {}) {
     const value = patch.transcription;
     const transcription = {};
     if (Object.hasOwn(value, 'mode') && ['realtime', 'batch'].includes(value.mode)) transcription.mode = value.mode;
-    if (Object.hasOwn(value, 'realtimeProvider') && ['openai', 'azure'].includes(value.realtimeProvider)) transcription.realtimeProvider = value.realtimeProvider;
+    if (Object.hasOwn(value, 'realtimeProvider') && ['openai', 'azure', 'deepgram'].includes(value.realtimeProvider)) transcription.realtimeProvider = value.realtimeProvider;
     if (Object.hasOwn(value, 'realtimeModel')) transcription.realtimeModel = String(value.realtimeModel || DEFAULTS.transcription.realtimeModel).slice(0, 200);
+    if (Object.hasOwn(value, 'deepgramModel')) transcription.deepgramModel = String(value.deepgramModel || DEFAULTS.transcription.deepgramModel).slice(0, 200);
     if (Object.hasOwn(value, 'azureRealtimeDeployment')) transcription.azureRealtimeDeployment = String(value.azureRealtimeDeployment || '').slice(0, 200);
     if (Object.hasOwn(value, 'fallbackModel')) transcription.fallbackModel = String(value.fallbackModel || DEFAULTS.transcription.fallbackModel).slice(0, 200);
+    if (Object.hasOwn(value, 'geminiFallbackModel')) transcription.geminiFallbackModel = String(value.geminiFallbackModel || DEFAULTS.transcription.geminiFallbackModel).slice(0, 200);
     if (Object.hasOwn(value, 'offlineEnabled') && typeof value.offlineEnabled === 'boolean') transcription.offlineEnabled = value.offlineEnabled;
     if (Object.hasOwn(value, 'offlineCloudFallback') && typeof value.offlineCloudFallback === 'boolean') transcription.offlineCloudFallback = value.offlineCloudFallback;
     if (Object.hasOwn(value, 'language')) transcription.language = String(value.language || '').slice(0, 20);
@@ -160,6 +172,7 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'inputDeviceId')) audio.inputDeviceId = String(value.inputDeviceId || '').slice(0, 500);
     if (Object.hasOwn(value, 'micEnabled') && typeof value.micEnabled === 'boolean') audio.micEnabled = value.micEnabled;
     if (Object.hasOwn(value, 'systemEnabled') && typeof value.systemEnabled === 'boolean') audio.systemEnabled = value.systemEnabled;
+    if (Object.hasOwn(value, 'browserMicProcessing') && typeof value.browserMicProcessing === 'boolean') audio.browserMicProcessing = value.browserMicProcessing;
     if (Object.hasOwn(value, 'sensitivity') && ['quiet', 'balanced', 'noisy'].includes(value.sensitivity)) audio.sensitivity = value.sensitivity;
     if (Object.hasOwn(value, 'silenceMs')) audio.silenceMs = Math.max(300, Math.min(2000, Number(value.silenceMs) || 700));
     if (Object.hasOwn(value, 'preRollMs')) audio.preRollMs = Math.max(0, Math.min(1000, Number(value.preRollMs) || 250));
@@ -172,15 +185,21 @@ function sanitizeSettingsPatch(patch = {}) {
 
 function setSettings(patch) {
   load();
-  data = deepMerge(data, sanitizeSettingsPatch(patch));
-  if (data.fallbackProvider === data.provider) data.fallbackProvider = '';
-  if (!data.audio.micEnabled && !data.audio.systemEnabled) data.audio.micEnabled = true;
-  save();
+  const previous = data;
+  data = clone(data);
+  try {
+    data = deepMerge(data, sanitizeSettingsPatch(patch));
+    if (data.fallbackProvider === data.provider) data.fallbackProvider = '';
+    if (!data.audio.micEnabled && !data.audio.systemEnabled) data.audio.micEnabled = true;
+    save();
+  } catch (error) {
+    data = previous;
+    throw error;
+  }
   return data;
 }
 
-function updateApiKeys(updates) {
-  load();
+function applyApiKeyUpdates(updates) {
   const accepted = Object.entries(updates || {}).filter(([name]) => KEY_NAMES.includes(name));
   if (credentialRecordLocked && accepted.length) {
     throw new Error('Saved credentials are locked by the operating system. Unlock secure storage and restart Volyx Lens before changing API keys.');
@@ -188,14 +207,34 @@ function updateApiKeys(updates) {
   for (const [name, value] of accepted) {
     data.apiKeys[name] = value == null ? '' : String(value).trim();
   }
-  save();
+}
+
+function updateSettingsAndApiKeys(patch, updates) {
+  load();
+  const previous = data;
+  data = clone(data);
+  try {
+    applyApiKeyUpdates(updates);
+    data = deepMerge(data, sanitizeSettingsPatch(patch));
+    if (data.fallbackProvider === data.provider) data.fallbackProvider = '';
+    if (!data.audio.micEnabled && !data.audio.systemEnabled) data.audio.micEnabled = true;
+    save();
+  } catch (error) {
+    data = previous;
+    throw error;
+  }
   return publicSettings();
+}
+
+function updateApiKeys(updates) {
+  return updateSettingsAndApiKeys({}, updates);
 }
 
 module.exports = {
   getSettings: () => load(),
   getPublicSettings: () => publicSettings(),
   setSettings,
+  updateSettingsAndApiKeys,
   updateApiKeys,
   clearApiKey(name) { return updateApiKeys({ [name]: '' }); },
   credentialStorageStatus() { return publicSettings().credentialStatus; },

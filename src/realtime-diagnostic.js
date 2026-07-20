@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const { resolveRealtimeTranscription, normalizeTranscriptionLanguage } = require('./provider-config');
 const { buildRealtimeConnection, RealtimeTranscriptionManager } = require('./realtime-stt');
+const { DeepgramRealtimeChannel } = require('./deepgram-realtime');
 const { AUDIO_SAMPLE_RATE } = require('./audio-config');
 
 function redact(value, secrets = []) {
@@ -28,7 +29,7 @@ function httpFailure(status) {
   };
 }
 
-function runRealtimeDiagnostic({ settings, WebSocketImpl = WebSocket, timeoutMs = 12000 } = {}) {
+function runRealtimeDiagnostic({ settings, WebSocketImpl = WebSocket, DeepgramClientImpl, timeoutMs = 12000 } = {}) {
   const startedAt = Date.now();
   const safeSettings = settings || {};
   const resolved = resolveRealtimeTranscription(safeSettings);
@@ -46,6 +47,36 @@ function runRealtimeDiagnostic({ settings, WebSocketImpl = WebSocket, timeoutMs 
       message: resolved.configurationError,
       elapsedMs: Date.now() - startedAt,
     });
+  }
+
+  if (resolved.provider === 'deepgram') {
+    const channel = new DeepgramRealtimeChannel({
+      apiKey: resolved.apiKey,
+      channel: 'you',
+      model: resolved.model,
+      language: normalizeTranscriptionLanguage(safeSettings.transcription?.language),
+      sampleRate: AUDIO_SAMPLE_RATE,
+      connectTimeoutMs: timeoutMs,
+      DeepgramClientImpl,
+    });
+    return channel.connect()
+      .then(() => ({
+        ...base,
+        ok: true,
+        stage: 'session',
+        code: 'session_accepted',
+        message: 'Deepgram endpoint, authentication, model, and streaming settings were accepted.',
+        elapsedMs: Date.now() - startedAt,
+      }))
+      .catch((error) => ({
+        ...base,
+        ok: false,
+        stage: 'connection',
+        code: 'connection_failed',
+        message: redact(error.message, [resolved.apiKey]),
+        elapsedMs: Date.now() - startedAt,
+      }))
+      .finally(() => channel.close());
   }
 
   let connection;
@@ -167,10 +198,11 @@ function runRealtimeDiagnostic({ settings, WebSocketImpl = WebSocket, timeoutMs 
 }
 
 class LiveRealtimeDiagnostic {
-  constructor({ settings, ManagerImpl = RealtimeTranscriptionManager, WebSocketImpl = WebSocket } = {}) {
+  constructor({ settings, ManagerImpl = RealtimeTranscriptionManager, WebSocketImpl = WebSocket, DeepgramClientImpl } = {}) {
     this.settings = settings || {};
     this.ManagerImpl = ManagerImpl;
     this.WebSocketImpl = WebSocketImpl;
+    this.DeepgramClientImpl = DeepgramClientImpl;
     this.manager = null;
     this.started = false;
     this.finished = false;
@@ -185,8 +217,8 @@ class LiveRealtimeDiagnostic {
     this.resolved = resolveRealtimeTranscription(this.settings);
     this.startedAt = Date.now();
     try {
-      const connection = this.resolved.ready ? buildRealtimeConnection(this.resolved) : null;
-      this.endpointHost = connection ? new URL(connection.url).hostname : '';
+      const connection = this.resolved.ready && this.resolved.provider !== 'deepgram' ? buildRealtimeConnection(this.resolved) : null;
+      this.endpointHost = this.resolved.provider === 'deepgram' ? 'api.deepgram.com' : (connection ? new URL(connection.url).hostname : '');
     } catch { this.endpointHost = ''; }
   }
 
@@ -214,6 +246,7 @@ class LiveRealtimeDiagnostic {
       sampleRate: AUDIO_SAMPLE_RATE,
       enabledChannels: ['you'],
       WebSocketImpl: this.WebSocketImpl,
+      DeepgramClientImpl: this.DeepgramClientImpl,
       onFinal: (event) => {
         const text = String(event && event.text || '').trim().slice(0, 4000);
         if (text && !this.transcripts.includes(text) && this.transcripts.length < 10) this.transcripts.push(text);

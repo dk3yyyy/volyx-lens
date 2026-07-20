@@ -37,7 +37,7 @@ test('transcript workspace exposes timestamps, speakers, partial state, and boun
 });
 
 test('transcript and diagnostics actions cross narrow IPC boundaries without renderer file access', () => {
-  for (const channel of ['transcript:get', 'transcript:copy', 'transcript:copy-turn', 'transcript:clear', 'transcript:export', 'diagnostics:get', 'diagnostics:copy']) assert.match(main, new RegExp(`ipcMain\\.handle\\('${channel}'`));
+  for (const channel of ['transcript:get', 'transcript:copy', 'transcript:copy-turn', 'transcript:clear', 'transcript:export', 'diagnostics:get', 'diagnostics:copy']) assert.match(main, new RegExp(`handleTrusted\\('${channel}'`));
   assert.match(preload, /transcriptExport: \(format\) => ipcRenderer\.invoke\('transcript:export', format\)/);
   assert.match(preload, /diagnosticsCopy: \(\) => ipcRenderer\.invoke\('diagnostics:copy'\)/);
   assert.doesNotMatch(preload, /writeFile|showSaveDialog|clipboard/);
@@ -57,15 +57,26 @@ test('consecutive STT segments update one stable speaker turn until the channel 
 
 test('cross-talk suppression prefers direct system audio and removes only the leaked raw segment', () => {
   assert.match(main, /findCrossTalkDuplicate\(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt\)/);
+  assert.match(main, /findCrossTalkDuplicateAcrossCandidateWindow\(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt\)/);
   assert.match(main, /normalizedChannel === 'you'[\s\S]*transcript:suppressed[\s\S]*return/);
-  assert.match(main, /removeRecentTranscriptSegment\(duplicate\.turn\.id\)/);
-  assert.match(main, /removeTranscriptSegment\(duplicate\.turn\)/);
+  assert.match(main, /for \(const leakedSegment of duplicate\.turns \|\| \[duplicate\.turn\]\)/);
+  assert.match(main, /removeRecentTranscriptSegment\(leakedSegment\.id\)/);
+  assert.match(main, /removeTranscriptSegment\(leakedSegment\)/);
   assert.match(preload, /'transcript:remove'/);
   assert.match(preload, /'transcript:suppressed'/);
   assert.match(renderer, /volyxLens\.on\('transcript:remove', removeTranscriptTurn\)/);
   assert.match(renderer, /volyxLens\.on\('transcript:suppressed', clearSuppressedPartial\)/);
   assert.match(html, /id="diag-cross-talk"/);
   assert.match(renderer, /crossTalkSuppressed/);
+  assert.match(main, /createAcousticEchoFilter/);
+  assert.match(main, /createMicEchoCoordinator/);
+  assert.match(main, /micEchoCoordinator\.observeSystem\(pcm\)/);
+  assert.match(main, /micEchoCoordinator\.enqueueMicrophone\(pcm\)/);
+  assert.match(main, /micEchoCoordinator\.drain\(\)/);
+  assert.match(main, /micEchoCoordinator\.clear\(\)/);
+  assert.match(main, /acousticEchoFilter\.inspectMicrophone\(pcm\)/);
+  assert.match(main, /acousticEchoSuppressed \+= 1/);
+  assert.match(renderer, /acousticEchoSuppressed/);
 });
 
 test('sanitized diagnostics omit credentials, endpoints, transcript text, audio, and images', () => {

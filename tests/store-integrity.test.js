@@ -53,6 +53,24 @@ test('partial nested settings patches preserve omitted preferences', () => {
   assert.equal(updated.audio.maxSessionMinutes, 90);
 });
 
+test('Deepgram realtime provider, model, and credential survive the atomic Settings save', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  const updated = store.updateSettingsAndApiKeys({
+    transcription: { realtimeProvider: 'deepgram', deepgramModel: 'nova-3' },
+  }, { deepgram: 'saved-deepgram-key' });
+  assert.equal(updated.transcription.realtimeProvider, 'deepgram');
+  assert.equal(updated.transcription.deepgramModel, 'nova-3');
+  assert.equal(updated.credentialStatus.present.deepgram, true);
+  assert.equal(updated.apiKeys.deepgram, '');
+  assert.doesNotMatch(JSON.stringify(updated), /saved-deepgram-key/);
+
+  const reloaded = loadStore(userData).getSettings();
+  assert.equal(reloaded.transcription.realtimeProvider, 'deepgram');
+  assert.equal(reloaded.transcription.deepgramModel, 'nova-3');
+  assert.equal(reloaded.apiKeys.deepgram, 'saved-deepgram-key');
+});
+
 test('legacy bundled model defaults migrate without replacing custom model names', () => {
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');
@@ -90,6 +108,47 @@ test('at least one audio channel remains enabled', () => {
   const loaded = loadStore(userData).getSettings();
   assert.equal(loaded.audio.micEnabled, true);
   assert.equal(loaded.audio.systemEnabled, false);
+});
+
+test('browser microphone processing mode persists as an explicit boolean', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  assert.equal(store.getSettings().audio.browserMicProcessing, true);
+  store.setSettings({ audio: { browserMicProcessing: false } });
+  assert.equal(loadStore(userData).getSettings().audio.browserMicProcessing, false);
+});
+
+test('settings and credential updates commit in one atomic write and roll back together on failure', () => {
+  const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+  const store = loadStore(userData);
+  store.updateSettingsAndApiKeys({ smart: false }, { openai: 'old-key' });
+  const before = fs.readFileSync(file, 'utf8');
+
+  const originalRename = fs.renameSync;
+  let renames = 0;
+  fs.renameSync = (...args) => { renames += 1; return originalRename(...args); };
+  try {
+    store.updateSettingsAndApiKeys({ smart: true }, { openai: 'new-key' });
+  } finally {
+    fs.renameSync = originalRename;
+  }
+  assert.equal(renames, 1);
+  assert.equal(store.getSettings().smart, true);
+
+  const committed = fs.readFileSync(file, 'utf8');
+  const externallyHeldSettings = store.getSettings();
+  const externallyHeldSnapshot = JSON.stringify(externallyHeldSettings);
+  fs.renameSync = () => { throw new Error('simulated disk failure'); };
+  try {
+    assert.throws(() => store.updateSettingsAndApiKeys({ smart: false }, { openai: 'third-key' }), /could not be saved/i);
+  } finally {
+    fs.renameSync = originalRename;
+  }
+  assert.equal(fs.readFileSync(file, 'utf8'), committed);
+  assert.equal(store.getSettings().smart, true);
+  assert.equal(JSON.stringify(externallyHeldSettings), externallyHeldSnapshot);
+  assert.notEqual(before, committed);
 });
 
 test('locked secure credentials cannot be overwritten by a partial key update', () => {

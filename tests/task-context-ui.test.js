@@ -15,13 +15,13 @@ const textIndex = fs.readFileSync(path.join(root, 'src', 'text-index.js'), 'utf8
 
 test('Task Context capture is explicit, local, memory-bounded, and makes no AI request', () => {
   assert.match(main, /captureTaskContextScreen\(\)/);
-  assert.match(main, /captureScreenshot\(\{ maxWidth: 1920, format: 'jpeg', quality: 80 \}\)/);
+  assert.match(main, /captureScreenshot\(\{ maxWidth: 1920, format: 'jpeg', quality: 80, displayId: activeDisplayId\(\) \}\)/);
   assert.match(main, /No AI request was made/);
   assert.match(main, /CommandOrControl\+Shift\+C/);
   assert.match(main, /const generation = taskContextGeneration[\s\S]*generation !== taskContextGeneration/);
   assert.match(main, /function clearTaskContext\(\) \{\n\s*taskContextGeneration \+= 1/);
   const captureFunction = main.slice(main.indexOf('async function captureTaskContextScreen'), main.indexOf('function clearTaskContext'));
-  assert.doesNotMatch(captureFunction, /runFeature|\.stream\(|ipcMain\.on\('ask'/);
+  assert.doesNotMatch(captureFunction, /runFeature|\.stream\(|onTrusted\('ask'/);
 });
 
 test('renderer receives metadata only and docks Task Context behind the action after Recap', () => {
@@ -56,9 +56,9 @@ test('renderer receives metadata only and docks Task Context behind the action a
 });
 
 test('Task Context metadata IPC is bounded and never returns screenshot bytes or hashes', () => {
-  assert.match(main, /ipcMain\.handle\('task-context:list',[^\n]*taskContext\.list/);
-  assert.match(main, /ipcMain\.handle\('task-context:remove'/);
-  assert.match(main, /ipcMain\.handle\('task-context:pin'/);
+  assert.match(main, /handleTrusted\('task-context:list',[^\n]*taskContext\.list/);
+  assert.match(main, /handleTrusted\('task-context:remove'/);
+  assert.match(main, /handleTrusted\('task-context:pin'/);
   assert.match(taskContextModule, /Math\.min\(limit, 100\)/);
   const metadataFunction = taskContextModule.slice(taskContextModule.indexOf('function metadata'), taskContextModule.indexOf('function totalBytes'));
   assert.doesNotMatch(metadataFunction, /dataUrl|hash/);

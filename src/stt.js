@@ -14,11 +14,11 @@ async function transcribeOpenAI(apiKey, wav, model) {
   return (res.text || '').trim();
 }
 
-async function transcribeGemini(apiKey, wav) {
+async function transcribeGemini(apiKey, wav, model) {
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
   const res = await ai.models.generateContent({
-    model: 'gemini-1.5-flash',
+    model: model || 'gemini-3.5-flash',
     contents: [{ role: 'user', parts: [
       { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
       { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } }
@@ -27,18 +27,19 @@ async function transcribeGemini(apiKey, wav) {
   return ((res && res.text) || '').trim();
 }
 
-function createSTT(settings, { env = process.env, offlineTranscribe = transcribeOffline } = {}) {
+function createSTT(settings, { env = process.env, offlineTranscribe = transcribeOffline, openAITranscribe = transcribeOpenAI, geminiTranscribe = transcribeGemini } = {}) {
   const keys = settings.apiKeys || {};
   const chain = [];
   const transcription = settings.transcription || {};
   const fallbackModel = transcription.fallbackModel || settings.sttModel || 'gpt-4o-mini-transcribe';
+  const geminiFallbackModel = transcription.geminiFallbackModel || 'gemini-3.5-flash';
   const offline = validateOfflineConfig(env);
   if (transcription.offlineEnabled && offline.ready) {
     chain.push({ p: 'offline', fn: (wav) => offlineTranscribe(wav, { env, language: transcription.language || '' }) });
   }
   const allowCloud = !transcription.offlineEnabled || transcription.offlineCloudFallback === true;
-  if (allowCloud && keys.openai) chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, fallbackModel) });
-  if (allowCloud && keys.gemini) chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
+  if (allowCloud && keys.openai) chain.push({ p: 'openai', fn: (wav) => openAITranscribe(keys.openai, wav, fallbackModel) });
+  if (allowCloud && keys.gemini) chain.push({ p: 'gemini', fn: (wav) => geminiTranscribe(keys.gemini, wav, geminiFallbackModel) });
 
   return {
     available: chain.length > 0,

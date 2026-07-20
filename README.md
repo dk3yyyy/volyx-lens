@@ -4,9 +4,11 @@
 
 **A private, context-aware macOS assistant for your screen, voice, meetings, and coding workflows.**
 
-Bring your own AI key and keep control of the providers you use (OpenAI · Anthropic · Google Gemini · Azure Foundry · DeepSeek).
+Bring your own AI key and keep control of the providers you use (OpenAI · Anthropic · Google Gemini · Azure Foundry · DeepSeek · Deepgram transcription).
 
-<img src="docs/tutorial.png" width="620" alt="Volyx Lens first-run tutorial" />
+<img src="docs/onboarding-welcome.png" width="700" alt="Volyx Lens redesigned first-run welcome screen" />
+
+<sub>The current five-step onboarding experience.</sub>
 
 </div>
 
@@ -14,10 +16,6 @@ Bring your own AI key and keep control of the providers you use (OpenAI · Anthr
 
 > [!IMPORTANT]
 > **Please read this first.** Volyx Lens tries to stay out of screen recordings/shares, but this is **best-effort, not guaranteed** — on macOS 15.4+ Apple can let modern capture tools see it anyway, and a phone camera always can. Using a hidden assistant during a **proctored exam, job interview, or recorded meeting** may break that platform's rules and, in some places, consent laws. Volyx Lens is built for legitimate uses — your own notes, studying, accessibility, and practice. **You are responsible for how you use it.**
->
-> On Zoom specifically, whether Volyx Lens is hidden depends on one setting — **Settings → Share Screen → Screen capture mode → "Advanced capture with window filtering."**
->
-> <img src="docs/zoom-capture-mode.png" width="560" alt="Zoom Settings → Share Screen → Screen capture mode set to Advanced capture with window filtering" />
 
 ---
 
@@ -53,27 +51,22 @@ There are two ways to install Volyx Lens. **If you're not a developer, use Optio
 
 ### Option A — Download the app (easiest)
 
-1. Go to the [**Releases**](../../releases) page and download **`volyx-lens-mac.zip`**.
+1. Go to the [**Releases**](../../releases) page. Download the latest signed archive for your Mac:
+   - **Apple Silicon (M1/M2/M3/M4 or newer):** `volyx-lens-<version>-mac-arm64.zip`
+   - **Intel:** `volyx-lens-<version>-mac-x64.zip`
+   If no release assets are listed yet, use Option B; a public binary has not been published.
 2. Double-click the zip to unzip it. You'll get **`Volyx Lens.app`**.
 3. Drag **`Volyx Lens.app`** into your **Applications** folder.
-4. **First open (important):** because Volyx Lens is a free app without a paid Apple certificate, macOS will refuse to open it normally the first time. Do this once:
-   - **Right-click** `Volyx Lens.app` → **Open** → click **Open** in the dialog.
-   - If macOS instead says **"Volyx Lens is damaged and can't be opened,"** open the **Terminal** app and paste this line, then press Return:
-     ```bash
-     xattr -cr /Applications/Volyx\ Lens.app
-     ```
-     Then double-click Volyx Lens.app again. (This just tells macOS "yes, I trust this app I downloaded." It's safe.)
-
-After that, Volyx Lens opens normally forever.
+4. Open Volyx Lens normally. Public release assets are Developer ID signed, notarized, stapled, checksummed, and accompanied by a CycloneDX SBOM and GitHub build attestation. Do not bypass Gatekeeper for an asset that fails verification.
 
 ### Option B — Run from source (developers)
 
-You need [Node.js](https://nodejs.org) 20+ installed. No Xcode required.
+You need [Node.js](https://nodejs.org) 20+ installed. On macOS, source startup compiles the local Vision OCR and ScreenCaptureKit system-audio helpers, so install Apple's Xcode Command Line Tools first with `xcode-select --install`. Downloaded release builds already include these helpers and do not require development tools.
 
 ```bash
 git clone https://github.com/dk3yyyy/volyx-lens.git
 cd volyx-lens
-npm install
+npm ci
 npm start
 ```
 
@@ -100,7 +93,13 @@ If a permission was previously denied, macOS will not show the consent popup aga
 
 ### Step 2 — Add your AI key (bring your own)
 
-Volyx Lens uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). Click the **`...`** button in the input box (or press `⌘` `,`) to open **Settings**. Provider tabs now open one clean configuration at a time: select a provider, add its key and models, then click **Use as default** when that provider should answer requests.
+Volyx Lens has no subscription fee, but your selected AI or transcription provider may charge for usage. Click the **`...`** button in the input box (or press `⌘` `,`) to open **Settings**. Provider tabs open one configuration at a time: select a provider, add its key and models, then click **Use as default** when that provider should answer requests.
+
+<div align="center">
+  <img src="docs/settings-providers.png" width="700" alt="Volyx Lens Settings showing response-provider selection and Azure Foundry configuration" />
+  <br />
+  <sub>Current provider Settings. Values shown are non-secret examples from the UI test harness.</sub>
+</div>
 
 | Provider | Get a key | Notes |
 |---|---|---|
@@ -109,21 +108,24 @@ Volyx Lens uses **your own** API key, so it's free to run (you only pay your AI 
 | **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Defaults to stable `gemini-3.5-flash` and `gemini-2.5-pro`. One key handles chat and batch transcription. |
 | **Azure Foundry** | [ai.azure.com](https://ai.azure.com) | Enter the resource key, resource endpoint (Volyx Lens adds `/openai/v1` when needed), and exact deployment names. Azure `gpt-realtime-whisper` deployments are supported for listening. |
 | **DeepSeek** | [platform.deepseek.com](https://platform.deepseek.com) | Uses the official `https://api.deepseek.com` endpoint. Defaults to `deepseek-v4-flash` and `deepseek-v4-pro`. DeepSeek is text-only here, so meeting/transcript modes work without screenshots; screen-only analysis needs a vision-capable provider. |
+| **Deepgram** | [console.deepgram.com](https://console.deepgram.com) | Realtime transcription only. Uses pinned `@deepgram/sdk` with Nova-3, interim results, continuous 24 kHz PCM (including silence while listening), and 300 ms endpointing. The key remains in the Electron main process. |
 
 You can also choose one optional **Fallback** response provider. Volyx Lens uses it when the default is not configured, cannot satisfy a required screen request, or fails before emitting any answer text. Volyx Lens does **not** switch providers after partial text has appeared, preventing mixed or duplicated answers. The response panel identifies the provider actually used. A fallback must have its own valid key and model configuration.
 
 Each response-provider tab includes an explicit **Test connection** action for either the Fast or Smart model. The test saves the current settings and sends one minimal text-only request capped at 64 output tokens; it never includes screenshots, transcript, Task Context, resume, job description, or fallback routing, but a small provider charge may apply. Results report the tested provider, tier, model/deployment, vision capability, latency, and—in Azure's case—whether the configured URL is a Foundry resource, Azure OpenAI resource, or project-scoped endpoint. Credentials and endpoint names are never returned to the renderer.
 
-The response provider and transcription provider are independent. Realtime listening can use either direct OpenAI or an Azure Foundry `gpt-realtime-whisper` deployment. Batch fallback uses OpenAI Audio or Gemini when configured.
+The response provider and transcription provider are independent. Realtime listening can use direct OpenAI, an Azure Foundry `gpt-realtime-whisper` deployment, or Deepgram Nova-3. Batch fallback uses OpenAI Audio or Gemini when configured.
 
 Under **Settings → Transcription**, choose:
 
-- **Realtime** (recommended) — streams 24 kHz PCM to `gpt-realtime-whisper`. OpenAI commits turns using local voice activity detection; Azure streams continuously and commits fixed three-second windows as required by Microsoft's current example.
-- **Realtime provider** — choose OpenAI or Azure Foundry. Azure reuses the response-provider key and endpoint by default, or accepts an optional separate Realtime resource key and endpoint.
+- **Realtime** (recommended) — streams 24 kHz PCM. OpenAI commits turns using local voice activity detection; Azure streams continuously and commits fixed three-second windows; Deepgram streams continuously and returns interim/final Nova-3 results. When microphone and system audio are both enabled, Volyx Lens holds mic PCM for 250 ms before echo inspection so the native system-audio reference can catch up.
+- **Realtime provider** — choose OpenAI, Azure Foundry, or Deepgram. Azure reuses the response-provider key and endpoint by default, or accepts an optional separate Realtime resource key and endpoint. Deepgram uses its own securely stored key.
 - **Azure deployment** — enter the exact deployment name assigned to your Azure `gpt-realtime-whisper` model.
+- **Deepgram model** — defaults to `nova-3`; keep this unless a tested compatible streaming model is required.
+- **Browser mic processing** — enabled by default and applies Chromium echo cancellation, noise suppression, and automatic gain control. For speaker-bleed diagnosis, replay the same source once enabled and once disabled; restart listening after each change and compare Diagnostics peak correlation/acoustic suppression. Disabling it can increase room noise.
 - **Batch** — uses the configured OpenAI fallback model or Gemini in short chunks.
 - **Language** — leave blank for automatic behavior, or enter a short language hint such as `en`, `fr`, or `de`.
-- **Delay** — lower values show text sooner; higher values trade latency for more context.
+- **OpenAI/Azure delay** — lower values show text sooner; higher values trade latency for more context. Deepgram uses its explicit streaming endpointing configuration instead.
 - **Microphone / sensitivity / silence** — select the input device and tune local speech boundaries.
 - **Cost warning / session limit** — warn on long sessions and stop automatically at the configured limit.
 
@@ -187,9 +189,9 @@ Volyx Lens is an [Electron](https://www.electronjs.org/) app. Everything runs lo
 **The three inputs are kept completely separate:**
 - **Screen** — captured with Electron's `desktopCapturer` (full-resolution screenshots, taken only when a feature needs one).
 - **Your mic ("You")** — `getUserMedia` → measured device sample rate → deterministic 24 kHz mono PCM resampling → transcribed.
-- **Meeting audio ("Them")** — `getDisplayMedia` loopback capture → the same measured-rate 24 kHz resampling, kept on its own channel so Volyx Lens knows *who* said what.
+- **Meeting audio ("Them")** — a main-process ScreenCaptureKit helper captures macOS system audio and emits bounded 24 kHz mono PCM, kept on its own channel so Volyx Lens knows *who* said what. The helper is bundled in release builds and compiled locally before source startup.
 
-With Realtime enabled, each enabled audio channel gets its own `gpt-realtime-whisper` WebSocket session with the selected transcription provider. Azure uses the GA resource route `wss://<resource-host>/openai/v1/realtime?intent=transcription`, authenticates with the `api-key` header, streams continuously, and commits fixed three-second windows. OpenAI uses bounded local voice activity detection to commit turns after silence. Disable Mic or System in Settings when that source is not needed to avoid opening an unnecessary billable session. Partial transcripts stream into the active speaker box; confirmed chunks are grouped into conversational You/Them turns.
+With Realtime enabled, each enabled audio channel gets its own session with the selected transcription provider. OpenAI and Azure use `gpt-realtime-whisper`; Deepgram uses Nova-3 streaming. Azure uses the GA resource route `wss://<resource-host>/openai/v1/realtime?intent=transcription`, authenticates with the `api-key` header, streams continuously, and commits fixed three-second windows. OpenAI uses bounded local voice activity detection to commit turns after silence. Disable Mic or System in Settings when that source is not needed to avoid opening an unnecessary billable session. Partial transcripts stream into the active speaker box; confirmed chunks are grouped into conversational You/Them turns.
 
 Optional offline batch transcription can run an externally installed `whisper-cli` before any cloud batch provider. It is disabled by default and requires absolute `VOLYX_LENS_WHISPER_CLI` and `VOLYX_LENS_WHISPER_MODEL` environment paths at launch. The executable is never selected by the renderer; Volyx Lens launches it without a shell, with a minimal environment, bounded output/time, private temporary audio files, serialized jobs, and lifecycle cancellation. **Cloud fallback is separately disabled by default in offline mode**, so local failure cannot silently upload audio. Enabling Cloud fallback explicitly allows local → OpenAI → Gemini batch ordering. Volyx Lens does not download, bundle, sign, or prove the network behavior of third-party Whisper binaries/models.
 
@@ -224,7 +226,7 @@ To test Azure safely without streaming microphone audio, stop listening, close V
 Set Zoom's **Screen capture mode** to *"Advanced capture with window filtering"* (see Step 3). And remember: on macOS 15.4+ this can still fail — it's best-effort.
 
 **"Volyx Lens is damaged and can't be opened."**
-Run `xattr -cr /Applications/Volyx\ Lens.app` in Terminal once (see Install → Option A).
+Do not bypass Gatekeeper for an unverified download. Delete the copy, download the signed release archive again from this repository, and verify its checksum. If no signed release exists yet, use the documented source-build path instead.
 
 ---
 
@@ -235,17 +237,17 @@ Run `xattr -cr /Applications/Volyx\ Lens.app` in Terminal once (see Install → 
 - Resume/job-description imports persist only bounded extracted text plus the original filename, never the original path or raw file. `personal-context.json` is encrypted with safeStorage when available and mode `0600`; Settings warns before use when only plaintext fallback storage is available.
 - Enabled personal documents are not uploaded at import time. Relevant bounded excerpts are sent to the selected response provider only when an answer-oriented action runs, and the UI identifies the source and destination provider.
 - Screenshots and response prompts go to the selected LLM provider only when a feature runs.
-- When listening is active, microphone/system audio goes to the selected transcription service: Azure Realtime, OpenAI Realtime/Audio, or Gemini. When optional offline mode is enabled, audio stays local unless **Cloud fallback** is separately enabled. The resulting transcript may then be sent to the selected response provider only when an answer action runs; question detection itself is local.
+- When listening is active, microphone/system audio goes to the selected transcription service: Azure Realtime, OpenAI Realtime/Audio, Deepgram Realtime, or Gemini batch transcription. When optional offline mode is enabled, audio stays local unless **Cloud fallback** is separately enabled. The resulting transcript may then be sent to the selected response provider only when an answer action runs; question detection itself is local.
 - Audio and screenshots are not persisted by Volyx Lens; the current transcript remains in memory until the session ends or the kill switch clears it.
 
 ## Security and releases
 
 - Renderer processes run with Chromium sandboxing, context isolation, no Node integration, a restrictive CSP, denied popup/navigation requests, and bounded IPC payloads.
 - Packaged application code is stored in ASAR and macOS builds enable Hardened Runtime with the minimum Electron/audio entitlements in `build/entitlements.mac.plist`.
-- CI runs tests, syntax checks, a repository secret scan, a critical dependency audit, and Linux/macOS package builds.
+- CI runs tests, both Electron UI harnesses, syntax checks, a repository secret scan, a low-severity dependency audit, package builds, and a deterministic packaged-renderer readiness check.
 - `npm audit` should report zero known vulnerabilities before release.
 
-Local packaging can be verified with `npm test && npm run check:syntax && npm run security:secrets && npm run release:check && npm run pack`. A publicly distributed macOS build still requires credentials that are not stored in this repository: a Developer ID Application certificate (`CSC_LINK` / `CSC_KEY_PASSWORD`) plus Apple notarization credentials (`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`, or the supported App Store Connect API-key variables). `npm run release:mac` fails closed when these variables are absent and always passes `--publish never`. The manual GitHub workflow targets the protected `macos-release` environment, prevents overlapping notarization runs, extracts the exact ZIP that will be uploaded, and verifies bundle ID, Developer ID signature, notarization staple, and Gatekeeper assessment. Configure required reviewers for that GitHub Environment before using it. No release is published automatically.
+Local packaging can be verified with `npm test && npm run check:syntax && npm run security:secrets && npm run release:check && npm run pack`. A publicly distributed macOS build still requires credentials that are not stored in this repository: a Developer ID Application certificate (`CSC_LINK` / `CSC_KEY_PASSWORD`) plus Apple notarization credentials (`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`, or `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`). `npm run release:mac` fails closed when these variables are absent and always passes `--publish never`. Pushing a version tag such as `v0.2.0` starts the GitHub release workflow: it builds Intel and Apple Silicon archives, verifies renderer readiness, signature, notarization staple, Gatekeeper assessment, and architecture, then generates portable SHA-256 files, CycloneDX SBOMs, and separate provenance/SBOM attestations before publishing the GitHub Release. The workflow references the `macos-release` environment, but required reviewers and deployment restrictions must be configured in the repository’s GitHub Environment settings before any version tag is pushed.
 
 ## License
 

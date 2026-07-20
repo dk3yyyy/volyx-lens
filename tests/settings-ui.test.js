@@ -9,6 +9,30 @@ const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'ut
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const styles = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
+const settingsHarness = fs.readFileSync(path.join(root, 'scripts', 'check-settings-ui.js'), 'utf8');
+
+test('settings use four simple pages without removing existing controls', () => {
+  for (const section of ['providers', 'listening', 'context', 'shortcuts']) {
+    assert.match(html, new RegExp(`data-settings-section="${section}"`));
+    assert.match(html, new RegExp(`data-settings-page="${section}"`));
+    assert.match(html, new RegExp(`id="settings-${section}-title"`));
+  }
+  assert.match(html, /id="settings"[^>]*role="dialog"[^>]*aria-modal="true"/);
+  assert.match(renderer, /function selectSettingsSection\(section/);
+  assert.match(renderer, /page\.hidden = !active/);
+  assert.match(styles, /grid-template-columns:\s*156px minmax\(0,1fr\)/);
+});
+
+test('settings behavior harness covers navigation, modal focus, and compact fit', () => {
+  assert.equal(pkg.scripts['check:settings-ui'], 'electron scripts/check-settings-ui.js');
+  assert.match(settingsHarness, /should be the only visible page/);
+  assert.match(settingsHarness, /Shift\+Tab from heading should wrap/);
+  assert.match(settingsHarness, /closing Settings should restore focus/);
+  assert.match(settingsHarness, /compact Settings must not overflow horizontally/);
+  assert.match(renderer, /function handleSettingsKeydown\(event\)/);
+  assert.match(styles, /button:focus-visible[\s\S]*outline:\s*2px solid var\(--cyan\)/);
+});
 
 test('settings UI exposes clean provider tabs with one provider configuration at a time', () => {
   for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek']) {
@@ -30,7 +54,7 @@ test('default and optional fallback response providers are explicit and persiste
   assert.match(renderer, /settings\.provider = providerView/);
   assert.match(renderer, /settings\.fallbackProvider = event\.target\.value/);
   assert.match(renderer, /fallback\.options/);
-  assert.match(renderer, /fallback: \$\{fallbackLabel\}/);
+  assert.match(renderer, /\$\{fallbackLabel\} fallback/);
 });
 
 test('renderer loads credential presence and sends only explicit key updates', () => {

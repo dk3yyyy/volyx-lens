@@ -1,5 +1,6 @@
 const { VoiceActivityDetector } = require('./voice-activity');
 const { normalizeAzureEndpoint, normalizeTranscriptionLanguage } = require('./provider-config');
+const { DeepgramRealtimeChannel } = require('./deepgram-realtime');
 
 const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime';
 
@@ -20,11 +21,23 @@ function buildRealtimeConnection({ provider = 'openai', endpoint, apiKey, model 
 }
 
 function cleanError(error, channel) {
-  return {
-    code: (error && error.code) || 'realtime_error',
-    message: (error && error.message) || 'Realtime transcription failed.',
-    channel,
-  };
+  const candidate = [error && error.code, error && error.type, error && error.message]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase())
+    .join(' ');
+  if (/(auth|api.?key|401|403)/.test(candidate)) {
+    return { code: 'realtime_authentication_failed', message: 'Realtime transcription authentication failed.', channel };
+  }
+  if (candidate.includes('timeout')) {
+    return { code: 'realtime_connection_timeout', message: 'Realtime transcription connection timed out.', channel };
+  }
+  if (/(network|socket|transport|connect|closed|backpressure|ws_)/.test(candidate)) {
+    return { code: 'realtime_transport_failed', message: 'Realtime transcription connection failed.', channel };
+  }
+  if (/(audio|transcription)/.test(candidate)) {
+    return { code: 'realtime_audio_failed', message: 'Realtime transcription could not process this audio segment.', channel };
+  }
+  return { code: 'realtime_failed', message: 'Realtime transcription failed.', channel };
 }
 
 class OpenAIRealtimeChannel {
@@ -327,6 +340,7 @@ class RealtimeTranscriptionManager {
     azureCommitMs = 3000,
     enabledChannels = ['you', 'them'],
     WebSocketImpl,
+    DeepgramClientImpl,
     onPartial = () => {},
     onFinal = () => {},
     onError = () => {},
@@ -363,7 +377,8 @@ class RealtimeTranscriptionManager {
     this.channelStates = Object.fromEntries(this.enabledChannels.map((channel) => [channel, 'idle']));
     for (const channel of this.enabledChannels) {
       this.vads[channel] = new VoiceActivityDetector({ sampleRate, ...vad });
-      this.channels[channel] = new OpenAIRealtimeChannel({
+      const ChannelImpl = provider === 'deepgram' ? DeepgramRealtimeChannel : OpenAIRealtimeChannel;
+      this.channels[channel] = new ChannelImpl({
         apiKey,
         channel,
         provider,
@@ -373,6 +388,7 @@ class RealtimeTranscriptionManager {
         delay,
         sampleRate,
         WebSocketImpl,
+        DeepgramClientImpl,
         onPartial,
         onFinal,
         onError: (error) => this._fail(error),
@@ -394,6 +410,7 @@ class RealtimeTranscriptionManager {
     const buffer = Buffer.isBuffer(pcm) ? pcm : Buffer.from(pcm || []);
     if (!buffer.length) return true;
     if (this.provider === 'azure') return this._appendAzure(channelName, buffer);
+    if (this.provider === 'deepgram') return this._appendDeepgram(channelName, buffer);
     const wasActive = this.vads[channelName].active;
     const durationMs = (buffer.length / 2 / this.vads[channelName].sampleRate) * 1000;
     const fallback = this.fallbackCandidates[channelName];
@@ -451,6 +468,18 @@ class RealtimeTranscriptionManager {
     return true;
   }
 
+  _appendDeepgram(channelName, buffer) {
+    const result = this.vads[channelName].push(buffer);
+    const accepted = this.channels[channelName].append(buffer);
+    if (result.speechStarted) {
+      this.onState({ mode: 'realtime', status: 'activity', channel: channelName, activity: 'speech' });
+    }
+    if (result.speechStopped) {
+      this.onState({ mode: 'realtime', status: 'activity', channel: channelName, activity: 'processing' });
+    }
+    return accepted;
+  }
+
   _fallbackEligible(channelName) {
     const vad = this.vads[channelName];
     const fallback = this.fallbackCandidates[channelName];
@@ -476,7 +505,9 @@ class RealtimeTranscriptionManager {
     }
     const shouldFlushFallback = flushFallback == null ? graceMs > 0 : !!flushFallback;
     for (const channel of Object.keys(this.channels)) {
-      if (this.provider === 'azure') {
+      if (this.provider === 'deepgram') {
+        this.channels[channel].commit();
+      } else if (this.provider === 'azure') {
         const stream = this.azureStreams[channel];
         if (shouldFlushFallback && stream.durationMs >= 500 && stream.maxLevel >= 30) {
           this.channels[channel].commit();

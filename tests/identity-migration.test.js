@@ -18,11 +18,19 @@ test('Volyx Lens identity is complete across package and release metadata', () =
   assert.equal(pkg.author, 'VolyxAI');
   assert.equal(pkg.build.productName, 'Volyx Lens');
   assert.equal(pkg.build.appId, 'ai.volyx.lens');
-  assert.deepEqual(pkg.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr'] }]);
+  assert.equal(pkg.build.artifactName, 'volyx-lens-${version}-${os}-${arch}.${ext}');
+  assert.deepEqual(pkg.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr', 'volyx-lens-system-audio'] }]);
   assert.ok(pkg.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-vision-ocr'));
+  assert.ok(pkg.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-system-audio'));
   assert.match(workflow, /Volyx Lens\.app/);
   assert.match(workflow, /ai\.volyx\.lens/);
-  assert.match(workflow, /volyx-lens-macos-signed/);
+  assert.match(workflow, /volyx-lens-macos-\$\{\{ matrix\.arch \}\}/);
+  assert.match(workflow, /macos-15-intel[\s\S]*arch: x64/);
+  assert.match(workflow, /actions\/attest@v4/);
+  assert.match(workflow, /Attest build provenance[\s\S]*subject-path:[^\n]+[\s\S]*Attest signed archive SBOM/);
+  assert.match(workflow, /\(cd dist && shasum -a 256 "\$ZIP_NAME"/);
+  assert.match(workflow, /VOLYX_LENS_RENDERER_READY/);
+  assert.match(workflow, /gh release create/);
 });
 
 test('legacy Volyx Lens data is copied once without overwriting current Volyx Lens data', () => {
