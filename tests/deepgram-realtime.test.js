@@ -79,6 +79,18 @@ test.beforeEach(() => {
   PreOpenFailureClient.connection = null;
 });
 
+async function settlesWithin(promise, timeoutMs = 100) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => { timer = setTimeout(() => resolve('still-pending'), timeoutMs); }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 test('Deepgram options use Nova-3 with continuous 24 kHz linear PCM and bounded endpointing', () => {
   assert.deepEqual(buildDeepgramOptions({ model: 'nova-3', language: 'en', sampleRate: 24000 }), {
     model: 'nova-3',
@@ -243,16 +255,32 @@ for (const eventName of ['error', 'close']) {
     const connection = PreOpenFailureClient.connection;
     if (eventName === 'error') connection.emit('error', new Error('socket failed before open'));
     else connection.emit('close', 1006, 'network lost');
-    const outcome = await Promise.race([
-      connecting.then(() => 'resolved', () => 'rejected'),
-      new Promise((resolve) => setTimeout(() => resolve('still-pending'), 100)),
-    ]);
+    const outcome = await settlesWithin(connecting.then(() => 'resolved', () => 'rejected'));
     assert.equal(outcome, 'rejected');
     assert.equal(failures.length, 1);
     assert.equal(failures[0].code, 'realtime_transport_failed');
     assert.ok(connection.closed >= 1 || connection.closeStreams >= 1);
   });
 }
+
+test('Deepgram pre-open error stays a transport failure when the error callback closes the channel', async () => {
+  const failures = [];
+  let channel = null;
+  channel = new DeepgramRealtimeChannel({
+    apiKey: 'deepgram-secret', channel: 'you', connectTimeoutMs: 5000,
+    DeepgramClientImpl: PreOpenFailureClient,
+    onError: (error) => { failures.push(error); channel.close(); },
+  });
+  const connecting = channel.connect();
+  await new Promise((resolve) => setImmediate(resolve));
+  const connection = PreOpenFailureClient.connection;
+  connection.emit('error', new Error('socket failed before open'));
+  connection.emit('close', 1006, 'network lost');
+  await assert.rejects(connecting, /Deepgram transcription connection failed/i);
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].code, 'realtime_transport_failed');
+  assert.equal(connection.closed, 1);
+});
 
 test('manager sends continuous Deepgram audio without waiting for a local VAD commit', async () => {
   const manager = new RealtimeTranscriptionManager({

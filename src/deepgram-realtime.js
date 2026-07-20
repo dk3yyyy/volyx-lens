@@ -135,13 +135,14 @@ class DeepgramRealtimeChannel {
     let opening = true;
     const preOpenFailure = new Promise((_, reject) => { rejectPreOpen = reject; });
     const failPreOpen = (clean) => {
+      if (opening && rejectPreOpen && !this.intentionalClose) {
+        const error = new Error(clean.message);
+        error.code = clean.code;
+        const reject = rejectPreOpen;
+        rejectPreOpen = null;
+        reject(error);
+      }
       this._reportError(clean);
-      if (!opening || !rejectPreOpen || this.intentionalClose) return;
-      const error = new Error(clean.message);
-      error.code = clean.code;
-      const reject = rejectPreOpen;
-      rejectPreOpen = null;
-      reject(error);
     };
     connection.on('open', () => this.onState({ channel: this.channel, state: 'connected' }));
     connection.on('message', (event) => this._handleMessage(event));
@@ -163,7 +164,7 @@ class DeepgramRealtimeChannel {
         }),
       ]);
     } catch (error) {
-      if (this.intentionalClose || error.code === 'connection_cancelled') {
+      if (error.code === 'connection_cancelled') {
         this._disposeConnection(connection, false);
         throw new Error('Deepgram connection cancelled.');
       }

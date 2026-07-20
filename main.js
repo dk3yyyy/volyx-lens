@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCap
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { migrateLegacyUserData, getLegacyDataStatus, deleteLegacyUserData } = require('./src/identity-migration');
+const { migrateLegacyUserData } = require('./src/identity-migration');
 const currentUserDataPath = app.getPath('userData');
 const legacyUserDataPath = path.join(path.dirname(currentUserDataPath), 'volyx-lens-legacy');
 const identityMigration = migrateLegacyUserData({ legacyUserData: legacyUserDataPath, currentUserData: currentUserDataPath });
@@ -1195,20 +1195,6 @@ handleTrusted('personal-context:get', () => personalContextStore.getSummary());
 handleTrusted('personal-context:import', (_e, kind) => importPersonalContextDocument(String(kind || '')));
 handleTrusted('personal-context:remove', (_e, kind) => personalContextStore.removeDocument(String(kind || '')));
 handleTrusted('personal-context:set-enabled', (_e, kind, enabled) => personalContextStore.setEnabled(String(kind || ''), enabled === true));
-function verifiedLegacyDataStatus() {
-  const base = getLegacyDataStatus({ legacyUserData: legacyUserDataPath, currentUserData: currentUserDataPath });
-  const settingsStatus = store.getPublicSettings().credentialStatus || {};
-  const contextStatus = personalContextStore.getSummary();
-  const secureStorageReady = settingsStatus.secure === true && contextStatus.secure === true && contextStatus.locked !== true;
-  return { ...base, secureStorageReady, canDelete: base.canDelete && secureStorageReady };
-}
-handleTrusted('legacy-data:status', () => verifiedLegacyDataStatus());
-handleTrusted('legacy-data:delete', () => {
-  const before = verifiedLegacyDataStatus();
-  if (!before.canDelete) throw new Error('Legacy data cannot be deleted until every current copy is readable and protected by macOS safeStorage.');
-  const result = deleteLegacyUserData({ legacyUserData: legacyUserDataPath, currentUserData: currentUserDataPath });
-  return { ...verifiedLegacyDataStatus(), deletedCount: result.deletedCount };
-});
 handleTrusted('capture:toggle', () => setCapturing(!desiredCapturing));
 handleTrusted('capture:stop', () => setCapturing(false));
 handleTrusted('capture:state', () => ({ active: state.capturing, transitioning: state.capturing !== desiredCapturing }));
