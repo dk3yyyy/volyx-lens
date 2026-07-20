@@ -175,9 +175,11 @@ function findCrossTalkDuplicate(turns, candidate, arrivalTimes, now = Date.now()
     let previousArrival = arrivedAt;
     for (let earlier = index - 1; earlier >= 0 && group.length < MAX_ROLLING_SEGMENTS; earlier -= 1) {
       const prior = turns[earlier];
-      if (!prior || prior.channel !== turn.channel) continue;
+      if (!prior) continue;
       const priorArrival = arrivalTimes instanceof Map ? arrivalTimes.get(prior.id) : prior.ts;
-      if (!Number.isFinite(priorArrival) || now - priorArrival > windowMs || previousArrival - priorArrival > MAX_ROLLING_GAP_MS) break;
+      if (!Number.isFinite(priorArrival) || now - priorArrival > windowMs) break;
+      if (prior.channel !== turn.channel) continue;
+      if (previousArrival - priorArrival > MAX_ROLLING_GAP_MS) break;
       group.unshift(prior);
       previousArrival = priorArrival;
     }

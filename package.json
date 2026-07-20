@@ -15,6 +15,7 @@
     "check:settings-ui": "electron scripts/check-settings-ui.js",
     "security:secrets": "node scripts/check-secrets.js",
     "test:azure-realtime": "node scripts/azure-realtime-probe.js",
+    "prestart": "node scripts/build-native.js",
     "start": "electron .",
     "pack": "electron-builder --dir --config.mac.notarize=false",
     "release:check": "node scripts/check-macos-release.js",

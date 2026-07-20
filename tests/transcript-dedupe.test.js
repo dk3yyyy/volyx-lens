@@ -46,6 +46,20 @@ test('duplicate search is bounded by recent opposite-channel arrivals', () => {
   assert.equal(expired, null);
 });
 
+test('rolling duplicate scan stops at a stale interleaved turn before inspecting older history', () => {
+  const turns = [
+    { id: 1, channel: 'them', text: video, ts: 1000 },
+    { id: 2, channel: 'you', text: 'An unrelated stale microphone turn with enough words.', ts: 2000 },
+    { id: 3, channel: 'them', text: video, ts: 19_000 },
+  ];
+  const inspected = [];
+  const arrivals = new Map([[1, 1000], [2, 2000], [3, 19_000]]);
+  const originalGet = arrivals.get.bind(arrivals);
+  arrivals.get = (id) => { inspected.push(id); return originalGet(id); };
+  findCrossTalkDuplicate(turns, { channel: 'you', text: leakedMic }, arrivals, 20_000, 5000);
+  assert.deepEqual(inspected.slice(0, 2), [3, 2]);
+});
+
 test('a substantial containment match tolerates one channel missing a few edge words', () => {
   const full = 'When you think about coordinates as scalars the basis vectors define what those scalars mean in the space';
   const clipped = 'coordinates as scalars the basis vectors define what those scalars mean in the space';

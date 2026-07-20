@@ -61,7 +61,7 @@ There are two ways to install Volyx Lens. **If you're not a developer, use Optio
 
 ### Option B — Run from source (developers)
 
-You need [Node.js](https://nodejs.org) 20+ installed. No Xcode required.
+You need [Node.js](https://nodejs.org) 20+ installed. On macOS, source startup compiles the local Vision OCR and ScreenCaptureKit system-audio helpers, so install Apple's Xcode Command Line Tools first with `xcode-select --install`. Downloaded release builds already include these helpers and do not require development tools.
 
 ```bash
 git clone https://github.com/dk3yyyy/volyx-lens.git
@@ -189,9 +189,9 @@ Volyx Lens is an [Electron](https://www.electronjs.org/) app. Everything runs lo
 **The three inputs are kept completely separate:**
 - **Screen** — captured with Electron's `desktopCapturer` (full-resolution screenshots, taken only when a feature needs one).
 - **Your mic ("You")** — `getUserMedia` → measured device sample rate → deterministic 24 kHz mono PCM resampling → transcribed.
-- **Meeting audio ("Them")** — `getDisplayMedia` loopback capture → the same measured-rate 24 kHz resampling, kept on its own channel so Volyx Lens knows *who* said what.
+- **Meeting audio ("Them")** — a main-process ScreenCaptureKit helper captures macOS system audio and emits bounded 24 kHz mono PCM, kept on its own channel so Volyx Lens knows *who* said what. The helper is bundled in release builds and compiled locally before source startup.
 
-With Realtime enabled, each enabled audio channel gets its own `gpt-realtime-whisper` WebSocket session with the selected transcription provider. Azure uses the GA resource route `wss://<resource-host>/openai/v1/realtime?intent=transcription`, authenticates with the `api-key` header, streams continuously, and commits fixed three-second windows. OpenAI uses bounded local voice activity detection to commit turns after silence. Disable Mic or System in Settings when that source is not needed to avoid opening an unnecessary billable session. Partial transcripts stream into the active speaker box; confirmed chunks are grouped into conversational You/Them turns.
+With Realtime enabled, each enabled audio channel gets its own session with the selected transcription provider. OpenAI and Azure use `gpt-realtime-whisper`; Deepgram uses Nova-3 streaming. Azure uses the GA resource route `wss://<resource-host>/openai/v1/realtime?intent=transcription`, authenticates with the `api-key` header, streams continuously, and commits fixed three-second windows. OpenAI uses bounded local voice activity detection to commit turns after silence. Disable Mic or System in Settings when that source is not needed to avoid opening an unnecessary billable session. Partial transcripts stream into the active speaker box; confirmed chunks are grouped into conversational You/Them turns.
 
 Optional offline batch transcription can run an externally installed `whisper-cli` before any cloud batch provider. It is disabled by default and requires absolute `VOLYX_LENS_WHISPER_CLI` and `VOLYX_LENS_WHISPER_MODEL` environment paths at launch. The executable is never selected by the renderer; Volyx Lens launches it without a shell, with a minimal environment, bounded output/time, private temporary audio files, serialized jobs, and lifecycle cancellation. **Cloud fallback is separately disabled by default in offline mode**, so local failure cannot silently upload audio. Enabling Cloud fallback explicitly allows local → OpenAI → Gemini batch ordering. Volyx Lens does not download, bundle, sign, or prove the network behavior of third-party Whisper binaries/models.
 
@@ -226,7 +226,7 @@ To test Azure safely without streaming microphone audio, stop listening, close V
 Set Zoom's **Screen capture mode** to *"Advanced capture with window filtering"* (see Step 3). And remember: on macOS 15.4+ this can still fail — it's best-effort.
 
 **"Volyx Lens is damaged and can't be opened."**
-Run `xattr -cr /Applications/Volyx\ Lens.app` in Terminal once (see Install → Option A).
+Do not bypass Gatekeeper for an unverified download. Delete the copy, download the signed release archive again from this repository, and verify its checksum. If no signed release exists yet, use the documented source-build path instead.
 
 ---
 
@@ -237,7 +237,7 @@ Run `xattr -cr /Applications/Volyx\ Lens.app` in Terminal once (see Install → 
 - Resume/job-description imports persist only bounded extracted text plus the original filename, never the original path or raw file. `personal-context.json` is encrypted with safeStorage when available and mode `0600`; Settings warns before use when only plaintext fallback storage is available.
 - Enabled personal documents are not uploaded at import time. Relevant bounded excerpts are sent to the selected response provider only when an answer-oriented action runs, and the UI identifies the source and destination provider.
 - Screenshots and response prompts go to the selected LLM provider only when a feature runs.
-- When listening is active, microphone/system audio goes to the selected transcription service: Azure Realtime, OpenAI Realtime/Audio, or Gemini. When optional offline mode is enabled, audio stays local unless **Cloud fallback** is separately enabled. The resulting transcript may then be sent to the selected response provider only when an answer action runs; question detection itself is local.
+- When listening is active, microphone/system audio goes to the selected transcription service: Azure Realtime, OpenAI Realtime/Audio, Deepgram Realtime, or Gemini batch transcription. When optional offline mode is enabled, audio stays local unless **Cloud fallback** is separately enabled. The resulting transcript may then be sent to the selected response provider only when an answer action runs; question detection itself is local.
 - Audio and screenshots are not persisted by Volyx Lens; the current transcript remains in memory until the session ends or the kill switch clears it.
 
 ## Security and releases

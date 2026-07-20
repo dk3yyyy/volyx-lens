@@ -12,6 +12,8 @@ const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'ut
 const styles = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
 const screenSource = fs.readFileSync(path.join(root, 'src', 'screen.js'), 'utf8');
 const storeSource = fs.readFileSync(path.join(root, 'src', 'store.js'), 'utf8');
+const pkg = require('../package.json');
+const releaseWorkflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-macos.yml'), 'utf8');
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -137,4 +139,17 @@ test('permission state is refreshed from macOS rather than trusted as a cached g
   assert.match(main, /systemPreferences\.getMediaAccessStatus\(permission\)/);
   assert.match(renderer, /async function refreshPermissionStates/);
   assert.match(renderer, /void refreshPermissionStates\(\)/);
+});
+
+test('source startup builds required native helpers before launching Electron', () => {
+  assert.equal(pkg.scripts.prestart, 'node scripts/build-native.js');
+  const buildNative = fs.readFileSync(path.join(root, 'scripts', 'build-native.js'), 'utf8');
+  assert.match(buildNative, /buildVisionOcr/);
+  assert.match(buildNative, /catch\(.*process\.exitCode = 1/s);
+});
+
+test('release tags must point to a commit reachable from main', () => {
+  assert.match(releaseWorkflow, /fetch-depth:\s*0/);
+  assert.match(releaseWorkflow, /git fetch origin main/);
+  assert.match(releaseWorkflow, /git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main/);
 });
