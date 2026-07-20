@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { migrateLegacyUserData } = require('../src/identity-migration');
+const { migrateLegacyUserData, getLegacyDataStatus, deleteLegacyUserData } = require('../src/identity-migration');
 
 function temporaryRoot() {
   return fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-lens-migration-')));
@@ -87,4 +87,44 @@ test('legacy migration rejects symlinked source and destination directories', ()
   fs.symlinkSync(redirectedDestination, linkedDestination, 'dir');
   assert.deepEqual(migrateLegacyUserData({ legacyUserData: ordinaryLegacy, currentUserData: linkedDestination }).migrated, []);
   assert.equal(fs.existsSync(path.join(redirectedDestination, 'volyx-lens-data.json')), false);
+});
+
+test('legacy cleanup deletes only known files after protected destination copies exist', () => {
+  const root = temporaryRoot();
+  const legacyUserData = path.join(root, 'volyx-lens');
+  const currentUserData = path.join(root, 'Volyx Lens');
+  fs.mkdirSync(legacyUserData, { recursive: true });
+  fs.mkdirSync(currentUserData, { recursive: true });
+  fs.writeFileSync(path.join(legacyUserData, 'volyx-lens-data.json'), '{"apiKeys":{"openai":"legacy"}}', { mode: 0o600 });
+  fs.writeFileSync(path.join(legacyUserData, 'personal-context.json'), '{"resume":"legacy"}', { mode: 0o600 });
+  fs.writeFileSync(path.join(legacyUserData, 'keep-me.txt'), 'unrelated');
+  fs.writeFileSync(path.join(currentUserData, 'volyx-lens-data.json'), '{"credentials":{"mode":"safeStorage","values":{}}}', { mode: 0o600 });
+  fs.writeFileSync(path.join(currentUserData, 'personal-context.json'), '{"mode":"safeStorage","values":{}}', { mode: 0o600 });
+
+  assert.deepEqual(getLegacyDataStatus({ legacyUserData, currentUserData }), {
+    presentCount: 2, protectedCount: 2, canDelete: true,
+  });
+  assert.deepEqual(deleteLegacyUserData({ legacyUserData, currentUserData }), {
+    deletedCount: 2, remainingCount: 0,
+  });
+  assert.equal(fs.existsSync(path.join(legacyUserData, 'volyx-lens-data.json')), false);
+  assert.equal(fs.existsSync(path.join(legacyUserData, 'personal-context.json')), false);
+  assert.equal(fs.readFileSync(path.join(legacyUserData, 'keep-me.txt'), 'utf8'), 'unrelated');
+});
+
+test('legacy cleanup refuses deletion for plaintext destination copies', () => {
+  const root = temporaryRoot();
+  const legacyUserData = path.join(root, 'volyx-lens');
+  const currentUserData = path.join(root, 'Volyx Lens');
+  fs.mkdirSync(legacyUserData, { recursive: true });
+  fs.mkdirSync(currentUserData, { recursive: true });
+  fs.writeFileSync(path.join(legacyUserData, 'volyx-lens-data.json'), '{"apiKeys":{"openai":"legacy"}}', { mode: 0o600 });
+  fs.writeFileSync(path.join(currentUserData, 'volyx-lens-data.json'), '{"credentials":{"mode":"plaintext-fallback","values":{}}}', { mode: 0o600 });
+  assert.deepEqual(getLegacyDataStatus({ legacyUserData, currentUserData }), {
+    presentCount: 1, protectedCount: 0, canDelete: false,
+  });
+  assert.deepEqual(deleteLegacyUserData({ legacyUserData, currentUserData }), {
+    deletedCount: 0, remainingCount: 1,
+  });
+  assert.equal(fs.existsSync(path.join(legacyUserData, 'volyx-lens-data.json')), true);
 });

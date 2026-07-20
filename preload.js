@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('volyxLens', {
   personalContextImport: (kind) => ipcRenderer.invoke('personal-context:import', kind),
   personalContextRemove: (kind) => ipcRenderer.invoke('personal-context:remove', kind),
   personalContextSetEnabled: (kind, enabled) => ipcRenderer.invoke('personal-context:set-enabled', kind, enabled),
+  legacyDataStatus: () => ipcRenderer.invoke('legacy-data:status'),
+  legacyDataDelete: () => ipcRenderer.invoke('legacy-data:delete'),
   ask: (payload) => ipcRenderer.send('ask', payload),
   cancelResponse: () => ipcRenderer.send('llm:cancel'),
   captureToggle: () => ipcRenderer.invoke('capture:toggle'),

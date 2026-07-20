@@ -64,10 +64,19 @@ class DelayedDeepgramClient {
   }
 }
 
+class PreOpenFailureClient {
+  static connection = null;
+  constructor() {
+    PreOpenFailureClient.connection = new DelayedConnection();
+    this.listen = { v1: { connect: async () => PreOpenFailureClient.connection } };
+  }
+}
+
 test.beforeEach(() => {
   FakeDeepgramClient.instances = [];
   DelayedDeepgramClient.connection = null;
   DelayedDeepgramClient.resolveFactory = null;
+  PreOpenFailureClient.connection = null;
 });
 
 test('Deepgram options use Nova-3 with continuous 24 kHz linear PCM and bounded endpointing', () => {
@@ -220,6 +229,30 @@ test('closing during asynchronous SDK connection creation cannot open a leaked s
   assert.equal(DelayedDeepgramClient.connection.connectCalls, 0);
   assert.equal(DelayedDeepgramClient.connection.closed, 1);
 });
+
+for (const eventName of ['error', 'close']) {
+  test(`Deepgram ${eventName} before open rejects immediately instead of waiting for timeout`, async () => {
+    const failures = [];
+    const channel = new DeepgramRealtimeChannel({
+      apiKey: 'deepgram-secret', channel: 'you', connectTimeoutMs: 5000,
+      DeepgramClientImpl: PreOpenFailureClient,
+      onError: (error) => failures.push(error),
+    });
+    const connecting = channel.connect();
+    await new Promise((resolve) => setImmediate(resolve));
+    const connection = PreOpenFailureClient.connection;
+    if (eventName === 'error') connection.emit('error', new Error('socket failed before open'));
+    else connection.emit('close', 1006, 'network lost');
+    const outcome = await Promise.race([
+      connecting.then(() => 'resolved', () => 'rejected'),
+      new Promise((resolve) => setTimeout(() => resolve('still-pending'), 100)),
+    ]);
+    assert.equal(outcome, 'rejected');
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].code, 'realtime_transport_failed');
+    assert.ok(connection.closed >= 1 || connection.closeStreams >= 1);
+  });
+}
 
 test('manager sends continuous Deepgram audio without waiting for a local VAD commit', async () => {
   const manager = new RealtimeTranscriptionManager({

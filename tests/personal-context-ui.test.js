@@ -27,6 +27,20 @@ test('personal-context IPC is narrow and file paths remain in the main process',
   assert.match(main, /dialog\.showOpenDialog\(win/);
   assert.match(main, /parseContextDocument\(\{ filePath, buffer: await fs\.promises\.readFile\(filePath\) \}\)/);
   assert.match(main, /handleTrusted\('personal-context:remove'/);
+  assert.match(preload, /legacyDataStatus: \(\) => ipcRenderer\.invoke\('legacy-data:status'\)/);
+  assert.match(preload, /legacyDataDelete: \(\) => ipcRenderer\.invoke\('legacy-data:delete'\)/);
+  assert.match(main, /handleTrusted\('legacy-data:status'/);
+  assert.match(main, /handleTrusted\('legacy-data:delete'/);
+  assert.doesNotMatch(preload, /legacyDataDelete: \([^)]*path/i);
+});
+
+test('Settings exposes explicit confirmed cleanup only for protected legacy copies', () => {
+  for (const id of ['legacy-data-card', 'legacy-data-status', 'legacy-data-delete']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(renderer, /volyxLens\.legacyDataStatus\(\)/);
+  assert.match(renderer, /window\.confirm\([^)]*legacy/i);
+  assert.match(renderer, /volyxLens\.legacyDataDelete\(\)/);
 });
 
 test('answer generation discloses and safely injects only selected personal context', () => {
