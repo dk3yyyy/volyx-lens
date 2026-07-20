@@ -6,7 +6,9 @@
 
 Bring your own AI key and keep control of the providers you use (OpenAI · Anthropic · Google Gemini · Azure Foundry · DeepSeek · Deepgram transcription).
 
-<img src="docs/tutorial.png" width="620" alt="Volyx Lens first-run tutorial" />
+<img src="docs/tutorial.png" width="700" alt="Volyx Lens redesigned first-run welcome screen" />
+
+<sub>The current five-step onboarding experience.</sub>
 
 </div>
 
@@ -14,10 +16,6 @@ Bring your own AI key and keep control of the providers you use (OpenAI · Anthr
 
 > [!IMPORTANT]
 > **Please read this first.** Volyx Lens tries to stay out of screen recordings/shares, but this is **best-effort, not guaranteed** — on macOS 15.4+ Apple can let modern capture tools see it anyway, and a phone camera always can. Using a hidden assistant during a **proctored exam, job interview, or recorded meeting** may break that platform's rules and, in some places, consent laws. Volyx Lens is built for legitimate uses — your own notes, studying, accessibility, and practice. **You are responsible for how you use it.**
->
-> On Zoom specifically, whether Volyx Lens is hidden depends on one setting — **Settings → Share Screen → Screen capture mode → "Advanced capture with window filtering."**
->
-> <img src="docs/zoom-capture-mode.png" width="560" alt="Zoom Settings → Share Screen → Screen capture mode set to Advanced capture with window filtering" />
 
 ---
 
@@ -95,7 +93,13 @@ If a permission was previously denied, macOS will not show the consent popup aga
 
 ### Step 2 — Add your AI key (bring your own)
 
-Volyx Lens uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). Click the **`...`** button in the input box (or press `⌘` `,`) to open **Settings**. Provider tabs now open one clean configuration at a time: select a provider, add its key and models, then click **Use as default** when that provider should answer requests.
+Volyx Lens has no subscription fee, but your selected AI or transcription provider may charge for usage. Click the **`...`** button in the input box (or press `⌘` `,`) to open **Settings**. Provider tabs open one configuration at a time: select a provider, add its key and models, then click **Use as default** when that provider should answer requests.
+
+<div align="center">
+  <img src="docs/settings-providers.png" width="700" alt="Volyx Lens Settings showing response-provider selection and Azure Foundry configuration" />
+  <br />
+  <sub>Current provider Settings. Values shown are non-secret examples from the UI test harness.</sub>
+</div>
 
 | Provider | Get a key | Notes |
 |---|---|---|
