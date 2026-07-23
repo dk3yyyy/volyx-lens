@@ -106,5 +106,8 @@ test('renderer keeps macOS system PCM out of the preload boundary', () => {
   assert.match(preload, /platform: process\.platform/);
   const swift = fs.readFileSync(path.join(root, 'native', 'macos-system-audio.swift'), 'utf8');
   assert.match(swift, /bundleIdentifier == "ai\.volyx\.lens"/);
-  assert.match(swift, /self\?\.stopped\.signal\(\)/);
+  assert.match(swift, /private final class StopLatch: @unchecked Sendable/);
+  assert.match(swift, /let stopLatch = stopped/);
+  assert.match(swift, /DispatchQueue\.global\(\)\.async \{[\s\S]*stopLatch\.signal\(\)/);
+  assert.doesNotMatch(swift, /DispatchQueue\.global\(\)\.async \{ \[weak self\]/);
 });
