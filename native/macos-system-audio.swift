@@ -8,7 +8,9 @@ private let frameSamples = 480
 private let frameBytes = frameSamples * MemoryLayout<Int16>.size
 private let maxQueuedFrames = 100
 
-private final class StopLatch {
+// All mutable state is protected by `lock`, so sharing this latch across
+// DispatchQueue's @Sendable closures is safe.
+private final class StopLatch: @unchecked Sendable {
     private let lock = NSLock()
     private var signaled = false
     private var continuation: CheckedContinuation<Void, Never>?
@@ -199,18 +201,19 @@ private final class CaptureController {
             configuration.sampleRate = sampleRate
             configuration.channelCount = 1
             configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-            let captureOutput = CaptureOutput(writer: writer) { [weak self] _ in self?.stopped.signal() }
+            let stopLatch = stopped
+            let captureOutput = CaptureOutput(writer: writer) { _ in stopLatch.signal() }
             let captureStream = SCStream(filter: filter, configuration: configuration, delegate: captureOutput)
             try captureStream.addStreamOutput(captureOutput, type: .audio, sampleHandlerQueue: audioQueue)
             output = captureOutput
             stream = captureStream
             try await captureStream.startCapture()
             writer.event(["event": "ready", "format": ["encoding": "s16le", "sampleRate": sampleRate, "channels": 1, "frameSamples": frameSamples]])
-            DispatchQueue.global().async { [weak self] in
+            DispatchQueue.global().async {
                 while let line = readLine() {
-                    if line.contains("\"command\":\"stop\"") { self?.stopped.signal(); break }
+                    if line.contains("\"command\":\"stop\"") { stopLatch.signal(); break }
                 }
-                self?.stopped.signal()
+                stopLatch.signal()
             }
             await stopped.wait()
             stopping = true
