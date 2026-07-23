@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Volyx Lens eye app icon</title>
+  <desc id="desc">A minimal violet and blue eye representing focused, user-selected context.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#201C40"/>
+      <stop offset="1" stop-color="#0D0B1E"/>
+    </linearGradient>
+    <linearGradient id="eye" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset=".48" stop-color="#A8DFFF"/>
+      <stop offset="1" stop-color="#9B83FF"/>
+    </linearGradient>
+    <radialGradient id="iris" cx="38%" cy="32%" r="70%">
+      <stop offset="0" stop-color="#8BE4FF"/>
+      <stop offset=".45" stop-color="#4D84FF"/>
+      <stop offset="1" stop-color="#7957E8"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity=".42"/>
+    </filter>
+  </defs>
+
+  <rect x="52" y="52" width="920" height="920" rx="216" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="62" y="62" width="900" height="900" rx="206" fill="none" stroke="#FFFFFF" stroke-opacity=".08" stroke-width="10"/>
+
+  <ellipse cx="512" cy="512" rx="210" ry="190" fill="#556DFF" opacity=".2" filter="url(#glow)"/>
+
+  <!-- One continuous eye silhouette: simple enough to remain legible in the Dock. -->
+  <path d="M196 512 C278 356 390 294 512 294 C634 294 746 356 828 512 C746 668 634 730 512 730 C390 730 278 668 196 512 Z"
+        fill="#111027" stroke="url(#eye)" stroke-width="34" stroke-linejoin="round"/>
+
+  <!-- Lens-like iris. -->
+  <circle cx="512" cy="512" r="150" fill="url(#iris)" stroke="#FFFFFF" stroke-opacity=".72" stroke-width="18"/>
+  <circle cx="512" cy="512" r="92" fill="#121027" stroke="#A99AFF" stroke-width="12"/>
+  <circle cx="512" cy="512" r="47" fill="#080714"/>
+  <circle cx="466" cy="459" r="28" fill="#FFFFFF" opacity=".88"/>
+  <circle cx="554" cy="564" r="11" fill="#82DEFF" opacity=".75"/>
+</svg>
