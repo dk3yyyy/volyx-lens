@@ -14,6 +14,7 @@ test('Volyx Lens identity is complete across package and release metadata', () =
   const root = path.join(__dirname, '..');
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-macos.yml'), 'utf8');
+  const testBuildWorkflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'build-macos-test.yml'), 'utf8');
   assert.equal(pkg.name, 'volyx-lens');
   assert.equal(pkg.author, 'VolyxAI');
   assert.equal(pkg.build.productName, 'Volyx Lens');
@@ -22,6 +23,8 @@ test('Volyx Lens identity is complete across package and release metadata', () =
   assert.deepEqual(pkg.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr', 'volyx-lens-system-audio'] }]);
   assert.ok(pkg.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-vision-ocr'));
   assert.ok(pkg.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-system-audio'));
+  assert.equal(pkg.build.mac.icon, 'build/icon.icns');
+  assert.equal(fs.readFileSync(path.join(root, 'build', 'icon.icns')).subarray(0, 4).toString('ascii'), 'icns');
   assert.match(workflow, /Volyx Lens\.app/);
   assert.match(workflow, /ai\.volyx\.lens/);
   assert.match(workflow, /volyx-lens-macos-\$\{\{ matrix\.arch \}\}/);
@@ -31,6 +34,11 @@ test('Volyx Lens identity is complete across package and release metadata', () =
   assert.match(workflow, /\(cd dist && shasum -a 256 "\$ZIP_NAME"/);
   assert.match(workflow, /VOLYX_LENS_RENDERER_READY/);
   assert.match(workflow, /gh release create/);
+  assert.match(testBuildWorkflow, /--config\.mac\.identity=null/);
+  assert.match(testBuildWorkflow, /CFBundleIconFile/);
+  assert.match(testBuildWorkflow, /volyx-lens-vision-ocr/);
+  assert.match(testBuildWorkflow, /shasum -a 256/);
+  assert.doesNotMatch(testBuildWorkflow, /CSC_LINK|APPLE_ID|APPLE_TEAM_ID/);
 });
 
 test('legacy Volyx Lens data is copied once without overwriting current Volyx Lens data', () => {
