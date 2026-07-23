@@ -132,6 +132,7 @@
           <button type="button" data-settings-section="listening"><strong>Listening</strong><span>Audio and transcript</span></button>
           <button type="button" data-settings-section="context"><strong>Context</strong><span>Resume and role</span></button>
           <button type="button" data-settings-section="shortcuts"><strong>Shortcuts</strong><span>Keyboard status</span></button>
+          <button type="button" data-settings-section="updates"><strong>Updates</strong><span>Version and releases</span></button>
         </nav>
         <div class="s-pages">
           <section class="s-page on" data-settings-page="providers" aria-labelledby="settings-providers-title">
@@ -243,6 +244,21 @@
             <div class="shortcut-status-row" data-shortcut="quit"><kbd>⌘⇧X</kbd><div><strong>Stop all and quit</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="quit">Quit now</button></div>
           </div>
         </div>
+          </section>
+
+          <section class="s-page" data-settings-page="updates" aria-labelledby="settings-updates-title" hidden>
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-updates-title">App Updates</h2><p>Check GitHub Releases for a signed Volyx Lens update.</p></div>
+            <div class="update-card">
+              <div class="update-version"><span>Installed version</span><strong id="update-current-version">Loading…</strong></div>
+              <div id="update-status" class="update-status" role="status" aria-live="polite" aria-atomic="true">Update status is loading.</div>
+              <div class="update-progress hidden" id="update-progress" aria-hidden="true"><span></span></div>
+              <div class="update-actions">
+                <button id="update-check" type="button">Check for Updates</button>
+                <button id="update-download" type="button" hidden>Download Update</button>
+                <button id="update-install" type="button" hidden>Restart &amp; Install</button>
+              </div>
+            </div>
+            <div class="s-note">Updates are manual: Volyx Lens does not check or download in the background. Installation is available only in signed packaged macOS builds published by VolyxAI.</div>
           </section>
 
         <div class="s-status" id="s-status" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></div>
