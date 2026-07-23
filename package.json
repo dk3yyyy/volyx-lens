@@ -52,6 +52,7 @@
         "zip"
       ],
       "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
       "hardenedRuntime": true,
       "binaries": [
         "Contents/Resources/native/volyx-lens-vision-ocr",

@@ -1,0 +1,95 @@
+name: Build unsigned macOS test app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: volyx-lens-macos-test-build
+  cancel-in-progress: true
+
+jobs:
+  build-macos-test-app:
+    name: Build unsigned ${{ matrix.arch }} test app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:syntax
+      - run: npm run security:secrets
+      - run: npm run release:check
+
+      - name: Build unsigned macOS ZIP
+        run: >-
+          npx electron-builder --mac zip --${{ matrix.arch }} --publish never
+          --config.mac.notarize=false
+          --config.mac.identity=null
+
+      - name: Verify package structure and create checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          ARCH="${{ matrix.arch }}"
+          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -n "$ZIP_PATH"
+          OUTPUT="dist/Volyx-Lens-${VERSION}-macOS-${ARCH}-unsigned.zip"
+          mv "$ZIP_PATH" "$OUTPUT"
+
+          VERIFY_DIR="$(mktemp -d)"
+          ditto -x -k "$OUTPUT" "$VERIFY_DIR"
+          APP_PATH="$(find "$VERIFY_DIR" -type d -name 'Volyx Lens.app' -print -quit)"
+          test -n "$APP_PATH"
+          test "$(defaults read "$APP_PATH/Contents/Info" CFBundleIdentifier)" = "ai.volyx.lens"
+
+          ICON_FILE="$(defaults read "$APP_PATH/Contents/Info" CFBundleIconFile)"
+          test -n "$ICON_FILE"
+          case "$ICON_FILE" in *.icns) ;; *) ICON_FILE="${ICON_FILE}.icns" ;; esac
+          test -f "$APP_PATH/Contents/Resources/$ICON_FILE"
+
+          VISION_HELPER="$APP_PATH/Contents/Resources/native/volyx-lens-vision-ocr"
+          SYSTEM_AUDIO_HELPER="$APP_PATH/Contents/Resources/native/volyx-lens-system-audio"
+          test -x "$VISION_HELPER"
+          test -x "$SYSTEM_AUDIO_HELPER"
+          "$VISION_HELPER" --self-test | grep -q '"ok":true'
+          "$SYSTEM_AUDIO_HELPER" --self-test | grep -q '"ok":true'
+
+          EXPECTED_ARCH="x86_64"
+          test "$ARCH" = "arm64" && EXPECTED_ARCH="arm64"
+          file "$APP_PATH/Contents/MacOS/Volyx Lens" | grep -q "$EXPECTED_ARCH"
+          python3 - "$APP_PATH/Contents/MacOS/Volyx Lens" <<'PY'
+          import subprocess, sys
+          result = subprocess.run([sys.argv[1], '--smoke-test'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
+          print(result.stdout)
+          if result.returncode != 0 or 'VOLYX_LENS_RENDERER_READY' not in result.stdout:
+              raise SystemExit('Unsigned test application did not report renderer readiness.')
+          PY
+
+          (cd dist && shasum -a 256 "$(basename "$OUTPUT")" > "$(basename "$OUTPUT").sha256")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: volyx-lens-macos-${{ matrix.arch }}-unsigned-test
+          path: |
+            dist/Volyx-Lens-*-unsigned.zip
+            dist/Volyx-Lens-*-unsigned.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
