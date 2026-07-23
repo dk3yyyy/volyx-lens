@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="renderer/assets/volyx-lens-logo.svg" width="128" alt="Volyx Lens logo" />
+
 # Volyx Lens
 
 **A private, context-aware macOS assistant for your screen, voice, meetings, and coding workflows.**
