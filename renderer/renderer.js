@@ -5,7 +5,8 @@
   const $ = (s) => document.querySelector(s);
 
   // ---- paint icons -------------------------------------------------------
-  $('#logo-btn').innerHTML = icon('logo', { size: 18 });
+  const brandLogo = (className = '') => `<img class="volyx-brand-logo ${className}" src="assets/volyx-lens-logo.svg" alt="">`;
+  $('#logo-btn').innerHTML = brandLogo('toolbar-brand-logo');
   $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
   $('#new-session-btn .new-icon').innerHTML = icon('refresh-cw', { size: 14 });
   $('#kill-btn').innerHTML = icon('power', { size: 15 });
@@ -44,7 +45,6 @@
     const label = active ? 'Stop Listening' : 'Start Listening';
     button.classList.toggle('active', active);
     button.querySelector('.listen-icon').innerHTML = icon(active ? 'stop-square' : 'mic', { size: 15 });
-    button.querySelector('.listen-label').textContent = label;
     button.title = label;
     button.setAttribute('aria-label', label);
   }
@@ -1691,10 +1691,15 @@
     }
   ];
   let obIndex = 0;
-  $('#ob-brand-mark').innerHTML = icon('logo', { size: 19 });
+  $('#ob-brand-mark').innerHTML = brandLogo('onboarding-brand-logo');
   function renderOnboard() {
     const step = OB_STEPS[obIndex];
-    $('#ob-icon').innerHTML = icon(step.icon, { size: 30, stroke: 1.7 });
+    const onboardingIcon = $('#ob-icon');
+    const isBrandLogo = step.icon === 'logo';
+    onboardingIcon.classList.toggle('brand-logo', isBrandLogo);
+    onboardingIcon.innerHTML = isBrandLogo
+      ? brandLogo('onboarding-hero-logo')
+      : icon(step.icon, { size: 30, stroke: 1.7 });
     $('#ob-step-label').textContent = step.stepLabel;
     $('#ob-step-count').textContent = `${obIndex + 1} of ${OB_STEPS.length}`;
     $('#ob-stage-kicker').textContent = step.kicker;

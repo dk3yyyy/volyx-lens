@@ -78,16 +78,18 @@ html, body {
 }
 .tb-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.10); margin: 0 2px; }
 #toolbar button { border: none; background: transparent; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background 140ms ease, transform 140ms ease; }
-.tb-logo { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.06) !important; }
+.tb-logo { width: 28px; height: 28px; padding: 0; border-radius: 9px; background: transparent !important; }
 .tb-logo:hover { background: rgba(255,255,255,0.12) !important; }
+.volyx-brand-logo { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.toolbar-brand-logo { width: 25px; height: 25px; }
 .tb-hide { gap: 6px; padding: 5px 12px 5px 10px; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; }
 .tb-hide:hover { background: rgba(255,255,255,0.08); }
 .tb-hide .chev { width: 14px; height: 14px; display: inline-flex; color: rgba(255,255,255,0.9); }
 .tb-hide.collapsed .chev { transform: rotate(180deg); }
-.tb-new { height: 30px; padding: 0 10px; gap: 6px; border-radius: var(--r-pill); color: rgba(255,255,255,0.88) !important; font-size: 12px; font-weight: 550; }
+.tb-new { width: 30px; height: 30px; padding: 0; border-radius: var(--r-8); color: rgba(255,255,255,0.88) !important; }
 .tb-new .new-icon { width: 14px; height: 14px; display: inline-flex; }
 .tb-new:hover { background: rgba(255,255,255,0.10) !important; color: #fff !important; }
-.tb-stop { min-width: 118px; height: 30px; padding: 0 12px; gap: 7px; border-radius: var(--r-pill); color: #fff; font-size: 12px; font-weight: 650; letter-spacing: 0.01em; }
+.tb-stop { width: 30px; height: 30px; padding: 0; border-radius: var(--r-8); color: #fff; }
 .tb-stop .listen-icon { width: 15px; height: 15px; display: inline-flex; flex: 0 0 auto; }
 .tb-stop:hover { background: rgba(255,255,255,0.10) !important; }
 .tb-stop.active { color: #fff; background: rgba(255,102,120,0.24) !important; box-shadow: inset 0 0 0 1px rgba(255,102,120,0.45); }
@@ -496,11 +498,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   height: 32px;
   display: grid;
   place-items: center;
-  color: #fff;
   border-radius: 10px;
-  background: linear-gradient(145deg, rgba(125,138,255,0.30), rgba(66,207,232,0.12));
-  box-shadow: inset 0 0 0 1px rgba(199,206,255,0.20), 0 8px 20px rgba(39,55,158,0.22);
 }
+.onboarding-brand-logo { width: 32px; height: 32px; }
 .ob-brand > span:last-child { display: grid; gap: 2px; }
 .ob-brand strong { color: var(--tx-1); font-size: 13px; line-height: 1.1; font-weight: 650; letter-spacing: -0.01em; }
 .ob-brand small { color: var(--tx-mut); font-size: 10.5px; line-height: 1.1; }
@@ -556,6 +556,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   background: linear-gradient(145deg, rgba(125,138,255,0.95), rgba(82,99,225,0.72));
   box-shadow: 0 14px 35px rgba(52,66,180,0.42), inset 0 1px 0 rgba(255,255,255,0.24);
 }
+.ob-icon.brand-logo { padding: 0; background: transparent; box-shadow: none; }
+.onboarding-hero-logo { width: 58px; height: 58px; max-width: none; }
 .ob-stage-copy { position: relative; z-index: 1; display: grid; gap: 7px; }
 #ob-stage-kicker { color: var(--accent-soft); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 #ob-stage-note { margin: 0; color: var(--tx-mut); font-size: 11.5px; line-height: 1.45; }

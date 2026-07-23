@@ -11,6 +11,8 @@ const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const onboardingHarness = fs.readFileSync(path.join(root, 'scripts', 'check-onboarding-ui.js'), 'utf8');
+const appIcon = fs.readFileSync(path.join(root, 'build', 'icon.svg'), 'utf8');
+const rendererLogo = fs.readFileSync(path.join(root, 'renderer', 'assets', 'volyx-lens-logo.svg'), 'utf8');
 
 test('onboarding buttons request native microphone and screen permissions', () => {
   assert.match(renderer, /requestPermission\('microphone'\)/);
@@ -29,6 +31,15 @@ test('onboarding uses an accessible split setup layout with clear progress and p
   assert.match(renderer, /permission-card/);
   assert.match(renderer, /ob-step-label/);
   assert.match(renderer, /aria-current/);
+});
+
+test('toolbar and onboarding use the approved packaged Volyx Lens logo', () => {
+  assert.equal(rendererLogo, appIcon);
+  assert.match(renderer, /assets\/volyx-lens-logo\.svg/);
+  assert.match(renderer, /brandLogo\('toolbar-brand-logo'\)/);
+  assert.match(renderer, /brandLogo\('onboarding-brand-logo'\)/);
+  assert.match(renderer, /brandLogo\('onboarding-hero-logo'\)/);
+  assert.doesNotMatch(renderer, /\$\('#logo-btn'\)\.innerHTML = icon\('logo'/);
 });
 
 test('onboarding dialog declares and implements keyboard focus containment and restoration', () => {
