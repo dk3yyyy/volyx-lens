@@ -8,7 +8,7 @@
 
 Bring your own AI key and keep control of the providers you use (OpenAI · Anthropic · Google Gemini · Azure Foundry · DeepSeek · Deepgram transcription).
 
-<img src="docs/onboarding-welcome.png" width="700" alt="Volyx Lens redesigned first-run welcome screen" />
+<img src="docs/onboarding-welcome-eye.png" width="700" alt="Volyx Lens first-run welcome screen using the canonical eye logo" />
 
 <sub>The current five-step onboarding experience.</sub>
 
