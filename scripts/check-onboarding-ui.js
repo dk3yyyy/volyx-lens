@@ -66,7 +66,8 @@ app.whenReady().then(async () => {
   });
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
   win.show();
-  await waitFor(win, "document.activeElement && document.activeElement.id === 'ob-title'", 'initial onboarding heading focus');
+  // Cold Electron startup can exceed the normal interaction timeout on shared CI runners.
+  await waitFor(win, "document.activeElement && document.activeElement.id === 'ob-title'", 'initial onboarding heading focus', 10000);
 
   const names = ['welcome', 'permissions', 'provider', 'sharing', 'ready'];
   const heights = [];

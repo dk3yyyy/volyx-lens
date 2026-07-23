@@ -1,4 +1,4 @@
-name: Build unsigned macOS test app
+name: Build ad-hoc signed macOS test app
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build-macos-test-app:
-    name: Build unsigned ${{ matrix.arch }} test app
+    name: Build ad-hoc signed ${{ matrix.arch }} test app
     strategy:
       fail-fast: false
       matrix:
@@ -37,27 +37,38 @@ jobs:
       - run: npm run security:secrets
       - run: npm run release:check
 
-      - name: Build unsigned macOS ZIP
+      - name: Build unpacked macOS application
         run: >-
-          npx electron-builder --mac zip --${{ matrix.arch }} --publish never
+          npx electron-builder --mac dir --${{ matrix.arch }} --publish never
           --config.mac.notarize=false
           --config.mac.identity=null
 
-      - name: Verify package structure and create checksum
+      - name: Ad-hoc sign, archive, and verify application
         shell: bash
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
           ARCH="${{ matrix.arch }}"
-          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*.zip' -print -quit)"
-          test -n "$ZIP_PATH"
-          OUTPUT="dist/Volyx-Lens-${VERSION}-macOS-${ARCH}-unsigned.zip"
-          mv "$ZIP_PATH" "$OUTPUT"
+          BUILT_APP="$(find dist -maxdepth 2 -type d -name 'Volyx Lens.app' -print -quit)"
+          test -n "$BUILT_APP"
+
+          # electron-builder mutates the pre-signed Electron bundle. With signing
+          # disabled, that leaves a stale resource seal which macOS calls damaged.
+          # Replace it with a complete local ad-hoc signature for test installs.
+          xattr -cr "$BUILT_APP"
+          codesign --force --deep --sign - --timestamp=none "$BUILT_APP"
+          codesign --verify --deep --strict --verbose=4 "$BUILT_APP"
+          codesign -dv --verbose=4 "$BUILT_APP" 2>&1 | grep -q 'Signature=adhoc'
+
+          OUTPUT="dist/Volyx-Lens-${VERSION}-macOS-${ARCH}-adhoc.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$BUILT_APP" "$OUTPUT"
 
           VERIFY_DIR="$(mktemp -d)"
           ditto -x -k "$OUTPUT" "$VERIFY_DIR"
           APP_PATH="$(find "$VERIFY_DIR" -type d -name 'Volyx Lens.app' -print -quit)"
           test -n "$APP_PATH"
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -q 'Signature=adhoc'
           test "$(defaults read "$APP_PATH/Contents/Info" CFBundleIdentifier)" = "ai.volyx.lens"
 
           ICON_FILE="$(defaults read "$APP_PATH/Contents/Info" CFBundleIconFile)"
@@ -80,16 +91,16 @@ jobs:
           result = subprocess.run([sys.argv[1], '--smoke-test'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
           print(result.stdout)
           if result.returncode != 0 or 'VOLYX_LENS_RENDERER_READY' not in result.stdout:
-              raise SystemExit('Unsigned test application did not report renderer readiness.')
+              raise SystemExit('Ad-hoc signed test application did not report renderer readiness.')
           PY
 
           (cd dist && shasum -a 256 "$(basename "$OUTPUT")" > "$(basename "$OUTPUT").sha256")
 
       - uses: actions/upload-artifact@v4
         with:
-          name: volyx-lens-macos-${{ matrix.arch }}-unsigned-test
+          name: volyx-lens-macos-${{ matrix.arch }}-adhoc-test
           path: |
-            dist/Volyx-Lens-*-unsigned.zip
-            dist/Volyx-Lens-*-unsigned.zip.sha256
+            dist/Volyx-Lens-*-adhoc.zip
+            dist/Volyx-Lens-*-adhoc.zip.sha256
           if-no-files-found: error
           retention-days: 14

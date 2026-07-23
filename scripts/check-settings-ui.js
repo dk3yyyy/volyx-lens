@@ -23,6 +23,7 @@ ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyTaskContext);
 ipcMain.handle('task-context:list', () => ({ ...emptyTaskContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false }));
+ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.2.0', status: 'unsupported', message: 'Updates are available in official signed macOS release builds.', availableVersion: null, progress: null }));
 ipcMain.handle('shortcuts:get', () => [
   { id: 'assist', feature: 'Assist', displayAccelerator: '⌘↵', registered: true },
   { id: 'solve', feature: 'Solve screen', displayAccelerator: '⌘H', registered: true },
@@ -58,7 +59,7 @@ app.whenReady().then(async () => {
   await win.webContents.executeJavaScript("document.querySelector('#more-btn').click()");
   await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'Settings to open');
 
-  const sections = ['providers', 'listening', 'context', 'shortcuts'];
+  const sections = ['providers', 'listening', 'context', 'shortcuts', 'updates'];
   const heights = new Set();
   for (const section of sections) {
     await win.webContents.executeJavaScript(`document.querySelector('[data-settings-section="${section}"]').click()`);
@@ -86,6 +87,8 @@ app.whenReady().then(async () => {
   }
   assert.equal(heights.size, 1, 'settings shell height should remain stable');
 
+  await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"shortcuts\"]').click()");
+  await waitFor(win, "document.activeElement && document.activeElement.id === 'settings-shortcuts-title'", 'shortcuts heading focus before reverse tab test');
   const reverseFromHeading = await win.webContents.executeJavaScript(`(() => {
     document.querySelector('#settings-shortcuts-title').focus();
     document.querySelector('#settings-shortcuts-title').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
@@ -111,7 +114,7 @@ app.whenReady().then(async () => {
   assert.ok(compact.dialogRight <= compact.width, 'compact Settings dialog must fit');
   await capture(win, 'compact');
 
-  console.log('Settings UI behavior passed: 4 simple pages, stable layout, focus containment/restoration, and compact fit.');
+  console.log('Settings UI behavior passed: 5 simple pages, stable layout, focus containment/restoration, and compact fit.');
   app.quit();
 }).catch((error) => {
   console.error(error);

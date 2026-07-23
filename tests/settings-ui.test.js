@@ -12,8 +12,8 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const styles = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
 const settingsHarness = fs.readFileSync(path.join(root, 'scripts', 'check-settings-ui.js'), 'utf8');
 
-test('settings use four simple pages without removing existing controls', () => {
-  for (const section of ['providers', 'listening', 'context', 'shortcuts']) {
+test('settings use five simple pages without removing existing controls', () => {
+  for (const section of ['providers', 'listening', 'context', 'shortcuts', 'updates']) {
     assert.match(html, new RegExp(`data-settings-section="${section}"`));
     assert.match(html, new RegExp(`data-settings-page="${section}"`));
     assert.match(html, new RegExp(`id="settings-${section}-title"`));

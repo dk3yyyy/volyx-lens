@@ -38,6 +38,7 @@ const { createAcousticEchoFilter } = require('./src/acoustic-echo-filter');
 const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
+const { createUpdateManager } = require('./src/update-manager');
 
 const personalContextStore = createPersonalContextStore({ userDataPath: currentUserDataPath, safeStorage });
 const taskContext = createTaskContext({
@@ -148,6 +149,15 @@ const transcriptionDiagnostics = {
 function send(channel, data) {
   if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) win.webContents.send(channel, data);
 }
+
+const updateManager = createUpdateManager({
+  app,
+  platform: process.platform,
+  arch: process.arch,
+  releaseBuild: require('./package.json').volyxReleaseBuild === true,
+  updaterFactory: () => require('electron-updater').autoUpdater,
+  emit: (value) => send('update:state', value),
+});
 
 function taskContextState(extra = {}) {
   return { ...taskContext.summary(), ...extra };
@@ -1237,6 +1247,10 @@ handleTrusted('transcript:export', (_event, format) => exportTranscript(String(f
 handleTrusted('diagnostics:get', () => getSessionDiagnostics());
 handleTrusted('shortcuts:get', () => getShortcutStatus());
 handleTrusted('shortcuts:retry', () => registerShortcuts());
+handleTrusted('update:get-state', () => updateManager.getState());
+handleTrusted('update:check', () => updateManager.check());
+handleTrusted('update:download', () => updateManager.download());
+handleTrusted('update:install', () => updateManager.install());
 handleTrusted('provider:test-response', (_event, payload) => testResponseConfiguration(payload));
 handleTrusted('diagnostics:copy', () => {
   const text = JSON.stringify(getSessionDiagnostics(), null, 2) + '\n';

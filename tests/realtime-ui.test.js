@@ -55,9 +55,12 @@ test('live transcript workspace identifies both channels and distinguishes parti
   assert.match(renderer, /activeTurn\.pendingText = partial\.text/);
 });
 
-test('toolbar has an explicit microphone listening control with active state text', () => {
+test('toolbar has a compact icon-only listening control with accessible dynamic state text', () => {
   assert.match(html, /id="stop-btn"[^>]*aria-label="Start Listening"/);
-  assert.match(html, /class="listen-label">Start Listening</);
+  assert.match(html, /id="stop-btn"[^>]*data-icon-only="true"/);
+  assert.doesNotMatch(html, /class="listen-label"/);
   assert.match(renderer, /icon\(active \? 'stop-square' : 'mic'/);
   assert.match(renderer, /active \? 'Stop Listening' : 'Start Listening'/);
+  assert.match(renderer, /button\.title = label/);
+  assert.match(renderer, /button\.setAttribute\('aria-label', label\)/);
 });

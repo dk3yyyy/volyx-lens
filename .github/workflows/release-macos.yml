@@ -63,6 +63,8 @@ jobs:
       - name: Build, sign, and notarize
         run: |
           node scripts/check-macos-release.js --require-credentials
+          npm pkg set "build.publish[0].channel=latest-${{ matrix.arch }}"
+          npm pkg set "build.extraMetadata.volyxReleaseBuild=true" --json
           npx electron-builder --mac zip --${{ matrix.arch }} --publish never
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -94,10 +96,17 @@ jobs:
           xcrun stapler validate "$APP_PATH"
           spctl --assess --verbose --type exec "$APP_PATH"
           file "$APP_PATH/Contents/MacOS/Volyx Lens" | grep -q "${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}"
-      - name: Create checksum and SBOM
+      - name: Generate checksum and SBOM
         run: |
           ZIP_PATH="$(find dist -maxdepth 1 -type f -name "*-${{ matrix.arch }}.zip" -print -quit)"
           ZIP_NAME="$(basename "$ZIP_PATH")"
+          APP_ASAR="$(find dist -path '*/Volyx Lens.app/Contents/Resources/app.asar' -print -quit)"
+          test -n "$APP_ASAR"
+          node -e "const asar=require('@electron/asar'); const pkg=JSON.parse(asar.extractFile(process.argv[1], 'package.json')); if (pkg.volyxReleaseBuild !== true) throw new Error('Missing official release-build marker');" "$APP_ASAR"
+          METADATA_PATH="dist/latest-${{ matrix.arch }}-mac.yml"
+          test -f "$METADATA_PATH"
+          VERSION="$(node -p "require('./package.json').version")"
+          node scripts/validate-update-metadata.js "$METADATA_PATH" "$ZIP_PATH" "$VERSION" "${{ matrix.arch }}"
           (cd dist && shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256")
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-${{ matrix.arch }}.cdx.json"
       - name: Attest build provenance
@@ -115,6 +124,7 @@ jobs:
           path: |
             dist/*-${{ matrix.arch }}.zip
             dist/*-${{ matrix.arch }}.zip.sha256
+            dist/latest-${{ matrix.arch }}-mac.yml
             dist/volyx-lens-${{ matrix.arch }}.cdx.json
           if-no-files-found: error
 
