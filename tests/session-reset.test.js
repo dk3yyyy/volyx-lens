@@ -10,8 +10,9 @@ const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'ut
 const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 
 test('new session is available as an explicit control and /new command', () => {
-  assert.match(html, /id="new-session-btn"/);
-  assert.match(html, />New Session</);
+  assert.match(html, /id="new-session-btn"[^>]*data-icon-only="true"/);
+  assert.match(html, /id="new-session-btn"[^>]*title="Start a fresh conversation"[^>]*aria-label="New Session"/);
+  assert.doesNotMatch(html, /<span>New Session<\/span>/);
   assert.match(preload, /newSession:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('session:new'\)/);
   assert.match(renderer, /text === '\/new'/);
   assert.match(renderer, /volyxLens\.newSession\(\)/);

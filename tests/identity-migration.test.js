@@ -34,7 +34,11 @@ test('Volyx Lens identity is complete across package and release metadata', () =
   assert.match(workflow, /\(cd dist && shasum -a 256 "\$ZIP_NAME"/);
   assert.match(workflow, /VOLYX_LENS_RENDERER_READY/);
   assert.match(workflow, /gh release create/);
+  assert.match(testBuildWorkflow, /--mac dir/);
   assert.match(testBuildWorkflow, /--config\.mac\.identity=null/);
+  assert.match(testBuildWorkflow, /codesign --force --deep --sign - --timestamp=none/);
+  assert.match(testBuildWorkflow, /codesign --verify --deep --strict/);
+  assert.match(testBuildWorkflow, /Signature=adhoc/);
   assert.match(testBuildWorkflow, /CFBundleIconFile/);
   assert.match(testBuildWorkflow, /volyx-lens-vision-ocr/);
   assert.match(testBuildWorkflow, /shasum -a 256/);

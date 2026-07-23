@@ -5,7 +5,8 @@
   const $ = (s) => document.querySelector(s);
 
   // ---- paint icons -------------------------------------------------------
-  $('#logo-btn').innerHTML = icon('logo', { size: 18 });
+  const brandLogo = (className = '') => `<img class="volyx-brand-logo ${className}" src="assets/volyx-lens-logo.svg" alt="">`;
+  $('#logo-btn').innerHTML = brandLogo('toolbar-brand-logo');
   $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
   $('#new-session-btn .new-icon').innerHTML = icon('refresh-cw', { size: 14 });
   $('#kill-btn').innerHTML = icon('power', { size: 15 });
@@ -44,7 +45,6 @@
     const label = active ? 'Stop Listening' : 'Start Listening';
     button.classList.toggle('active', active);
     button.querySelector('.listen-icon').innerHTML = icon(active ? 'stop-square' : 'mic', { size: 15 });
-    button.querySelector('.listen-label').textContent = label;
     button.title = label;
     button.setAttribute('aria-label', label);
   }
@@ -975,6 +975,7 @@
   volyxLens.on('question:detected', showQuestionSuggestion);
   volyxLens.on('question:clear', clearQuestionSuggestion);
   volyxLens.on('transcript:cleared', clearTranscriptWorkspace);
+  volyxLens.on('update:state', renderUpdateState);
   volyxLens.on('transcription:state', (event) => {
     if (event.status === 'source' && event.channel === 'them') {
       const labels = { connecting: 'Connecting', connected: 'Connected', failed: 'Failed', stopped: 'Idle' };
@@ -1068,6 +1069,29 @@
     }
   }
 
+  function renderUpdateState(value) {
+    const update = value && typeof value === 'object' ? value : {};
+    const status = String(update.status || 'error');
+    $('#update-current-version').textContent = update.currentVersion ? `v${update.currentVersion}` : 'Unknown';
+    $('#update-status').textContent = String(update.message || 'Update status is unavailable.');
+    const checking = status === 'checking';
+    const downloading = status === 'downloading';
+    $('#update-check').disabled = update.supported !== true || checking || downloading;
+    $('#update-check').textContent = checking ? 'Checking…' : 'Check for Updates';
+    $('#update-download').hidden = status !== 'available';
+    $('#update-download').disabled = downloading;
+    $('#update-install').hidden = status !== 'downloaded';
+    const progress = $('#update-progress');
+    progress.classList.toggle('hidden', !downloading);
+    progress.setAttribute('aria-hidden', downloading ? 'false' : 'true');
+    progress.querySelector('span').style.width = `${Number.isFinite(update.progress) ? Math.max(0, Math.min(100, update.progress)) : 0}%`;
+  }
+
+  async function refreshUpdateState() {
+    try { renderUpdateState(await volyxLens.updateGetState()); }
+    catch { renderUpdateState({ supported: false, status: 'error', message: 'Update status is unavailable.' }); }
+  }
+
   function selectSettingsSection(section, { focus = false } = {}) {
     const target = document.querySelector(`[data-settings-page="${section}"]`) || document.querySelector('[data-settings-page="providers"]');
     document.querySelectorAll('[data-settings-page]').forEach((page) => {
@@ -1134,6 +1158,7 @@
     volyxLens.setModalState(true);
     requestAnimationFrame(() => document.querySelector('[data-settings-page="providers"] h2').focus());
     await refreshShortcutStatus();
+    await refreshUpdateState();
   }
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
   function hideSettingsAndRestoreFocus() {
@@ -1157,6 +1182,18 @@
   $('#s-close').addEventListener('click', closeSettings);
   scrim.addEventListener('click', (e) => { if (e.target === scrim) closeSettings(); });
   $('#shortcuts-retry').addEventListener('click', () => refreshShortcutStatus({ retry: true }));
+  $('#update-check').addEventListener('click', async () => {
+    try { renderUpdateState(await volyxLens.updateCheck()); }
+    catch (error) { showStatus(error && error.message ? error.message : 'The update check failed.'); await refreshUpdateState(); }
+  });
+  $('#update-download').addEventListener('click', async () => {
+    try { renderUpdateState(await volyxLens.updateDownload()); }
+    catch (error) { showStatus(error && error.message ? error.message : 'The update download failed.'); await refreshUpdateState(); }
+  });
+  $('#update-install').addEventListener('click', async () => {
+    try { await volyxLens.updateInstall(); }
+    catch (error) { showStatus(error && error.message ? error.message : 'The update could not be installed.'); await refreshUpdateState(); }
+  });
   document.querySelectorAll('[data-shortcut-fallback]').forEach((button) => button.addEventListener('click', async () => {
     const action = button.dataset.shortcutFallback;
     if (action === 'quit') { volyxLens.quit(); return; }
@@ -1691,10 +1728,15 @@
     }
   ];
   let obIndex = 0;
-  $('#ob-brand-mark').innerHTML = icon('logo', { size: 19 });
+  $('#ob-brand-mark').innerHTML = brandLogo('onboarding-brand-logo');
   function renderOnboard() {
     const step = OB_STEPS[obIndex];
-    $('#ob-icon').innerHTML = icon(step.icon, { size: 30, stroke: 1.7 });
+    const onboardingIcon = $('#ob-icon');
+    const isBrandLogo = step.icon === 'logo';
+    onboardingIcon.classList.toggle('brand-logo', isBrandLogo);
+    onboardingIcon.innerHTML = isBrandLogo
+      ? brandLogo('onboarding-hero-logo')
+      : icon(step.icon, { size: 30, stroke: 1.7 });
     $('#ob-step-label').textContent = step.stepLabel;
     $('#ob-step-count').textContent = `${obIndex + 1} of ${OB_STEPS.length}`;
     $('#ob-stage-kicker').textContent = step.kicker;

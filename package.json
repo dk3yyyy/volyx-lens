@@ -30,6 +30,13 @@
     "artifactName": "volyx-lens-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "beforePack": "scripts/build-vision-ocr.js",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "dk3yyyy",
+        "repo": "volyx-lens"
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
@@ -79,12 +86,14 @@
   ],
   "devDependencies": {
     "electron": "^43.1.1",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "js-yaml": "^5.2.1"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@deepgram/sdk": "5.6.0",
     "@google/genai": "^2.12.0",
+    "electron-updater": "^6.8.9",
     "jszip": "^3.10.1",
     "lucide-static": "^0.468.0",
     "mammoth": "^1.12.0",
