@@ -131,26 +131,40 @@ class DeepgramRealtimeChannel {
       throw new Error('Deepgram connection cancelled.');
     }
     this.connection = connection;
+    let rejectPreOpen = null;
+    let opening = true;
+    const preOpenFailure = new Promise((_, reject) => { rejectPreOpen = reject; });
+    const handleTransportFailure = (clean) => {
+      if (opening && rejectPreOpen && !this.intentionalClose) {
+        const error = new Error(clean.message);
+        error.code = clean.code;
+        const reject = rejectPreOpen;
+        rejectPreOpen = null;
+        reject(error);
+      }
+      this._reportError(clean);
+    };
     connection.on('open', () => this.onState({ channel: this.channel, state: 'connected' }));
     connection.on('message', (event) => this._handleMessage(event));
-    connection.on('error', (error) => this._reportError(sanitizeDeepgramError(error, this.channel)));
+    connection.on('error', (error) => handleTransportFailure(sanitizeDeepgramError(error, this.channel)));
     connection.on('close', () => {
       this._clearKeepAlive();
       this.onState({ channel: this.channel, state: this.intentionalClose ? 'stopped' : 'disconnected' });
-      if (!this.intentionalClose) this._reportError(sanitizeDeepgramError({ code: 'socket_closed' }, this.channel));
+      if (!this.intentionalClose) handleTransportFailure(sanitizeDeepgramError({ code: 'socket_closed' }, this.channel));
     });
     connection.connect();
     let timer = null;
     try {
       await Promise.race([
         connection.waitForOpen(),
+        preOpenFailure,
         this.cancelPromise,
         new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error('Deepgram connection timeout.')), this.connectTimeoutMs);
         }),
       ]);
     } catch (error) {
-      if (this.intentionalClose || error.code === 'connection_cancelled') {
+      if (error.code === 'connection_cancelled') {
         this._disposeConnection(connection, false);
         throw new Error('Deepgram connection cancelled.');
       }
@@ -159,6 +173,8 @@ class DeepgramRealtimeChannel {
       this.close();
       throw new Error(clean.message);
     } finally {
+      opening = false;
+      rejectPreOpen = null;
       if (timer) clearTimeout(timer);
     }
     if (this.intentionalClose) {
