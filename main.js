@@ -93,7 +93,7 @@ const pendingTaskContextOcr = new Set();
 let win = null;
 let windowDock = { side: 'top', collapsed: false, anchor: null };
 let windowAutoFit = null;
-const AUTO_FIT_DELAY_MS = 700;
+const AUTO_FIT_DELAY_MS = 400;
 // Fail closed until the trusted renderer finishes booting and reports whether
 // onboarding or Settings is visible.
 let uiModalOpen = true;
