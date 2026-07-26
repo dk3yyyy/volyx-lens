@@ -97,6 +97,14 @@ test('permission request crosses a narrow invoke IPC boundary', () => {
   assert.match(main, /handleTrusted\('permissions:request'/);
 });
 
+test('development permission mismatch does not offer an ineffective relaunch', () => {
+  assert.match(main, /mediaPermissionStatus\(String\(kind \|\| ''\)/);
+  assert.match(main, /isPackaged:\s*app\.isPackaged/);
+  assert.match(renderer, /result\.developmentClient/);
+  assert.match(renderer, /npm start/i);
+  assert.match(renderer, /separate from Volyx Lens\.app/i);
+});
+
 test('application declares only permissions it actually requests', () => {
   assert.equal(pkg.build.mac.extendInfo.NSCameraUsageDescription, undefined);
   assert.match(pkg.build.mac.extendInfo.NSMicrophoneUsageDescription, /microphone/i);

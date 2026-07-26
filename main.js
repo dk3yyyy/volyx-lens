@@ -15,7 +15,7 @@ const { MODES } = require('./src/prompts');
 const { createResponseRoute, chooseInitialProvider, streamWithFallback } = require('./src/response-router');
 const { rms16 } = require('./src/wav');
 const { planScreenInput } = require('./src/capabilities');
-const { requestMediaPermission } = require('./src/permissions');
+const { mediaPermissionStatus, requestMediaPermission } = require('./src/permissions');
 const { RealtimeTranscriptionManager } = require('./src/realtime-stt');
 const { AUDIO_SAMPLE_RATE } = require('./src/audio-config');
 const { resolveRealtimeTranscription } = require('./src/provider-config');
@@ -1316,15 +1316,13 @@ handleTrusted('transcription:retry', () => retryTranscription());
 handleTrusted('permissions:request', (_e, kind) => requestMediaPermission(kind, {
   systemPreferences,
   desktopCapturer,
-  openExternal: (url) => shell.openExternal(url)
+  openExternal: (url) => shell.openExternal(url),
+  isPackaged: app.isPackaged,
 }));
-handleTrusted('permissions:status', (_event, kind) => {
-  const permission = String(kind || '');
-  if (!['microphone', 'screen'].includes(permission)) throw new Error('Unsupported permission type.');
-  if (process.platform !== 'darwin') return { kind: permission, status: 'unsupported', granted: false };
-  const status = systemPreferences.getMediaAccessStatus(permission);
-  return { kind: permission, status, granted: status === 'granted' };
-});
+handleTrusted('permissions:status', (_event, kind) => mediaPermissionStatus(String(kind || ''), {
+  systemPreferences,
+  isPackaged: app.isPackaged,
+}));
 onTrusted('ask', (_e, payload = {}) => runFeature(payload.mode, String(payload.text || '').slice(0, 12000), {
   confirmedLongRecap: payload.confirmedLongRecap === true,
   confirmedTaskContext: payload.confirmedTaskContext === true,

@@ -23,9 +23,12 @@ ipcMain.handle('task-context:get', () => emptyContext);
 ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false, transitioning: false }));
 ipcMain.handle('shortcuts:get', () => []);
+let developmentPermissionClient = false;
 ipcMain.handle('permissions:request', (_event, kind) => (
   kind === 'screen'
-    ? { kind, granted: false, settingsOpened: true }
+    ? developmentPermissionClient
+      ? { kind, granted: false, status: 'denied', settingsOpened: true, developmentClient: true, message: 'This npm start development build is a separate macOS permission client.' }
+      : { kind, granted: false, settingsOpened: true, developmentClient: false }
     : { kind, granted: true }
 ));
 ipcMain.handle('permissions:status', (_event, kind) => ({ kind, status: 'not-determined', granted: false }));
@@ -128,6 +131,19 @@ app.whenReady().then(async () => {
       assert.equal(recoveryLayout.contentOverflowY, false, 'permission recovery must not make onboarding scroll');
       assert.equal(recoveryLayout.statusInsideContent, true, 'permission recovery must fit inside the content panel');
       await capture(win, 'permission-recovery');
+
+      developmentPermissionClient = true;
+      await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
+      await waitFor(win, "document.querySelector('#ob-permission-status').textContent.includes('npm start')", 'development permission identity guidance');
+      const developmentRecovery = await win.webContents.executeJavaScript(`({
+        text: document.querySelector('#ob-permission-status').textContent,
+        state: document.querySelector('[data-permission-kind="screen"] .ob-permission-state').textContent,
+        restart: Boolean(document.querySelector('#ob-permission-status .ob-restart'))
+      })`);
+      assert.match(developmentRecovery.text, /separate from Volyx Lens\.app/i, 'development guidance should explain the separate permission client');
+      assert.equal(developmentRecovery.state, 'Use packaged app', 'development permission state should direct users to the packaged app');
+      assert.equal(developmentRecovery.restart, false, 'development mismatch must not offer an ineffective relaunch');
+      developmentPermissionClient = false;
     }
     if (index < names.length - 1) {
       await win.webContents.executeJavaScript("document.querySelector('#ob-next').click()");

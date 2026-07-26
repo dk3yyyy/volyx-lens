@@ -11,6 +11,7 @@ const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
 const screenSource = fs.readFileSync(path.join(root, 'src', 'screen.js'), 'utf8');
+const permissionsSource = fs.readFileSync(path.join(root, 'src', 'permissions.js'), 'utf8');
 const storeSource = fs.readFileSync(path.join(root, 'src', 'store.js'), 'utf8');
 const pkg = require('../package.json');
 const releaseWorkflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-macos.yml'), 'utf8');
@@ -136,7 +137,8 @@ test('cancellation and realtime failures expose one bounded announcement and fix
 test('permission state is refreshed from macOS rather than trusted as a cached grant', () => {
   assert.match(preload, /permissionStatus: \(kind\)/);
   assert.match(main, /handleTrusted\('permissions:status'/);
-  assert.match(main, /systemPreferences\.getMediaAccessStatus\(permission\)/);
+  assert.match(main, /mediaPermissionStatus\(String\(kind \|\| ''\)/);
+  assert.match(permissionsSource, /systemPreferences\.getMediaAccessStatus\(kind\)/);
   assert.match(renderer, /async function refreshPermissionStates/);
   assert.match(renderer, /void refreshPermissionStates\(\)/);
 });
