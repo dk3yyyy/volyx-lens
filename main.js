@@ -25,7 +25,7 @@ const { createShortcutRegistry } = require('./src/shortcut-registry');
 const { createPersonalContextStore, KINDS: PERSONAL_CONTEXT_KINDS } = require('./src/personal-context-store');
 const { parseContextDocument, MAX_FILE_BYTES } = require('./src/document-context');
 const { buildPersonalContext } = require('./src/personal-context');
-const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
+const { normalizeSpokenDigits, formatTranscript, transcriptFilename } = require('./src/transcript-tools');
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
 const { detectQuestion } = require('./src/question-detection');
@@ -292,7 +292,7 @@ function resetTranscriptData() {
 
 function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch) {
   if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
-  const clean = String(text || '').trim().slice(0, 12000);
+  const clean = normalizeSpokenDigits(String(text || '').trim()).slice(0, 12000);
   if (!clean) return;
   const normalizedChannel = channel === 'you' ? 'you' : 'them';
   const timestamp = Number.isFinite(ts) ? ts : Date.now();

@@ -1,3 +1,26 @@
+const SPOKEN_DIGITS = Object.freeze({
+  zero: '0',
+  oh: '0',
+  one: '1',
+  two: '2',
+  three: '3',
+  four: '4',
+  five: '5',
+  six: '6',
+  seven: '7',
+  eight: '8',
+  nine: '9',
+});
+const DIGIT_TOKEN = '(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|[0-9])';
+const SPOKEN_DIGIT_SEQUENCE = new RegExp(`\\b(${DIGIT_TOKEN}(?:[ \\t]+${DIGIT_TOKEN}){2,})\\b`, 'gi');
+
+function normalizeSpokenDigits(value) {
+  return String(value || '').replace(SPOKEN_DIGIT_SEQUENCE, (sequence) => sequence
+    .split(/[ \t]+/)
+    .map((token) => SPOKEN_DIGITS[token.toLowerCase()] ?? token)
+    .join(''));
+}
+
 function normalizeTurns(turns) {
   return (Array.isArray(turns) ? turns : []).slice(-500).map((turn) => ({
     id: Number.isFinite(turn.id) ? turn.id : undefined,
@@ -40,4 +63,4 @@ function transcriptFilename(format = 'txt', now = Date.now()) {
   return `volyx-lens-transcript-${stamp}.${extension}`;
 }
 
-module.exports = { normalizeTurns, formatTranscript, transcriptFilename };
+module.exports = { normalizeTurns, normalizeSpokenDigits, formatTranscript, transcriptFilename };
