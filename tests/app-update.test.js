@@ -51,6 +51,9 @@ test('release configuration produces signed DMG installers and updater ZIP metad
   assert.match(releaseWorkflow, /electron-builder --mac dmg zip/);
   assert.match(releaseWorkflow, /latest-.*-mac\.yml/);
   assert.match(releaseWorkflow, /DMG_PATH=.*\.dmg/);
+  assert.match(releaseWorkflow, /hdiutil attach [^\n]*-readonly[^\n]*"\$DMG_PATH"/);
+  assert.match(releaseWorkflow, /validate_app "\$DMG_APP_PATH"/);
+  assert.match(releaseWorkflow, /trap cleanup EXIT/);
   assert.match(releaseWorkflow, /volyxReleaseBuild=true/);
   assert.match(releaseWorkflow, /Missing official release-build marker/);
   assert.match(releaseWorkflow, /validate-update-metadata\.js/);

@@ -1134,8 +1134,7 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
       }
     });
     if (isCurrent()) {
-      const historyUser = mode === 'ask' ? String(userText || '').trim() : (userBubble || `Assist · ${mode}`);
-      chatHistory.addExchange(historyUser, fullAnswer);
+      if (mode === 'ask') chatHistory.addExchange(String(userText || '').trim(), fullAnswer);
       send('llm:done', {});
     }
   } catch (e) {
