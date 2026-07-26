@@ -14,11 +14,19 @@ const SPOKEN_DIGITS = Object.freeze({
 const DIGIT_TOKEN = '(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|[0-9])';
 const SPOKEN_DIGIT_SEQUENCE = new RegExp(`\\b(${DIGIT_TOKEN}(?:[ \\t]+${DIGIT_TOKEN}){2,})\\b`, 'gi');
 
+const NUMBER_CONTEXT = /\b(?:account|call|code|digits?|identifier|id|number|otp|phone|pin|reference|ref|serial)(?:\s+(?:is|are))?\s*$/i;
+
 function normalizeSpokenDigits(value) {
-  return String(value || '').replace(SPOKEN_DIGIT_SEQUENCE, (sequence) => sequence
-    .split(/[ \t]+/)
-    .map((token) => SPOKEN_DIGITS[token.toLowerCase()] ?? token)
-    .join(''));
+  const text = String(value || '');
+  return text.replace(SPOKEN_DIGIT_SEQUENCE, (sequence, _capture, offset) => {
+    const hasExplicitDigitSignal = /\b(?:zero|oh)\b/i.test(sequence) || /[0-9]/.test(sequence);
+    const context = text.slice(Math.max(0, offset - 40), offset);
+    if (!hasExplicitDigitSignal && !NUMBER_CONTEXT.test(context)) return sequence;
+    return sequence
+      .split(/[ \t]+/)
+      .map((token) => SPOKEN_DIGITS[token.toLowerCase()] ?? token)
+      .join('');
+  });
 }
 
 function normalizeTurns(turns) {
