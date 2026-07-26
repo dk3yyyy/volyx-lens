@@ -43,6 +43,14 @@ test('settings navigation is compact and interactive controls use restrained liq
   assert.match(styles, /\.tb-new[^}]*border-radius:\s*var\(--r-control\)/);
 });
 
+test('settings and onboarding use compact click-through liquid-glass surfaces without a blocking backdrop', () => {
+  assert.match(styles, /#settings-scrim\s*\{[^}]*background:\s*transparent[^}]*backdrop-filter:\s*none[^}]*pointer-events:\s*none/);
+  assert.match(styles, /#onboard-scrim\s*\{[^}]*background:\s*transparent[^}]*backdrop-filter:\s*none[^}]*pointer-events:\s*none/);
+  assert.match(styles, /#settings\s*\{[^}]*pointer-events:\s*auto[^}]*background:\s*rgba\([^)]*,\s*0\.7[0-9]\)/);
+  assert.match(styles, /#onboard\s*\{[^}]*pointer-events:\s*auto[^}]*background:\s*rgba\([^)]*,\s*0\.7[0-9]\)/);
+  assert.match(styles, /body:has\(#settings-scrim:not\(\.hidden\)\) #app,[\s\S]*body:has\(#onboard-scrim:not\(\.hidden\)\) #app\s*\{[^}]*opacity:\s*0[^}]*pointer-events:\s*none/);
+});
+
 test('settings UI exposes clean provider tabs with one provider configuration at a time', () => {
   for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek']) {
     assert.match(html, new RegExp(`data-provider="${provider}"`));
