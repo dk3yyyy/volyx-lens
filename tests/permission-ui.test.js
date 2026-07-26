@@ -67,6 +67,20 @@ test('onboarding honors reduced motion and constrains resizable compact layouts'
   assert.match(main, /minHeight:\s*480/);
 });
 
+test('onboarding footer stays compact and uses rounded navigation controls', () => {
+  assert.match(styles, /\.ob-footer\s*\{[^}]*min-height:\s*54px[^}]*padding:\s*0 16px 0 20px/);
+  assert.match(styles, /\.ob-ghost\s*\{[^}]*min-height:\s*34px[^}]*border-radius:\s*999px/);
+  assert.match(styles, /\.ob-primary\s*\{[^}]*min-width:\s*96px[^}]*min-height:\s*38px[^}]*border-radius:\s*999px/);
+  assert.match(styles, /@media \(max-width:\s*560px\)[\s\S]*\.ob-footer\s*\{[^}]*min-height:\s*70px/);
+});
+
+test('permission recovery restart action is an intentional rounded glass control', () => {
+  assert.match(renderer, /restart\.className = 'ob-restart'/);
+  assert.match(renderer, /obPermissionStatus\.className = 'ob-permission-status denied has-action'/);
+  assert.match(styles, /\.ob-restart\s*\{[^}]*border-radius:\s*999px[^}]*background:\s*rgba\(255,255,255,0\.08\)/);
+  assert.match(styles, /\.ob-permission-status\.has-action\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center/);
+});
+
 test('permission actions expose optionality and visible text states', () => {
   assert.match(renderer, /Each permission is optional/);
   assert.match(renderer, /permissionStates = \{[\s\S]*microphone: \{ text: 'Not requested', className: '' \}[\s\S]*screen: \{ text: 'Not requested', className: '' \}/);

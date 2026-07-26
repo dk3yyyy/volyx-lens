@@ -689,26 +689,49 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .ob-permission-status.pending { color: #C7CEFF; background: rgba(102,119,255,0.10); border: 1px solid rgba(102,119,255,0.25); }
 .ob-permission-status.granted { color: #bceecf; background: rgba(79,209,155,0.10); border: 1px solid rgba(79,209,155,0.24); }
 .ob-permission-status.denied { color: #ffc2ca; background: rgba(255,102,120,0.10); border: 1px solid rgba(255,102,120,0.24); }
-.ob-footer { min-height: 64px; padding: 0 18px 0 22px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-top: 1px solid rgba(255,255,255,0.075); }
+.ob-permission-status.has-action { display: flex; align-items: center; gap: 10px; }
+.ob-permission-status.has-action > span { min-width: 0; flex: 1; }
+.ob-restart {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font: 650 10.5px var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 5px 14px rgba(0,0,0,0.16);
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+.ob-restart:hover { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.24); transform: translateY(-1px); }
+.ob-restart:active { transform: translateY(0); }
+.ob-footer { min-height: 54px; padding: 0 16px 0 20px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-top: 1px solid rgba(255,255,255,0.075); background: rgba(8,12,26,0.12); }
 .ob-dots { display: flex; gap: 6px; justify-content: center; }
 .ob-dots span { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.17); transition: width 220ms ease, background 220ms ease; }
 .ob-dots span.on { width: 18px; border-radius: 999px; background: var(--accent-hi); }
 .ob-actions { justify-self: end; display: flex; align-items: center; gap: 7px; }
-.ob-ghost { min-height: 40px; border: none; background: transparent; color: #B8C0D6; font-size: 12px; font-weight: 600; cursor: pointer; padding: 8px 10px; border-radius: 9px; }
+.ob-ghost { min-height: 34px; border: 1px solid transparent; background: transparent; color: #B8C0D6; font-size: 11.5px; font-weight: 600; cursor: pointer; padding: 6px 10px; border-radius: 999px; }
 .ob-ghost:hover { color: #fff; background: rgba(255,255,255,0.055); }
-.ob-primary { min-width: 108px; min-height: 44px; border: 1px solid rgba(255,255,255,0.10); background: linear-gradient(180deg, #4C5DDB, #4354D4); color: #fff; font-size: 12px; font-weight: 650; padding: 9px 17px; border-radius: 10px; cursor: pointer; box-shadow: 0 8px 20px rgba(57,72,191,0.30), inset 0 1px 0 rgba(255,255,255,0.18); transition: transform 140ms ease, filter 140ms ease; }
+.ob-primary { min-width: 96px; min-height: 38px; border: 1px solid rgba(255,255,255,0.14); background: linear-gradient(180deg, #5365E6, #4354D4); color: #fff; font-size: 11.5px; font-weight: 650; padding: 7px 15px; border-radius: 999px; cursor: pointer; box-shadow: 0 7px 18px rgba(57,72,191,0.28), inset 0 1px 0 rgba(255,255,255,0.20); transition: transform 140ms ease, filter 140ms ease; }
 .ob-primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .ob-primary:active { transform: translateY(0); }
-@media (max-width: 560px), (max-height: 520px) {
+@media (max-width: 560px) {
   #onboard { height: calc(100vh - 24px); min-height: 0; }
   .ob-main { grid-template-columns: 1fr; min-height: 0; }
   #ob-stage { display: none; }
   #ob-content { padding: 24px; }
   .ob-feature-grid { grid-template-columns: 1fr; }
-  .ob-footer { min-height: 86px; padding: 6px 16px; grid-template-columns: 1fr auto; grid-template-rows: auto auto; }
+  .ob-footer { min-height: 70px; padding: 5px 14px; grid-template-columns: 1fr auto; grid-template-rows: auto auto; }
   .ob-dots { grid-column: 1 / -1; grid-row: 1; }
   #ob-skip { grid-column: 1; grid-row: 2; justify-self: start; }
   .ob-actions { grid-column: 2; grid-row: 2; }
+}
+@media (max-height: 520px) and (min-width: 561px) {
+  #onboard { height: calc(100vh - 24px); min-height: 0; }
+  .ob-main { min-height: 0; }
+  #ob-content { padding-top: 22px; padding-bottom: 14px; }
 }
 
 /* ============================ Animations ============================ */
