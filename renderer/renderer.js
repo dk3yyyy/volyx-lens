@@ -1669,13 +1669,15 @@
         obPermissionStatus.className = 'ob-permission-status granted';
       } else if (result.settingsOpened) {
         setPermissionState(kind, 'Needs settings', 'denied');
-        obPermissionStatus.textContent = label + ' access was not granted. Enable Volyx Lens in System Settings, then restart Volyx Lens.';
+        const message = document.createElement('span');
+        message.textContent = label + ' access was not granted. Enable Volyx Lens in System Settings, then restart Volyx Lens.';
         const restart = document.createElement('button');
         restart.type = 'button';
+        restart.className = 'ob-restart';
         restart.textContent = 'Restart Volyx Lens';
         restart.addEventListener('click', () => volyxLens.relaunch());
-        obPermissionStatus.append(' ', restart);
-        obPermissionStatus.className = 'ob-permission-status denied';
+        obPermissionStatus.replaceChildren(message, restart);
+        obPermissionStatus.className = 'ob-permission-status denied has-action';
       } else {
         setPermissionState(kind, 'Unavailable', 'denied');
         obPermissionStatus.textContent = result.message || (label + ' access is unavailable.');
