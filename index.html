@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0d18">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-dJjTWIkbNH1fXx1x5gp74GF+NckTXe6FGidvX9HND4g='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HdU7E4MDsd+Ej9w0sSZw1rMqr9RwpKKKNJ1359w9JZE='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; upgrade-insecure-requests">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="description" content="Volyx Lens is a private, context-aware macOS assistant for user-selected screen, voice, meeting, and coding context.">
   <meta property="og:title" content="Volyx Lens — context, only when you choose">
@@ -29,7 +29,7 @@
       "downloadUrl": "https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1",
       "codeRepository": "https://github.com/dk3yyyy/volyx-lens",
       "license": "https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md",
-      "author": { "@type": "Organization", "name": "VolyxAI" }
+      "author": { "@type": "Person", "name": "Joshua Nwachinemere" }
     }
   </script>
   <script src="site.js" defer></script>
@@ -92,7 +92,7 @@
         <p>Compact when you need the screen. Expanded when you need an answer. Volyx Lens stays out of the way until you invoke it.</p>
       </div>
       <figure class="product-frame">
-        <img src="assets/onboarding-welcome-eye.png" width="1400" height="1146" alt="Volyx Lens onboarding screen introducing separate See, Hear, and Assist capabilities">
+        <img src="assets/onboarding-welcome-eye.png" width="700" height="573" alt="Volyx Lens onboarding screen introducing separate See, Hear, and Assist capabilities">
         <figcaption><span>Real product interface</span><span>Current onboarding · v0.3.1</span></figcaption>
       </figure>
     </section>
@@ -148,7 +148,7 @@
           <h2 id="privacy-title">Local controls come first.</h2>
           <p>Volyx Lens checks permissions, manages bounded session context, protects stored credentials, and waits for an explicit action before routing selected data.</p>
           <div class="privacy-points">
-            <div><strong>No VolyxAI intermediary</strong><span>Requests go from the app to the provider you configure.</span></div>
+            <div><strong>No intermediary relay</strong><span>Requests go from the app to the provider you configure.</span></div>
             <div><strong>Credentials stay out of the UI</strong><span>Keys remain in the Electron main process and use macOS Keychain-backed secure storage where available.</span></div>
             <div><strong>Session media is temporary</strong><span>Active screenshots and audio are kept in bounded memory, not intentionally persisted.</span></div>
           </div>
@@ -172,7 +172,7 @@
             <strong>Your configured provider</strong>
             <small>Only the context required for the chosen action</small>
           </div>
-          <div class="no-server"><span aria-hidden="true">×</span> No VolyxAI relay server</div>
+          <div class="no-server"><span aria-hidden="true">×</span> No intermediary relay server</div>
         </div>
       </div>
     </section>
@@ -253,7 +253,7 @@
         <details><summary>Does everything stay on my Mac?</summary><p>No. Local controls and selection happen on your Mac, but third-party providers receive the context required for actions you invoke. Optional local Whisper can handle supported transcription paths when separately installed and configured.</p></details>
         <details><summary>Is the app signed and notarized?</summary><p>The current public binaries are ad-hoc signed test builds, not Apple Developer ID-signed or notarized production releases. They cannot use the trusted automatic-update path.</p></details>
         <details><summary>Can Volyx Lens be hidden from every recording?</summary><p>No. Capture exclusion is best-effort. It may not work with every macOS version, capture path, or physical camera.</p></details>
-        <details><summary>Can I use the source commercially?</summary><p>Not under the PolyForm Noncommercial 1.0.0 licence. Commercial use, resale, paid redistribution, or use in a commercial product or service requires a separate licence from VolyxAI.</p></details>
+        <details><summary>Can I use the source commercially?</summary><p>Not under the PolyForm Noncommercial 1.0.0 licence. Commercial use, resale, paid redistribution, or use in a commercial product or service requires a separate licence from the copyright holder.</p></details>
         <details><summary>Which permissions does it need?</summary><p>Microphone permission is used for your voice channel. Screen &amp; System Audio Recording permission is used for screenshots and meeting audio. Volyx Lens does not request camera access.</p></details>
       </div>
     </section>
@@ -270,7 +270,7 @@
   </main>
 
   <footer class="site-footer section-shell">
-    <div class="footer-brand"><img src="assets/volyx-lens-logo.svg" width="34" height="34" alt=""><strong>Volyx Lens</strong><span>A VolyxAI project</span></div>
+    <div class="footer-brand"><img src="assets/volyx-lens-logo.svg" width="34" height="34" alt=""><strong>Volyx Lens</strong><span>An independent project by Joshua Nwachinemere</span></div>
     <div class="footer-links">
       <a href="https://github.com/dk3yyyy/volyx-lens">GitHub</a>
       <a href="https://github.com/dk3yyyy/volyx-lens/releases">Releases</a>

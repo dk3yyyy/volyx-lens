@@ -143,7 +143,7 @@
     <circle cx="348" cy="631" r="5" fill="#7c8aff"/>
     <text x="362" y="635" class="tiny">REMOTE · only selected providers</text>
 
-    <text x="1140" y="627" text-anchor="end" class="card-copy">No VolyxAI account · no intermediary server · no telemetry</text>
+    <text x="1140" y="627" text-anchor="end" class="card-copy">No intermediary account · no intermediary server · no telemetry</text>
     <text x="1140" y="648" text-anchor="end" class="card-copy">Provider charges and policies still apply</text>
   </g>
 </svg>
