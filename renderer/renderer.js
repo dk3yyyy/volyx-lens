@@ -1548,7 +1548,9 @@
       const permission = await volyxLens.requestPermission('microphone');
       if (!permission || permission.granted !== true) {
         resultEl.className = 's-diag-result error';
-        resultEl.textContent = 'microphone · permission_denied: Allow Volyx Lens in System Settings → Privacy & Security → Microphone, then restart the app.';
+        resultEl.textContent = permission && permission.developmentClient
+          ? `microphone · permission_client_mismatch: ${permission.message || 'This npm start session uses a separate macOS permission client. Quit it and open the packaged Volyx Lens app.'}`
+          : 'microphone · permission_denied: Allow Volyx Lens in System Settings → Privacy & Security → Microphone, then restart the app.';
         return;
       }
       resultEl.textContent = 'Opening a one-channel Realtime session…';
@@ -1656,6 +1658,12 @@
       state.className = `ob-permission-state ${className}`.trim();
     }
   }
+  function showDevelopmentPermissionMismatch(kind) {
+    const label = kind === 'microphone' ? 'Microphone' : 'Screen Recording';
+    setPermissionState(kind, 'Use packaged app', 'denied');
+    obPermissionStatus.textContent = `${label} for this npm start session is separate from Volyx Lens.app in macOS System Settings. Quit npm start and open the packaged Volyx Lens app; reload and Restart cannot transfer a grant between those macOS permission clients.`;
+    obPermissionStatus.className = 'ob-permission-status denied';
+  }
   async function requestPermission(kind) {
     const label = kind === 'microphone' ? 'Microphone' : 'Screen Recording';
     setPermissionState(kind, 'Requesting…', 'pending');
@@ -1667,6 +1675,8 @@
         setPermissionState(kind, 'Granted', 'granted');
         obPermissionStatus.textContent = label + ' access granted.';
         obPermissionStatus.className = 'ob-permission-status granted';
+      } else if (result.developmentClient) {
+        showDevelopmentPermissionMismatch(kind);
       } else if (result.settingsOpened) {
         setPermissionState(kind, 'Needs settings', 'denied');
         const message = document.createElement('span');
@@ -1696,11 +1706,16 @@
     }));
     for (const result of results) {
       if (result.granted) setPermissionState(result.kind, 'Granted', 'granted');
+      else if (result.developmentClient && ['denied', 'restricted'].includes(result.status)) setPermissionState(result.kind, 'Use packaged app', 'denied');
       else if (['denied', 'restricted'].includes(result.status)) setPermissionState(result.kind, 'Needs settings', 'denied');
       else if (result.status === 'unsupported') setPermissionState(result.kind, 'Unavailable', 'denied');
       else setPermissionState(result.kind, 'Not requested', '');
     }
-    if (obIndex === 1) renderOnboard();
+    if (obIndex === 1) {
+      renderOnboard();
+      const mismatch = results.find((result) => result.developmentClient && ['denied', 'restricted'].includes(result.status));
+      if (mismatch) showDevelopmentPermissionMismatch(mismatch.kind);
+    }
   }
   const OB_STEPS = [
     {
