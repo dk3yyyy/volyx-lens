@@ -19,16 +19,32 @@ test('trusted bridge carries collapse state to main and dock state back to rende
   assert.match(renderer, /volyxLens\.on\('window:dock-state'/);
 });
 
-test('native dragging stays free and docking occurs only when collapse is requested', () => {
+test('native dragging stays free and docking occurs only when hide or show is requested', () => {
   assert.match(main, /require\('\.\/src\/window-docking'\)/);
-  assert.match(main, /nearestDockSide/);
+  assert.match(main, /dockSideForIntent/);
   assert.match(main, /railCenter/);
   assert.match(main, /win\.setBounds\(nextBounds/);
-  assert.match(main, /screen\.getDisplayMatching/);
+  assert.match(main, /screen\.getDisplayNearestPoint/);
   assert.doesNotMatch(main, /win\.on\(['"]move[d]?['"]/);
   assert.doesNotMatch(main, /scheduleWindowDock|snapWindowToNearestEdge|dockMoveTimer/);
-  assert.match(main, /onTrusted\('window:set-collapsed',[\s\S]*nearestDockSide[\s\S]*applyDockBounds\(\{ side, collapsed: nextCollapsed, anchor \}\)/);
+  assert.match(main, /onTrusted\('window:set-collapsed',[\s\S]*dockSideForIntent[\s\S]*applyDockBounds\(\{ side, collapsed: nextCollapsed, anchor \}\)/);
   assert.match(main, /did-finish-load[\s\S]*side:\s*windowDock\.side[\s\S]*collapsed:\s*windowDock\.collapsed/);
+});
+
+test('hide and show both resolve fresh edge intent from the visible rail position', () => {
+  assert.match(main, /dockIntentPoint/);
+  assert.match(main, /dockSideForIntent/);
+  assert.match(
+    main,
+    /onTrusted\('window:set-collapsed',[\s\S]*dockIntentPoint\(\{[\s\S]*collapsed:\s*windowDock\.collapsed[\s\S]*dockSideForIntent\([\s\S]*applyDockBounds\(\{ side, collapsed: nextCollapsed, anchor \}\)/
+  );
+});
+
+test('final dock bounds select the same display as the visible rail anchor', () => {
+  assert.match(
+    main,
+    /function applyDockBounds[\s\S]*const resolvedAnchor[\s\S]*screen\.getDisplayNearestPoint\(resolvedAnchor\)[\s\S]*dockBounds\(\{ workArea: display\.workArea/
+  );
 });
 
 test('renderer reload preserves a freely dragged expanded window', () => {
@@ -61,6 +77,10 @@ test('the full toolbar remains the drag target while interactive controls stay n
 test('opening a modal expands a collapsed native window and closing restores it', () => {
   assert.match(main, /let modalRestoreCollapsed = null/);
   assert.match(main, /const modalStateWasKnown = rendererModalStateReported[\s\S]*!modalStateWasKnown \|\| !uiModalOpen/);
-  assert.match(main, /modalRestoreCollapsed === null[\s\S]*modalRestoreCollapsed = windowDock\.collapsed[\s\S]*applyDockBounds\(\{ collapsed: false, anchor \}\)/);
+  assert.match(main, /modalRestoreCollapsed === null[\s\S]*modalRestoreCollapsed = windowDock\.collapsed/);
+  assert.match(
+    main,
+    /onTrusted\('ui:modal-state',[\s\S]*if \(windowDock\.collapsed[\s\S]*dockIntentPoint\([\s\S]*dockSideForIntent\([\s\S]*applyDockBounds\(\{ side, collapsed: false, anchor \}\)/
+  );
   assert.match(main, /onTrusted\('ui:modal-state',[\s\S]*modalRestoreCollapsed === true[\s\S]*applyDockBounds\(\{ collapsed: true, anchor \}\)/);
 });

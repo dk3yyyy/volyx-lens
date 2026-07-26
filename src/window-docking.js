@@ -7,6 +7,7 @@ const DEFAULT_DOCK_SIZES = Object.freeze({
   collapsedVertical: Object.freeze({ width: 52, height: 220 }),
   edgeInset: 6,
 });
+const DEFAULT_SIDE_ZONE_RATIO = 0.22;
 
 function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
@@ -67,6 +68,16 @@ function nearestDockSide({ point, workArea, previousSide, hysteresis = 24 }) {
   return best;
 }
 
+function dockSideForIntent({ point, workArea, sideZoneRatio = DEFAULT_SIDE_ZONE_RATIO }) {
+  // Side strips express deliberate horizontal intent; the center follows the screen's vertical half.
+  const ratio = clamp(Number(sideZoneRatio) || 0, 0, 0.5);
+  const leftBoundary = workArea.x + (workArea.width * ratio);
+  const rightBoundary = workArea.x + (workArea.width * (1 - ratio));
+  if (point.x <= leftBoundary) return 'left';
+  if (point.x >= rightBoundary) return 'right';
+  return point.y < workArea.y + (workArea.height / 2) ? 'top' : 'bottom';
+}
+
 function railCenter(bounds, side, sizes = DEFAULT_DOCK_SIZES) {
   const dockSide = validSide(side);
   const half = Math.round((dockSide === 'left' || dockSide === 'right')
@@ -78,10 +89,21 @@ function railCenter(bounds, side, sizes = DEFAULT_DOCK_SIZES) {
   return { x: bounds.x + bounds.width - half, y: Math.round(bounds.y + bounds.height / 2) };
 }
 
+function dockIntentPoint({ bounds, collapsed, side, sizes = DEFAULT_DOCK_SIZES }) {
+  if (!collapsed) return railCenter(bounds, side, sizes);
+  return {
+    x: Math.round(bounds.x + (bounds.width / 2)),
+    y: Math.round(bounds.y + (bounds.height / 2)),
+  };
+}
+
 module.exports = {
   DOCK_SIDES,
   DEFAULT_DOCK_SIZES,
+  DEFAULT_SIDE_ZONE_RATIO,
   dockBounds,
+  dockIntentPoint,
+  dockSideForIntent,
   nearestDockSide,
   railCenter,
 };

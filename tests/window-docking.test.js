@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const {
   DEFAULT_DOCK_SIZES,
   dockBounds,
+  dockIntentPoint,
+  dockSideForIntent,
   nearestDockSide,
   railCenter,
 } = require('../src/window-docking');
@@ -46,6 +48,25 @@ test('nearest edge uses rail center and keeps the previous side inside corner hy
   assert.equal(nearestDockSide({ point: { x: 112, y: 480 }, workArea }), 'left');
   assert.equal(nearestDockSide({ point: { x: 1528, y: 480 }, workArea }), 'right');
   assert.equal(nearestDockSide({ point: { x: 120, y: 58 }, workArea, previousSide: 'left', hysteresis: 24 }), 'left');
+});
+
+test('dock intent uses side zones before splitting the center into top and bottom halves', () => {
+  assert.equal(dockSideForIntent({ point: { x: 820, y: 100 }, workArea }), 'top');
+  assert.equal(dockSideForIntent({ point: { x: 820, y: 925 }, workArea }), 'bottom');
+  assert.equal(dockSideForIntent({ point: { x: 300, y: 925 }, workArea }), 'left');
+  assert.equal(dockSideForIntent({ point: { x: 1400, y: 100 }, workArea }), 'right');
+});
+
+test('dock intent point follows the visible rail when expanded and the moved window center when collapsed', () => {
+  const bounds = { x: 300, y: 200, width: 700, height: 600 };
+  assert.deepEqual(dockIntentPoint({ bounds, collapsed: false, side: 'bottom' }), { x: 650, y: 774 });
+  assert.deepEqual(dockIntentPoint({ bounds, collapsed: true, side: 'top' }), { x: 650, y: 500 });
+});
+
+test('dock intent supports displays with negative origins', () => {
+  const area = { x: -1920, y: -200, width: 1920, height: 1080 };
+  assert.equal(dockSideForIntent({ point: { x: -1800, y: 700 }, workArea: area }), 'left');
+  assert.equal(dockSideForIntent({ point: { x: -960, y: 800 }, workArea: area }), 'bottom');
 });
 
 test('rail center follows the selected side of an expanded window', () => {
