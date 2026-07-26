@@ -9,6 +9,7 @@ const website = path.join(root, 'website');
 const html = fs.readFileSync(path.join(website, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(website, 'styles.css'), 'utf8');
 const js = fs.readFileSync(path.join(website, 'site.js'), 'utf8');
+const architecture = fs.readFileSync(path.join(website, 'assets', 'architecture.svg'), 'utf8');
 
 const occurrences = (text, pattern) => [...text.matchAll(pattern)].length;
 const hash = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -36,8 +37,13 @@ test('landing page preserves required product and release truth', () => {
   ];
   for (const claim of required) assert.ok(html.includes(claim), `missing claim: ${claim}`);
 
-  const forbidden = ['A VolyxAI project', 'guaranteed invisible', 'completely private', 'SOC 2', 'trusted by', 'customers worldwide'];
+  const forbidden = ['guaranteed invisible', 'completely private', 'SOC 2', 'trusted by', 'customers worldwide'];
   for (const claim of forbidden) assert.ok(!html.toLowerCase().includes(claim.toLowerCase()), `forbidden claim: ${claim}`);
+
+  const affiliationSurface = `${html}\n${css}\n${js}\n${architecture}`
+    .replace(/https?:[^\s"'<>]+/gi, '')
+    .replace(/mailto:[^\s"'<>]+/gi, '');
+  assert.doesNotMatch(affiliationSurface, /VolyxAI/i);
 });
 
 test('canonical eye asset is copied without modification', () => {
@@ -49,7 +55,7 @@ test('canonical eye asset is copied without modification', () => {
 test('onboarding image keeps its native dimensions and is never upscaled', () => {
   assert.match(html, /onboarding-welcome-eye\.png" width="700" height="573"/);
   assert.match(css, /\.product-frame \{ width: min\(100%, 736px\);/);
-  assert.match(css, /\.product-frame img \{ display: block; width: 100%; height: auto;/);
+  assert.match(css, /\.product-frame img \{ display: block; width: 100%; max-width: 700px; height: auto;/);
 });
 
 test('all local page assets exist and external links use allowed protocols', () => {
