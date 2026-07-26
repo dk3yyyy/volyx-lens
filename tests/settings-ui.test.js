@@ -21,7 +21,7 @@ test('settings use five simple pages without removing existing controls', () => 
   assert.match(html, /id="settings"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(renderer, /function selectSettingsSection\(section/);
   assert.match(renderer, /page\.hidden = !active/);
-  assert.match(styles, /grid-template-columns:\s*156px minmax\(0,1fr\)/);
+  assert.match(styles, /grid-template-columns:\s*132px minmax\(0,1fr\)/);
 });
 
 test('settings behavior harness covers navigation, modal focus, and compact fit', () => {
@@ -32,6 +32,15 @@ test('settings behavior harness covers navigation, modal focus, and compact fit'
   assert.match(settingsHarness, /compact Settings must not overflow horizontally/);
   assert.match(renderer, /function handleSettingsKeydown\(event\)/);
   assert.match(styles, /button:focus-visible[\s\S]*outline:\s*2px solid var\(--cyan\)/);
+});
+
+test('settings navigation is compact and interactive controls use restrained liquid-glass squircles', () => {
+  assert.match(styles, /--r-control:\s*12px/);
+  assert.match(styles, /\.s-layout\s*\{[^}]*grid-template-columns:\s*132px minmax\(0,1fr\)/);
+  assert.match(styles, /\.s-nav button\s*\{[^}]*min-height:\s*40px[^}]*border-radius:\s*var\(--r-control\)/);
+  assert.match(styles, /\.s-nav button\.on\s*\{[^}]*linear-gradient[^}]*inset 0 1px 0/);
+  assert.match(styles, /\.s-seg button\s*\{[^}]*border-radius:\s*var\(--r-control\)/);
+  assert.match(styles, /\.tb-new[^}]*border-radius:\s*var\(--r-control\)/);
 });
 
 test('settings UI exposes clean provider tabs with one provider configuration at a time', () => {
