@@ -37,7 +37,7 @@ test('renderer and preload share the canonical bridge name', () => {
   assert.doesNotMatch(renderer, new RegExp(`\\b${retiredIdentifier}\\.`, 'i'));
 });
 
-test('repository declares the PolyForm noncommercial license and commercial contact', () => {
+test('repository declares the PolyForm noncommercial license', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
   const license = fs.readFileSync(path.join(root, 'LICENSE.md'), 'utf8');
@@ -50,5 +50,4 @@ test('repository declares the PolyForm noncommercial license and commercial cont
   assert.match(license, /https:\/\/polyformproject\.org\/licenses\/noncommercial\/1\.0\.0/);
   assert.match(license, /Required Notice: Copyright 2026 Joshua Nwachinemere/);
   assert.match(readme, /source-available under the \[PolyForm Noncommercial License 1\.0\.0\]/);
-  assert.match(readme, /Commercial licensing: joshua@volyxai\.com/);
 });

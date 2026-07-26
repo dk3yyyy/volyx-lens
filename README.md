@@ -251,8 +251,6 @@ Copyright © 2026 Joshua Nwachinemere.
 
 Volyx Lens is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Personal and other noncommercial use is permitted under its terms. Commercial use, resale, paid redistribution, or use in a commercial product or service requires a separate licence from VolyxAI.
 
-Commercial licensing: joshua@volyxai.com
-
 ## Contributing
 
 Issues and pull requests are welcome. Keep changes focused, preserve the privacy boundaries above, and include tests for behavior changes.
