@@ -23,6 +23,7 @@ test('answer generation is user-cancellable and hard-time-bounded across the IPC
 
 test('session and application lifecycle cancel active provider work', () => {
   assert.match(main, /cancelActiveFeature\('new-session'/);
+  assert.match(main, /handleTrusted\('transcript:clear'[\s\S]*?cancelActiveFeature\('transcript-clear', \{ notify: false, invalidate: true \}\)/);
   assert.match(main, /cancelActiveFeature\('quit'/);
   assert.match(main, /cancelActiveFeature\('relaunch'/);
   assert.match(main, /sanitizeProviderError\(e, \{ timedOut:/);

@@ -98,7 +98,7 @@ test('scroll overlap and relevance selection remain local, bounded, and metadata
 });
 
 test('saved screens are disclosed and used only by screen-capable explicit requests', () => {
-  assert.match(main, /const taskContextPreview = def\.needsScreen && llm\.supportsVision/);
+  assert.match(main, /const taskContextPreview = needsScreen && llm\.supportsVision/);
   assert.match(main, /imageDataUrls = \[\.\.\.savedTaskImages/);
   assert.match(main, /selectImages\(MAX_SAVED_TASK_IMAGES_PER_REQUEST, \{ query: relevanceQuery \}\)/);
   assert.match(main, /Visual task context:/);
@@ -117,6 +117,6 @@ test('large visual requests require confirmation before capture or upload', () =
 
 test('New Session and quit clear task-context images from memory', () => {
   assert.match(main, /resetTranscriptData\(\);\n\s*clearTaskContext\(\);\n\s*app\.quit\(\)/);
-  assert.match(main, /resetTranscriptData\(\);\n\s*clearTaskContext\(\);\n\s*buffers\.you/);
+  assert.match(main, /resetTranscriptData\(\);\n\s*chatHistory\.clear\(\);\n\s*clearTaskContext\(\);\n\s*buffers\.you/);
   assert.match(renderer, /session:cleared[\s\S]*renderTaskContext\(\{ count: 0/);
 });
