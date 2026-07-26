@@ -157,7 +157,19 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   border-radius: var(--r-panel);
   box-shadow: 0 16px 48px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.10);
 }
-#panel { padding: 20px 22px; max-height: calc(100vh - 90px); overflow-y: auto; animation: overlayIn 260ms cubic-bezier(0.22,1,0.36,1); }
+#panel {
+  padding: 20px 22px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  animation: overlayIn 260ms cubic-bezier(0.22,1,0.36,1);
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+#panel:hover { scrollbar-color: rgba(255,255,255,0.22) transparent; }
+#panel::-webkit-scrollbar { width: 7px; }
+#panel::-webkit-scrollbar-track { background: transparent; }
+#panel::-webkit-scrollbar-thumb { border-radius: 8px; background: transparent; }
+#panel:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); }
 #panel.collapsed { display: none; }
 
 /* ============================ Messages ============================ */

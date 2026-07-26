@@ -12,18 +12,22 @@ const SPOKEN_DIGITS = Object.freeze({
   nine: '9',
 });
 const DIGIT_TOKEN = '(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|[0-9])';
-const SPOKEN_DIGIT_SEQUENCE = new RegExp(`\\b(${DIGIT_TOKEN}(?:[ \\t]+${DIGIT_TOKEN}){2,})\\b`, 'gi');
+const DIGIT_SEPARATOR = '(?:[ \\t]+|[ \\t]*,[ \\t]*)';
+const SPOKEN_DIGIT_SEQUENCE = new RegExp(`\\b(${DIGIT_TOKEN}(?:${DIGIT_SEPARATOR}${DIGIT_TOKEN}){2,})\\b`, 'gi');
 
 const NUMBER_CONTEXT = /\b(?:account|call|code|digits?|identifier|id|number|otp|phone|pin|reference|ref|serial)(?:\s+(?:is|are))?\s*$/i;
+const ENUMERATION_CONTEXT = /\b(?:(?:choose|select|pick)|(?:options?|choices?)\s+(?:are|include))\s*$/i;
 
 function normalizeSpokenDigits(value) {
   const text = String(value || '');
   return text.replace(SPOKEN_DIGIT_SEQUENCE, (sequence, _capture, offset) => {
-    const hasExplicitDigitSignal = /\b(?:zero|oh)\b/i.test(sequence) || /[0-9]/.test(sequence);
+    const tokens = sequence.toLowerCase().match(/[a-z]+|[0-9]/g) || [];
     const context = text.slice(Math.max(0, offset - 40), offset);
+    if (ENUMERATION_CONTEXT.test(context)) return sequence;
+    const hasExplicitDigitSignal = tokens.includes('zero') || tokens.includes('oh') || tokens.some((token) => /^[0-9]$/.test(token));
     if (!hasExplicitDigitSignal && !NUMBER_CONTEXT.test(context)) return sequence;
     return sequence
-      .split(/[ \t]+/)
+      .split(/[ \t]*,[ \t]*|[ \t]+/)
       .map((token) => SPOKEN_DIGITS[token.toLowerCase()] ?? token)
       .join('');
   });

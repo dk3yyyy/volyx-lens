@@ -67,6 +67,13 @@ test('renderer has explicit four-edge layouts and inward panel ordering', () => 
   assert.match(styles, /#app\[data-dock="right"\][\s\S]*#toolbar[\s\S]*flex-direction:\s*column/);
 });
 
+test('the expanded panel uses a transparent scrollbar track instead of a bright native strip', () => {
+  assert.match(styles, /#panel\s*\{[^}]*scrollbar-width:\s*thin[^}]*scrollbar-color:\s*transparent transparent/);
+  assert.match(styles, /#panel::\-webkit-scrollbar-track\s*\{[^}]*background:\s*transparent/);
+  assert.match(styles, /#panel::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*transparent/);
+  assert.match(styles, /#panel:hover::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*rgba\(255,255,255,0\.22\)/);
+});
+
 test('the full toolbar remains the drag target while interactive controls stay no-drag', () => {
   assert.doesNotMatch(html, /class="tb-grab"/);
   assert.doesNotMatch(styles, /\.tb-grab/);
