@@ -42,6 +42,10 @@ test('Volyx Lens identity is complete across package and release metadata', () =
   assert.match(testBuildWorkflow, /CFBundleIconFile/);
   assert.match(testBuildWorkflow, /volyx-lens-vision-ocr/);
   assert.match(testBuildWorkflow, /shasum -a 256/);
+  assert.match(testBuildWorkflow, /hdiutil create[\s\S]*-format UDZO/);
+  assert.match(testBuildWorkflow, /hdiutil verify "\$DMG_OUTPUT"/);
+  assert.match(testBuildWorkflow, /dist\/Volyx-Lens-\*-adhoc\.dmg/);
+  assert.match(testBuildWorkflow, /dist\/Volyx-Lens-\*-adhoc\.dmg\.sha256/);
   assert.doesNotMatch(testBuildWorkflow, /CSC_LINK|APPLE_ID|APPLE_TEAM_ID/);
 });
 

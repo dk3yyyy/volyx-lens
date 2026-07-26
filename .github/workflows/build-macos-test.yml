@@ -43,7 +43,7 @@ jobs:
           --config.mac.notarize=false
           --config.mac.identity=null
 
-      - name: Ad-hoc sign, archive, and verify application
+      - name: Ad-hoc sign, package, and verify application
         shell: bash
         run: |
           set -euo pipefail
@@ -60,11 +60,26 @@ jobs:
           codesign --verify --deep --strict --verbose=4 "$BUILT_APP"
           codesign -dv --verbose=4 "$BUILT_APP" 2>&1 | grep -q 'Signature=adhoc'
 
-          OUTPUT="dist/Volyx-Lens-${VERSION}-macOS-${ARCH}-adhoc.zip"
-          ditto -c -k --sequesterRsrc --keepParent "$BUILT_APP" "$OUTPUT"
+          ZIP_OUTPUT="dist/Volyx-Lens-${VERSION}-macOS-${ARCH}-adhoc.zip"
+          DMG_OUTPUT="dist/Volyx-Lens-${VERSION}-macOS-${ARCH}-adhoc.dmg"
+          ditto -c -k --sequesterRsrc --keepParent "$BUILT_APP" "$ZIP_OUTPUT"
 
+          DMG_STAGE="$(mktemp -d)"
+          DMG_MOUNT="$(mktemp -d)"
           VERIFY_DIR="$(mktemp -d)"
-          ditto -x -k "$OUTPUT" "$VERIFY_DIR"
+          DMG_ATTACHED=0
+          cleanup() {
+            if [ "$DMG_ATTACHED" = 1 ]; then hdiutil detach "$DMG_MOUNT" -quiet || true; fi
+            rm -rf "$DMG_STAGE" "$DMG_MOUNT" "$VERIFY_DIR"
+          }
+          trap cleanup EXIT
+
+          ditto "$BUILT_APP" "$DMG_STAGE/Volyx Lens.app"
+          ln -s /Applications "$DMG_STAGE/Applications"
+          hdiutil create -volname "Volyx Lens" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_OUTPUT"
+          hdiutil verify "$DMG_OUTPUT"
+
+          ditto -x -k "$ZIP_OUTPUT" "$VERIFY_DIR"
           APP_PATH="$(find "$VERIFY_DIR" -type d -name 'Volyx Lens.app' -print -quit)"
           test -n "$APP_PATH"
           codesign --verify --deep --strict --verbose=4 "$APP_PATH"
@@ -94,7 +109,18 @@ jobs:
               raise SystemExit('Ad-hoc signed test application did not report renderer readiness.')
           PY
 
-          (cd dist && shasum -a 256 "$(basename "$OUTPUT")" > "$(basename "$OUTPUT").sha256")
+          hdiutil attach -readonly -nobrowse -mountpoint "$DMG_MOUNT" "$DMG_OUTPUT"
+          DMG_ATTACHED=1
+          DMG_APP="$DMG_MOUNT/Volyx Lens.app"
+          test -d "$DMG_APP"
+          codesign --verify --deep --strict --verbose=4 "$DMG_APP"
+          codesign -dv --verbose=4 "$DMG_APP" 2>&1 | grep -q 'Signature=adhoc'
+          test "$(defaults read "$DMG_APP/Contents/Info" CFBundleIdentifier)" = "ai.volyx.lens"
+          hdiutil detach "$DMG_MOUNT" -quiet
+          DMG_ATTACHED=0
+
+          (cd dist && shasum -a 256 "$(basename "$ZIP_OUTPUT")" > "$(basename "$ZIP_OUTPUT").sha256")
+          (cd dist && shasum -a 256 "$(basename "$DMG_OUTPUT")" > "$(basename "$DMG_OUTPUT").sha256")
 
       - uses: actions/upload-artifact@v4
         with:
@@ -102,5 +128,7 @@ jobs:
           path: |
             dist/Volyx-Lens-*-adhoc.zip
             dist/Volyx-Lens-*-adhoc.zip.sha256
+            dist/Volyx-Lens-*-adhoc.dmg
+            dist/Volyx-Lens-*-adhoc.dmg.sha256
           if-no-files-found: error
           retention-days: 14
