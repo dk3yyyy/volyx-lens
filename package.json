@@ -1,6 +1,6 @@
 {
   "name": "volyx-lens",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Private macOS context assistant for screen, voice, meetings, and coding workflows.",
   "author": "VolyxAI",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -56,6 +56,7 @@
     ],
     "mac": {
       "target": [
+        "dmg",
         "zip"
       ],
       "category": "public.app-category.productivity",
@@ -87,7 +88,7 @@
   "devDependencies": {
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
-    "js-yaml": "^5.2.1"
+    "js-yaml": "5.2.2"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
@@ -100,5 +101,9 @@
     "openai": "^4.73.0",
     "pdfjs-dist": "^4.10.38",
     "ws": "^8.21.1"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.8",
+    "tar": "7.5.22"
   }
 }
