@@ -441,12 +441,42 @@ h3 { font-size: clamp(1.35rem, 2vw, 1.8rem); letter-spacing: -0.035em; }
   .product-frame { padding: 8px; border-radius: 19px; }
   .product-frame figcaption { flex-direction: column; gap: 2px; }
   .context-explainer { grid-template-columns: 1fr; min-height: 0; }
-  .source-tabs { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); scroll-snap-type: x mandatory; }
-  .source-tabs button { min-width: 200px; min-height: 100px; scroll-snap-align: start; }
-  .source-tabs button[aria-selected="true"]::after { right: 20px; left: 20px; top: auto; bottom: -19px; width: auto; height: 3px; transform: none; }
-  .source-panels [role="tabpanel"] { padding: 44px 24px 50px; }
-  .source-panels [role="tabpanel"]::before { right: 8px; top: 15px; font-size: 7rem; }
-  .context-footnote { text-align: left; }
+  .source-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    background: rgba(4, 6, 15, .28);
+  }
+  .source-tabs button {
+    min-width: 0;
+    min-height: 48px;
+    display: grid;
+    grid-template-columns: 1fr;
+    place-items: center;
+    padding: 6px 4px;
+    text-align: center;
+    border-radius: 9px;
+  }
+  .source-number,
+  .source-tabs button > span:last-child { display: none; }
+  .source-tabs strong { font-size: .82rem; }
+  .source-tabs button[aria-selected="true"] {
+    background: rgba(141, 124, 255, .14);
+    border-color: rgba(141, 124, 255, .28);
+  }
+  .source-tabs button[aria-selected="true"]::after { display: none; }
+  .source-panels [role="tabpanel"] { padding: 32px 20px 30px; }
+  .source-panels [role="tabpanel"]::before { display: none; }
+  .panel-kicker { margin: 0 0 12px; font-size: .68rem; }
+  .source-panels h3 { margin: 0 0 16px; font-size: clamp(1.75rem, 8.5vw, 2.35rem); line-height: 1.08; }
+  .source-panels [role="tabpanel"] > p:not(.panel-kicker) { margin: 0; font-size: .92rem; line-height: 1.6; }
+  .plain-list { gap: 6px; padding-top: 16px; }
+  .plain-list li { padding: 6px 9px; font-size: .7rem; }
+  .context-footnote { margin: 14px 0 28px; text-align: left; }
   .privacy-section, .install-section { padding-block: 90px; }
   .privacy-points div { grid-template-columns: 1fr; gap: 5px; }
   .route-card { padding: 16px; }
@@ -472,7 +502,6 @@ h3 { font-size: clamp(1.35rem, 2vw, 1.8rem); letter-spacing: -0.035em; }
   .brand span { font-size: .9rem; }
   .hero { padding-inline: 16px; }
   .lens-stage { transform: scale(.72); width: 120%; margin-left: -10%; margin-bottom: -120px; }
-  .source-tabs button { min-width: 185px; }
   .route-card { margin-inline: -2px; }
 }
 

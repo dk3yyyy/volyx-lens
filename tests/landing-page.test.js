@@ -13,6 +13,20 @@ const architecture = fs.readFileSync(path.join(website, 'assets', 'architecture.
 
 const occurrences = (text, pattern) => [...text.matchAll(pattern)].length;
 const hash = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const cssBlock = (source, header) => {
+  const headerIndex = source.indexOf(header);
+  assert.notEqual(headerIndex, -1, `missing CSS block: ${header}`);
+  const openIndex = source.indexOf('{', headerIndex + header.length);
+  assert.notEqual(openIndex, -1, `missing opening brace for: ${header}`);
+
+  let depth = 0;
+  for (let index = openIndex; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1;
+    if (source[index] === '}') depth -= 1;
+    if (depth === 0) return source.slice(openIndex + 1, index);
+  }
+  assert.fail(`missing closing brace for: ${header}`);
+};
 
 test('landing page has core semantic structure and one h1', () => {
   assert.match(html, /<html lang="en">/);
@@ -77,10 +91,19 @@ test('interactive context selector follows tab semantics', () => {
 });
 
 test('tablet/mobile navigation and reduced-motion safeguards are present', () => {
+  const mobileCss = cssBlock(css, '@media (max-width: 700px)');
+
   assert.match(css, /@media \(max-width: 980px\)/);
   assert.match(css, /@media \(max-width: 700px\)/);
   assert.match(css, /@media \(max-width: 380px\)/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(mobileCss, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(mobileCss, /\.source-tabs\s*\{[\s\S]*?gap: 4px;[\s\S]*?padding: 6px;[\s\S]*?overflow: visible;/);
+  assert.match(mobileCss, /\.source-tabs button\s*\{[\s\S]*?min-width: 0;[\s\S]*?min-height: 48px;/);
+  assert.match(mobileCss, /\.source-number,[\s\S]*?\.source-tabs button > span:last-child\s*\{ display: none; \}/);
+  assert.match(mobileCss, /\.source-tabs button\[aria-selected="true"\]\s*\{[\s\S]*?background: rgba\(141, 124, 255, \.14\);[\s\S]*?border-color: rgba\(141, 124, 255, \.28\);/);
+  assert.match(mobileCss, /\.source-tabs button\[aria-selected="true"\]::after\s*\{ display: none; \}/);
+  assert.doesNotMatch(mobileCss, /min-width:\s*(?:185|200)px/);
   assert.match(css, /min-height: 44px/);
   assert.match(css, /overflow-x: hidden/);
   assert.match(css, /\[hidden\] \{ display: none !important; \}/);
