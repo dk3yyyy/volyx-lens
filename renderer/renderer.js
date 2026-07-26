@@ -456,6 +456,18 @@
   $('#hide-btn').addEventListener('click', () => {
     const collapsed = $('#panel').classList.toggle('collapsed');
     $('#hide-btn').classList.toggle('collapsed', collapsed);
+    $('#hide-btn').setAttribute('aria-expanded', String(!collapsed));
+    $('#live-dot').style.display = collapsed ? 'none' : '';
+    volyxLens.setWindowCollapsed(collapsed);
+  });
+
+  volyxLens.on('window:dock-state', (dockState = {}) => {
+    const side = ['top', 'bottom', 'left', 'right'].includes(dockState.side) ? dockState.side : 'top';
+    const collapsed = dockState.collapsed === true;
+    $('#app').dataset.dock = side;
+    $('#panel').classList.toggle('collapsed', collapsed);
+    $('#hide-btn').classList.toggle('collapsed', collapsed);
+    $('#hide-btn').setAttribute('aria-expanded', String(!collapsed));
     $('#live-dot').style.display = collapsed ? 'none' : '';
   });
 

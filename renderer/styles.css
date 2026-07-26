@@ -56,7 +56,8 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 14px;
+  padding: 0;
+  gap: 12px;
   pointer-events: none;                  /* only the actual UI blocks; gaps pass through */
 }
 #toolbar, #panel-wrap, #settings-scrim, #onboard-scrim { pointer-events: auto; }
@@ -76,6 +77,39 @@ html, body {
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
+
+/* The BrowserWindow snaps to an edge. Keep the rail on that edge and place
+   the panel inward, inside the active display's usable work area. */
+#app[data-dock="top"] { flex-direction: column; justify-content: flex-start; }
+#app[data-dock="bottom"] { flex-direction: column-reverse; justify-content: flex-start; }
+#app[data-dock="left"] { flex-direction: row; justify-content: flex-start; }
+#app[data-dock="right"] { flex-direction: row-reverse; justify-content: flex-start; }
+#app[data-dock="left"], #app[data-dock="right"] { align-items: center; }
+
+#app[data-dock="left"] #toolbar, #app[data-dock="right"] #toolbar {
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+#app[data-dock="left"] .tb-divider, #app[data-dock="right"] .tb-divider {
+  width: 20px;
+  height: 1px;
+  margin: 2px 0;
+}
+#app[data-dock="left"] .tb-hide, #app[data-dock="right"] .tb-hide {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+#app[data-dock="left"] .tb-hide > span:last-child,
+#app[data-dock="right"] .tb-hide > span:last-child { display: none; }
+
+#app[data-dock="top"] .tb-hide.collapsed .chev { transform: rotate(0deg); }
+#app[data-dock="bottom"] .tb-hide .chev,
+#app[data-dock="bottom"] .tb-hide.collapsed .chev { transform: rotate(180deg); }
+#app[data-dock="left"] .tb-hide .chev,
+#app[data-dock="left"] .tb-hide.collapsed .chev { transform: rotate(-90deg); }
+#app[data-dock="right"] .tb-hide .chev,
+#app[data-dock="right"] .tb-hide.collapsed .chev { transform: rotate(90deg); }
 .tb-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.10); margin: 0 2px; }
 #toolbar button { border: none; background: transparent; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background 140ms ease, transform 140ms ease; }
 .tb-logo { width: 28px; height: 28px; padding: 0; border-radius: 9px; background: transparent !important; }
@@ -98,7 +132,9 @@ html, body {
 .tb-kill:hover { background: rgba(255,102,120,0.16) !important; color: #FF6678 !important; }
 
 /* ============================ Panel ============================ */
-#panel-wrap { position: relative; margin-top: 12px; width: min(624px, 94vw); }
+#panel-wrap { position: relative; margin: 0; width: min(624px, calc(100vw - 64px)); }
+#app[data-dock="top"] #panel-wrap,
+#app[data-dock="bottom"] #panel-wrap { width: min(624px, 94vw); }
 button:focus:not(:focus-visible) { outline: none; }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
   outline: 2px solid var(--cyan);
