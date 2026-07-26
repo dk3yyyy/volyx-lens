@@ -36,6 +36,8 @@
       .subtitle{font:400 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#9da8c7}
       .kicker{font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#6ee7d8;letter-spacing:1.8px}
       .card-title{font:700 17px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#f5f7ff}
+      .core-title{font:700 17px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#fff}
+      .core-subtitle{font:600 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#e5e8ff;letter-spacing:.2px}
       .card-copy{font:400 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#aab3cf}
       .tiny{font:600 11px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#bcc4df}
       .pill{font:700 10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.5px}
@@ -92,7 +94,8 @@
     <rect x="444" y="203" width="312" height="62" rx="25" fill="url(#core)"/>
     <rect x="444" y="240" width="312" height="25" fill="url(#core)"/>
   </g>
-  <text x="474" y="241" class="card-title">Volyx Lens · Electron main process</text>
+  <text x="600" y="229" text-anchor="middle" class="core-title">Volyx Lens</text>
+  <text x="600" y="249" text-anchor="middle" class="core-subtitle">Electron main process</text>
   <g>
     <rect x="472" y="290" width="256" height="48" rx="13" fill="#171f3a" stroke="#303d66"/>
     <circle cx="493" cy="314" r="6" fill="#55dbc9"/>
