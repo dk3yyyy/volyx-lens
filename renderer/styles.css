@@ -165,11 +165,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
-#panel:hover { scrollbar-color: rgba(255,255,255,0.22) transparent; }
+#panel:hover,
+#panel:focus-within { scrollbar-color: rgba(255,255,255,0.22) transparent; }
 #panel::-webkit-scrollbar { width: 7px; }
 #panel::-webkit-scrollbar-track { background: transparent; }
 #panel::-webkit-scrollbar-thumb { border-radius: 8px; background: transparent; }
-#panel:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); }
+#panel:hover::-webkit-scrollbar-thumb,
+#panel:focus-within::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); }
 #panel.collapsed { display: none; }
 
 /* ============================ Messages ============================ */
