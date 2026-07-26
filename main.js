@@ -98,6 +98,7 @@ let dockMoveTimer = null;
 // onboarding or Settings is visible.
 let uiModalOpen = true;
 let rendererModalStateReported = false;
+let modalRestoreCollapsed = null;
 
 function activeDisplayId() {
   if (win && !win.isDestroyed()) return screen.getDisplayMatching(win.getBounds()).id;
@@ -1372,7 +1373,23 @@ onTrusted('open-pane', (_e, value) => {
 });
 onTrusted('log', (_e, msg) => console.log('[renderer]', msg));
 onTrusted('ui:modal-state', (_e, open) => {
-  uiModalOpen = open === true;
+  const nextOpen = open === true;
+  const modalStateWasKnown = rendererModalStateReported;
+  if (nextOpen && (!modalStateWasKnown || !uiModalOpen)) {
+    // Preserve an existing restore target across renderer reloads while a modal is open.
+    if (modalRestoreCollapsed === null) modalRestoreCollapsed = windowDock.collapsed;
+    if (windowDock.collapsed && win && !win.isDestroyed()) {
+      const anchor = railCenter(win.getBounds(), windowDock.side, DEFAULT_DOCK_SIZES);
+      applyDockBounds({ collapsed: false, anchor });
+    }
+  } else if (!nextOpen && (!modalStateWasKnown || uiModalOpen)) {
+    if (modalRestoreCollapsed === true && win && !win.isDestroyed()) {
+      const anchor = railCenter(win.getBounds(), windowDock.side, DEFAULT_DOCK_SIZES);
+      applyDockBounds({ collapsed: true, anchor });
+    }
+    modalRestoreCollapsed = null;
+  }
+  uiModalOpen = nextOpen;
   rendererModalStateReported = true;
 });
 onTrusted('app:renderer-ready', () => {

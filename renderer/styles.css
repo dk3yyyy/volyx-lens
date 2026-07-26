@@ -78,18 +78,6 @@ html, body {
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
-.tb-grab {
-  -webkit-app-region: drag;
-  min-width: 14px;
-  height: 24px;
-  flex: 0 0 14px;
-  cursor: grab;
-  opacity: 0.48;
-  background: radial-gradient(circle, rgba(255,255,255,0.82) 1px, transparent 1.5px) center / 4px 4px;
-  border-radius: 7px;
-}
-.tb-grab:active { cursor: grabbing; opacity: 0.72; }
-
 /* The BrowserWindow snaps to an edge. Keep the rail on that edge and place
    the panel inward, inside the active display's usable work area. */
 #app[data-dock="top"] { flex-direction: column; justify-content: flex-start; }
@@ -106,14 +94,6 @@ html, body {
   width: 20px;
   height: 1px;
   margin: 2px 0;
-}
-#app[data-dock="left"] .tb-grab,
-#app[data-dock="right"] .tb-grab {
-  min-width: 24px;
-  width: 24px;
-  min-height: 14px;
-  height: 14px;
-  flex-basis: 14px;
 }
 #app[data-dock="left"] .tb-hide, #app[data-dock="right"] .tb-hide {
   width: 30px;
