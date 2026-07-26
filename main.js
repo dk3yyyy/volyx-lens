@@ -15,7 +15,7 @@ const { MODES } = require('./src/prompts');
 const { createResponseRoute, chooseInitialProvider, streamWithFallback } = require('./src/response-router');
 const { rms16 } = require('./src/wav');
 const { planScreenInput } = require('./src/capabilities');
-const { requestMediaPermission } = require('./src/permissions');
+const { mediaPermissionStatus, requestMediaPermission } = require('./src/permissions');
 const { RealtimeTranscriptionManager } = require('./src/realtime-stt');
 const { AUDIO_SAMPLE_RATE } = require('./src/audio-config');
 const { resolveRealtimeTranscription } = require('./src/provider-config');
@@ -25,7 +25,7 @@ const { createShortcutRegistry } = require('./src/shortcut-registry');
 const { createPersonalContextStore, KINDS: PERSONAL_CONTEXT_KINDS } = require('./src/personal-context-store');
 const { parseContextDocument, MAX_FILE_BYTES } = require('./src/document-context');
 const { buildPersonalContext } = require('./src/personal-context');
-const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
+const { normalizeSpokenDigits, formatTranscript, transcriptFilename } = require('./src/transcript-tools');
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
 const { detectQuestion } = require('./src/question-detection');
@@ -39,7 +39,8 @@ const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
-const { DEFAULT_DOCK_SIZES, dockBounds, nearestDockSide, railCenter } = require('./src/window-docking');
+const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
+const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = require('./src/response-context');
 
@@ -91,13 +92,13 @@ const pendingTaskContextOcr = new Set();
 
 let win = null;
 let windowDock = { side: 'top', collapsed: false, anchor: null };
-let applyingDockBounds = false;
-let lastAppliedDockBounds = null;
-let dockMoveTimer = null;
+let windowAutoFit = null;
+const AUTO_FIT_DELAY_MS = 400;
 // Fail closed until the trusted renderer finishes booting and reports whether
 // onboarding or Settings is visible.
 let uiModalOpen = true;
 let rendererModalStateReported = false;
+let modalRestoreCollapsed = null;
 
 function activeDisplayId() {
   if (win && !win.isDestroyed()) return screen.getDisplayMatching(win.getBounds()).id;
@@ -294,7 +295,7 @@ function resetTranscriptData() {
 
 function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch) {
   if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
-  const clean = String(text || '').trim().slice(0, 12000);
+  const clean = normalizeSpokenDigits(String(text || '').trim()).slice(0, 12000);
   if (!clean) return;
   const normalizedChannel = channel === 'you' ? 'you' : 'them';
   const timestamp = Number.isFinite(ts) ? ts : Date.now();
@@ -432,53 +433,37 @@ function isTrustedFileOrigin(value, { optional = false } = {}) {
   catch { return value === 'file://' || value === 'file:///'; }
 }
 
-function sameBounds(a, b) {
-  return Boolean(a && b && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
-}
-
 function publishDockState() {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
   win.webContents.send('window:dock-state', { side: windowDock.side, collapsed: windowDock.collapsed });
 }
 
-function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collapsed, anchor = windowDock.anchor } = {}) {
+function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collapsed, anchor = windowDock.anchor, targetDisplay = null } = {}) {
   if (!win || win.isDestroyed()) return;
+  windowAutoFit?.cancel();
   const currentBounds = win.getBounds();
-  const display = screen.getDisplayMatching(currentBounds);
   const resolvedAnchor = anchor || railCenter(currentBounds, windowDock.side, DEFAULT_DOCK_SIZES);
+  const display = targetDisplay || screen.getDisplayNearestPoint(resolvedAnchor);
   const nextBounds = dockBounds({ workArea: display.workArea, side, anchor: resolvedAnchor, collapsed });
   windowDock = { side, collapsed, anchor: resolvedAnchor };
-  applyingDockBounds = true;
-  lastAppliedDockBounds = nextBounds;
   if (collapsed) win.setMinimumSize(1, 1);
-  win.setBounds(nextBounds, false);
+  if (!sameBounds(currentBounds, nextBounds)) win.setBounds(nextBounds, false);
   if (!collapsed) win.setMinimumSize(500, 480);
-  applyingDockBounds = false;
   publishDockState();
 }
 
-function snapWindowToNearestEdge() {
-  if (!win || win.isDestroyed() || applyingDockBounds) return;
-  const bounds = win.getBounds();
-  if (sameBounds(bounds, lastAppliedDockBounds)) return;
-  const display = screen.getDisplayMatching(bounds);
-  const point = railCenter(bounds, windowDock.side, DEFAULT_DOCK_SIZES);
-  const side = nearestDockSide({ point, workArea: display.workArea, previousSide: windowDock.side });
-  applyDockBounds({ side, anchor: point });
-}
-
-function scheduleWindowDock() {
-  if (!win || win.isDestroyed() || applyingDockBounds || sameBounds(win.getBounds(), lastAppliedDockBounds)) return;
-  if (dockMoveTimer) clearTimeout(dockMoveTimer);
-  dockMoveTimer = setTimeout(() => {
-    dockMoveTimer = null;
-    snapWindowToNearestEdge();
-  }, 80);
+function fitWindowToMovedEdge(anchor) {
+  if (!win || win.isDestroyed()) return;
+  if (windowDock.collapsed || !anchor) return;
+  const display = screen.getDisplayNearestPoint(anchor);
+  const side = dockSideForIntent({ point: anchor, workArea: display.workArea });
+  applyDockBounds({ side, collapsed: false, anchor, targetDisplay: display });
 }
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   const { width: W, height: H } = DEFAULT_DOCK_SIZES.expanded;
+  let rendererHasLoaded = false;
   win = new BrowserWindow({
     width: W,
     height: H,
@@ -508,6 +493,20 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'screen-saver', 1);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   if (typeof win.setHiddenInMissionControl === 'function') win.setHiddenInMissionControl(true);
+  windowAutoFit = createWindowAutoFitController({ fit: fitWindowToMovedEdge, delayMs: AUTO_FIT_DELAY_MS });
+  win.on('will-move', () => {
+    windowAutoFit?.beginManualMove();
+  });
+  win.on('moved', () => {
+    windowAutoFit?.recordMove(screen.getCursorScreenPoint());
+  });
+  win.on('close', () => {
+    windowAutoFit?.cancel();
+  });
+  win.on('closed', () => {
+    windowAutoFit?.cancel();
+    windowAutoFit = null;
+  });
 
   win.loadURL(APP_ENTRY_URL);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -520,14 +519,17 @@ function createWindow() {
     rendererModalStateReported = false;
   });
   win.webContents.on('did-finish-load', () => {
-    const initialAnchor = windowDock.anchor || { x: workArea.x + workArea.width / 2, y: workArea.y };
-    applyDockBounds({ side: windowDock.side, collapsed: windowDock.collapsed, anchor: initialAnchor });
+    if (!rendererHasLoaded) {
+      const initialAnchor = windowDock.anchor || { x: workArea.x + workArea.width / 2, y: workArea.y };
+      applyDockBounds({ side: windowDock.side, collapsed: windowDock.collapsed, anchor: initialAnchor });
+    } else if (windowDock.collapsed) {
+      applyDockBounds(windowDock);
+    } else {
+      publishDockState();
+    }
+    rendererHasLoaded = true;
     win.showInactive();
   });
-  // `move` is cross-platform and fires throughout native app-region drags;
-  // debounce it so snapping occurs after movement settles instead of fighting the pointer.
-  win.on('move', scheduleWindowDock);
-  win.on('moved', scheduleWindowDock);
   win.webContents.on('render-process-gone', (_e, d) => {
     uiModalOpen = true;
     rendererModalStateReported = false;
@@ -1340,15 +1342,13 @@ handleTrusted('transcription:retry', () => retryTranscription());
 handleTrusted('permissions:request', (_e, kind) => requestMediaPermission(kind, {
   systemPreferences,
   desktopCapturer,
-  openExternal: (url) => shell.openExternal(url)
+  openExternal: (url) => shell.openExternal(url),
+  isPackaged: app.isPackaged,
 }));
-handleTrusted('permissions:status', (_event, kind) => {
-  const permission = String(kind || '');
-  if (!['microphone', 'screen'].includes(permission)) throw new Error('Unsupported permission type.');
-  if (process.platform !== 'darwin') return { kind: permission, status: 'unsupported', granted: false };
-  const status = systemPreferences.getMediaAccessStatus(permission);
-  return { kind: permission, status, granted: status === 'granted' };
-});
+handleTrusted('permissions:status', (_event, kind) => mediaPermissionStatus(String(kind || ''), {
+  systemPreferences,
+  isPackaged: app.isPackaged,
+}));
 onTrusted('ask', (_e, payload = {}) => runFeature(payload.mode, String(payload.text || '').slice(0, 12000), {
   confirmedLongRecap: payload.confirmedLongRecap === true,
   confirmedTaskContext: payload.confirmedTaskContext === true,
@@ -1360,9 +1360,18 @@ onTrusted('system:pcm', (_e, arrayBuffer) => acceptPcm('them', arrayBuffer));
 onTrusted('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 onTrusted('window:set-collapsed', (_e, collapsed) => {
   if (!win || win.isDestroyed()) return;
+  // Resolve immediately for explicit Hide/Show; native movement uses the delayed auto-fit path.
   const bounds = win.getBounds();
-  const anchor = railCenter(bounds, windowDock.side, DEFAULT_DOCK_SIZES);
-  applyDockBounds({ collapsed: collapsed === true, anchor });
+  const nextCollapsed = collapsed === true;
+  const anchor = dockIntentPoint({
+    bounds,
+    collapsed: windowDock.collapsed,
+    side: windowDock.side,
+    sizes: DEFAULT_DOCK_SIZES,
+  });
+  const display = screen.getDisplayNearestPoint(anchor);
+  const side = dockSideForIntent({ point: anchor, workArea: display.workArea });
+  applyDockBounds({ side, collapsed: nextCollapsed, anchor });
 });
 onTrusted('open-pane', (_e, value) => {
   try {
@@ -1372,7 +1381,31 @@ onTrusted('open-pane', (_e, value) => {
 });
 onTrusted('log', (_e, msg) => console.log('[renderer]', msg));
 onTrusted('ui:modal-state', (_e, open) => {
-  uiModalOpen = open === true;
+  const nextOpen = open === true;
+  const modalStateWasKnown = rendererModalStateReported;
+  if (nextOpen && (!modalStateWasKnown || !uiModalOpen)) {
+    // Preserve an existing restore target across renderer reloads while a modal is open.
+    if (modalRestoreCollapsed === null) modalRestoreCollapsed = windowDock.collapsed;
+    if (windowDock.collapsed && win && !win.isDestroyed()) {
+      const bounds = win.getBounds();
+      const anchor = dockIntentPoint({
+        bounds,
+        collapsed: true,
+        side: windowDock.side,
+        sizes: DEFAULT_DOCK_SIZES,
+      });
+      const display = screen.getDisplayNearestPoint(anchor);
+      const side = dockSideForIntent({ point: anchor, workArea: display.workArea });
+      applyDockBounds({ side, collapsed: false, anchor });
+    }
+  } else if (!nextOpen && (!modalStateWasKnown || uiModalOpen)) {
+    if (modalRestoreCollapsed === true && win && !win.isDestroyed()) {
+      const anchor = railCenter(win.getBounds(), windowDock.side, DEFAULT_DOCK_SIZES);
+      applyDockBounds({ collapsed: true, anchor });
+    }
+    modalRestoreCollapsed = null;
+  }
+  uiModalOpen = nextOpen;
   rendererModalStateReported = true;
 });
 onTrusted('app:renderer-ready', () => {

@@ -19,15 +19,49 @@ test('trusted bridge carries collapse state to main and dock state back to rende
   assert.match(renderer, /volyxLens\.on\('window:dock-state'/);
 });
 
-test('main process snaps from rail position and applies origin and size atomically', () => {
+test('native dragging stays free and docking auto-fits only after user movement settles', () => {
   assert.match(main, /require\('\.\/src\/window-docking'\)/);
-  assert.match(main, /nearestDockSide/);
+  assert.match(main, /require\('\.\/src\/window-auto-fit'\)/);
+  assert.match(main, /dockSideForIntent/);
   assert.match(main, /railCenter/);
   assert.match(main, /win\.setBounds\(nextBounds/);
-  assert.match(main, /screen\.getDisplayMatching/);
-  assert.match(main, /win\.on\('move',\s*scheduleWindowDock\)/);
-  assert.match(main, /setTimeout\([\s\S]*snapWindowToNearestEdge[\s\S]*80\)/);
+  assert.match(main, /screen\.getDisplayNearestPoint/);
+  assert.match(main, /win\.on\('will-move',[\s\S]*windowAutoFit\?\.beginManualMove\(\)/);
+  assert.match(main, /win\.on\('moved',[\s\S]*windowAutoFit\?\.recordMove\(screen\.getCursorScreenPoint\(\)\)/);
+  assert.doesNotMatch(main, /win\.on\(['"]move['"]/);
+  assert.match(main, /win\.on\('close',[\s\S]*windowAutoFit\?\.cancel\(\)/);
+  assert.match(main, /function fitWindowToMovedEdge\(anchor\)[\s\S]*if \(windowDock\.collapsed \|\| !anchor\) return;/);
+  assert.match(main, /fitWindowToMovedEdge\(anchor\)[\s\S]*screen\.getDisplayNearestPoint\(anchor\)[\s\S]*dockSideForIntent\(\{ point: anchor, workArea: display\.workArea \}\)/);
+  assert.match(main, /applyDockBounds\(\{ side, collapsed: false, anchor, targetDisplay: display \}\)/);
+  assert.match(main, /function applyDockBounds[\s\S]*windowAutoFit\?\.cancel\(\)/);
+  assert.match(main, /AUTO_FIT_DELAY_MS\s*=\s*400/);
+  assert.match(main, /if \(!sameBounds\(currentBounds, nextBounds\)\) win\.setBounds\(nextBounds, false\)/);
+  assert.match(main, /onTrusted\('window:set-collapsed',[\s\S]*dockSideForIntent[\s\S]*applyDockBounds\(\{ side, collapsed: nextCollapsed, anchor \}\)/);
   assert.match(main, /did-finish-load[\s\S]*side:\s*windowDock\.side[\s\S]*collapsed:\s*windowDock\.collapsed/);
+});
+
+test('hide and show both resolve fresh edge intent from the visible rail position', () => {
+  assert.match(main, /dockIntentPoint/);
+  assert.match(main, /dockSideForIntent/);
+  assert.match(
+    main,
+    /onTrusted\('window:set-collapsed',[\s\S]*dockIntentPoint\(\{[\s\S]*collapsed:\s*windowDock\.collapsed[\s\S]*dockSideForIntent\([\s\S]*applyDockBounds\(\{ side, collapsed: nextCollapsed, anchor \}\)/
+  );
+});
+
+test('final dock bounds select the same display as the visible rail anchor', () => {
+  assert.match(
+    main,
+    /function applyDockBounds[\s\S]*const resolvedAnchor[\s\S]*screen\.getDisplayNearestPoint\(resolvedAnchor\)[\s\S]*dockBounds\(\{ workArea: display\.workArea/
+  );
+});
+
+test('renderer reload preserves a freely dragged expanded window', () => {
+  assert.match(main, /let rendererHasLoaded = false;/);
+  assert.match(
+    main,
+    /if \(!rendererHasLoaded\)[\s\S]*else if \(windowDock\.collapsed\) \{\s*applyDockBounds\(windowDock\);\s*\} else \{\s*publishDockState\(\);\s*\}\s*rendererHasLoaded = true;/
+  );
 });
 
 test('renderer has explicit four-edge layouts and inward panel ordering', () => {
@@ -40,4 +74,30 @@ test('renderer has explicit four-edge layouts and inward panel ordering', () => 
   assert.match(styles, /#app\[data-dock="right"\][\s\S]*flex-direction:\s*row-reverse/);
   assert.match(styles, /#app\[data-dock="left"\][\s\S]*#toolbar[\s\S]*flex-direction:\s*column/);
   assert.match(styles, /#app\[data-dock="right"\][\s\S]*#toolbar[\s\S]*flex-direction:\s*column/);
+});
+
+test('the expanded panel uses a transparent scrollbar track instead of a bright native strip', () => {
+  assert.match(styles, /#panel\s*\{[^}]*scrollbar-width:\s*thin[^}]*scrollbar-color:\s*transparent transparent/);
+  assert.match(styles, /#panel:hover,\s*#panel:focus-within\s*\{[^}]*scrollbar-color:\s*rgba\(255,255,255,0\.22\) transparent/);
+  assert.match(styles, /#panel::\-webkit-scrollbar-track\s*\{[^}]*background:\s*transparent/);
+  assert.match(styles, /#panel::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*transparent/);
+  assert.match(styles, /#panel:hover::\-webkit-scrollbar-thumb,\s*#panel:focus-within::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*rgba\(255,255,255,0\.22\)/);
+});
+
+test('the full toolbar remains the drag target while interactive controls stay no-drag', () => {
+  assert.doesNotMatch(html, /class="tb-grab"/);
+  assert.doesNotMatch(styles, /\.tb-grab/);
+  assert.match(styles, /#toolbar\s*\{\s*-webkit-app-region:\s*drag/);
+  assert.match(styles, /\.no-drag, button, input, textarea\s*\{\s*-webkit-app-region:\s*no-drag/);
+});
+
+test('opening a modal expands a collapsed native window and closing restores it', () => {
+  assert.match(main, /let modalRestoreCollapsed = null/);
+  assert.match(main, /const modalStateWasKnown = rendererModalStateReported[\s\S]*!modalStateWasKnown \|\| !uiModalOpen/);
+  assert.match(main, /modalRestoreCollapsed === null[\s\S]*modalRestoreCollapsed = windowDock\.collapsed/);
+  assert.match(
+    main,
+    /onTrusted\('ui:modal-state',[\s\S]*if \(windowDock\.collapsed[\s\S]*dockIntentPoint\([\s\S]*dockSideForIntent\([\s\S]*applyDockBounds\(\{ side, collapsed: false, anchor \}\)/
+  );
+  assert.match(main, /onTrusted\('ui:modal-state',[\s\S]*modalRestoreCollapsed === true[\s\S]*applyDockBounds\(\{ collapsed: true, anchor \}\)/);
 });
