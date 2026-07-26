@@ -44,6 +44,13 @@ test('spoken digit sequences become digits and preserve leading zeroes', () => {
 test('spoken digit normalization leaves ordinary quantities and enumerations unchanged', () => {
   assert.equal(normalizeSpokenDigits('I have two options and one concern.'), 'I have two options and one concern.');
   assert.equal(normalizeSpokenDigits('Choose one, two, or three.'), 'Choose one, two, or three.');
+  assert.equal(normalizeSpokenDigits('I saw one two three birds.'), 'I saw one two three birds.');
+  assert.equal(normalizeSpokenDigits('Someone two three four joined later.'), 'Someone two three four joined later.');
   assert.equal(normalizeSpokenDigits('The answer is twenty-one.'), 'The answer is twenty-one.');
   assert.equal(normalizeSpokenDigits('Version one two is available.'), 'Version one two is available.');
+});
+
+test('number context converts sequences without zeroes', () => {
+  assert.equal(normalizeSpokenDigits('The code is one two three.'), 'The code is 123.');
+  assert.equal(normalizeSpokenDigits('PIN four five six seven.'), 'PIN 4567.');
 });
