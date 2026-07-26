@@ -91,9 +91,6 @@ const pendingTaskContextOcr = new Set();
 
 let win = null;
 let windowDock = { side: 'top', collapsed: false, anchor: null };
-let applyingDockBounds = false;
-let lastAppliedDockBounds = null;
-let dockMoveTimer = null;
 // Fail closed until the trusted renderer finishes booting and reports whether
 // onboarding or Settings is visible.
 let uiModalOpen = true;
@@ -433,10 +430,6 @@ function isTrustedFileOrigin(value, { optional = false } = {}) {
   catch { return value === 'file://' || value === 'file:///'; }
 }
 
-function sameBounds(a, b) {
-  return Boolean(a && b && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
-}
-
 function publishDockState() {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
   win.webContents.send('window:dock-state', { side: windowDock.side, collapsed: windowDock.collapsed });
@@ -449,37 +442,16 @@ function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collap
   const resolvedAnchor = anchor || railCenter(currentBounds, windowDock.side, DEFAULT_DOCK_SIZES);
   const nextBounds = dockBounds({ workArea: display.workArea, side, anchor: resolvedAnchor, collapsed });
   windowDock = { side, collapsed, anchor: resolvedAnchor };
-  applyingDockBounds = true;
-  lastAppliedDockBounds = nextBounds;
   if (collapsed) win.setMinimumSize(1, 1);
   win.setBounds(nextBounds, false);
   if (!collapsed) win.setMinimumSize(500, 480);
-  applyingDockBounds = false;
   publishDockState();
-}
-
-function snapWindowToNearestEdge() {
-  if (!win || win.isDestroyed() || applyingDockBounds) return;
-  const bounds = win.getBounds();
-  if (sameBounds(bounds, lastAppliedDockBounds)) return;
-  const display = screen.getDisplayMatching(bounds);
-  const point = railCenter(bounds, windowDock.side, DEFAULT_DOCK_SIZES);
-  const side = nearestDockSide({ point, workArea: display.workArea, previousSide: windowDock.side });
-  applyDockBounds({ side, anchor: point });
-}
-
-function scheduleWindowDock() {
-  if (!win || win.isDestroyed() || applyingDockBounds || sameBounds(win.getBounds(), lastAppliedDockBounds)) return;
-  if (dockMoveTimer) clearTimeout(dockMoveTimer);
-  dockMoveTimer = setTimeout(() => {
-    dockMoveTimer = null;
-    snapWindowToNearestEdge();
-  }, 80);
 }
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   const { width: W, height: H } = DEFAULT_DOCK_SIZES.expanded;
+  let rendererHasLoaded = false;
   win = new BrowserWindow({
     width: W,
     height: H,
@@ -521,14 +493,17 @@ function createWindow() {
     rendererModalStateReported = false;
   });
   win.webContents.on('did-finish-load', () => {
-    const initialAnchor = windowDock.anchor || { x: workArea.x + workArea.width / 2, y: workArea.y };
-    applyDockBounds({ side: windowDock.side, collapsed: windowDock.collapsed, anchor: initialAnchor });
+    if (!rendererHasLoaded) {
+      const initialAnchor = windowDock.anchor || { x: workArea.x + workArea.width / 2, y: workArea.y };
+      applyDockBounds({ side: windowDock.side, collapsed: windowDock.collapsed, anchor: initialAnchor });
+    } else if (windowDock.collapsed) {
+      applyDockBounds(windowDock);
+    } else {
+      publishDockState();
+    }
+    rendererHasLoaded = true;
     win.showInactive();
   });
-  // `move` is cross-platform and fires throughout native app-region drags;
-  // debounce it so snapping occurs after movement settles instead of fighting the pointer.
-  win.on('move', scheduleWindowDock);
-  win.on('moved', scheduleWindowDock);
   win.webContents.on('render-process-gone', (_e, d) => {
     uiModalOpen = true;
     rendererModalStateReported = false;
@@ -1362,8 +1337,18 @@ onTrusted('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { 
 onTrusted('window:set-collapsed', (_e, collapsed) => {
   if (!win || win.isDestroyed()) return;
   const bounds = win.getBounds();
-  const anchor = railCenter(bounds, windowDock.side, DEFAULT_DOCK_SIZES);
-  applyDockBounds({ collapsed: collapsed === true, anchor });
+  const nextCollapsed = collapsed === true;
+  let side = windowDock.side;
+  let anchor = railCenter(bounds, side, DEFAULT_DOCK_SIZES);
+  if (nextCollapsed && !windowDock.collapsed) {
+    const display = screen.getDisplayMatching(bounds);
+    anchor = {
+      x: Math.round(bounds.x + (bounds.width / 2)),
+      y: Math.round(bounds.y + (bounds.height / 2)),
+    };
+    side = nearestDockSide({ point: anchor, workArea: display.workArea, previousSide: side });
+  }
+  applyDockBounds({ side, collapsed: nextCollapsed, anchor });
 });
 onTrusted('open-pane', (_e, value) => {
   try {

@@ -19,15 +19,24 @@ test('trusted bridge carries collapse state to main and dock state back to rende
   assert.match(renderer, /volyxLens\.on\('window:dock-state'/);
 });
 
-test('main process snaps from rail position and applies origin and size atomically', () => {
+test('native dragging stays free and docking occurs only when collapse is requested', () => {
   assert.match(main, /require\('\.\/src\/window-docking'\)/);
   assert.match(main, /nearestDockSide/);
   assert.match(main, /railCenter/);
   assert.match(main, /win\.setBounds\(nextBounds/);
   assert.match(main, /screen\.getDisplayMatching/);
-  assert.match(main, /win\.on\('move',\s*scheduleWindowDock\)/);
-  assert.match(main, /setTimeout\([\s\S]*snapWindowToNearestEdge[\s\S]*80\)/);
+  assert.doesNotMatch(main, /win\.on\(['"]move[d]?['"]/);
+  assert.doesNotMatch(main, /scheduleWindowDock|snapWindowToNearestEdge|dockMoveTimer/);
+  assert.match(main, /onTrusted\('window:set-collapsed',[\s\S]*nearestDockSide[\s\S]*applyDockBounds\(\{ side, collapsed: nextCollapsed, anchor \}\)/);
   assert.match(main, /did-finish-load[\s\S]*side:\s*windowDock\.side[\s\S]*collapsed:\s*windowDock\.collapsed/);
+});
+
+test('renderer reload preserves a freely dragged expanded window', () => {
+  assert.match(main, /let rendererHasLoaded = false;/);
+  assert.match(
+    main,
+    /if \(!rendererHasLoaded\)[\s\S]*else if \(windowDock\.collapsed\) \{\s*applyDockBounds\(windowDock\);\s*\} else \{\s*publishDockState\(\);\s*\}\s*rendererHasLoaded = true;/
+  );
 });
 
 test('renderer has explicit four-edge layouts and inward panel ordering', () => {
