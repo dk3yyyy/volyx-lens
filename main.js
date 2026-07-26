@@ -39,7 +39,7 @@ const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
-const { DEFAULT_DOCK_SIZES, dockBounds, nearestDockSide, railCenter } = require('./src/window-docking');
+const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter } = require('./src/window-docking');
 const { createChatHistory } = require('./src/chat-history');
 const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = require('./src/response-context');
 
@@ -438,8 +438,8 @@ function publishDockState() {
 function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collapsed, anchor = windowDock.anchor } = {}) {
   if (!win || win.isDestroyed()) return;
   const currentBounds = win.getBounds();
-  const display = screen.getDisplayMatching(currentBounds);
   const resolvedAnchor = anchor || railCenter(currentBounds, windowDock.side, DEFAULT_DOCK_SIZES);
+  const display = screen.getDisplayNearestPoint(resolvedAnchor);
   const nextBounds = dockBounds({ workArea: display.workArea, side, anchor: resolvedAnchor, collapsed });
   windowDock = { side, collapsed, anchor: resolvedAnchor };
   if (collapsed) win.setMinimumSize(1, 1);
@@ -1336,18 +1336,17 @@ onTrusted('system:pcm', (_e, arrayBuffer) => acceptPcm('them', arrayBuffer));
 onTrusted('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 onTrusted('window:set-collapsed', (_e, collapsed) => {
   if (!win || win.isDestroyed()) return;
+  // Resolve docking only on this explicit action. Never snap from move/moved listeners or timers.
   const bounds = win.getBounds();
   const nextCollapsed = collapsed === true;
-  let side = windowDock.side;
-  let anchor = railCenter(bounds, side, DEFAULT_DOCK_SIZES);
-  if (nextCollapsed && !windowDock.collapsed) {
-    const display = screen.getDisplayMatching(bounds);
-    anchor = {
-      x: Math.round(bounds.x + (bounds.width / 2)),
-      y: Math.round(bounds.y + (bounds.height / 2)),
-    };
-    side = nearestDockSide({ point: anchor, workArea: display.workArea, previousSide: side });
-  }
+  const anchor = dockIntentPoint({
+    bounds,
+    collapsed: windowDock.collapsed,
+    side: windowDock.side,
+    sizes: DEFAULT_DOCK_SIZES,
+  });
+  const display = screen.getDisplayNearestPoint(anchor);
+  const side = dockSideForIntent({ point: anchor, workArea: display.workArea });
   applyDockBounds({ side, collapsed: nextCollapsed, anchor });
 });
 onTrusted('open-pane', (_e, value) => {
@@ -1364,8 +1363,16 @@ onTrusted('ui:modal-state', (_e, open) => {
     // Preserve an existing restore target across renderer reloads while a modal is open.
     if (modalRestoreCollapsed === null) modalRestoreCollapsed = windowDock.collapsed;
     if (windowDock.collapsed && win && !win.isDestroyed()) {
-      const anchor = railCenter(win.getBounds(), windowDock.side, DEFAULT_DOCK_SIZES);
-      applyDockBounds({ collapsed: false, anchor });
+      const bounds = win.getBounds();
+      const anchor = dockIntentPoint({
+        bounds,
+        collapsed: true,
+        side: windowDock.side,
+        sizes: DEFAULT_DOCK_SIZES,
+      });
+      const display = screen.getDisplayNearestPoint(anchor);
+      const side = dockSideForIntent({ point: anchor, workArea: display.workArea });
+      applyDockBounds({ side, collapsed: false, anchor });
     }
   } else if (!nextOpen && (!modalStateWasKnown || uiModalOpen)) {
     if (modalRestoreCollapsed === true && win && !win.isDestroyed()) {
