@@ -17,6 +17,14 @@ function validSide(side) {
   return DOCK_SIDES.includes(side) ? side : 'top';
 }
 
+function sameBounds(first, second) {
+  return Boolean(first && second
+    && first.x === second.x
+    && first.y === second.y
+    && first.width === second.width
+    && first.height === second.height);
+}
+
 function sizeFor(workArea, side, collapsed, sizes = DEFAULT_DOCK_SIZES) {
   const vertical = side === 'left' || side === 'right';
   const requested = collapsed
@@ -106,4 +114,5 @@ module.exports = {
   dockSideForIntent,
   nearestDockSide,
   railCenter,
+  sameBounds,
 };
