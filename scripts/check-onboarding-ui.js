@@ -23,7 +23,14 @@ ipcMain.handle('task-context:get', () => emptyContext);
 ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false, transitioning: false }));
 ipcMain.handle('shortcuts:get', () => []);
-ipcMain.handle('permissions:request', (_event, kind) => ({ kind, granted: true }));
+let developmentPermissionClient = false;
+ipcMain.handle('permissions:request', (_event, kind) => (
+  kind === 'screen'
+    ? developmentPermissionClient
+      ? { kind, granted: false, status: 'denied', settingsOpened: true, developmentClient: true, message: 'This npm start development build is a separate macOS permission client.' }
+      : { kind, granted: false, settingsOpened: true, developmentClient: false }
+    : { kind, granted: true }
+));
 ipcMain.handle('permissions:status', (_event, kind) => ({ kind, status: 'not-determined', granted: false }));
 ipcMain.on('mouse:ignore', () => {});
 
@@ -80,6 +87,7 @@ app.whenReady().then(async () => {
       return {
         active: document.activeElement && document.activeElement.id,
         dialog: { x: dialog.x, y: dialog.y, width: dialog.width, height: dialog.height, right: dialog.right, bottom: dialog.bottom },
+        footerHeight: document.querySelector('.ob-footer').getBoundingClientRect().height,
         viewport: { width: innerWidth, height: innerHeight },
         contentOverflowY: content.scrollHeight > content.clientHeight,
         documentOverflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth
@@ -88,9 +96,55 @@ app.whenReady().then(async () => {
     assert.equal(state.active, 'ob-title', `${names[index]} should focus its heading`);
     assert.equal(state.documentOverflowX, false, `${names[index]} must not overflow horizontally`);
     assert.equal(state.contentOverflowY, false, `${names[index]} must not scroll at production size`);
+    assert.ok(Math.abs(state.footerHeight - 54) < 0.1, `${names[index]} should use the compact single-row footer`);
     assert.ok(state.dialog.x >= 0 && state.dialog.y >= 0 && state.dialog.right <= state.viewport.width && state.dialog.bottom <= state.viewport.height, `${names[index]} dialog must fit viewport`);
     heights.push(state.dialog.height);
     await capture(win, names[index]);
+    if (index === 1) {
+      await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
+      await waitFor(win, "document.querySelector('#ob-permission-status').classList.contains('has-action')", 'permission recovery action');
+      const recovery = await win.webContents.executeJavaScript(`(() => {
+        const status = document.querySelector('#ob-permission-status');
+        const restart = status.querySelector('.ob-restart');
+        const style = getComputedStyle(restart);
+        return {
+          statusDisplay: getComputedStyle(status).display,
+          radius: style.borderRadius,
+          height: restart.getBoundingClientRect().height,
+          background: style.backgroundColor
+        };
+      })()`);
+      assert.equal(recovery.statusDisplay, 'flex', 'permission recovery should align its message and action');
+      assert.equal(recovery.radius, '999px', 'restart action should use the app pill radius');
+      assert.ok(Math.abs(recovery.height - 30) < 0.1, 'restart action should stay compact');
+      assert.notEqual(recovery.background, 'rgba(0, 0, 0, 0)', 'restart action should use a glass fill');
+      await waitForPaint(win);
+      const recoveryLayout = await win.webContents.executeJavaScript(`(() => {
+        const content = document.querySelector('#ob-content');
+        const status = document.querySelector('#ob-permission-status').getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+        return {
+          contentOverflowY: content.scrollHeight > content.clientHeight,
+          statusInsideContent: status.left >= contentRect.left && status.right <= contentRect.right && status.bottom <= contentRect.bottom
+        };
+      })()`);
+      assert.equal(recoveryLayout.contentOverflowY, false, 'permission recovery must not make onboarding scroll');
+      assert.equal(recoveryLayout.statusInsideContent, true, 'permission recovery must fit inside the content panel');
+      await capture(win, 'permission-recovery');
+
+      developmentPermissionClient = true;
+      await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
+      await waitFor(win, "document.querySelector('#ob-permission-status').textContent.includes('npm start')", 'development permission identity guidance');
+      const developmentRecovery = await win.webContents.executeJavaScript(`({
+        text: document.querySelector('#ob-permission-status').textContent,
+        state: document.querySelector('[data-permission-kind="screen"] .ob-permission-state').textContent,
+        restart: Boolean(document.querySelector('#ob-permission-status .ob-restart'))
+      })`);
+      assert.match(developmentRecovery.text, /separate from Volyx Lens\.app/i, 'development guidance should explain the separate permission client');
+      assert.equal(developmentRecovery.state, 'Use packaged app', 'development permission state should direct users to the packaged app');
+      assert.equal(developmentRecovery.restart, false, 'development mismatch must not offer an ineffective relaunch');
+      developmentPermissionClient = false;
+    }
     if (index < names.length - 1) {
       await win.webContents.executeJavaScript("document.querySelector('#ob-next').click()");
       await waitFor(win, `document.activeElement && document.activeElement.id === 'ob-title' && document.querySelector('#ob-step-count').textContent === '${index + 2} of 5'`, `${names[index + 1]} heading focus`);
@@ -133,9 +187,10 @@ app.whenReady().then(async () => {
   const compact = await win.webContents.executeJavaScript(`(() => {
     const footer = document.querySelector('.ob-footer').getBoundingClientRect();
     const dialog = document.querySelector('#onboard').getBoundingClientRect();
-    return { overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth, footerRight: footer.right, dialogRight: dialog.right, width: innerWidth };
+    return { overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth, footerRight: footer.right, footerHeight: footer.height, dialogRight: dialog.right, width: innerWidth };
   })()`);
   assert.equal(compact.overflowX, false, 'compact onboarding must not overflow horizontally');
+  assert.ok(Math.abs(compact.footerHeight - 70) < 0.5, `narrow onboarding should use the compact two-row footer (received ${compact.footerHeight}px)`);
   assert.ok(compact.footerRight <= compact.width && compact.dialogRight <= compact.width, 'compact footer and dialog must fit');
   await capture(win, 'compact');
 

@@ -23,6 +23,14 @@ ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyTaskContext);
 ipcMain.handle('task-context:list', () => ({ ...emptyTaskContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false }));
+ipcMain.handle('permissions:request', (_event, kind) => ({
+  kind,
+  granted: false,
+  status: 'denied',
+  settingsOpened: true,
+  developmentClient: true,
+  message: 'This npm start development build is a separate macOS permission client. Quit it and open the packaged app; a grant for Volyx Lens.app does not apply to this process.',
+}));
 ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.2.0', status: 'unsupported', message: 'Updates are available in official signed macOS release builds.', availableVersion: null, progress: null }));
 ipcMain.handle('shortcuts:get', () => [
   { id: 'assist', feature: 'Assist', displayAccelerator: '⌘↵', registered: true },
@@ -86,6 +94,16 @@ app.whenReady().then(async () => {
     await capture(win, section);
   }
   assert.equal(heights.size, 1, 'settings shell height should remain stable');
+
+  await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"listening\"]').click(); document.querySelector('#test-live-transcription-btn').click()");
+  await waitFor(win, "document.querySelector('#realtime-test-result').textContent.includes('permission_client_mismatch')", 'development permission identity guidance');
+  const permissionDiagnostic = await win.webContents.executeJavaScript(`({
+    text: document.querySelector('#realtime-test-result').textContent,
+    startAttempted: document.querySelector('#test-live-transcription-btn').textContent !== 'Test Live Mic'
+  })`);
+  assert.match(permissionDiagnostic.text, /npm start/i, 'development diagnostic should name the active npm start client');
+  assert.match(permissionDiagnostic.text, /packaged app/i, 'development diagnostic should direct users to the packaged app');
+  assert.equal(permissionDiagnostic.startAttempted, false, 'development mismatch should stop before opening microphone capture');
 
   await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"shortcuts\"]').click()");
   await waitFor(win, "document.activeElement && document.activeElement.id === 'settings-shortcuts-title'", 'shortcuts heading focus before reverse tab test');

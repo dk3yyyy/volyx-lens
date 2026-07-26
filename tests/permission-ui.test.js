@@ -67,6 +67,20 @@ test('onboarding honors reduced motion and constrains resizable compact layouts'
   assert.match(main, /minHeight:\s*480/);
 });
 
+test('onboarding footer stays compact and uses rounded navigation controls', () => {
+  assert.match(styles, /\.ob-footer\s*\{[^}]*min-height:\s*54px[^}]*padding:\s*0 16px 0 20px/);
+  assert.match(styles, /\.ob-ghost\s*\{[^}]*min-height:\s*34px[^}]*border-radius:\s*999px/);
+  assert.match(styles, /\.ob-primary\s*\{[^}]*min-width:\s*96px[^}]*min-height:\s*38px[^}]*border-radius:\s*999px/);
+  assert.match(styles, /@media \(max-width:\s*560px\)[\s\S]*\.ob-footer\s*\{[^}]*min-height:\s*70px/);
+});
+
+test('permission recovery restart action is an intentional rounded glass control', () => {
+  assert.match(renderer, /restart\.className = 'ob-restart'/);
+  assert.match(renderer, /obPermissionStatus\.className = 'ob-permission-status denied has-action'/);
+  assert.match(styles, /\.ob-restart\s*\{[^}]*border-radius:\s*999px[^}]*background:\s*rgba\(255,255,255,0\.08\)/);
+  assert.match(styles, /\.ob-permission-status\.has-action\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center/);
+});
+
 test('permission actions expose optionality and visible text states', () => {
   assert.match(renderer, /Each permission is optional/);
   assert.match(renderer, /permissionStates = \{[\s\S]*microphone: \{ text: 'Not requested', className: '' \}[\s\S]*screen: \{ text: 'Not requested', className: '' \}/);
@@ -81,6 +95,14 @@ test('permission actions expose optionality and visible text states', () => {
 test('permission request crosses a narrow invoke IPC boundary', () => {
   assert.match(preload, /requestPermission:\s*\(kind\)\s*=>\s*ipcRenderer\.invoke\('permissions:request', kind\)/);
   assert.match(main, /handleTrusted\('permissions:request'/);
+});
+
+test('development permission mismatch does not offer an ineffective relaunch', () => {
+  assert.match(main, /mediaPermissionStatus\(String\(kind \|\| ''\)/);
+  assert.match(main, /isPackaged:\s*app\.isPackaged/);
+  assert.match(renderer, /result\.developmentClient/);
+  assert.match(renderer, /npm start/i);
+  assert.match(renderer, /separate from Volyx Lens\.app/i);
 });
 
 test('application declares only permissions it actually requests', () => {
