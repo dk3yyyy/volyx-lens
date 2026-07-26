@@ -44,10 +44,13 @@ test('main process gates updater operations to trusted packaged macOS builds', (
   assert.match(updateManager, /releaseBuild === true/);
 });
 
-test('release configuration produces and publishes updater metadata with signed archives', () => {
+test('release configuration produces signed DMG installers and updater ZIP metadata', () => {
   assert.equal(pkg.dependencies['electron-updater'] != null, true);
   assert.deepEqual(pkg.build.publish, [{ provider: 'github', owner: 'dk3yyyy', repo: 'volyx-lens' }]);
+  assert.deepEqual(pkg.build.mac.target, ['dmg', 'zip']);
+  assert.match(releaseWorkflow, /electron-builder --mac dmg zip/);
   assert.match(releaseWorkflow, /latest-.*-mac\.yml/);
+  assert.match(releaseWorkflow, /DMG_PATH=.*\.dmg/);
   assert.match(releaseWorkflow, /volyxReleaseBuild=true/);
   assert.match(releaseWorkflow, /Missing official release-build marker/);
   assert.match(releaseWorkflow, /validate-update-metadata\.js/);
