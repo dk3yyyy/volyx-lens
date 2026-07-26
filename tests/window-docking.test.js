@@ -7,7 +7,15 @@ const {
   dockSideForIntent,
   nearestDockSide,
   railCenter,
+  sameBounds,
 } = require('../src/window-docking');
+
+test('same bounds compares the complete native window rectangle', () => {
+  const bounds = { x: 10, y: 20, width: 700, height: 600 };
+  assert.equal(sameBounds(bounds, { ...bounds }), true);
+  assert.equal(sameBounds(bounds, { ...bounds, y: 21 }), false);
+  assert.equal(sameBounds(bounds, null), false);
+});
 
 const workArea = { x: 100, y: 40, width: 1440, height: 900 };
 

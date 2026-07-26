@@ -39,7 +39,8 @@ const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
-const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter } = require('./src/window-docking');
+const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
+const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = require('./src/response-context');
 
@@ -91,6 +92,8 @@ const pendingTaskContextOcr = new Set();
 
 let win = null;
 let windowDock = { side: 'top', collapsed: false, anchor: null };
+let windowAutoFit = null;
+const AUTO_FIT_DELAY_MS = 700;
 // Fail closed until the trusted renderer finishes booting and reports whether
 // onboarding or Settings is visible.
 let uiModalOpen = true;
@@ -435,17 +438,26 @@ function publishDockState() {
   win.webContents.send('window:dock-state', { side: windowDock.side, collapsed: windowDock.collapsed });
 }
 
-function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collapsed, anchor = windowDock.anchor } = {}) {
+function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collapsed, anchor = windowDock.anchor, targetDisplay = null } = {}) {
   if (!win || win.isDestroyed()) return;
+  windowAutoFit?.cancel();
   const currentBounds = win.getBounds();
   const resolvedAnchor = anchor || railCenter(currentBounds, windowDock.side, DEFAULT_DOCK_SIZES);
-  const display = screen.getDisplayNearestPoint(resolvedAnchor);
+  const display = targetDisplay || screen.getDisplayNearestPoint(resolvedAnchor);
   const nextBounds = dockBounds({ workArea: display.workArea, side, anchor: resolvedAnchor, collapsed });
   windowDock = { side, collapsed, anchor: resolvedAnchor };
   if (collapsed) win.setMinimumSize(1, 1);
-  win.setBounds(nextBounds, false);
+  if (!sameBounds(currentBounds, nextBounds)) win.setBounds(nextBounds, false);
   if (!collapsed) win.setMinimumSize(500, 480);
   publishDockState();
+}
+
+function fitWindowToMovedEdge(anchor) {
+  if (!win || win.isDestroyed()) return;
+  if (windowDock.collapsed || !anchor) return;
+  const display = screen.getDisplayNearestPoint(anchor);
+  const side = dockSideForIntent({ point: anchor, workArea: display.workArea });
+  applyDockBounds({ side, collapsed: false, anchor, targetDisplay: display });
 }
 
 function createWindow() {
@@ -481,6 +493,20 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'screen-saver', 1);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   if (typeof win.setHiddenInMissionControl === 'function') win.setHiddenInMissionControl(true);
+  windowAutoFit = createWindowAutoFitController({ fit: fitWindowToMovedEdge, delayMs: AUTO_FIT_DELAY_MS });
+  win.on('will-move', () => {
+    windowAutoFit?.beginManualMove();
+  });
+  win.on('moved', () => {
+    windowAutoFit?.recordMove(screen.getCursorScreenPoint());
+  });
+  win.on('close', () => {
+    windowAutoFit?.cancel();
+  });
+  win.on('closed', () => {
+    windowAutoFit?.cancel();
+    windowAutoFit = null;
+  });
 
   win.loadURL(APP_ENTRY_URL);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -1334,7 +1360,7 @@ onTrusted('system:pcm', (_e, arrayBuffer) => acceptPcm('them', arrayBuffer));
 onTrusted('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 onTrusted('window:set-collapsed', (_e, collapsed) => {
   if (!win || win.isDestroyed()) return;
-  // Resolve docking only on this explicit action. Never snap from move/moved listeners or timers.
+  // Resolve immediately for explicit Hide/Show; native movement uses the delayed auto-fit path.
   const bounds = win.getBounds();
   const nextCollapsed = collapsed === true;
   const anchor = dockIntentPoint({

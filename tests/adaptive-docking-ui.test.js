@@ -19,14 +19,23 @@ test('trusted bridge carries collapse state to main and dock state back to rende
   assert.match(renderer, /volyxLens\.on\('window:dock-state'/);
 });
 
-test('native dragging stays free and docking occurs only when hide or show is requested', () => {
+test('native dragging stays free and docking auto-fits only after user movement settles', () => {
   assert.match(main, /require\('\.\/src\/window-docking'\)/);
+  assert.match(main, /require\('\.\/src\/window-auto-fit'\)/);
   assert.match(main, /dockSideForIntent/);
   assert.match(main, /railCenter/);
   assert.match(main, /win\.setBounds\(nextBounds/);
   assert.match(main, /screen\.getDisplayNearestPoint/);
-  assert.doesNotMatch(main, /win\.on\(['"]move[d]?['"]/);
-  assert.doesNotMatch(main, /scheduleWindowDock|snapWindowToNearestEdge|dockMoveTimer/);
+  assert.match(main, /win\.on\('will-move',[\s\S]*windowAutoFit\?\.beginManualMove\(\)/);
+  assert.match(main, /win\.on\('moved',[\s\S]*windowAutoFit\?\.recordMove\(screen\.getCursorScreenPoint\(\)\)/);
+  assert.doesNotMatch(main, /win\.on\(['"]move['"]/);
+  assert.match(main, /win\.on\('close',[\s\S]*windowAutoFit\?\.cancel\(\)/);
+  assert.match(main, /function fitWindowToMovedEdge\(anchor\)[\s\S]*if \(windowDock\.collapsed \|\| !anchor\) return;/);
+  assert.match(main, /fitWindowToMovedEdge\(anchor\)[\s\S]*screen\.getDisplayNearestPoint\(anchor\)[\s\S]*dockSideForIntent\(\{ point: anchor, workArea: display\.workArea \}\)/);
+  assert.match(main, /applyDockBounds\(\{ side, collapsed: false, anchor, targetDisplay: display \}\)/);
+  assert.match(main, /function applyDockBounds[\s\S]*windowAutoFit\?\.cancel\(\)/);
+  assert.match(main, /AUTO_FIT_DELAY_MS\s*=\s*700/);
+  assert.match(main, /if \(!sameBounds\(currentBounds, nextBounds\)\) win\.setBounds\(nextBounds, false\)/);
   assert.match(main, /onTrusted\('window:set-collapsed',[\s\S]*dockSideForIntent[\s\S]*applyDockBounds\(\{ side, collapsed: nextCollapsed, anchor \}\)/);
   assert.match(main, /did-finish-load[\s\S]*side:\s*windowDock\.side[\s\S]*collapsed:\s*windowDock\.collapsed/);
 });
