@@ -1,14 +1,18 @@
 <div align="center">
 
-<img src="renderer/assets/volyx-lens-logo.svg" width="128" alt="Volyx Lens logo" />
+<img src="renderer/assets/volyx-lens-logo.svg" width="112" alt="Volyx Lens eye logo" />
 
 # Volyx Lens
 
 **A private, context-aware macOS assistant for your screen, voice, meetings, and coding workflows.**
 
-Bring your own AI key and keep control of the providers you use (OpenAI · Anthropic · Google Gemini · Azure Foundry · DeepSeek · Deepgram transcription).
+Bring your own provider. Keep control of what you capture and when it is sent.
 
-<img src="docs/onboarding-welcome-eye.png" width="700" alt="Volyx Lens first-run welcome screen using the canonical eye logo" />
+[Download for macOS](#download) · [How it works](#how-it-works) · [Privacy](#privacy-and-security) · [Build from source](#build-from-source)
+
+<br />
+
+<img src="docs/onboarding-welcome-eye.png" width="700" alt="Volyx Lens welcome screen showing the five-step onboarding experience" />
 
 <sub>The current five-step onboarding experience.</sub>
 
@@ -17,54 +21,198 @@ Bring your own AI key and keep control of the providers you use (OpenAI · Anthr
 ---
 
 > [!IMPORTANT]
-> **Please read this first.** Volyx Lens tries to stay out of screen recordings/shares, but this is **best-effort, not guaranteed** — on macOS 15.4+ Apple can let modern capture tools see it anyway, and a phone camera always can. Using a hidden assistant during a **proctored exam, job interview, or recorded meeting** may break that platform's rules and, in some places, consent laws. Volyx Lens is built for legitimate uses — your own notes, studying, accessibility, and practice. **You are responsible for how you use it.**
+> **Capture exclusion is best-effort, never guaranteed.** Modern macOS capture tools may still show Volyx Lens, and a physical camera always can. Do not use hidden assistance where it violates exam, interview, workplace, platform, recording-consent, or local-law requirements. Volyx Lens is intended for legitimate personal notes, accessibility, study, practice, and permitted work.
 
----
+## Why Volyx Lens
 
-## What it does
+Volyx Lens is a compact glass overlay that can use three intentionally separate inputs:
 
-Volyx Lens floats a small glass panel on top of everything. It takes **three separate inputs** — your **screen**, your **microphone**, and your **meeting audio** (what the other person says) — and uses an AI model to help you in real time.
+- **Screen** — screenshots are captured only for an explicit screen-based action.
+- **Microphone / “You”** — your voice is transcribed on its own channel.
+- **System audio / “Them”** — a native ScreenCaptureKit helper captures meeting audio on a separate channel.
 
-| Feature | How to trigger | What it uses |
+Nothing is routed through a VolyxAI server. Provider requests go directly from the app to the AI or transcription provider you configure.
+
+### Highlights
+
+- **Screen-aware assistance** — ask about the visible screen, a conversation, or both.
+- **Separated meeting transcript** — stable timestamped **You** and **Them** turns.
+- **Task Context** — save multiple screens locally, pin important captures, deduplicate near-identical views, and attach a bounded relevant set only when you explicitly ask.
+- **Provider choice** — OpenAI, Anthropic, Gemini, Azure Foundry, and DeepSeek for responses; OpenAI, Azure, Deepgram, or optional local Whisper for transcription.
+- **Personal context** — import a resume/CV and job description with bounded extraction and relevance selection.
+- **Local controls** — clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
+- **Native macOS behavior** — compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
+
+## Download
+
+### Current test release: v0.3.1
+
+The current public binaries are **ad-hoc signed test builds**. They are not signed with an Apple Developer ID certificate and are not notarized by Apple, so GitHub publishes them as a **pre-release**, not as a trusted production release.
+
+| Mac | Installer |
+|---|---|
+| **Apple Silicon** — M1, M2, M3, M4, or newer | `Volyx-Lens-0.3.1-macOS-arm64-adhoc.dmg` |
+| **Intel** | `Volyx-Lens-0.3.1-macOS-x64-adhoc.dmg` |
+
+**[Open the v0.3.1 release and download the matching DMG →](https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1)**
+
+SHA-256 checksum files and ZIP packages are included in the release.
+
+### Install the DMG
+
+1. Download the DMG matching your Mac architecture.
+2. Open it and drag **Volyx Lens** into **Applications**.
+3. Because this test build is not notarized, macOS may block its first launch. In Finder, Control-click or right-click **Volyx Lens**, choose **Open**, then confirm **Open**.
+4. Grant Microphone and Screen & System Audio Recording access when prompted.
+
+Do **not** disable Gatekeeper globally. Ad-hoc builds cannot use the in-app updater; install later test releases manually. A normal one-click launch and trusted automatic update path requires an Apple Developer ID–signed and notarized release.
+
+## What it can do
+
+| Action | Trigger | Context used |
 |---|---|---|
-| **Assist** | `⌘` `↵` or the *Assist* button | explicitly choose screen only, conversation only, or both |
-| **Task Context** | action after *Recap*, `⌘` `⇧` `C`, or *Add screen* | docks/opens its panel and saves visible screens in memory without calling AI; included only in a later explicit screen-based request |
-| **What should I say?** | button | meeting audio + your mic |
-| **Follow-up questions** | button | the whole conversation |
-| **Recap** | button | the whole conversation |
-| **New Session** | button or type `/new` | clears transcript, generated answers, task-context screens, partials, and buffered audio context |
-| **Ask anything** | type + `↵` | your screen + conversation |
-| **Solve a coding problem** | `⌘` `H` | your screen only |
-| **Smart** toggle | pill in the box | switches to a smarter (slower) model |
+| **Assist** | `⌘` `↵` or Assist | screen, conversation, or both — you choose |
+| **Solve what’s on screen** | `⌘` `H` | current screen |
+| **Add Task Context screen** | `⌘` `⇧` `C` or Add screen | local capture only; no AI request |
+| **What should I say?** | action button | conversation transcript |
+| **Follow-up questions** | action button | conversation transcript |
+| **Recap** | action button | bounded meeting transcript |
+| **Ask anything** | type and press `↵` | selected screen/conversation context |
+| **New Session** | `/new` or New Session | clears in-memory session context |
+| **Emergency quit** | `⌘` `⇧` `X` or power button | stops capture and clears session media context |
 
-### Task Context
+The **Smart** toggle selects the configured higher-capability model. Settings reports whether each global shortcut registered successfully and keeps equivalent visible buttons available.
 
-When an interview or browser IDE reveals files gradually, open **Task Context** from the action immediately after **Recap**, then click **Add screen** on the problem statement and again as you open useful files or test output. The panel lists metadata only—capture number, timestamp, approximate size, pin state, and local text-indexing status—through a bounded paginated view; screenshot bytes, recognized text, and hashes stay in the main process. Pin the problem statement or another important capture to protect it from ordinary eviction and prioritize it for requests. Remove deletes one selected capture, **Undo last** removes the newest capture, and **Clear** removes all captures. Click the same Task Context action to dock the panel without clearing its screens. `⌘` `⇧` `C` captures directly. Capturing is local and makes **no provider request**. There is no fixed screenshot-count limit; Volyx Lens retains compressed screens inside a 96 MB process-memory budget, deduplicates byte-identical captures with SHA-256, and uses a dependency-free 17×16 local visual fingerprint to conservatively reject near-identical captures caused by cursor, compression, or tiny overlay changes. Fingerprints stay in main-process session memory, never cross to the renderer or a provider, and fingerprint failures never block capture. On macOS, a bundled Apple Vision helper processes one saved screen at a time after capture; Add Screen returns immediately, and the panel shows Processing, character count, Failed, Unavailable, or Evicted without exposing recognized content. OCR input is limited to 8 MB, helper stdout to 512 KiB, retained text to 64 KiB per capture, and total retained OCR text to 8 MB; oldest unpinned OCR text is evicted first. OCR failures never block capture, no cloud OCR is used, and recognized text is used only for local overlap detection and screen ranking—not attached to provider requests. Adjacent code or document captures with repeated OCR lines are linked rather than rejected; the panel shows the approximate overlap or detected line range, while only each capture's non-repeated text influences relevance ranking. Volyx Lens evicts the oldest unpinned captures when needed and displays the last eviction. If pinned captures fill the budget, Volyx Lens rejects a new capture without deleting existing screens. **New Session**, **Clear**, relaunching, or quitting cancels local OCR and removes all screenshots, fingerprints, and recognized text.
+## Setup
 
-A screen-based AI request attaches at most 39 saved screens plus the current screen. Before any upload involving eight or more saved screens, Volyx Lens shows the selected provider and image count and requires confirmation because multiple images can increase latency and provider cost. When more than 39 are saved, Volyx Lens prioritizes pinned captures, locally ranks non-repeated OCR text against the question and recent transcript, preserves the earliest context screen when space permits, and fills remaining slots with the newest captures. The selected screenshots are then attached in chronological order; omitted screens visibly remain local and Volyx Lens never implies they were processed. The model receives attached screens together so it can compare files. Conversation-only actions and text-only providers do not receive images. Task Context cannot read files or code that never appeared on screen. Use it only when external assistance is permitted.
+### 1. Grant macOS permissions
 
-It supports **live meetings** ("what should I say next?"), **screen-aware questions**, and **coding workflows** while keeping capture, routing, and provider use explicit.
+Volyx Lens requests only the permissions its capture features need; it does not request camera access.
 
----
+- **Microphone:** System Settings → Privacy & Security → **Microphone**
+- **Screen and meeting audio:** System Settings → Privacy & Security → **Screen & System Audio Recording**
 
-## Install
+If access was previously denied, enable Volyx Lens in System Settings, then fully quit and reopen it. macOS associates permission grants with the effective app identity, so replacing an ad-hoc build can require granting access again.
 
-There are two ways to install Volyx Lens. **If you're not a developer, use Option A.**
+### 2. Configure providers
 
-### Option A — Download the app (easiest)
+Open Settings with `⌘` `,` or the `…` button. Choose a response provider, enter its key and model/deployment names, then select **Use as default**. An optional fallback provider is used only when it is capable of the request and the default fails before producing answer text.
 
-1. Go to the [**Releases**](../../releases) page. Download the latest signed archive for your Mac:
-   - **Apple Silicon (M1/M2/M3/M4 or newer):** `volyx-lens-<version>-mac-arm64.zip`
-   - **Intel:** `volyx-lens-<version>-mac-x64.zip`
-   If no release assets are listed yet, use Option B; a public binary has not been published.
-2. Double-click the zip to unzip it. You'll get **`Volyx Lens.app`**.
-3. Drag **`Volyx Lens.app`** into your **Applications** folder.
-4. Open Volyx Lens normally. Public release assets are Developer ID signed, notarized, stapled, checksummed, and accompanied by a CycloneDX SBOM and GitHub build attestation. Do not bypass Gatekeeper for an asset that fails verification.
-5. For later releases, open **Settings → Updates** and choose **Check for Updates**. Volyx Lens checks only when you click the button, downloads only after confirmation, and asks before restarting to install. Source and ad-hoc test builds cannot self-update.
+<div align="center">
+  <img src="docs/settings-providers.png" width="700" alt="Volyx Lens provider settings with Azure Foundry selected as the default response provider" />
+  <br />
+  <sub>Current provider Settings. Visible values are sanitized examples from the UI test harness.</sub>
+</div>
 
-### Option B — Run from source (developers)
+| Provider | Role | Configuration notes |
+|---|---|---|
+| **OpenAI** | responses + transcription | API key; compatible response and audio models |
+| **Anthropic** | responses | API key; transcription requires another provider |
+| **Google Gemini** | responses + batch transcription | Gemini API key |
+| **Azure Foundry** | responses + realtime transcription | resource key, official resource endpoint, and exact deployment names |
+| **DeepSeek** | text responses | screen analysis requires a vision-capable default/fallback |
+| **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
+| **Local Whisper** | optional offline batch transcription | externally installed `whisper-cli` and model; disabled by default |
 
-You need [Node.js](https://nodejs.org) 20+ installed. On macOS, source startup compiles the local Vision OCR and ScreenCaptureKit system-audio helpers, so install Apple's Xcode Command Line Tools first with `xcode-select --install`. Downloaded release builds already include these helpers and do not require development tools.
+Keys stay in the Electron main process and are protected with `safeStorage` / macOS Keychain where available. The renderer receives credential status, not stored secret values. Settings warns if secure storage is unavailable.
+
+### 3. Configure Zoom capture filtering
+
+For Zoom, select:
+
+**Settings → Share Screen → Advanced → Screen capture mode → Advanced capture with window filtering**
+
+<div align="center">
+  <img src="docs/zoom-setting.png" width="700" alt="Zoom Advanced Share Screen settings with Advanced capture with window filtering selected" />
+</div>
+
+This asks Zoom to respect Volyx Lens’s protected-window flag. It is still best-effort and may not work with every macOS or capture-tool version.
+
+## Task Context
+
+Task Context is for work revealed across multiple screens—for example a problem statement, source files, and test output.
+
+- **Add screen** saves a compressed capture in bounded process memory without contacting a provider.
+- Exact SHA-256 and a local visual fingerprint reduce duplicate captures.
+- Optional Apple Vision OCR runs locally and is used for overlap detection and relevance ranking; recognized text is not sent as a separate provider payload.
+- Pinning protects important screens from ordinary eviction and prioritizes them for later requests.
+- Remove, Undo last, Clear, and New Session provide explicit lifecycle control.
+- A screen request attaches at most **39 saved screens plus the current screen**. Before eight or more saved screens are uploaded, Volyx Lens shows the selected provider and image count and requires confirmation.
+- Screens that are not selected remain local and are not presented as processed.
+
+Task Context cannot read files or code that never appeared on screen. Use it only when external assistance is permitted.
+
+## How it works
+
+<div align="center">
+  <img src="docs/architecture.svg" width="100%" alt="Volyx Lens architecture showing separate screen, microphone, and system-audio pipelines entering local controls before explicit routing to response and transcription providers" />
+</div>
+
+Volyx Lens is an Electron application with a sandboxed renderer and a privileged main process:
+
+1. **Capture stays separated.** Screens, microphone PCM, and system-audio PCM have distinct lifecycles.
+2. **Local controls run first.** Permission checks, memory budgets, deduplication, OCR ranking, cancellation, and secure credential access happen locally.
+3. **The user triggers a request.** Screen and transcript context is attached only for the selected action.
+4. **The main process routes directly.** Requests go to the configured response or transcription provider—never through a VolyxAI intermediary.
+5. **Results stream into the overlay.** Provider failures are reduced to sanitized, actionable states rather than exposing credentials or raw SDK errors.
+
+Realtime microphone audio is deterministically resampled to 24 kHz mono PCM. System audio comes from a bundled ScreenCaptureKit helper and remains a separate **Them** channel. Optional local Whisper is operator-configured, disabled by default, and does not silently fall back to cloud transcription unless cloud fallback is separately enabled.
+
+## Privacy and security
+
+- **No VolyxAI account, intermediary server, or product telemetry.** Selected third-party providers still receive the data required for explicit requests and apply their own terms and pricing.
+- **No persistent screenshots or audio.** Volyx Lens keeps active session media in memory; New Session or emergency quit clears it.
+- **Bounded personal context.** Imported documents store extracted text and status—not the original file path or raw document—and send only relevant bounded excerpts for answer-oriented actions.
+- **Sandboxed UI.** Chromium sandboxing, context isolation, no renderer Node integration, restrictive CSP, denied popup/navigation requests, and bounded IPC payloads are enabled.
+- **Protected secrets.** Credentials are accessed in the main process and use `safeStorage` / Keychain when available.
+- **Explicit expensive requests.** Large multi-image requests and multi-part long-meeting recaps require confirmation.
+- **Best-effort capture exclusion.** `setContentProtection(true)` / `NSWindowSharingNone` reduces accidental capture but is not a security guarantee.
+
+## Transcript workspace
+
+While listening, confirmed provider chunks are grouped into timestamped **You** and **Them** turns. Partial text remains visually distinct and is replaced by confirmed text. The workspace can:
+
+- copy one turn or the complete confirmed transcript;
+- export TXT, Markdown, or structured JSON through a native save dialog;
+- clear the session with confirmation;
+- show sanitized diagnostics without keys, endpoints, raw audio, images, personal-context text, or transcript content.
+
+Long answer requests use bounded recent context. Longer recaps use bounded part summaries and require confirmation before multiple paid provider requests are made.
+
+## Troubleshooting
+
+<details>
+<summary><strong>macOS says the app is damaged or cannot be opened</strong></summary>
+
+Delete the copy and download the matching DMG from this repository’s release page again. Verify its SHA-256 checksum. For the current ad-hoc test build, use Finder’s Control-click/right-click → **Open** flow. Never disable Gatekeeper globally.
+</details>
+
+<details>
+<summary><strong>Permission is enabled but capture still fails</strong></summary>
+
+You may have granted permission to an older ad-hoc build. Toggle Volyx Lens off and on in the relevant Privacy & Security pane, then fully quit and reopen the current app. Rebuilt ad-hoc apps can receive a different effective identity.
+</details>
+
+<details>
+<summary><strong>Listening connects but no transcript appears</strong></summary>
+
+Verify the selected realtime provider and exact deployment/model configuration. For Azure, use the official resource endpoint, resource key, and exact realtime transcription deployment name. Stop listening before changing settings, then use **Test Live Mic** to send a bounded five-second sample and require a real transcript. Provider billing may apply.
+</details>
+
+<details>
+<summary><strong>Volyx Lens appears in a Zoom share</strong></summary>
+
+Select **Advanced capture with window filtering** in Zoom as shown above. Capture exclusion remains best-effort, especially on newer macOS capture paths.
+</details>
+
+## Build from source
+
+Requirements:
+
+- macOS
+- [Node.js](https://nodejs.org) 20+ installed
+- npm
+- Xcode Command Line Tools (`xcode-select --install`) for native OCR and system-audio helpers
 
 ```bash
 git clone https://github.com/dk3yyyy/volyx-lens.git
@@ -73,193 +221,38 @@ npm ci
 npm start
 ```
 
-To build your own `Volyx Lens.app`:
+Run the verification suite:
+
 ```bash
-npm run pack      # creates dist/mac-arm64/Volyx Lens.app
-```
-> Note: local builds are unsigned unless a valid Apple Developer ID certificate is installed. macOS ties permission grants to the exact build, so **rebuilding can reset mic/screen permissions**. Signed public releases still require an Apple Developer certificate and notarization credentials.
-
----
-
-## First launch — the 1-minute setup
-
-When Volyx Lens opens the first time, a **built-in tutorial** walks you through everything below. You can reopen it anytime by clicking the **Volyx Lens logo** (top-left of the pill). Here's the same thing in writing.
-
-### Step 1 — Grant two macOS permissions
-
-Volyx Lens can't help until macOS lets it see and hear. In the built-in tutorial, click **Request Microphone access** and **Request Screen Recording access** to trigger the native macOS permission flow. Volyx Lens does **not** use or request camera access.
-
-If a permission was previously denied, macOS will not show the consent popup again; Volyx Lens opens the corresponding System Settings pane instead. Enable the app there, then fully quit and reopen Volyx Lens:
-
-- **Microphone:** System Settings → **Privacy & Security** → **Microphone** → turn on **Volyx Lens**.
-- **Screen Recording:** System Settings → **Privacy & Security** → **Screen & System Audio Recording** → turn on **Volyx Lens**. (This one grant covers both screenshots *and* meeting audio.)
-
-### Step 2 — Add your AI key (bring your own)
-
-Volyx Lens has no subscription fee, but your selected AI or transcription provider may charge for usage. Click the **`...`** button in the input box (or press `⌘` `,`) to open **Settings**. Provider tabs open one configuration at a time: select a provider, add its key and models, then click **Use as default** when that provider should answer requests.
-
-<div align="center">
-  <img src="docs/settings-providers.png" width="700" alt="Volyx Lens Settings showing response-provider selection and Azure Foundry configuration" />
-  <br />
-  <sub>Current provider Settings. Values shown are non-secret examples from the UI test harness.</sub>
-</div>
-
-| Provider | Get a key | Notes |
-|---|---|---|
-| **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | Realtime listening uses `gpt-realtime-whisper`; batch fallback defaults to `gpt-4o-mini-transcribe`. The key needs Realtime/audio access. |
-| **Anthropic (Claude)** | [console.anthropic.com](https://console.anthropic.com) | Defaults to `claude-haiku-4-5` and `claude-sonnet-5`. Great for screen and coding help. Claude has no speech-to-text, so add an OpenAI or Gemini key too if you want listening features. |
-| **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Defaults to stable `gemini-3.5-flash` and `gemini-2.5-pro`. One key handles chat and batch transcription. |
-| **Azure Foundry** | [ai.azure.com](https://ai.azure.com) | Enter the resource key, resource endpoint (Volyx Lens adds `/openai/v1` when needed), and exact deployment names. Azure `gpt-realtime-whisper` deployments are supported for listening. |
-| **DeepSeek** | [platform.deepseek.com](https://platform.deepseek.com) | Uses the official `https://api.deepseek.com` endpoint. Defaults to `deepseek-v4-flash` and `deepseek-v4-pro`. DeepSeek is text-only here, so meeting/transcript modes work without screenshots; screen-only analysis needs a vision-capable provider. |
-| **Deepgram** | [console.deepgram.com](https://console.deepgram.com) | Realtime transcription only. Uses pinned `@deepgram/sdk` with Nova-3, interim results, continuous 24 kHz PCM (including silence while listening), and 300 ms endpointing. The key remains in the Electron main process. |
-
-You can also choose one optional **Fallback** response provider. Volyx Lens uses it when the default is not configured, cannot satisfy a required screen request, or fails before emitting any answer text. Volyx Lens does **not** switch providers after partial text has appeared, preventing mixed or duplicated answers. The response panel identifies the provider actually used. A fallback must have its own valid key and model configuration.
-
-Each response-provider tab includes an explicit **Test connection** action for either the Fast or Smart model. The test saves the current settings and sends one minimal text-only request capped at 64 output tokens; it never includes screenshots, transcript, Task Context, resume, job description, or fallback routing, but a small provider charge may apply. Results report the tested provider, tier, model/deployment, vision capability, latency, and—in Azure's case—whether the configured URL is a Foundry resource, Azure OpenAI resource, or project-scoped endpoint. Credentials and endpoint names are never returned to the renderer.
-
-The response provider and transcription provider are independent. Realtime listening can use direct OpenAI, an Azure Foundry `gpt-realtime-whisper` deployment, or Deepgram Nova-3. Batch fallback uses OpenAI Audio or Gemini when configured.
-
-Under **Settings → Transcription**, choose:
-
-- **Realtime** (recommended) — streams 24 kHz PCM. OpenAI commits turns using local voice activity detection; Azure streams continuously and commits fixed three-second windows; Deepgram streams continuously and returns interim/final Nova-3 results. When microphone and system audio are both enabled, Volyx Lens holds mic PCM for 250 ms before echo inspection so the native system-audio reference can catch up.
-- **Realtime provider** — choose OpenAI, Azure Foundry, or Deepgram. Azure reuses the response-provider key and endpoint by default, or accepts an optional separate Realtime resource key and endpoint. Deepgram uses its own securely stored key.
-- **Azure deployment** — enter the exact deployment name assigned to your Azure `gpt-realtime-whisper` model.
-- **Deepgram model** — defaults to `nova-3`; keep this unless a tested compatible streaming model is required.
-- **Browser mic processing** — enabled by default and applies Chromium echo cancellation, noise suppression, and automatic gain control. For speaker-bleed diagnosis, replay the same source once enabled and once disabled; restart listening after each change and compare Diagnostics peak correlation/acoustic suppression. Disabling it can increase room noise.
-- **Batch** — uses the configured OpenAI fallback model or Gemini in short chunks.
-- **Language** — leave blank for automatic behavior, or enter a short language hint such as `en`, `fr`, or `de`.
-- **OpenAI/Azure delay** — lower values show text sooner; higher values trade latency for more context. Deepgram uses its explicit streaming endpointing configuration instead.
-- **Microphone / sensitivity / silence** — select the input device and tune local speech boundaries.
-- **Cost warning / session limit** — warn on long sessions and stop automatically at the configured limit.
-
-If a Realtime session cannot connect, Volyx Lens switches to batch transcription for that listening session instead of reconnecting in a loop. The staged implementation and macOS validation checklist are documented in [`docs/voice-upgrade-plan.md`](docs/voice-upgrade-plan.md).
-
-Keys are migrated out of plaintext settings and protected through Electron `safeStorage` (macOS Keychain on macOS). The renderer receives only “present / missing” status, never saved credential values. If secure storage is unavailable, Settings explicitly reports a plaintext fallback. Screen images and response prompts go to the selected response provider. When listening is enabled, microphone/system audio goes separately to the configured OpenAI, Azure, or batch transcription service; resulting text can then be included in prompts sent to the selected response provider. Volyx Lens has no intermediary server.
-
-### Personal context — resume/CV and job description
-
-Settings can import one **Resume / CV** and one **Job Description** in PDF, DOCX, UTF-8 TXT, or Markdown format. Files are limited to 5 MB; PDF extraction is limited to 50 pages, DOCX archives are bounded, and extracted text is capped at 50,000 characters per document. Scanned image-only PDFs are not supported yet.
-
-Volyx Lens stores only the extracted text, original filename, and document status—never the original path or raw file. Extracted text is protected with `safeStorage` / macOS Keychain when available; Settings clearly warns if the operating system only provides a local `0600` plaintext fallback. Documents can be previewed, disabled independently, replaced, or removed without changing the original file.
-
-Enabled personal context is available only to answer-oriented actions: Assist, What should I say?, Follow-up questions, and typed questions. Recap and the dedicated coding solver do not receive it. Volyx Lens sends no personal-context excerpt when the request has no relevant terms or recognizable personal/career intent; otherwise it selects bounded relevant excerpts rather than automatically sending the whole document. Every response that uses it displays the document source and selected provider. Documents, screenshots, transcripts, webpages, and editor content are treated as untrusted reference data: embedded instructions are ignored, unrelated personal information must not be revealed, factual personal claims must be supported by the documents or conversation, and missing experience must be disclosed rather than invented.
-
-### Transcript workspace and diagnostics
-
-While listening, Volyx Lens groups backend transcription chunks into conversational turns with timestamps and separate **You** / **Them** labels. Consecutive chunks from the same channel—including punctuation boundaries, fixed provider commit windows, silence, and breath pauses—update one stable text box. A new box starts only when the channel changes between **You** and **Them**. Partial speech updates the active speaker box as visually distinct “Listening…” text and is replaced by confirmed text rather than exported. To reduce speaker leakage, Volyx Lens conservatively compares substantial opposite-channel segments received within eight seconds; when they are at least 82% similar, it keeps the direct **Them/system-audio** segment and removes the duplicate **You/microphone** segment without discarding other text in that conversation turn. Short acknowledgements, same-channel repetitions, and dissimilar speech are preserved. The workspace can copy an individual turn or the full confirmed transcript, clear it with confirmation, or export it locally as TXT, Markdown, or structured JSON through a native save dialog. Exported files are created with owner-only permissions where the operating system supports them.
-
-The expandable **Diagnostics** panel shows session duration, transcription mode/provider, channel connection count, last latency, response-provider routing, transcript counts, and the last sanitized transcription state. **Copy diagnostics** deliberately excludes API keys, endpoints, raw audio, screenshots, personal-context text, and transcript text.
-
-Answer-oriented actions use a bounded recent excerpt rather than sending an arbitrarily large grouped turn: normal conversation context is capped at approximately 16,000 characters and explicitly marks omitted history. A normal Recap uses up to approximately 48,000 characters. Every response request can be stopped from the composer, is aborted by New Session/relaunch/quit, and has a two-minute hard timeout; canceled requests never start the fallback provider. Provider failures are reduced to actionable sanitized messages rather than exposing raw SDK errors. Longer meetings can use sequential bounded part summaries plus a final recap; before that multi-request path runs, Volyx Lens displays the exact request count and requires confirmation because provider charges may apply. Extremely long sessions are capped at 12 evenly sampled parts.
-
-When local **Detect questions** is enabled, Volyx Lens identifies likely questions from Them without contacting an AI provider and displays a dismissible **Draft answer** suggestion. No model request occurs until that button is clicked.
-
-### Step 3 — Capture exclusion in Zoom
-
-Volyx Lens requests best-effort exclusion from many screen-capture tools. **Zoom** has a specific setting that decides whether it respects that request:
-
-> **Zoom → Settings → Share Screen → Advanced → Screen capture mode → choose "Advanced capture with window filtering."**
-
-<div align="center"><img src="docs/zoom-setting.png" width="560" alt="Zoom screen capture mode setting" /></div>
-
-**Why:** the *"...with window filtering"* modes tell Zoom to leave out windows that mark themselves as private — which is exactly what Volyx Lens does. The **"Advanced capture without window filtering"** mode grabs the raw screen and **will show Volyx Lens**, so avoid it.
-
----
-
-## How to use it
-
-- **`⌘` `↵` — Assist.** The do-the-smart-thing key. On a coding problem it solves it; in a conversation it tells you what to say. Works from anywhere.
-- **`⌘` `H` — Solve what's on screen.** Screenshots a coding problem and returns the approach, code, and time/space complexity.
-- **Start Listening / Stop Listening** (top bar) — controls meeting transcription. The mint dot means it's live. Sleep, screen lock, shutdown, and the configured session limit stop capture through the main process; wake/unlock never restart it automatically.
-- **Transcript workspace** — review timestamped You/Them turns, copy or clear the session, export TXT/Markdown/JSON, and open sanitized diagnostics.
-- **New Session** (top bar), or type **`/new`** — clears the previous conversation context so Assist and Recap cannot mix unrelated meetings. If listening is active, capture continues in a fresh transcription session.
-- **Type a question** in the box and press `↵` to ask about your screen or conversation.
-- **Personal context** — import a resume/CV and optional job description in Settings. Enable only the documents you want used; Volyx Lens labels every answer that sends relevant excerpts to the selected provider.
-- **Smart** — flip it on for a smarter, more thorough model; off for fast and cheap.
-- **Hide** collapses the panel to just the top bar. Drag Volyx Lens around by the **top pill**.
-- **Red power button** — immediately stops capture, clears in-memory session audio/transcript data, and quits Volyx Lens. The keyboard shortcut is `⌘` `⇧` `X`.
-
-Settings reports whether each global shortcut registered successfully. If macOS or another application owns one, Volyx Lens marks it unavailable without claiming which application caused the conflict, provides the equivalent Assist, Solve, Add screen, or Quit button, and can retry unavailable registrations without disturbing shortcuts that are already working.
-
-The panel is see-through and click-through — the empty space around it never blocks the app behind it.
-
----
-
-## How it works (under the hood)
-
-Volyx Lens is an [Electron](https://www.electronjs.org/) app. Everything runs locally except the calls to your chosen AI provider.
-
-**The three inputs are kept completely separate:**
-- **Screen** — captured with Electron's `desktopCapturer` (full-resolution screenshots, taken only when a feature needs one).
-- **Your mic ("You")** — `getUserMedia` → measured device sample rate → deterministic 24 kHz mono PCM resampling → transcribed.
-- **Meeting audio ("Them")** — a main-process ScreenCaptureKit helper captures macOS system audio and emits bounded 24 kHz mono PCM, kept on its own channel so Volyx Lens knows *who* said what. The helper is bundled in release builds and compiled locally before source startup.
-
-With Realtime enabled, each enabled audio channel gets its own session with the selected transcription provider. OpenAI and Azure use `gpt-realtime-whisper`; Deepgram uses Nova-3 streaming. Azure uses the GA resource route `wss://<resource-host>/openai/v1/realtime?intent=transcription`, authenticates with the `api-key` header, streams continuously, and commits fixed three-second windows. OpenAI uses bounded local voice activity detection to commit turns after silence. Disable Mic or System in Settings when that source is not needed to avoid opening an unnecessary billable session. Partial transcripts stream into the active speaker box; confirmed chunks are grouped into conversational You/Them turns.
-
-Optional offline batch transcription can run an externally installed `whisper-cli` before any cloud batch provider. It is disabled by default and requires absolute `VOLYX_LENS_WHISPER_CLI` and `VOLYX_LENS_WHISPER_MODEL` environment paths at launch. The executable is never selected by the renderer; Volyx Lens launches it without a shell, with a minimal environment, bounded output/time, private temporary audio files, serialized jobs, and lifecycle cancellation. **Cloud fallback is separately disabled by default in offline mode**, so local failure cannot silently upload audio. Enabling Cloud fallback explicitly allows local → OpenAI → Gemini batch ordering. Volyx Lens does not download, bundle, sign, or prove the network behavior of third-party Whisper binaries/models.
-
-Azure prices `gpt-realtime-whisper` hourly. Because Volyx Lens keeps **You** and **Them** isolated in separate WebSocket sessions, Azure can count them as two concurrent billable sessions. Verify the current rate and quota in your Azure resource before long sessions.
-
-**Capture exclusion** is primarily a macOS window flag: `setContentProtection(true)`, which sets `NSWindowSharingNone`. This asks the window server to exclude Volyx Lens from screen-capture streams. The packaged app also uses `LSUIElement`, hides its Dock icon, adopts accessory activation policy, stays out of Mission Control, and gives the overlay a neutral window-list title. These reduce accidental visibility in ordinary UI surfaces; they do **not** hide the signed bundle, process, permissions entry, or helper processes from system inspection. On macOS 15.4+ Apple lets some capture tools ignore content protection, so exclusion remains best-effort (see the disclaimer at the top).
-
-```text
-main process ──┬─ overlay window (frameless, transparent, always-on-top, content-protected)
-               ├─ screenshot capture (desktopCapturer)
-               ├─ speech-to-text (Realtime Whisper / batch fallback) ── "You" + "Them"
-               └─ LLM streaming (OpenAI / Anthropic / Gemini / Azure Foundry / DeepSeek)
-renderer ──────┴─ the glass UI + mic capture + system-audio loopback
+npm test
+npm run check:syntax
+npm run security:secrets
+npm audit --audit-level=low
+npm run release:check
 ```
 
----
+Create an unpacked local app:
 
-## Troubleshooting
+```bash
+npm run pack
+```
 
-**"It says give access, but I already gave access."**
-You probably granted an older build. Because the app is ad-hoc signed, a rebuild changes its identity and macOS stops honoring the old grant (the checkmark can linger). Toggle Volyx Lens **off and on** in System Settings → Screen Recording, or remove and re-add it.
+Local builds are unsigned unless a valid signing identity is installed. Rebuilding can reset macOS permission grants.
 
-**A feature returns "403" / "no access to model."**
-Your API key is restricted. Most often it's an OpenAI **project key that only allows chat models** — it works for screen/coding help but 403s on transcription (Whisper). Fix: enable audio/Whisper on the key, use an unrestricted key, or add a Gemini key (Volyx Lens falls back to it for transcription).
+## Release integrity
 
-**Listening does nothing / no transcript.**
-Check Settings has the correct Realtime provider. For Azure, verify the Azure key, official resource endpoint, and exact `gpt-realtime-whisper` deployment name. Leave Language blank for automatic detection; `auto` and `automatic` are normalized to a blank hint. Stop Listening, then click **Test Live Mic**: Volyx Lens records five seconds, resamples the measured device rate to 24 kHz, sends one temporary mic stream, requires an actual transcript, and reports endpoint host, deployment, audio duration/bytes, commit count, and source/target rates without exposing credentials. The audio is discarded immediately. **Test Connection** remains a faster no-audio handshake check, but it does not prove that audio transcription works. Provider session billing may apply. Transcription-setting changes apply on the next listening session. Stop and restart listening. For a terminal-based no-audio diagnostic using the same saved settings, run `npm run test:azure-realtime`; it never prints the key and closes immediately after Azure accepts or rejects the transcription session. If the provider still fails, launch the packaged binary from Terminal and inspect the sanitized `[stt:realtime] error` line.
+The ad-hoc test workflow builds Apple Silicon and Intel artifacts on native GitHub-hosted macOS runners. Before uploading artifacts, it runs tests, syntax and secret checks, release-readiness checks, native-helper self-tests, ad-hoc signature verification, executable architecture checks, renderer smoke tests, DMG verification/mounting, and SHA-256 generation.
 
-To test Azure safely without streaming microphone audio, stop listening, close Volyx Lens, and run `npm run test:azure-realtime`. The probe reads Volyx Lens's local settings, opens one short Azure transcription session, reports a sanitized handshake/session result, and closes. It never prints the API key, but the short session can still be billable.
-
-**Volyx Lens shows up in my Zoom share.**
-Set Zoom's **Screen capture mode** to *"Advanced capture with window filtering"* (see Step 3). And remember: on macOS 15.4+ this can still fail — it's best-effort.
-
-**"Volyx Lens is damaged and can't be opened."**
-Do not bypass Gatekeeper for an unverified download. Delete the copy, download the signed release archive again from this repository, and verify its checksum. If no signed release exists yet, use the documented source-build path instead.
-
----
-
-## Privacy
-
-- No accounts, no servers, no telemetry. Volyx Lens collects nothing.
-- API keys are protected with Electron `safeStorage` (macOS Keychain on macOS); `volyx-lens-data.json` stores encrypted blobs rather than renderer-readable values. Settings warns when only a plaintext fallback is available.
-- Resume/job-description imports persist only bounded extracted text plus the original filename, never the original path or raw file. `personal-context.json` is encrypted with safeStorage when available and mode `0600`; Settings warns before use when only plaintext fallback storage is available.
-- Enabled personal documents are not uploaded at import time. Relevant bounded excerpts are sent to the selected response provider only when an answer-oriented action runs, and the UI identifies the source and destination provider.
-- Screenshots and response prompts go to the selected LLM provider only when a feature runs.
-- When listening is active, microphone/system audio goes to the selected transcription service: Azure Realtime, OpenAI Realtime/Audio, Deepgram Realtime, or Gemini batch transcription. When optional offline mode is enabled, audio stays local unless **Cloud fallback** is separately enabled. The resulting transcript may then be sent to the selected response provider only when an answer action runs; question detection itself is local.
-- Audio and screenshots are not persisted by Volyx Lens; the current transcript remains in memory until the session ends or the kill switch clears it.
-
-## Security and releases
-
-- Renderer processes run with Chromium sandboxing, context isolation, no Node integration, a restrictive CSP, denied popup/navigation requests, and bounded IPC payloads.
-- Packaged application code is stored in ASAR and macOS builds enable Hardened Runtime with the minimum Electron/audio entitlements in `build/entitlements.mac.plist`.
-- CI runs tests, both Electron UI harnesses, syntax checks, a repository secret scan, a low-severity dependency audit, package builds, and a deterministic packaged-renderer readiness check.
-- `npm audit` should report zero known vulnerabilities before release.
-
-Local packaging can be verified with `npm test && npm run check:syntax && npm run security:secrets && npm run release:check && npm run pack`. A publicly distributed macOS build still requires credentials that are not stored in this repository: a Developer ID Application certificate (`CSC_LINK` / `CSC_KEY_PASSWORD`) plus Apple notarization credentials (`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`, or `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`). `npm run release:mac` fails closed when these variables are absent, always passes `--publish never`, and does not create an update-enabled official release. Pushing a version tag such as `v0.3.0` starts the GitHub release workflow: it builds Intel and Apple Silicon DMG installers plus ZIP update archives, verifies renderer readiness, signature, notarization staple, Gatekeeper assessment, DMG integrity, architecture, and architecture-specific updater metadata against the exact ZIP version, size, and SHA-512 digest, then generates portable SHA-256 files, CycloneDX SBOMs, and separate provenance/SBOM attestations before publishing the GitHub Release. The workflow references the `macos-release` environment, but required reviewers and deployment restrictions must be configured in the repository’s GitHub Environment settings before any version tag is pushed.
+A trusted production release is a separate path. It fails closed unless Developer ID signing and Apple notarization credentials are available, and verifies signatures, notarization staples, Gatekeeper assessment, architecture-specific updater metadata, checksums, SBOMs, and build attestations before publication.
 
 ## License
 
 Copyright © 2026 Joshua Nwachinemere.
 
-Volyx Lens is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Personal and other noncommercial use is permitted under its terms. Commercial use, resale, paid redistribution, and use in a commercial product or service require a separate licence from VolyxAI.
+Volyx Lens is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Personal and other noncommercial use is permitted under its terms. Commercial use, resale, paid redistribution, or use in a commercial product or service requires a separate licence from VolyxAI.
 
 Commercial licensing: joshua@volyxai.com
 
 ## Contributing
 
-Issues and PRs welcome. Volyx Lens is intentionally small and readable — `main.js` (app + capture + AI), `renderer/` (the UI), `src/` (providers). No build step for the source (plain HTML/CSS/JS).
+Issues and pull requests are welcome. Keep changes focused, preserve the privacy boundaries above, and include tests for behavior changes.

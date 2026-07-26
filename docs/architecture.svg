@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">Volyx Lens privacy-first architecture</title>
+  <desc id="desc">Screen, microphone, and macOS system audio enter separate local pipelines. The Electron main process applies permissions, bounded context, redaction, and provider routing before explicit requests reach selected AI or transcription providers.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080b18"/>
+      <stop offset="0.55" stop-color="#0d1228"/>
+      <stop offset="1" stop-color="#090d1c"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6674ff"/>
+      <stop offset="1" stop-color="#8a5cff"/>
+    </linearGradient>
+    <linearGradient id="local" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#43d7c7"/>
+      <stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity=".32"/>
+    </filter>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="18" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#7b89d8" stroke-opacity=".065"/>
+    </pattern>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0l10 5-10 5z" fill="#6c7dff"/>
+    </marker>
+    <marker id="arrowMint" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0l10 5-10 5z" fill="#49d6c8"/>
+    </marker>
+    <style>
+      .title{font:700 30px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#f4f6ff;letter-spacing:-.5px}
+      .subtitle{font:400 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#9da8c7}
+      .kicker{font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#6ee7d8;letter-spacing:1.8px}
+      .card-title{font:700 17px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#f5f7ff}
+      .card-copy{font:400 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#aab3cf}
+      .tiny{font:600 11px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#bcc4df}
+      .pill{font:700 10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.5px}
+    </style>
+  </defs>
+
+  <rect width="1200" height="700" rx="28" fill="url(#bg)"/>
+  <rect width="1200" height="700" rx="28" fill="url(#grid)"/>
+  <circle cx="600" cy="360" r="235" fill="#5b68ff" opacity=".05"/>
+  <circle cx="600" cy="360" r="145" fill="#7c5cff" opacity=".07" filter="url(#glow)"/>
+
+  <text x="60" y="62" class="kicker">PRIVACY-FIRST REQUEST FLOW</text>
+  <text x="60" y="101" class="title">Your context stays local until you ask.</text>
+  <text x="60" y="130" class="subtitle">Separate capture pipelines · bounded in-memory context · explicit provider routing</text>
+
+  <!-- arrows, intentionally behind cards -->
+  <g fill="none" stroke-linecap="round" stroke-width="2.5">
+    <path d="M282 236 C360 236 365 300 444 300" stroke="#49d6c8" marker-end="url(#arrowMint)"/>
+    <path d="M282 355 C360 355 370 350 444 350" stroke="#49d6c8" marker-end="url(#arrowMint)"/>
+    <path d="M282 474 C360 474 365 400 444 400" stroke="#49d6c8" marker-end="url(#arrowMint)"/>
+    <path d="M756 330 C825 330 830 243 902 243" stroke="#6c7dff" marker-end="url(#arrowBlue)"/>
+    <path d="M756 372 C825 372 830 443 902 443" stroke="#6c7dff" marker-end="url(#arrowBlue)"/>
+  </g>
+
+  <!-- inputs -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="184" width="222" height="104" rx="18" fill="#10172d" stroke="#263457"/>
+    <rect x="60" y="303" width="222" height="104" rx="18" fill="#10172d" stroke="#263457"/>
+    <rect x="60" y="422" width="222" height="104" rx="18" fill="#10172d" stroke="#263457"/>
+  </g>
+  <g>
+    <rect x="78" y="204" width="39" height="39" rx="11" fill="#182647" stroke="#345079"/>
+    <path d="M87 224h21m-17-8h13v16H91z" fill="none" stroke="#67e8d4" stroke-width="2" stroke-linejoin="round"/>
+    <text x="132" y="220" class="card-title">Screen</text>
+    <text x="132" y="243" class="card-copy">On-demand screenshots</text>
+    <text x="78" y="270" class="tiny">desktopCapturer · local OCR</text>
+
+    <rect x="78" y="323" width="39" height="39" rx="11" fill="#182647" stroke="#345079"/>
+    <path d="M98 332v12a6 6 0 01-12 0v-12m3 0a3 3 0 016 0v12a3 3 0 01-6 0zm-2 22h10m-5-5v5" fill="none" stroke="#67e8d4" stroke-width="2" stroke-linecap="round"/>
+    <text x="132" y="339" class="card-title">Microphone</text>
+    <text x="132" y="362" class="card-copy">Your voice · “You”</text>
+    <text x="78" y="389" class="tiny">24 kHz PCM · isolated channel</text>
+
+    <rect x="78" y="442" width="39" height="39" rx="11" fill="#182647" stroke="#345079"/>
+    <path d="M86 458h5l6-6v20l-6-6h-5zm15 2c3 2 3 6 0 8m4-12c6 5 6 11 0 16" fill="none" stroke="#67e8d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="132" y="458" class="card-title">System audio</text>
+    <text x="132" y="481" class="card-copy">Meeting audio · “Them”</text>
+    <text x="78" y="508" class="tiny">ScreenCaptureKit helper</text>
+  </g>
+
+  <!-- core -->
+  <g filter="url(#shadow)">
+    <rect x="444" y="203" width="312" height="326" rx="25" fill="#11172d" stroke="#5969d9" stroke-width="1.5"/>
+    <rect x="444" y="203" width="312" height="62" rx="25" fill="url(#core)"/>
+    <rect x="444" y="240" width="312" height="25" fill="url(#core)"/>
+  </g>
+  <text x="474" y="241" class="card-title">Volyx Lens · Electron main process</text>
+  <g>
+    <rect x="472" y="290" width="256" height="48" rx="13" fill="#171f3a" stroke="#303d66"/>
+    <circle cx="493" cy="314" r="6" fill="#55dbc9"/>
+    <text x="510" y="310" class="tiny">Permission &amp; lifecycle controls</text>
+    <text x="510" y="326" class="card-copy">capture stops on quit, lock, sleep</text>
+
+    <rect x="472" y="350" width="256" height="48" rx="13" fill="#171f3a" stroke="#303d66"/>
+    <circle cx="493" cy="374" r="6" fill="#55dbc9"/>
+    <text x="510" y="370" class="tiny">Bounded session context</text>
+    <text x="510" y="386" class="card-copy">memory budgets · local ranking</text>
+
+    <rect x="472" y="410" width="256" height="48" rx="13" fill="#171f3a" stroke="#303d66"/>
+    <circle cx="493" cy="434" r="6" fill="#7c8aff"/>
+    <text x="510" y="430" class="tiny">Explicit request boundary</text>
+    <text x="510" y="446" class="card-copy">nothing sent until an action runs</text>
+
+    <rect x="472" y="470" width="256" height="36" rx="12" fill="#151b32" stroke="#303d66"/>
+    <text x="600" y="493" text-anchor="middle" class="tiny">safeStorage / macOS Keychain</text>
+  </g>
+
+  <!-- external providers -->
+  <g filter="url(#shadow)">
+    <rect x="902" y="184" width="238" height="118" rx="18" fill="#12172d" stroke="#3b4782"/>
+    <rect x="902" y="384" width="238" height="118" rx="18" fill="#12172d" stroke="#3b4782"/>
+  </g>
+  <g>
+    <rect x="920" y="201" width="80" height="22" rx="11" fill="#27306b"/>
+    <text x="960" y="216" text-anchor="middle" class="pill" fill="#dce1ff">EXPLICIT</text>
+    <text x="920" y="250" class="card-title">Response provider</text>
+    <text x="920" y="273" class="card-copy">OpenAI · Anthropic · Gemini</text>
+    <text x="920" y="290" class="card-copy">Azure Foundry · DeepSeek</text>
+
+    <rect x="920" y="401" width="80" height="22" rx="11" fill="#173e42"/>
+    <text x="960" y="416" text-anchor="middle" class="pill" fill="#9af0e2">LISTENING</text>
+    <text x="920" y="450" class="card-title">Transcription provider</text>
+    <text x="920" y="473" class="card-copy">OpenAI · Azure · Deepgram</text>
+    <text x="920" y="490" class="card-copy">or optional local Whisper</text>
+  </g>
+
+  <!-- footer labels -->
+  <line x1="60" y1="584" x2="1140" y2="584" stroke="#26314f"/>
+  <g>
+    <rect x="60" y="610" width="238" height="42" rx="13" fill="#0e1930" stroke="#21485d"/>
+    <circle cx="82" cy="631" r="5" fill="#55dbc9"/>
+    <text x="96" y="635" class="tiny">LOCAL · capture, context, credentials</text>
+
+    <rect x="326" y="610" width="251" height="42" rx="13" fill="#161831" stroke="#343b72"/>
+    <circle cx="348" cy="631" r="5" fill="#7c8aff"/>
+    <text x="362" y="635" class="tiny">REMOTE · only selected providers</text>
+
+    <text x="1140" y="627" text-anchor="end" class="card-copy">No VolyxAI account · no intermediary server · no telemetry</text>
+    <text x="1140" y="648" text-anchor="end" class="card-copy">Provider charges and policies still apply</text>
+  </g>
+</svg>
