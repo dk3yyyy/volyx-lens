@@ -8,8 +8,12 @@ function cleanText(value) {
 }
 
 function createChatHistory({ maxTurns = DEFAULT_MAX_TURNS, maxCharacters = DEFAULT_MAX_CHARACTERS } = {}) {
-  const historyTurnLimit = Math.max(0, Math.floor((Math.max(1, maxTurns) - 1) / 2) * 2);
-  const characterLimit = Math.max(1, Number(maxCharacters) || DEFAULT_MAX_CHARACTERS);
+  const parsedMaxTurns = Number(maxTurns);
+  const finiteMaxTurns = Number.isFinite(parsedMaxTurns) ? parsedMaxTurns : DEFAULT_MAX_TURNS;
+  const parsedMaxCharacters = Number(maxCharacters);
+  const finiteMaxCharacters = Number.isFinite(parsedMaxCharacters) ? parsedMaxCharacters : DEFAULT_MAX_CHARACTERS;
+  const historyTurnLimit = Math.max(0, Math.floor((Math.max(1, finiteMaxTurns) - 1) / 2) * 2);
+  const characterLimit = Math.max(1, finiteMaxCharacters);
   const exchanges = [];
 
   function prune() {

@@ -33,3 +33,15 @@ test('chat history ignores incomplete or empty exchanges', () => {
   history.addExchange('', 'answer');
   assert.deepEqual(history.turnsFor('current'), [{ role: 'user', text: 'current' }]);
 });
+
+test('chat history falls back to finite defaults for non-finite limits', () => {
+  const turnBounded = createChatHistory({ maxTurns: Number.NaN });
+  for (let index = 1; index <= 5; index += 1) {
+    turnBounded.addExchange(`question ${index}`, `answer ${index}`);
+  }
+  assert.equal(turnBounded.size(), 3);
+
+  const characterBounded = createChatHistory({ maxTurns: 20, maxCharacters: Number.POSITIVE_INFINITY });
+  characterBounded.addExchange('q'.repeat(7000), 'a'.repeat(7000));
+  assert.equal(characterBounded.size(), 0);
+});

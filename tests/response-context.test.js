@@ -6,6 +6,8 @@ test('typed chat does not attach a screen unless the user explicitly references 
   assert.equal(shouldAttachScreen({ mode: 'ask', userText: 'Rewrite this sentence' }), false);
   assert.equal(shouldAttachScreen({ mode: 'ask', userText: 'Explain image embeddings' }), false);
   assert.equal(shouldAttachScreen({ mode: 'ask', userText: 'How does virtual memory page replacement work?' }), false);
+  assert.equal(shouldAttachScreen({ mode: 'ask', userText: 'Explain this code' }), false);
+  assert.equal(shouldAttachScreen({ mode: 'ask', userText: 'Fix the current error' }), false);
   assert.equal(shouldAttachScreen({ mode: 'ask', userText: 'screen: explain this error' }), true);
   assert.equal(shouldAttachScreen({ mode: 'ask', userText: 'What is visible on this page?' }), true);
 });

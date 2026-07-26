@@ -18,7 +18,7 @@ test('all model requests receive an explicit uncertainty and no-guessing rule', 
 test('main process uses bounded chat history for typed follow-ups and clears it with the session', () => {
   assert.match(main, /createChatHistory/);
   assert.match(main, /chatHistory\.turnsFor\(built\)/);
-  assert.match(main, /chatHistory\.addExchange/);
+  assert.match(main, /if \(mode === 'ask'\) chatHistory\.addExchange/);
   assert.match(main, /resetTranscriptData\(\);\n\s*chatHistory\.clear\(\);/);
   assert.match(main, /handleTrusted\('transcript:clear'[\s\S]*?resetTranscriptData\(\);\n\s*chatHistory\.clear\(\);/);
 });
