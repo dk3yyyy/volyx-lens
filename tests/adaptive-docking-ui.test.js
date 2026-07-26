@@ -41,3 +41,9 @@ test('renderer has explicit four-edge layouts and inward panel ordering', () => 
   assert.match(styles, /#app\[data-dock="left"\][\s\S]*#toolbar[\s\S]*flex-direction:\s*column/);
   assert.match(styles, /#app\[data-dock="right"\][\s\S]*#toolbar[\s\S]*flex-direction:\s*column/);
 });
+
+test('toolbar exposes a dedicated drag target that remains draggable beside no-drag controls', () => {
+  assert.match(html, /class="tb-grab"[^>]*aria-hidden="true"/);
+  assert.match(styles, /\.tb-grab\s*\{[^}]*-webkit-app-region:\s*drag[^}]*min-width:\s*14px/);
+  assert.match(styles, /#app\[data-dock="left"\] \.tb-grab[\s\S]*min-height:\s*14px/);
+});

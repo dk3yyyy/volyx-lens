@@ -78,6 +78,17 @@ html, body {
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
+.tb-grab {
+  -webkit-app-region: drag;
+  min-width: 14px;
+  height: 24px;
+  flex: 0 0 14px;
+  cursor: grab;
+  opacity: 0.48;
+  background: radial-gradient(circle, rgba(255,255,255,0.82) 1px, transparent 1.5px) center / 4px 4px;
+  border-radius: 7px;
+}
+.tb-grab:active { cursor: grabbing; opacity: 0.72; }
 
 /* The BrowserWindow snaps to an edge. Keep the rail on that edge and place
    the panel inward, inside the active display's usable work area. */
@@ -95,6 +106,14 @@ html, body {
   width: 20px;
   height: 1px;
   margin: 2px 0;
+}
+#app[data-dock="left"] .tb-grab,
+#app[data-dock="right"] .tb-grab {
+  min-width: 24px;
+  width: 24px;
+  min-height: 14px;
+  height: 14px;
+  flex-basis: 14px;
 }
 #app[data-dock="left"] .tb-hide, #app[data-dock="right"] .tb-hide {
   width: 30px;
@@ -379,9 +398,28 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 #send-btn.busy { opacity: 0.6; pointer-events: none; }
 
 /* ============================ Settings ============================ */
-#settings-scrim { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(3,6,15,0.55); backdrop-filter: blur(14px); }
+#settings-scrim {
+  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
 #settings-scrim.hidden { display: none; }
-#settings { width: min(650px, calc(100vw - 28px)); height: min(540px, calc(100vh - 32px)); overflow: hidden; padding: 0; display: grid; grid-template-rows: 60px minmax(0,1fr); -webkit-app-region: no-drag; }
+body:has(#settings-scrim:not(.hidden)) #app,
+body:has(#onboard-scrim:not(.hidden)) #app {
+  opacity: 0;
+  pointer-events: none;
+}
+#settings {
+  pointer-events: auto;
+  width: min(650px, calc(100vw - 28px)); height: min(540px, calc(100vh - 32px));
+  overflow: hidden; padding: 0; display: grid; grid-template-rows: 60px minmax(0,1fr);
+  -webkit-app-region: no-drag;
+  background: rgba(12, 17, 34, 0.74);
+  border-color: rgba(215,222,255,0.22);
+  box-shadow: 0 24px 70px rgba(0,0,0,0.44), inset 0 1px 0 rgba(255,255,255,0.12);
+}
 .s-head { display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
 .s-title { font-size: 16px; font-weight: 650; color: var(--tx-1); letter-spacing: -0.01em; }
 .s-close { min-height: 34px; border: 1px solid rgba(255,255,255,0.16); background: linear-gradient(180deg, #5668E4, #4556CF); box-shadow: 0 7px 18px rgba(50,63,166,0.28), inset 0 1px 0 rgba(255,255,255,0.20); color: #fff; font-weight: 650; font-size: 12px; padding: 7px 15px; border-radius: var(--r-control); cursor: pointer; }
@@ -514,12 +552,14 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   display: grid;
   place-items: center;
   padding: 18px;
-  background: rgba(3, 6, 15, 0.60);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
-  backdrop-filter: blur(18px) saturate(135%);
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  pointer-events: none;
 }
 #onboard-scrim.hidden { display: none; }
 #onboard {
+  pointer-events: auto;
   width: min(650px, calc(100vw - 28px));
   height: min(520px, calc(100vh - 32px));
   min-height: min(480px, calc(100vh - 32px));
@@ -529,9 +569,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   overflow: hidden;
   text-align: left;
   -webkit-app-region: no-drag;
-  background: rgba(8, 12, 26, 0.93);
-  border-color: rgba(199,206,255,0.18);
-  box-shadow: 0 32px 90px rgba(0,0,0,0.58), 0 1px 0 rgba(255,255,255,0.08) inset;
+  background: rgba(12, 17, 34, 0.76);
+  border-color: rgba(215,222,255,0.22);
+  box-shadow: 0 24px 70px rgba(0,0,0,0.44), 0 1px 0 rgba(255,255,255,0.12) inset;
   animation: overlayIn 260ms cubic-bezier(0.22,1,0.36,1);
 }
 .ob-chrome {

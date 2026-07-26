@@ -1624,8 +1624,18 @@
   let ignoring = null;
   function setIgnore(v) { if (v !== ignoring) { ignoring = v; volyxLens.setIgnoreMouse(v); } }
   document.addEventListener('mousemove', (e) => {
+    const activeSurface = !scrim.classList.contains('hidden')
+      ? $('#settings')
+      : (!obScrim.classList.contains('hidden') ? $('#onboard') : null);
+    if (activeSurface) {
+      const rect = activeSurface.getBoundingClientRect();
+      const overSurface = e.clientX >= rect.left && e.clientX <= rect.right
+        && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      setIgnore(!overSurface);
+      return;
+    }
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim'));
+    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap'));
     setIgnore(!overUI);
   });
   setIgnore(true); // start fully click-through; hovering the panel re-enables it
