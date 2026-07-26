@@ -42,8 +42,16 @@ test('renderer has explicit four-edge layouts and inward panel ordering', () => 
   assert.match(styles, /#app\[data-dock="right"\][\s\S]*#toolbar[\s\S]*flex-direction:\s*column/);
 });
 
-test('toolbar exposes a dedicated drag target that remains draggable beside no-drag controls', () => {
-  assert.match(html, /class="tb-grab"[^>]*aria-hidden="true"/);
-  assert.match(styles, /\.tb-grab\s*\{[^}]*-webkit-app-region:\s*drag[^}]*min-width:\s*14px/);
-  assert.match(styles, /#app\[data-dock="left"\] \.tb-grab[\s\S]*min-height:\s*14px/);
+test('the full toolbar remains the drag target while interactive controls stay no-drag', () => {
+  assert.doesNotMatch(html, /class="tb-grab"/);
+  assert.doesNotMatch(styles, /\.tb-grab/);
+  assert.match(styles, /#toolbar\s*\{\s*-webkit-app-region:\s*drag/);
+  assert.match(styles, /\.no-drag, button, input, textarea\s*\{\s*-webkit-app-region:\s*no-drag/);
+});
+
+test('opening a modal expands a collapsed native window and closing restores it', () => {
+  assert.match(main, /let modalRestoreCollapsed = null/);
+  assert.match(main, /const modalStateWasKnown = rendererModalStateReported[\s\S]*!modalStateWasKnown \|\| !uiModalOpen/);
+  assert.match(main, /modalRestoreCollapsed === null[\s\S]*modalRestoreCollapsed = windowDock\.collapsed[\s\S]*applyDockBounds\(\{ collapsed: false, anchor \}\)/);
+  assert.match(main, /onTrusted\('ui:modal-state',[\s\S]*modalRestoreCollapsed === true[\s\S]*applyDockBounds\(\{ collapsed: true, anchor \}\)/);
 });
