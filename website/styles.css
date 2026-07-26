@@ -254,8 +254,8 @@ h3 { font-size: clamp(1.35rem, 2vw, 1.8rem); letter-spacing: -0.035em; }
 .centered-heading { max-width: 760px; margin-inline: auto; text-align: center; }
 .centered-heading > p:last-child { color: var(--ink-soft); font-size: 1.05rem; }
 .proof { padding-block: 130px; }
-.product-frame { margin: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: linear-gradient(145deg, rgba(141,124,255,.13), rgba(91,133,255,.03)); box-shadow: 0 36px 100px rgba(0,0,0,.32); }
-.product-frame img { width: 100%; border-radius: 15px; background: #101426; }
+.product-frame { width: min(100%, 736px); margin-inline: auto; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: linear-gradient(145deg, rgba(141,124,255,.13), rgba(91,133,255,.03)); box-shadow: 0 36px 100px rgba(0,0,0,.32); }
+.product-frame img { display: block; width: 100%; height: auto; border-radius: 15px; background: #101426; }
 .product-frame figcaption { display: flex; justify-content: space-between; gap: 20px; padding: 16px 5px 0; color: var(--ink-faint); font-size: .78rem; }
 .product-frame figcaption span:first-child { color: var(--cyan); }
 
