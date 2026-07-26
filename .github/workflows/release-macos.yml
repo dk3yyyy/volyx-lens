@@ -65,7 +65,7 @@ jobs:
           node scripts/check-macos-release.js --require-credentials
           npm pkg set "build.publish[0].channel=latest-${{ matrix.arch }}"
           npm pkg set "build.extraMetadata.volyxReleaseBuild=true" --json
-          npx electron-builder --mac zip --${{ matrix.arch }} --publish never
+          npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -78,28 +78,47 @@ jobs:
       - name: Verify signature, notarization, and architecture
         run: |
           ZIP_PATH="$(find dist -maxdepth 1 -type f -name "*-${{ matrix.arch }}.zip" -print -quit)"
+          DMG_PATH="$(find dist -maxdepth 1 -type f -name "*-${{ matrix.arch }}.dmg" -print -quit)"
           test -n "$ZIP_PATH"
+          test -n "$DMG_PATH"
+          hdiutil verify "$DMG_PATH"
           VERIFY_DIR="$(mktemp -d)"
-          ditto -x -k "$ZIP_PATH" "$VERIFY_DIR"
-          APP_PATH="$(find "$VERIFY_DIR" -type d -name 'Volyx Lens.app' -print -quit)"
-          test -n "$APP_PATH"
-          python3 - "$APP_PATH/Contents/MacOS/Volyx Lens" <<'PY'
+          MOUNT_DIR="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$MOUNT_DIR" -quiet || true
+            rm -rf "$VERIFY_DIR" "$MOUNT_DIR"
+          }
+          trap cleanup EXIT
+          validate_app() {
+            local app_path="$1"
+            test -d "$app_path"
+            python3 - "$app_path/Contents/MacOS/Volyx Lens" <<'PY'
           import subprocess, sys
           result = subprocess.run([sys.argv[1], '--smoke-test'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
           print(result.stdout)
           if result.returncode != 0 or 'VOLYX_LENS_RENDERER_READY' not in result.stdout:
               raise SystemExit('Signed application did not report renderer readiness.')
           PY
-          test "$(defaults read "$APP_PATH/Contents/Info" CFBundleIdentifier)" = "ai.volyx.lens"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -q "Authority=Developer ID Application"
-          xcrun stapler validate "$APP_PATH"
-          spctl --assess --verbose --type exec "$APP_PATH"
-          file "$APP_PATH/Contents/MacOS/Volyx Lens" | grep -q "${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}"
+            test "$(defaults read "$app_path/Contents/Info" CFBundleIdentifier)" = "ai.volyx.lens"
+            codesign --verify --deep --strict --verbose=2 "$app_path"
+            codesign -dv --verbose=4 "$app_path" 2>&1 | grep -q "Authority=Developer ID Application"
+            xcrun stapler validate "$app_path"
+            spctl --assess --verbose --type exec "$app_path"
+            file "$app_path/Contents/MacOS/Volyx Lens" | grep -q "${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}"
+          }
+          ditto -x -k "$ZIP_PATH" "$VERIFY_DIR"
+          APP_PATH="$(find "$VERIFY_DIR" -type d -name 'Volyx Lens.app' -print -quit)"
+          test -n "$APP_PATH"
+          validate_app "$APP_PATH"
+          hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$DMG_PATH"
+          DMG_APP_PATH="$MOUNT_DIR/Volyx Lens.app"
+          validate_app "$DMG_APP_PATH"
       - name: Generate checksum and SBOM
         run: |
           ZIP_PATH="$(find dist -maxdepth 1 -type f -name "*-${{ matrix.arch }}.zip" -print -quit)"
+          DMG_PATH="$(find dist -maxdepth 1 -type f -name "*-${{ matrix.arch }}.dmg" -print -quit)"
           ZIP_NAME="$(basename "$ZIP_PATH")"
+          DMG_NAME="$(basename "$DMG_PATH")"
           APP_ASAR="$(find dist -path '*/Volyx Lens.app/Contents/Resources/app.asar' -print -quit)"
           test -n "$APP_ASAR"
           node -e "const asar=require('@electron/asar'); const pkg=JSON.parse(asar.extractFile(process.argv[1], 'package.json')); if (pkg.volyxReleaseBuild !== true) throw new Error('Missing official release-build marker');" "$APP_ASAR"
@@ -108,11 +127,14 @@ jobs:
           VERSION="$(node -p "require('./package.json').version")"
           node scripts/validate-update-metadata.js "$METADATA_PATH" "$ZIP_PATH" "$VERSION" "${{ matrix.arch }}"
           (cd dist && shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256")
+          (cd dist && shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256")
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-${{ matrix.arch }}.cdx.json"
       - name: Attest build provenance
         uses: actions/attest@v4
         with:
-          subject-path: dist/*-${{ matrix.arch }}.zip
+          subject-path: |
+            dist/*-${{ matrix.arch }}.zip
+            dist/*-${{ matrix.arch }}.dmg
       - name: Attest signed archive SBOM
         uses: actions/attest@v4
         with:
@@ -124,6 +146,8 @@ jobs:
           path: |
             dist/*-${{ matrix.arch }}.zip
             dist/*-${{ matrix.arch }}.zip.sha256
+            dist/*-${{ matrix.arch }}.dmg
+            dist/*-${{ matrix.arch }}.dmg.sha256
             dist/latest-${{ matrix.arch }}-mac.yml
             dist/volyx-lens-${{ matrix.arch }}.cdx.json
           if-no-files-found: error

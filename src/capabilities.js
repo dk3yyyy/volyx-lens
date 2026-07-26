@@ -2,10 +2,10 @@ function planScreenInput({ mode, needsScreen, supportsVision, providerLabel = 'T
   if (!needsScreen) return { capture: false, error: null, notice: null };
   if (supportsVision) return { capture: true, error: null, notice: null };
 
-  if (mode === 'leetcode') {
+  if (mode === 'leetcode' || mode === 'ask') {
     return {
       capture: false,
-      error: `${providerLabel} is text-only. Choose a vision-capable provider to solve what is on screen.`,
+      error: `${providerLabel} is text-only. Choose a vision-capable provider to use screen context for this request.`,
       notice: null,
     };
   }

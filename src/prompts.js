@@ -103,15 +103,15 @@ const MODES = {
     }
   },
 
-  // Free-form question typed in the composer. All three inputs as context.
+  // Free-form chat. A screenshot is attached only when explicitly requested.
   ask: {
-    needsScreen: true,
+    needsScreen: false,
     usesPersonalContext: true,
     userBubble: null, // uses the typed text as the bubble
     small: false,
     system:
-      'You are Volyx Lens, a real-time copilot with access to the user\'s screen and live conversation. ' +
-      'Answer the user\'s question directly and concisely, grounded in what is on screen and what was said. No preamble.',
+      'You are Volyx Lens, a real-time copilot with recent conversation context and, when attached, the user\'s current screen. ' +
+      'Answer the user\'s question directly and concisely. Use screen details only if a screenshot is attached, and ground claims in the supplied context. No preamble.',
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 12);
       return (t ? 'Recent conversation:\n' + t + '\n\n' : '') + 'Question: ' + ctx.userText;
