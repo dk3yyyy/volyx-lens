@@ -132,11 +132,13 @@ test('landing page publishes complete canonical and social metadata with a stric
 
 test('landing page links to existing license and security documents', () => {
   const html = read('index.html');
+  const securityPolicy = fs.readFileSync(path.join(root, 'SECURITY.md'), 'utf8');
 
   assert.doesNotMatch(html, /blob\/main\/LICENSE(?:["#?])/);
   assert.match(html, /blob\/main\/LICENSE\.md/i);
   assert.match(html, /blob\/main\/SECURITY\.md/i);
-  assert.ok(fs.existsSync(path.join(root, 'SECURITY.md')));
+  assert.match(securityPolicy, /security\/advisories\/new/i);
+  assert.doesNotMatch(securityPolicy, /issues\/new/i);
 });
 
 test('reduced motion avoids an unfocusable scroll region and callouts meet contrast styling', () => {

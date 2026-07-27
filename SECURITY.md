@@ -8,7 +8,7 @@ Security fixes target the latest source on `main` and the most recent public tes
 
 Do not publish credentials, personal data, screenshots, transcripts, or exploit details in a public issue.
 
-Open a minimal [security contact issue](https://github.com/dk3yyyy/volyx-lens/issues/new) that asks the repository owner for a private reporting channel. Include only a short, non-sensitive summary until a private channel is established.
+Use GitHub's [private vulnerability reporting form](https://github.com/dk3yyyy/volyx-lens/security/advisories/new). The report is submitted privately as a draft security advisory visible to repository maintainers.
 
 For ordinary, non-sensitive defects, use the public [issue tracker](https://github.com/dk3yyyy/volyx-lens/issues).
 
