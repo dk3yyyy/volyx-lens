@@ -4,17 +4,19 @@
 
 # Volyx Lens
 
-**A private, context-aware macOS assistant for your screen, voice, meetings, and coding workflows.**
+**Private, context-aware assistance for your Mac.**
 
-Bring your own provider. Keep control of what you capture and when it is sent.
+Use your screen, voice, meeting audio, and saved Task Context without routing requests through a VolyxAI server. Bring your own AI provider and choose what leaves your Mac.
 
-[Download for macOS](#download) · [How it works](#how-it-works) · [Privacy](#privacy-and-security) · [Build from source](#build-from-source)
+[**Explore the live site**](https://dk3yyyy.github.io/volyx-lens/) · [Download for macOS](#download) · [Product tour](#product-tour) · [Architecture](#how-it-works) · [Privacy](#privacy-and-security)
 
 <br />
 
-<img src="docs/onboarding-welcome-eye.png" width="700" alt="Volyx Lens welcome screen showing the five-step onboarding experience" />
+<a href="https://dk3yyyy.github.io/volyx-lens/">
+  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing the privacy-first macOS assistant, its separate screen, voice, and meeting-audio inputs, and direct provider routing" />
+</a>
 
-<sub>The current five-step onboarding experience.</sub>
+<sub>Live product site: <a href="https://dk3yyyy.github.io/volyx-lens/">dk3yyyy.github.io/volyx-lens</a></sub>
 
 </div>
 
@@ -42,6 +44,29 @@ Nothing is routed through a VolyxAI server. Provider requests go directly from t
 - **Personal context** — import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls** — clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
 - **Native macOS behavior** — compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
+
+## Product tour
+
+These captures come from the current Electron UI test harness. Provider values shown in Settings are sanitized examples.
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/onboarding-welcome-eye.png">
+        <img src="docs/onboarding-welcome-eye.png" alt="Volyx Lens welcome screen introducing screen, voice, and assistance features" />
+      </a>
+      <br />
+      <sub><strong>Guided onboarding</strong> — five focused steps for permissions, providers, sharing, and readiness.</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/settings-providers.png">
+        <img src="docs/settings-providers.png" alt="Volyx Lens AI provider settings with Azure Foundry selected and OpenAI configured as fallback" />
+      </a>
+      <br />
+      <sub><strong>Provider control</strong> — choose the default and fallback without exposing stored secrets to the renderer.</sub>
+    </td>
+  </tr>
+</table>
 
 ## Download
 
@@ -97,12 +122,6 @@ If access was previously denied, enable Volyx Lens in System Settings, then full
 ### 2. Configure providers
 
 Open Settings with `⌘` `,` or the `…` button. Choose a response provider, enter its key and model/deployment names, then select **Use as default**. An optional fallback provider is used only when it is capable of the request and the default fails before producing answer text.
-
-<div align="center">
-  <img src="docs/settings-providers.png" width="700" alt="Volyx Lens provider settings with Azure Foundry selected as the default response provider" />
-  <br />
-  <sub>Current provider Settings. Visible values are sanitized examples from the UI test harness.</sub>
-</div>
 
 | Provider | Role | Configuration notes |
 |---|---|---|
