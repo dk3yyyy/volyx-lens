@@ -25,9 +25,34 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, /A private assistant for your Mac/i);
   assert.match(html, /ad-hoc signed test build/i);
   assert.match(html, /best-effort/i);
-  assert.match(html, /there is no VolyxAI (?:server|cloud|intermediary)/i);
+  assert.match(html, /there is no Volyx Lens-operated intermediary server/i);
   assert.match(html, /PolyForm Noncommercial 1\.0\.0/i);
   assert.doesNotMatch(html, /customer(s)?|trusted by|SOC\s?2|guaranteed invisible/i);
+});
+
+test('landing page presents the response providers the app actually supports', () => {
+  const html = read('index.html');
+  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek'];
+
+  for (const provider of expectedProviders) {
+    assert.match(html, new RegExp(`>${provider.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}<`, 'i'));
+  }
+  assert.match(html, /Five routes/i);
+  assert.doesNotMatch(html, />Groq<|>OpenRouter<|>Ollama<|Azure OpenAI/i);
+});
+
+test('landing page describes both architectures published by the current test release', () => {
+  const html = read('index.html');
+
+  assert.match(html, /Apple Silicon and Intel/i);
+  assert.doesNotMatch(html, /for Apple Silicon\./i);
+});
+
+test('landing page attributes the independent product to its actual owner', () => {
+  const html = read('index.html');
+
+  assert.match(html, /©\s*<span[^>]*data-year[^>]*>\d{4}<\/span>\s*Joshua Nwachinemere/i);
+  assert.doesNotMatch(html, /VolyxAI/i);
 });
 
 test('landing page preserves the canonical Volyx Lens eye byte for byte', () => {
