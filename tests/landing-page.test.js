@@ -128,6 +128,8 @@ test('landing page publishes complete canonical and social metadata with a stric
   assert.deepEqual(directives['base-uri'], ["'none'"]);
   assert.deepEqual(directives['form-action'], ["'none'"]);
   assert.doesNotMatch(match[1], /(?:\*|https?:|unsafe-inline|unsafe-eval)/i);
+  assert.match(html, /"license":\s*"https:\/\/polyformproject\.org\/licenses\/noncommercial\/1\.0\.0"/);
+  assert.doesNotMatch(html, /polyformproject\.org\/licenses\/noncommercial\/1\.0\.0\//);
 });
 
 test('landing page links to existing license and security documents', () => {
@@ -136,9 +138,11 @@ test('landing page links to existing license and security documents', () => {
 
   assert.doesNotMatch(html, /blob\/main\/LICENSE(?:["#?])/);
   assert.match(html, /blob\/main\/LICENSE\.md/i);
-  assert.match(html, /blob\/main\/SECURITY\.md/i);
+  assert.match(html, /github\.com\/dk3yyyy\/volyx-lens\/security\/policy/i);
+  assert.doesNotMatch(html, /blob\/main\/SECURITY\.md/i);
   assert.match(securityPolicy, /security\/advisories\/new/i);
   assert.doesNotMatch(securityPolicy, /issues\/new/i);
+  assert.ok(securityPolicy.endsWith('\n'));
 });
 
 test('reduced motion avoids an unfocusable scroll region and callouts meet contrast styling', () => {
