@@ -6,12 +6,18 @@
   <meta name="theme-color" content="#0d0b1e">
   <meta name="color-scheme" content="dark">
   <meta name="description" content="Volyx Lens is a privacy-oriented macOS assistant that lets you choose the screen, microphone, and system-audio context sent to your own AI provider.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vdu1mkBtPj4jSI7Qn/t3Za7dntLpf7U6DAMMy5QREGw='; style-src 'self'; img-src 'self'; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta property="og:type" content="website">
+  <meta property="og:url" content="https://dk3yyyy.github.io/volyx-lens/">
   <meta property="og:title" content="Volyx Lens — Choose what your AI sees">
   <meta property="og:description" content="A private assistant for your Mac. You choose the context and the provider.">
-  <meta property="og:image" content="assets/volyx-lens-onboarding.png">
+  <meta property="og:image" content="https://dk3yyyy.github.io/volyx-lens/assets/volyx-lens-onboarding.png">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Volyx Lens — Choose what your AI sees">
+  <meta name="twitter:description" content="A private assistant for your Mac. You choose the context and the provider.">
+  <meta name="twitter:image" content="https://dk3yyyy.github.io/volyx-lens/assets/volyx-lens-onboarding.png">
   <title>Volyx Lens — Choose what your AI sees</title>
+  <link rel="canonical" href="https://dk3yyyy.github.io/volyx-lens/">
   <link rel="icon" href="assets/volyx-lens-logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
   <script src="script.js" defer></script>
@@ -23,7 +29,7 @@
     "applicationCategory": "UtilitiesApplication",
     "operatingSystem": "macOS 13 or later on Apple Silicon and Intel",
     "softwareVersion": "0.3.1",
-    "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+    "license": "https://polyformproject.org/licenses/noncommercial/1.0.0",
     "url": "https://github.com/dk3yyyy/volyx-lens",
     "downloadUrl": "https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1",
     "description": "A privacy-oriented macOS context assistant that sends user-selected screen, microphone, and system-audio context directly to a configured AI provider."
@@ -189,9 +195,10 @@
         <h2 id="privacy-heading">Your context takes the short path.</h2>
         <p>Volyx Lens sends selected context directly from the app to the AI provider you configure. There is no Volyx Lens-operated intermediary server in that request path.</p>
         <ul class="plain-list">
-          <li><span>01</span>Provider credentials stay in the macOS Keychain.</li>
+          <li><span>01</span>Provider credentials use Electron secure storage backed by macOS Keychain when available. Without secure storage, the current app uses a local plaintext credential record.</li>
           <li><span>02</span>The app has no analytics or advertising SDK.</li>
           <li><span>03</span>You can switch providers without changing the workflow.</li>
+          <li><span>04</span>Active transcript and Task Context state stays memory-only and memory-bounded for the current session, then is cleared when the session ends.</li>
         </ul>
         <p class="privacy-caveat">Your chosen AI provider still receives the context you send and applies its own retention and privacy terms. Review those terms before sharing sensitive material.</p>
       </div>
@@ -228,7 +235,7 @@
         <div class="window-chrome" aria-hidden="true"><span></span><span></span><span></span><strong>Volyx Lens / Provider settings</strong></div>
         <img src="assets/volyx-lens-settings.png" width="700" height="573" alt="Volyx Lens settings showing configurable AI providers and local API key fields" loading="lazy">
         <div class="window-callout callout-one"><span>01</span>Choose a provider</div>
-        <div class="window-callout callout-two"><span>02</span>Keep keys in Keychain</div>
+        <div class="window-callout callout-two"><span>02</span>Keychain when available</div>
       </div>
     </section>
 
@@ -243,24 +250,24 @@
         <article class="use-item">
           <div class="use-marker"><span>01</span><i></i></div>
           <div>
-            <h3>Understand what is on screen</h3>
-            <p>Ask about an error, a dense document, a dashboard, or an unfamiliar interface without restating every visible detail.</p>
+            <h3>Work through screen and coding context</h3>
+            <p>Ask about an error, code, a dense document, a dashboard, or an unfamiliar interface without restating every visible detail.</p>
           </div>
           <div class="use-input">Screen <span>→</span> Prompt</div>
         </article>
         <article class="use-item">
           <div class="use-marker"><span>02</span><i></i></div>
           <div>
-            <h3>Think aloud while you work</h3>
-            <p>Talk through a problem while the relevant screen stays attached to the conversation. Useful when typing would break your flow.</p>
+            <h3>Build Task Context across screens</h3>
+            <p>Save multiple selected screens, such as files, visible problems, and test output, in local memory. A later explicit request uses a bounded visual window and discloses omitted screens.</p>
           </div>
-          <div class="use-input">Screen + You <span>→</span> Prompt</div>
+          <div class="use-input">Multiple screens <span>→</span> Prompt</div>
         </article>
         <article class="use-item">
           <div class="use-marker"><span>03</span><i></i></div>
           <div>
             <h3>Keep up with a live conversation</h3>
-            <p>Use microphone and system audio for contextual assistance during a meeting or interview, where permitted and with participant consent.</p>
+            <p>Use separate You/Them transcript channels during a permitted meeting, then explicitly request reply suggestions, follow-up questions, or meeting recaps.</p>
           </div>
           <div class="use-input">You + Them <span>→</span> Prompt</div>
         </article>
@@ -311,7 +318,7 @@
         <div class="responsibility-copy">
           <p>Capture permissions are explicit, but local consent and recording laws still apply. Do not capture private conversations, protected work, exams, or interviews when you lack permission.</p>
           <p>Capture evasion is best-effort only. Do not treat it as guaranteed invisibility or use it to bypass disclosure, supervision, proctoring, or security controls.</p>
-          <p>Source code is available under the <a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE" target="_blank" rel="noreferrer">PolyForm Noncommercial 1.0.0</a> license. Commercial use requires separate permission.</p>
+          <p>Source code is available under the <a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md" target="_blank" rel="noreferrer">PolyForm Noncommercial 1.0.0</a> license. Commercial use requires separate permission.</p>
         </div>
       </div>
     </section>
@@ -328,11 +335,15 @@
         </details>
         <details>
           <summary>Where are API keys stored?<span aria-hidden="true"></span></summary>
-          <p>The app stores provider credentials in the macOS Keychain. The settings screen lets you update or remove them.</p>
+          <p>The app uses Electron secure storage backed by macOS Keychain when available. If secure storage is unavailable, it falls back to a local plaintext credential record. The settings screen reports the storage status and lets you update or remove credentials.</p>
         </details>
         <details>
           <summary>Is the test build notarized?<span aria-hidden="true"></span></summary>
           <p>No. Version 0.3.1 is ad-hoc signed. Follow the repository's first-launch instructions and verify the published checksum before opening it.</p>
+        </details>
+        <details>
+          <summary>What works offline?<span aria-hidden="true"></span></summary>
+          <p>AI responses require an internet connection to your configured provider. Transcription can use optional Local Whisper when you install and configure it; automatic cloud fallback remains off by default.</p>
         </details>
         <details>
           <summary>Can I use it commercially?<span aria-hidden="true"></span></summary>
@@ -350,7 +361,7 @@
     <div class="footer-links">
       <div><span>Product</span><a href="#how-it-works">How it works</a><a href="#privacy">Privacy</a><a href="#release">Test build</a></div>
       <div><span>Project</span><a href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/dk3yyyy/volyx-lens/releases" target="_blank" rel="noreferrer">Releases</a><a href="https://github.com/dk3yyyy/volyx-lens/issues" target="_blank" rel="noreferrer">Issues</a></div>
-      <div><span>Terms</span><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE" target="_blank" rel="noreferrer">License</a><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/SECURITY.md" target="_blank" rel="noreferrer">Security</a></div>
+      <div><span>Terms</span><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md" target="_blank" rel="noreferrer">License</a><a href="https://github.com/dk3yyyy/volyx-lens/security/policy" target="_blank" rel="noreferrer">Security</a><a href="https://github.com/dk3yyyy/volyx-lens/issues/new" target="_blank" rel="noreferrer">Contact / licensing</a></div>
     </div>
     <div class="footer-bottom">
       <span>© <span data-year>2026</span> Joshua Nwachinemere</span>
