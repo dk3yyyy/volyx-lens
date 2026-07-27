@@ -195,7 +195,7 @@
         <h2 id="privacy-heading">Your context takes the short path.</h2>
         <p>Volyx Lens sends selected context directly from the app to the AI provider you configure. There is no Volyx Lens-operated intermediary server in that request path.</p>
         <ul class="plain-list">
-          <li><span>01</span>Provider credentials use secure storage and the macOS Keychain where available.</li>
+          <li><span>01</span>Provider credentials use Electron secure storage backed by macOS Keychain when available. Without secure storage, the current app uses a local plaintext credential record.</li>
           <li><span>02</span>The app has no analytics or advertising SDK.</li>
           <li><span>03</span>You can switch providers without changing the workflow.</li>
           <li><span>04</span>Active transcript and Task Context state stays memory-only and memory-bounded for the current session, then is cleared when the session ends.</li>
@@ -235,7 +235,7 @@
         <div class="window-chrome" aria-hidden="true"><span></span><span></span><span></span><strong>Volyx Lens / Provider settings</strong></div>
         <img src="assets/volyx-lens-settings.png" width="700" height="573" alt="Volyx Lens settings showing configurable AI providers and local API key fields" loading="lazy">
         <div class="window-callout callout-one"><span>01</span>Choose a provider</div>
-        <div class="window-callout callout-two"><span>02</span>Keep keys in Keychain</div>
+        <div class="window-callout callout-two"><span>02</span>Keychain when available</div>
       </div>
     </section>
 
@@ -335,7 +335,7 @@
         </details>
         <details>
           <summary>Where are API keys stored?<span aria-hidden="true"></span></summary>
-          <p>The app stores provider credentials in the macOS Keychain. The settings screen lets you update or remove them.</p>
+          <p>The app uses Electron secure storage backed by macOS Keychain when available. If secure storage is unavailable, it falls back to a local plaintext credential record. The settings screen reports the storage status and lets you update or remove credentials.</p>
         </details>
         <details>
           <summary>Is the test build notarized?<span aria-hidden="true"></span></summary>

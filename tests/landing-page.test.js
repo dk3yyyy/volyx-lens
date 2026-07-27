@@ -81,6 +81,8 @@ test('landing page explains the implemented context, meeting, coding, and offlin
 
   assert.match(html, /Task Context/i);
   assert.match(html, /multiple (?:selected )?screens/i);
+  assert.match(html, /bounded visual window/i);
+  assert.match(html, /discloses omitted screens/i);
   assert.match(html, /memory-bounded/i);
   assert.match(html, /memory-only/i);
   assert.match(html, /cleared when the session ends/i);
@@ -90,6 +92,8 @@ test('landing page explains the implemented context, meeting, coding, and offlin
   assert.match(html, /coding/i);
   assert.match(html, /AI responses require an internet connection/i);
   assert.match(html, /Local Whisper/i);
+  assert.match(html, /cloud fallback remains off by default/i);
+  assert.match(html, /plaintext credential record/i);
   assert.match(html, /Contact \/ licensing/i);
 });
 
@@ -98,12 +102,32 @@ test('landing page publishes complete canonical and social metadata with a stric
   const canonicalUrl = 'https://dk3yyyy.github.io/volyx-lens/';
   const socialImage = `${canonicalUrl}assets/volyx-lens-onboarding.png`;
 
-  assert.match(html, new RegExp(`<link rel="canonical" href="${canonicalUrl}"`));
-  assert.match(html, new RegExp(`<meta property="og:url" content="${canonicalUrl}"`));
-  assert.match(html, new RegExp(`<meta property="og:image" content="${socialImage}"`));
-  assert.match(html, new RegExp(`<meta name="twitter:image" content="${socialImage}"`));
-  assert.match(html, /http-equiv="Content-Security-Policy"/i);
-  assert.doesNotMatch(html, /Content-Security-Policy[^>]+unsafe-inline/i);
+  assert.ok(html.includes(`<link rel="canonical" href="${canonicalUrl}"`));
+  assert.ok(html.includes(`<meta property="og:url" content="${canonicalUrl}"`));
+  assert.ok(html.includes(`<meta property="og:image" content="${socialImage}"`));
+  assert.ok(html.includes(`<meta name="twitter:image" content="${socialImage}"`));
+
+  const match = html.match(/<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i);
+  assert.ok(match, 'expected a Content-Security-Policy meta tag');
+  const directives = Object.fromEntries(match[1].split(';').map((entry) => {
+    const [name, ...sources] = entry.trim().split(/\s+/);
+    return [name, sources];
+  }));
+
+  assert.deepEqual(Object.keys(directives).sort(), [
+    'base-uri', 'connect-src', 'default-src', 'font-src', 'form-action',
+    'img-src', 'object-src', 'script-src', 'style-src',
+  ]);
+  assert.deepEqual(directives['default-src'], ["'self'"]);
+  assert.deepEqual(directives['script-src'], ["'self'", "'sha256-vdu1mkBtPj4jSI7Qn/t3Za7dntLpf7U6DAMMy5QREGw='"]);
+  assert.deepEqual(directives['style-src'], ["'self'"]);
+  assert.deepEqual(directives['img-src'], ["'self'"]);
+  assert.deepEqual(directives['font-src'], ["'self'"]);
+  assert.deepEqual(directives['connect-src'], ["'none'"]);
+  assert.deepEqual(directives['object-src'], ["'none'"]);
+  assert.deepEqual(directives['base-uri'], ["'none'"]);
+  assert.deepEqual(directives['form-action'], ["'none'"]);
+  assert.doesNotMatch(match[1], /(?:\*|https?:|unsafe-inline|unsafe-eval)/i);
 });
 
 test('landing page links to existing license and security documents', () => {
