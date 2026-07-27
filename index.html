@@ -3,281 +3,359 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b0d18">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HdU7E4MDsd+Ej9w0sSZw1rMqr9RwpKKKNJ1359w9JZE='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; upgrade-insecure-requests">
-  <meta name="referrer" content="strict-origin-when-cross-origin">
-  <meta name="description" content="Volyx Lens is a private, context-aware macOS assistant for user-selected screen, voice, meeting, and coding context.">
-  <meta property="og:title" content="Volyx Lens — context, only when you choose">
-  <meta property="og:description" content="A privacy-oriented macOS assistant that routes user-selected context directly to the AI providers you configure.">
+  <meta name="theme-color" content="#0d0b1e">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Volyx Lens is a privacy-oriented macOS assistant that lets you choose the screen, microphone, and system-audio context sent to your own AI provider.">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="assets/onboarding-welcome-eye.png">
+  <meta property="og:title" content="Volyx Lens — Choose what your AI sees">
+  <meta property="og:description" content="A private assistant for your Mac. You choose the context and the provider.">
+  <meta property="og:image" content="assets/volyx-lens-onboarding.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Volyx Lens — context, only when you choose">
-  <meta name="twitter:description" content="A private, context-aware macOS assistant for your screen, voice, meetings, and coding workflows.">
+  <title>Volyx Lens — Choose what your AI sees</title>
   <link rel="icon" href="assets/volyx-lens-logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
-  <title>Volyx Lens — Context, only when you choose</title>
+  <script src="script.js" defer></script>
   <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Volyx Lens",
-      "applicationCategory": "ProductivityApplication",
-      "operatingSystem": "macOS",
-      "softwareVersion": "0.3.1",
-      "description": "A private, context-aware macOS assistant for user-selected screen, voice, meeting, and coding context.",
-      "downloadUrl": "https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1",
-      "codeRepository": "https://github.com/dk3yyyy/volyx-lens",
-      "license": "https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md",
-      "author": { "@type": "Person", "name": "Joshua Nwachinemere" }
-    }
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Volyx Lens",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "macOS 13 or later on Apple Silicon and Intel",
+    "softwareVersion": "0.3.1",
+    "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+    "url": "https://github.com/dk3yyyy/volyx-lens",
+    "downloadUrl": "https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1",
+    "description": "A privacy-oriented macOS context assistant that sends user-selected screen, microphone, and system-audio context directly to a configured AI provider."
+  }
   </script>
-  <script src="site.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
 
+  <div class="release-ribbon" role="status">
+    <span class="release-dot" aria-hidden="true"></span>
+    <span>Public test build <strong>v0.3.1</strong></span>
+    <span class="release-divider" aria-hidden="true"></span>
+    <span>Apple Silicon and Intel</span>
+  </div>
+
   <header class="site-header" data-header>
     <a class="brand" href="#top" aria-label="Volyx Lens home">
-      <img src="assets/volyx-lens-logo.svg" width="38" height="38" alt="">
+      <img src="assets/volyx-lens-logo.svg" width="42" height="42" alt="">
       <span>Volyx Lens</span>
     </a>
-    <button class="menu-button" type="button" aria-expanded="false" aria-controls="site-nav" data-menu-button>
-      <span class="sr-only">Open navigation</span>
-      <span aria-hidden="true"></span><span aria-hidden="true"></span>
+
+    <button class="nav-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Open navigation">
+      <span></span><span></span>
     </button>
-    <nav class="site-nav" id="site-nav" aria-label="Primary" data-menu>
+
+    <nav class="site-nav" id="site-nav" aria-label="Main navigation">
       <a href="#how-it-works">How it works</a>
       <a href="#privacy">Privacy</a>
-      <a href="#workflows">Workflows</a>
-      <a href="#faq">FAQ</a>
-      <a class="nav-cta" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1">Download test build</a>
+      <a href="#use-cases">Use cases</a>
+      <a href="#release">Test build</a>
+      <a class="nav-github" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">
+        GitHub
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg>
+      </a>
     </nav>
   </header>
 
   <main id="main">
     <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-glow" aria-hidden="true"></div>
       <div class="hero-copy">
-        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> macOS · v0.3.1 test release</p>
-        <h1 id="hero-title">Context,<br><em>only when you choose.</em></h1>
-        <p class="hero-lede">Volyx Lens is a private, context-aware assistant for the work already happening on your Mac—across your screen, voice, meetings, and coding workflows.</p>
+        <p class="eyebrow"><span>Private context assistant</span><span>for macOS</span></p>
+        <h1 id="hero-title">Your Mac has the context.<br><em>You choose what AI sees.</em></h1>
+        <p class="hero-lede">Volyx Lens brings your screen, voice, and meeting audio into one compact assistant. Select the inputs you need, choose your AI provider, and keep control of the route.</p>
         <div class="hero-actions">
-          <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1">Download for macOS <span aria-hidden="true">↗</span></a>
-          <a class="button button-secondary" href="#privacy">See the privacy model</a>
+          <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1">
+            <span>Download test build</span>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0 4-4m-4 4L6 9M4 17h12"/></svg>
+          </a>
+          <a class="button button-quiet" href="#how-it-works">See how context moves</a>
         </div>
-        <p class="release-note">Current binaries are ad-hoc signed test builds. They are not notarized by Apple.</p>
+        <p class="hero-note">Free public test release. macOS 13+, Apple Silicon and Intel. Bring your own provider key.</p>
       </div>
 
-      <div class="lens-stage" aria-label="Illustration of user-selected context passing through Volyx Lens">
-        <div class="orbit orbit-one" aria-hidden="true"></div>
-        <div class="orbit orbit-two" aria-hidden="true"></div>
-        <div class="context-chip chip-screen"><span>01</span> Screen</div>
-        <div class="context-chip chip-you"><span>02</span> You</div>
-        <div class="context-chip chip-them"><span>03</span> Them</div>
-        <div class="lens-core">
-          <img src="assets/volyx-lens-logo.svg" width="220" height="220" alt="Volyx Lens eye logo">
-          <p>Selected context</p>
+      <div class="aperture-wrap" aria-label="Interactive context selector">
+        <div class="aperture-card" data-aperture>
+          <div class="aperture-topline">
+            <span>Context aperture</span>
+            <span class="live-status"><i aria-hidden="true"></i> Ready</span>
+          </div>
+
+          <div class="aperture-stage" aria-hidden="true">
+            <div class="orbit orbit-outer"></div>
+            <div class="orbit orbit-middle"></div>
+            <div class="orbit orbit-inner"></div>
+            <div class="beam beam-screen" data-beam="screen"></div>
+            <div class="beam beam-you" data-beam="you"></div>
+            <div class="beam beam-them" data-beam="them"></div>
+            <div class="lens-core">
+              <img src="assets/volyx-lens-logo.svg" width="94" height="94" alt="">
+              <span>Volyx Lens</span>
+            </div>
+            <span class="orbit-label label-screen" data-label="screen">Screen</span>
+            <span class="orbit-label label-you" data-label="you">You</span>
+            <span class="orbit-label label-them" data-label="them">Them</span>
+          </div>
+
+          <div class="context-controls" aria-label="Choose example context inputs">
+            <button type="button" class="context-control is-active" data-context="screen" aria-pressed="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              <span><strong>Screen</strong><small>Selected display</small></span>
+            </button>
+            <button type="button" class="context-control is-active" data-context="you" aria-pressed="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>
+              <span><strong>You</strong><small>Microphone</small></span>
+            </button>
+            <button type="button" class="context-control" data-context="them" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13V9a8 8 0 0 1 16 0v4"/><path d="M4 12H2v5h4v-5H4Zm16 0h2v5h-4v-5h2ZM20 17c0 2-2 4-5 4"/></svg>
+              <span><strong>Them</strong><small>System audio</small></span>
+            </button>
+          </div>
+
+          <div class="aperture-route" aria-live="polite">
+            <span class="route-label">Selected context</span>
+            <strong data-context-summary>Screen + microphone</strong>
+            <span class="route-arrow" aria-hidden="true">→</span>
+            <span>Your provider</span>
+          </div>
         </div>
-        <div class="route-line" aria-hidden="true"></div>
-        <div class="provider-node"><span>Direct route</span>Your provider</div>
+      </div>
+
+      <div class="hero-facts" aria-label="Product facts">
+        <div><strong>3</strong><span>context inputs</span></div>
+        <div><strong>5</strong><span>provider routes</span></div>
+        <div><strong>0</strong><span>Volyx Lens relay servers</span></div>
+        <div><strong>1</strong><span>compact desktop rail</span></div>
       </div>
     </section>
 
-    <section class="proof section-shell" aria-labelledby="proof-title">
-      <div class="section-heading split-heading">
+    <section class="marquee" aria-label="Product principles">
+      <div class="marquee-track">
+        <span>Explicit capture</span><i></i><span>Provider choice</span><i></i><span>Local credentials</span><i></i><span>Visible state</span><i></i>
+        <span aria-hidden="true">Explicit capture</span><i aria-hidden="true"></i><span aria-hidden="true">Provider choice</span><i aria-hidden="true"></i><span aria-hidden="true">Local credentials</span><i aria-hidden="true"></i><span aria-hidden="true">Visible state</span><i aria-hidden="true"></i>
+      </div>
+    </section>
+
+    <section class="section context-section" id="how-it-works" aria-labelledby="context-heading">
+      <div class="section-index" aria-hidden="true">01 / FOCUS</div>
+      <div class="section-intro">
+        <p class="eyebrow">Context, on your terms</p>
+        <h2 id="context-heading">A lens should focus.<br><em>Not vacuum up everything.</em></h2>
+        <p>Volyx Lens separates context into explicit inputs. Turn on only what the task calls for, then see the active combination before you send a prompt.</p>
+      </div>
+
+      <div class="context-story">
+        <article class="story-row">
+          <div class="story-number">01</div>
+          <div class="story-icon screen-icon" aria-hidden="true"><span></span></div>
+          <div class="story-copy">
+            <h3>Pick a screen</h3>
+            <p>Choose the display that contains the work you want help with. Screenshots are attached only when your request uses screen context.</p>
+          </div>
+          <span class="story-state">Visual context</span>
+        </article>
+
+        <article class="story-row">
+          <div class="story-number">02</div>
+          <div class="story-icon mic-icon" aria-hidden="true"><span></span></div>
+          <div class="story-copy">
+            <h3>Add your voice</h3>
+            <p>Speak naturally instead of switching windows to type. The microphone is a separate input with its own visible state.</p>
+          </div>
+          <span class="story-state">Your audio</span>
+        </article>
+
+        <article class="story-row">
+          <div class="story-number">03</div>
+          <div class="story-icon wave-icon" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="story-copy">
+            <h3>Include system audio when needed</h3>
+            <p>Bring in the other side of a call for meeting or interview context. System audio stays optional and independent.</p>
+          </div>
+          <span class="story-state">Their audio</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="section privacy-section" id="privacy" aria-labelledby="privacy-heading">
+      <div class="section-index" aria-hidden="true">02 / ROUTE</div>
+      <div class="privacy-copy">
+        <p class="eyebrow">A route you can inspect</p>
+        <h2 id="privacy-heading">Your context takes the short path.</h2>
+        <p>Volyx Lens sends selected context directly from the app to the AI provider you configure. There is no Volyx Lens-operated intermediary server in that request path.</p>
+        <ul class="plain-list">
+          <li><span>01</span>Provider credentials stay in the macOS Keychain.</li>
+          <li><span>02</span>The app has no analytics or advertising SDK.</li>
+          <li><span>03</span>You can switch providers without changing the workflow.</li>
+        </ul>
+        <p class="privacy-caveat">Your chosen AI provider still receives the context you send and applies its own retention and privacy terms. Review those terms before sharing sensitive material.</p>
+      </div>
+
+      <div class="route-map" aria-label="Data route from selected Mac context to the configured AI provider">
+        <div class="route-node route-source">
+          <span class="node-kicker">Your Mac</span>
+          <strong>Selected context</strong>
+          <div class="source-chips"><span>Screen</span><span>Mic</span><span>Audio</span></div>
+        </div>
+        <div class="route-line" aria-hidden="true"><span></span></div>
+        <div class="route-node route-app">
+          <img src="assets/volyx-lens-logo.svg" width="76" height="76" alt="">
+          <strong>Volyx Lens</strong>
+          <small>Local app</small>
+        </div>
+        <div class="route-line" aria-hidden="true"><span></span></div>
+        <div class="route-node route-provider">
+          <span class="node-kicker">Your choice</span>
+          <strong>AI provider</strong>
+          <div class="provider-mini"><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="no-relay"><span aria-hidden="true">×</span>No Volyx Lens cloud relay</div>
+      </div>
+    </section>
+
+    <section class="product-window-section" aria-labelledby="product-heading">
+      <div class="window-copy">
+        <p class="eyebrow">Built for the edge of your workspace</p>
+        <h2 id="product-heading">Present when you need it.<br><em>Compact when you do not.</em></h2>
+        <p>The floating rail can move around your desktop. Expand it into chat, choose the context for the moment, then collapse it back out of the way.</p>
+      </div>
+      <div class="product-window">
+        <div class="window-chrome" aria-hidden="true"><span></span><span></span><span></span><strong>Volyx Lens / Provider settings</strong></div>
+        <img src="assets/volyx-lens-settings.png" width="700" height="573" alt="Volyx Lens settings showing configurable AI providers and local API key fields" loading="lazy">
+        <div class="window-callout callout-one"><span>01</span>Choose a provider</div>
+        <div class="window-callout callout-two"><span>02</span>Keep keys in Keychain</div>
+      </div>
+    </section>
+
+    <section class="section use-section" id="use-cases" aria-labelledby="use-heading">
+      <div class="section-index" aria-hidden="true">03 / WORK</div>
+      <div class="section-intro use-intro">
+        <p class="eyebrow">One assistant, different context</p>
+        <h2 id="use-heading">Keep the task in view.</h2>
+      </div>
+
+      <div class="use-list">
+        <article class="use-item">
+          <div class="use-marker"><span>01</span><i></i></div>
+          <div>
+            <h3>Understand what is on screen</h3>
+            <p>Ask about an error, a dense document, a dashboard, or an unfamiliar interface without restating every visible detail.</p>
+          </div>
+          <div class="use-input">Screen <span>→</span> Prompt</div>
+        </article>
+        <article class="use-item">
+          <div class="use-marker"><span>02</span><i></i></div>
+          <div>
+            <h3>Think aloud while you work</h3>
+            <p>Talk through a problem while the relevant screen stays attached to the conversation. Useful when typing would break your flow.</p>
+          </div>
+          <div class="use-input">Screen + You <span>→</span> Prompt</div>
+        </article>
+        <article class="use-item">
+          <div class="use-marker"><span>03</span><i></i></div>
+          <div>
+            <h3>Keep up with a live conversation</h3>
+            <p>Use microphone and system audio for contextual assistance during a meeting or interview, where permitted and with participant consent.</p>
+          </div>
+          <div class="use-input">You + Them <span>→</span> Prompt</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="provider-section" aria-labelledby="provider-heading">
+      <div class="provider-copy">
+        <p class="eyebrow">Bring your own model access</p>
+        <h2 id="provider-heading">Five routes.<br><em>No forced provider.</em></h2>
+        <p>Configure the provider that fits your work. Model availability and charges come from that provider, not Volyx Lens.</p>
+      </div>
+      <ul class="provider-list" aria-label="Supported AI providers">
+        <li><span class="provider-glyph glyph-openai">O</span><strong>OpenAI</strong></li>
+        <li><span class="provider-glyph glyph-anthropic">A</span><strong>Anthropic</strong></li>
+        <li><span class="provider-glyph glyph-gemini">G</span><strong>Google Gemini</strong></li>
+        <li><span class="provider-glyph glyph-azure">A</span><strong>Azure Foundry</strong></li>
+        <li><span class="provider-glyph glyph-deepseek">D</span><strong>DeepSeek</strong></li>
+      </ul>
+    </section>
+
+    <section class="release-section" id="release" aria-labelledby="release-heading">
+      <div class="release-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="release-content">
+        <p class="eyebrow">Try the public test build</p>
+        <h2 id="release-heading">Put the lens on your Mac.</h2>
+        <p>Version 0.3.1 is an ad-hoc signed test build for Apple Silicon and Intel Macs. It is not notarized, and first launch requires the documented macOS approval steps.</p>
+        <div class="release-actions">
+          <a class="button button-primary button-light" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1">
+            Download v0.3.1
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0 4-4m-4 4L6 9M4 17h12"/></svg>
+          </a>
+          <a class="text-link" href="https://github.com/dk3yyyy/volyx-lens#public-test-release-v031" target="_blank" rel="noreferrer">Read installation steps <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="release-meta">
+          <span>macOS 13+</span><span>Apple Silicon and Intel</span><span>Bring your own key</span><span>Free test release</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section responsibility-section" aria-labelledby="responsibility-heading">
+      <div class="section-index" aria-hidden="true">04 / TERMS</div>
+      <div class="responsibility-grid">
         <div>
-          <p class="eyebrow">Built for the Mac you already use</p>
-          <h2 id="proof-title">A quiet layer over your workspace.</h2>
+          <p class="eyebrow">Built with boundaries</p>
+          <h2 id="responsibility-heading">Useful context still needs judgment.</h2>
         </div>
-        <p>Compact when you need the screen. Expanded when you need an answer. Volyx Lens stays out of the way until you invoke it.</p>
-      </div>
-      <figure class="product-frame">
-        <img src="assets/onboarding-welcome-eye.png" width="700" height="573" alt="Volyx Lens onboarding screen introducing separate See, Hear, and Assist capabilities">
-        <figcaption><span>Real product interface</span><span>Current onboarding · v0.3.1</span></figcaption>
-      </figure>
-    </section>
-
-    <section class="context-section section-shell" id="how-it-works" aria-labelledby="context-title">
-      <div class="section-heading centered-heading">
-        <p class="eyebrow">One lens, three separate inputs</p>
-        <h2 id="context-title">You decide what enters the frame.</h2>
-        <p>Screen, microphone, and system audio keep distinct lifecycles. Choose a source to see what it contributes.</p>
-      </div>
-
-      <div class="context-explainer">
-        <div class="source-tabs" role="tablist" aria-label="Context sources">
-          <button id="tab-screen" role="tab" aria-selected="true" aria-controls="panel-screen" tabindex="0" data-source="screen">
-            <span class="source-number">01</span><strong>Screen</strong><span>Only on a screen action</span>
-          </button>
-          <button id="tab-you" role="tab" aria-selected="false" aria-controls="panel-you" tabindex="-1" data-source="you">
-            <span class="source-number">02</span><strong>You</strong><span>Your microphone channel</span>
-          </button>
-          <button id="tab-them" role="tab" aria-selected="false" aria-controls="panel-them" tabindex="-1" data-source="them">
-            <span class="source-number">03</span><strong>Them</strong><span>System audio channel</span>
-          </button>
-        </div>
-
-        <div class="source-panels">
-          <div id="panel-screen" role="tabpanel" aria-labelledby="tab-screen" data-panel="screen" data-index="01">
-            <p class="panel-kicker">Explicit screen action</p>
-            <h3>See what you see—only when asked.</h3>
-            <p>A current screenshot can be attached when you invoke screen assistance. Task Context can also hold a bounded set of screens in session memory for multi-step work.</p>
-            <ul class="plain-list"><li>Current-screen assistance</li><li>Local deduplication</li><li>Confirmation before large image requests</li></ul>
-          </div>
-          <div id="panel-you" role="tabpanel" aria-labelledby="tab-you" data-panel="you" data-index="02" hidden>
-            <p class="panel-kicker">Microphone / “You”</p>
-            <h3>Keep your side of the conversation clear.</h3>
-            <p>Your microphone is transcribed on its own channel while listening is active, keeping your confirmed turns separate from system audio.</p>
-            <ul class="plain-list"><li>Independent channel</li><li>Timestamped confirmed turns</li><li>Immediate stop control</li></ul>
-          </div>
-          <div id="panel-them" role="tabpanel" aria-labelledby="tab-them" data-panel="them" data-index="03" hidden>
-            <p class="panel-kicker">System audio / “Them”</p>
-            <h3>Follow the other side without mixing voices.</h3>
-            <p>A native ScreenCaptureKit helper captures meeting audio separately, giving reply suggestions and recaps a clearer view of who said what.</p>
-            <ul class="plain-list"><li>Native macOS capture</li><li>Separate transcript turns</li><li>Permission-controlled</li></ul>
-          </div>
-        </div>
-      </div>
-      <p class="context-footnote">Selecting a tab here explains the model; it does not start capture or contact a provider.</p>
-    </section>
-
-    <section class="privacy-section" id="privacy" aria-labelledby="privacy-title">
-      <div class="section-shell privacy-grid">
-        <div class="privacy-copy">
-          <p class="eyebrow">Privacy is a route, not a slogan</p>
-          <h2 id="privacy-title">Local controls come first.</h2>
-          <p>Volyx Lens checks permissions, manages bounded session context, protects stored credentials, and waits for an explicit action before routing selected data.</p>
-          <div class="privacy-points">
-            <div><strong>No intermediary relay</strong><span>Requests go from the app to the provider you configure.</span></div>
-            <div><strong>Credentials stay out of the UI</strong><span>Keys remain in the Electron main process and use macOS Keychain-backed secure storage where available.</span></div>
-            <div><strong>Session media is temporary</strong><span>Active screenshots and audio are kept in bounded memory, not intentionally persisted.</span></div>
-          </div>
-          <p class="provider-caveat">Third-party providers receive the data needed for the actions you invoke and apply their own terms, retention policies, and pricing.</p>
-        </div>
-
-        <div class="route-card" aria-label="Data route from selected inputs through local controls to a configured provider">
-          <div class="route-step route-inputs">
-            <span class="route-label">Selected inputs</span>
-            <div><i aria-hidden="true">S</i> Screen</div><div><i aria-hidden="true">Y</i> You</div><div><i aria-hidden="true">T</i> Them</div>
-          </div>
-          <div class="route-arrow" aria-hidden="true"><span></span></div>
-          <div class="route-step route-local">
-            <span class="route-label">On your Mac</span>
-            <strong>Local controls</strong>
-            <small>permission · bounds · selection · cancellation</small>
-          </div>
-          <div class="route-arrow" aria-hidden="true"><span></span></div>
-          <div class="route-step route-provider">
-            <span class="route-label">Direct request</span>
-            <strong>Your configured provider</strong>
-            <small>Only the context required for the chosen action</small>
-          </div>
-          <div class="no-server"><span aria-hidden="true">×</span> No intermediary relay server</div>
+        <div class="responsibility-copy">
+          <p>Capture permissions are explicit, but local consent and recording laws still apply. Do not capture private conversations, protected work, exams, or interviews when you lack permission.</p>
+          <p>Capture evasion is best-effort only. Do not treat it as guaranteed invisibility or use it to bypass disclosure, supervision, proctoring, or security controls.</p>
+          <p>Source code is available under the <a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE" target="_blank" rel="noreferrer">PolyForm Noncommercial 1.0.0</a> license. Commercial use requires separate permission.</p>
         </div>
       </div>
     </section>
 
-    <section class="workflows section-shell" id="workflows" aria-labelledby="workflows-title">
-      <div class="section-heading split-heading">
-        <div><p class="eyebrow">Practical context</p><h2 id="workflows-title">One focused action at a time.</h2></div>
-        <p>Volyx Lens joins the pieces already visible or audible in your current task without pretending it can see everything.</p>
+    <section class="faq-section" aria-labelledby="faq-heading">
+      <div class="faq-title">
+        <p class="eyebrow">Before you install</p>
+        <h2 id="faq-heading">A few direct answers.</h2>
       </div>
-      <div class="workflow-list">
-        <article>
-          <span class="workflow-number">01</span>
-          <div><h3>Understand the screen</h3><p>Ask about the current view, solve what is visible, or bring selected coding screens into Task Context.</p></div>
-          <span class="workflow-context">Screen</span>
-        </article>
-        <article>
-          <span class="workflow-number">02</span>
-          <div><h3>Stay present in meetings</h3><p>Keep You and Them as separate transcript channels, then request a reply suggestion, follow-up, or bounded recap.</p></div>
-          <span class="workflow-context">You + Them</span>
-        </article>
-        <article>
-          <span class="workflow-number">03</span>
-          <div><h3>Carry a task across screens</h3><p>Save, pin, deduplicate, and remove user-selected screens locally before attaching a relevant bounded set.</p></div>
-          <span class="workflow-context">Task Context</span>
-        </article>
-        <article>
-          <span class="workflow-number">04</span>
-          <div><h3>Bring the right personal context</h3><p>Import a CV and job description. Volyx Lens stores extracted text and selects bounded relevant excerpts for supported answer actions.</p></div>
-          <span class="workflow-context">Local selection</span>
-        </article>
-      </div>
-    </section>
-
-    <section class="providers section-shell" aria-labelledby="providers-title">
-      <div class="providers-intro">
-        <p class="eyebrow">Bring your own provider</p>
-        <h2 id="providers-title">Choice without a middleman.</h2>
-        <p>Configure response and transcription providers in the app. Models, availability, billing, and data handling remain subject to each provider.</p>
-      </div>
-      <div class="provider-board">
-        <div class="provider-group"><span>Responses</span><p>OpenAI</p><p>Anthropic</p><p>Gemini</p><p>Azure Foundry</p><p>DeepSeek</p></div>
-        <div class="provider-divider" aria-hidden="true"></div>
-        <div class="provider-group"><span>Transcription</span><p>OpenAI</p><p>Azure</p><p>Deepgram</p><p>Gemini batch</p><p>Local Whisper*</p></div>
-        <small>* Optional and operator-configured. Volyx Lens is not a completely offline application.</small>
-      </div>
-    </section>
-
-    <section class="responsible section-shell" aria-labelledby="responsible-title">
-      <div class="responsible-mark" aria-hidden="true">!</div>
-      <div>
-        <p class="eyebrow">A clear boundary</p>
-        <h2 id="responsible-title">Capture exclusion is best-effort. Never guaranteed.</h2>
-        <p>Modern macOS capture tools may still show Volyx Lens, and a physical camera always can. Use it only for legitimate personal notes, accessibility, study, practice, and permitted work. Follow exam, interview, workplace, platform, recording-consent, and local-law requirements.</p>
-      </div>
-    </section>
-
-    <section class="install-section" id="download" aria-labelledby="install-title">
-      <div class="section-shell install-grid">
-        <div>
-          <p class="eyebrow">Current test release · v0.3.1</p>
-          <h2 id="install-title">Try Volyx Lens on macOS.</h2>
-          <p>Test builds are available for Apple Silicon and Intel Macs. Because they are ad-hoc signed and not notarized, macOS may block the first launch.</p>
-          <a class="button button-light" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1">Open the GitHub release <span aria-hidden="true">↗</span></a>
-        </div>
-        <ol class="install-steps">
-          <li><span>1</span><div><strong>Choose your Mac</strong><p>Download the Apple Silicon or Intel DMG and verify the published SHA-256 checksum.</p></div></li>
-          <li><span>2</span><div><strong>Move it to Applications</strong><p>Open the DMG and drag Volyx Lens into your Applications folder.</p></div></li>
-          <li><span>3</span><div><strong>Open the test build safely</strong><p>In Finder, Control-click Volyx Lens, choose Open, then confirm Open. Do not disable Gatekeeper globally.</p></div></li>
-          <li><span>4</span><div><strong>Grant only what you use</strong><p>macOS requests microphone and Screen &amp; System Audio Recording permissions for the corresponding capture features.</p></div></li>
-        </ol>
-      </div>
-    </section>
-
-    <section class="faq section-shell" id="faq" aria-labelledby="faq-title">
-      <div class="section-heading centered-heading"><p class="eyebrow">Before you install</p><h2 id="faq-title">Questions, answered plainly.</h2></div>
       <div class="faq-list">
-        <details><summary>Does Volyx Lens include AI usage?</summary><p>No. You bring your own supported provider credentials. Provider billing and terms apply directly to your usage.</p></details>
-        <details><summary>Does everything stay on my Mac?</summary><p>No. Local controls and selection happen on your Mac, but third-party providers receive the context required for actions you invoke. Optional local Whisper can handle supported transcription paths when separately installed and configured.</p></details>
-        <details><summary>Is the app signed and notarized?</summary><p>The current public binaries are ad-hoc signed test builds, not Apple Developer ID-signed or notarized production releases. They cannot use the trusted automatic-update path.</p></details>
-        <details><summary>Can Volyx Lens be hidden from every recording?</summary><p>No. Capture exclusion is best-effort. It may not work with every macOS version, capture path, or physical camera.</p></details>
-        <details><summary>Can I use the source commercially?</summary><p>Not under the PolyForm Noncommercial 1.0.0 licence. Commercial use, resale, paid redistribution, or use in a commercial product or service requires a separate licence from the copyright holder.</p></details>
-        <details><summary>Which permissions does it need?</summary><p>Microphone permission is used for your voice channel. Screen &amp; System Audio Recording permission is used for screenshots and meeting audio. Volyx Lens does not request camera access.</p></details>
-      </div>
-    </section>
-
-    <section class="final-cta section-shell" aria-labelledby="final-title">
-      <img src="assets/volyx-lens-logo.svg" width="92" height="92" alt="">
-      <p class="eyebrow">Stay in control of the frame</p>
-      <h2 id="final-title">Your context. Your providers. Your call.</h2>
-      <div class="hero-actions">
-        <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1">Download test build</a>
-        <a class="button button-secondary" href="https://github.com/dk3yyyy/volyx-lens">Inspect the source</a>
+        <details>
+          <summary>Does Volyx Lens operate its own AI backend?<span aria-hidden="true"></span></summary>
+          <p>No. You configure your own supported provider. Requests travel from the desktop app to that provider, and the provider's own data terms apply.</p>
+        </details>
+        <details>
+          <summary>Where are API keys stored?<span aria-hidden="true"></span></summary>
+          <p>The app stores provider credentials in the macOS Keychain. The settings screen lets you update or remove them.</p>
+        </details>
+        <details>
+          <summary>Is the test build notarized?<span aria-hidden="true"></span></summary>
+          <p>No. Version 0.3.1 is ad-hoc signed. Follow the repository's first-launch instructions and verify the published checksum before opening it.</p>
+        </details>
+        <details>
+          <summary>Can I use it commercially?<span aria-hidden="true"></span></summary>
+          <p>The public source is licensed under PolyForm Noncommercial 1.0.0. Contact the owner if your intended use falls outside that license.</p>
+        </details>
       </div>
     </section>
   </main>
 
-  <footer class="site-footer section-shell">
-    <div class="footer-brand"><img src="assets/volyx-lens-logo.svg" width="34" height="34" alt=""><strong>Volyx Lens</strong><span>An independent project by Joshua Nwachinemere</span></div>
-    <div class="footer-links">
-      <a href="https://github.com/dk3yyyy/volyx-lens">GitHub</a>
-      <a href="https://github.com/dk3yyyy/volyx-lens/releases">Releases</a>
-      <a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md">Licence</a>
-      <a href="mailto:joshua@volyxai.com">Commercial licensing</a>
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <div class="footer-brand-lockup"><img src="assets/volyx-lens-logo.svg" width="42" height="42" alt=""><strong>Volyx Lens</strong></div>
+      <p>Context you choose. Providers you control.</p>
     </div>
-    <p>Source-available under PolyForm Noncommercial 1.0.0. © 2026 Joshua Nwachinemere.</p>
+    <div class="footer-links">
+      <div><span>Product</span><a href="#how-it-works">How it works</a><a href="#privacy">Privacy</a><a href="#release">Test build</a></div>
+      <div><span>Project</span><a href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/dk3yyyy/volyx-lens/releases" target="_blank" rel="noreferrer">Releases</a><a href="https://github.com/dk3yyyy/volyx-lens/issues" target="_blank" rel="noreferrer">Issues</a></div>
+      <div><span>Terms</span><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE" target="_blank" rel="noreferrer">License</a><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/SECURITY.md" target="_blank" rel="noreferrer">Security</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span data-year>2026</span> Joshua Nwachinemere</span>
+      <span>Source-available · Noncommercial license</span>
+    </div>
   </footer>
 </body>
 </html>
