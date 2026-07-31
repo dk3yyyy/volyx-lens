@@ -8,15 +8,15 @@
 
 Use your screen, voice, meeting audio, and saved Task Context without routing requests through a VolyxAI server. Bring your own AI provider and choose what leaves your Mac.
 
-[**Explore the live site**](https://dk3yyyy.github.io/volyx-lens/) · [Download for macOS](#download) · [Product tour](#product-tour) · [Architecture](#how-it-works) · [Privacy](#privacy-and-security)
+[**Explore the live site**](https://volyxlens.pages.dev/) · [Download for macOS](#download) · [Product tour](#product-tour) · [Architecture](#how-it-works) · [Privacy](#privacy-and-security)
 
 <br />
 
-<a href="https://dk3yyyy.github.io/volyx-lens/">
+<a href="https://volyxlens.pages.dev/">
   <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing the privacy-first macOS assistant, its separate screen, voice, and meeting-audio inputs, and direct provider routing" />
 </a>
 
-<sub>Live product site: <a href="https://dk3yyyy.github.io/volyx-lens/">dk3yyyy.github.io/volyx-lens</a></sub>
+<sub>Live product site: <a href="https://volyxlens.pages.dev/">volyxlens.pages.dev</a></sub>
 
 </div>
 

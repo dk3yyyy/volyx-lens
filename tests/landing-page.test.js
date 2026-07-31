@@ -99,7 +99,7 @@ test('landing page explains the implemented context, meeting, coding, and offlin
 
 test('landing page publishes complete canonical and social metadata with a strict CSP', () => {
   const html = read('index.html');
-  const canonicalUrl = 'https://dk3yyyy.github.io/volyx-lens/';
+  const canonicalUrl = 'https://volyxlens.pages.dev/';
   const socialImage = `${canonicalUrl}assets/volyx-lens-onboarding.png`;
 
   assert.ok(html.includes(`<link rel="canonical" href="${canonicalUrl}"`));
