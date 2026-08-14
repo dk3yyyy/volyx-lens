@@ -6,13 +6,51 @@ const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { WhisperSidecar, resolveWhisperBinary } = require('../src/whisper-sidecar');
+const { WhisperSidecar, buildInferenceBody, resolveWhisperBinary } = require('../src/whisper-sidecar');
 
 test('WhisperSidecar constructs without throwing and starts not running', () => {
   const sidecar = new WhisperSidecar({ modelId: 'tiny' });
   assert.equal(sidecar.running, false);
   assert.equal(sidecar.state, null);
   assert.equal(sidecar.modelId, 'tiny');
+});
+
+test('WhisperSidecar stores a normalized language option', () => {
+  assert.equal(new WhisperSidecar({ modelId: 'tiny', language: ' fr ' }).language, 'fr');
+  assert.equal(new WhisperSidecar({ modelId: 'tiny', language: '' }).language, '');
+  assert.equal(new WhisperSidecar({ modelId: 'tiny' }).language, '');
+  assert.equal(new WhisperSidecar({ modelId: 'tiny', language: 'zh-TW' }).language, 'zh');
+  assert.equal(new WhisperSidecar({ modelId: 'tiny', language: ' auto ' }).language, '');
+});
+
+test('WhisperSidecar.setLanguage updates the language for later transcriptions', () => {
+  const sidecar = new WhisperSidecar({ modelId: 'tiny', language: 'fr' });
+  assert.equal(sidecar.setLanguage('de').language, 'de');
+  assert.equal(sidecar.setLanguage('zh-TW').language, 'zh');
+  assert.equal(sidecar.setLanguage('auto').language, '');
+  assert.equal(sidecar.setLanguage().language, '');
+});
+
+test('buildInferenceBody omits the language field when unset', () => {
+  const { boundary, body } = buildInferenceBody(Buffer.from('RIFF-wav'));
+  assert.ok(boundary.length > 0);
+  assert.ok(body.includes(Buffer.from(`name="file"`)));
+  assert.ok(!body.includes(Buffer.from(`name="language"`)), 'no language part when unset');
+  assert.ok(body.toString('utf8').trim().endsWith(`--${boundary}--`));
+});
+
+test('buildInferenceBody includes a language form field when set', () => {
+  const { boundary, body } = buildInferenceBody(Buffer.from('RIFF-wav'), 'es');
+  const text = body.toString('utf8');
+  assert.match(text, new RegExp(`name="language"\\r\\n\\r\\nes\\r\\n--${boundary}--`));
+});
+
+test('buildInferenceBody normalizes locale-form and auto language codes', () => {
+  const withZhTw = buildInferenceBody(Buffer.from('RIFF-wav'), 'zh-TW');
+  assert.match(withZhTw.body.toString('utf8'), new RegExp('name="language"\\r\\n\\r\\nzh\\r\\n'));
+  assert.ok(!withZhTw.body.toString('utf8').includes('zh-TW'), 'locale-form code must not reach whisper.cpp');
+  const withAuto = buildInferenceBody(Buffer.from('RIFF-wav'), 'auto');
+  assert.ok(!withAuto.body.includes(Buffer.from(`name="language"`)), 'auto must be omitted (auto-detect)');
 });
 
 test('running is a boolean derived from state; idle leaves it restartable', () => {
@@ -40,6 +78,29 @@ test('queueYou and queueThem resolve with the transcript produced by _transcribe
   assert.equal(typeof you.timestamp, 'number');
   assert.equal(them.text, 'them:10');
   assert.equal(them.channel, 'them');
+});
+
+test('queued audio keeps the language it was enqueued under', async () => {
+  const sidecar = new WhisperSidecar({ modelId: 'tiny', language: 'fr' });
+  const languages = [];
+  let releaseFirst;
+  const gate = new Promise((resolve) => { releaseFirst = resolve; });
+  let firstCall = true;
+  sidecar._transcribe = async (pcm, channel, language) => {
+    languages.push(language);
+    if (firstCall) {
+      firstCall = false;
+      await gate;
+    }
+    return `${channel}:${language}`;
+  };
+  const first = sidecar.queueYou(Buffer.from('a'));
+  const second = sidecar.queueYou(Buffer.from('b'), 'de');
+  sidecar.setLanguage('es');
+  releaseFirst();
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+  assert.equal(firstResult.text, 'you:fr', 'audio enqueued under fr must not be re-transcribed as es');
+  assert.equal(secondResult.text, 'you:de', 'the per-job language must win over a later setLanguage');
 });
 
 test('queueYou rejects and the queue continues when _transcribe fails', async () => {

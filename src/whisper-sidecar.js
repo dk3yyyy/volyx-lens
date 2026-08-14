@@ -14,6 +14,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const fetch = require('node-fetch').default;
+const { normalizeWhisperLanguage } = require('./whisper-language');
 
 // Model specifications (~30 models)
 const MODEL_SPECS = {
@@ -126,6 +127,24 @@ function verifyModel(modelId, expectedSha256) {
   return { valid: actual === expectedSha256, actual };
 }
 
+// Build the multipart body for the whisper.cpp server /inference endpoint.
+// A non-empty language code is forwarded as a `language` form field so local
+// transcription honors the selected language; empty means auto-detection.
+function buildInferenceBody(pcmBuffer, language = '') {
+  const boundary = `volyx-${crypto.randomBytes(16).toString('hex')}`;
+  const parts = [
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n`, 'utf8'),
+    pcmBuffer,
+    Buffer.from('\r\n', 'utf8'),
+  ];
+  const normalizedLanguage = normalizeWhisperLanguage(language);
+  if (normalizedLanguage) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${normalizedLanguage}\r\n`, 'utf8'));
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`, 'utf8'));
+  return { boundary, body: Buffer.concat(parts) };
+}
+
 // Version of whisper.cpp the runtime-provisioned binaries directory maps to.
 // Must match dev/whisper-binary.js so a downloaded binary is found here.
 const PROVISIONED_BINARY_VERSION = 'v1.9.2';
@@ -196,6 +215,7 @@ class WhisperSidecar {
     this.modelPath = null;
     this.port = options.port || 0;
     this.host = options.host || '127.0.0.1';
+    this.language = normalizeWhisperLanguage(options.language);
     this.child = null;
     this._running = false;
     this._state = null;
@@ -205,6 +225,14 @@ class WhisperSidecar {
     this.ontranscript = options.ontranscript || (() => {});
     this.onstate = options.onstate || (() => {});
     this.abortCtrl = null;
+  }
+
+  // Update the language used for subsequent transcriptions. Whisper.cpp only
+  // accepts ISO 639-1 base codes, so locale-form identifiers (zh-TW) and the
+  // literal "auto" are normalized here rather than sent to the sidecar.
+  setLanguage(language = '') {
+    this.language = normalizeWhisperLanguage(language);
+    return this;
   }
 
   get running() { return this._running; }
@@ -320,18 +348,20 @@ class WhisperSidecar {
 
   // Queue audio for transcription (non-blocking, shared between You and Them).
   // Resolves with { text, channel, timestamp } once the sidecar transcribes it.
-  queueYou(pcmBuffer) {
+  // The language is captured at enqueue time so audio queued under one language
+  // is not re-transcribed under a later setLanguage change.
+  queueYou(pcmBuffer, language = this.language) {
     if (this.requestQueue.you.length >= 64) return Promise.reject(new Error('sidecar queue full'));
     return new Promise((resolve, reject) => {
-      this.requestQueue.you.push({ pcm: pcmBuffer, channel: 'you', resolve, reject });
+      this.requestQueue.you.push({ pcm: pcmBuffer, channel: 'you', language, resolve, reject });
       this._tryProcess();
     });
   }
 
-  queueThem(pcmBuffer) {
+  queueThem(pcmBuffer, language = this.language) {
     if (this.requestQueue.them.length >= 64) return Promise.reject(new Error('sidecar queue full'));
     return new Promise((resolve, reject) => {
-      this.requestQueue.them.push({ pcm: pcmBuffer, channel: 'them', resolve, reject });
+      this.requestQueue.them.push({ pcm: pcmBuffer, channel: 'them', language, resolve, reject });
       this._tryProcess();
     });
   }
@@ -341,7 +371,7 @@ class WhisperSidecar {
     if (this.requestQueue.you.length > 0) {
       const item = this.requestQueue.you.shift();
       this.processingYou = true;
-      this._transcribe(item.pcm, item.channel).then((text) => {
+      this._transcribe(item.pcm, item.channel, item.language).then((text) => {
         item.resolve({ text, channel: item.channel, timestamp: Date.now() });
       }).catch((err) => {
         item.reject(err);
@@ -352,7 +382,7 @@ class WhisperSidecar {
     } else if (this.requestQueue.them.length > 0) {
       const item = this.requestQueue.them.shift();
       this.processingThem = true;
-      this._transcribe(item.pcm, item.channel).then((text) => {
+      this._transcribe(item.pcm, item.channel, item.language).then((text) => {
         item.resolve({ text, channel: item.channel, timestamp: Date.now() });
       }).catch((err) => {
         item.reject(err);
@@ -363,15 +393,10 @@ class WhisperSidecar {
     }
   }
 
-  async _transcribe(pcmBuffer, channel) {
+  async _transcribe(pcmBuffer, channel, language = this.language) {
     if (!this.modelPath) throw new Error('No model loaded');
 
-    const boundary = `volyx-${crypto.randomBytes(16).toString('hex')}`;
-    const body = Buffer.concat([
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n`, 'utf8'),
-      pcmBuffer,
-      Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'),
-    ]);
+    const { boundary, body } = buildInferenceBody(pcmBuffer, language);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000); // 2min inference timeout
@@ -418,6 +443,7 @@ module.exports = {
   downloadModel,
   verifyModel,
   sha256File,
+  buildInferenceBody,
   resolveWhisperBinary,
   isExecutableFile,
   WhisperSidecar,
