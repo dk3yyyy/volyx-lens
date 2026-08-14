@@ -21,8 +21,10 @@
     "pack": "electron-builder --dir --config.mac.notarize=false",
     "release:check": "node scripts/check-macos-release.js",
     "verify:vision-ocr-package": "node scripts/verify-vision-ocr-package.js",
-    "release:mac": "node scripts/check-macos-release.js --require-credentials && electron-builder --mac zip --publish never && node scripts/verify-vision-ocr-package.js",
+    "release:mac": "node scripts/check-macos-release.js --require-credentials && electron-builder --mac dmg zip --publish never && node scripts/verify-vision-ocr-package.js",
     "release:verify": "node scripts/verify-macos-release.js",
+    "release:linux": "electron-builder --linux AppImage --publish never",
+    "release:win": "electron-builder --win nsis --publish never",
     "dist": "npm run release:mac"
   },
   "build": {
@@ -76,6 +78,28 @@
         "NSMicrophoneUsageDescription": "Volyx Lens transcribes your microphone so it can help you in conversations.",
         "NSAudioCaptureUsageDescription": "Volyx Lens captures system audio to transcribe the other participant in a call."
       }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png",
+      "publisherName": "VolyxAI",
+      "artifactName": "volyx-lens-${version}-win-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "artifactName": "volyx-lens-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
     }
   },
   "keywords": [
