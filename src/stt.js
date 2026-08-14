@@ -56,6 +56,10 @@ async function startSidecar(modelId, language, factory) {
     }
     await starting;
   }
+  // A running singleton was constructed with the language at the time it was
+  // created. Honor a language change on a subsequent call by updating the
+  // instance instead of requiring a restart (stale-language fix).
+  if (typeof sidecar.setLanguage === 'function') sidecar.setLanguage(language);
   return sidecar;
 }
 

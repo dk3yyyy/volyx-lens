@@ -14,6 +14,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const fetch = require('node-fetch').default;
+const { normalizeWhisperLanguage } = require('./whisper-language');
 
 // Model specifications (~30 models)
 const MODEL_SPECS = {
@@ -136,7 +137,7 @@ function buildInferenceBody(pcmBuffer, language = '') {
     pcmBuffer,
     Buffer.from('\r\n', 'utf8'),
   ];
-  const normalizedLanguage = String(language || '').trim();
+  const normalizedLanguage = normalizeWhisperLanguage(language);
   if (normalizedLanguage) {
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${normalizedLanguage}\r\n`, 'utf8'));
   }
@@ -151,7 +152,7 @@ class WhisperSidecar {
     this.modelPath = null;
     this.port = options.port || 0;
     this.host = options.host || '127.0.0.1';
-    this.language = String(options.language || '').trim();
+    this.language = normalizeWhisperLanguage(options.language);
     this.child = null;
     this._running = false;
     this._state = null;
@@ -161,6 +162,14 @@ class WhisperSidecar {
     this.ontranscript = options.ontranscript || (() => {});
     this.onstate = options.onstate || (() => {});
     this.abortCtrl = null;
+  }
+
+  // Update the language used for subsequent transcriptions. Whisper.cpp only
+  // accepts ISO 639-1 base codes, so locale-form identifiers (zh-TW) and the
+  // literal "auto" are normalized here rather than sent to the sidecar.
+  setLanguage(language = '') {
+    this.language = normalizeWhisperLanguage(language);
+    return this;
   }
 
   get running() { return this._running; }

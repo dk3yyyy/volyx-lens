@@ -163,6 +163,29 @@ test('local whisper forwards the selected language to the sidecar factory', asyn
   }
 });
 
+test('a language change reaches a running sidecar instead of staying stale', async () => {
+  resetSidecar();
+  let instances = 0;
+  let live;
+  const factory = (modelId, language) => {
+    instances += 1;
+    live = { running: false, language, async start() { live.running = true; }, async queueYou() { return { text: 'salut', channel: 'you', timestamp: 1 }; } };
+    live.setLanguage = (next) => { live.language = next; return live; };
+    return live;
+  };
+  try {
+    const first = createSTT({ transcription: { offlineEnabled: true, whisperModel: 'base.en', language: 'fr' }, apiKeys: {} }, { env: {}, sidecarFactory: factory });
+    await first.transcribe(Buffer.alloc(4000, 1));
+    assert.equal(live.language, 'fr', 'first call must construct with the initial language');
+    const second = createSTT({ transcription: { offlineEnabled: true, whisperModel: 'base.en', language: 'de' }, apiKeys: {} }, { env: {}, sidecarFactory: factory });
+    await second.transcribe(Buffer.alloc(4000, 1));
+    assert.equal(instances, 1, 'a running singleton must be reused, not rebuilt');
+    assert.equal(live.language, 'de', 'a language change must update the running singleton');
+  } finally {
+    resetSidecar();
+  }
+});
+
 test('env sidecar path forwards the settings language to the factory', async () => {
   resetSidecar();
   let captured;

@@ -16,6 +16,16 @@ test('WhisperSidecar stores a normalized language option', () => {
   assert.equal(new WhisperSidecar({ modelId: 'tiny', language: ' fr ' }).language, 'fr');
   assert.equal(new WhisperSidecar({ modelId: 'tiny', language: '' }).language, '');
   assert.equal(new WhisperSidecar({ modelId: 'tiny' }).language, '');
+  assert.equal(new WhisperSidecar({ modelId: 'tiny', language: 'zh-TW' }).language, 'zh');
+  assert.equal(new WhisperSidecar({ modelId: 'tiny', language: ' auto ' }).language, '');
+});
+
+test('WhisperSidecar.setLanguage updates the language for later transcriptions', () => {
+  const sidecar = new WhisperSidecar({ modelId: 'tiny', language: 'fr' });
+  assert.equal(sidecar.setLanguage('de').language, 'de');
+  assert.equal(sidecar.setLanguage('zh-TW').language, 'zh');
+  assert.equal(sidecar.setLanguage('auto').language, '');
+  assert.equal(sidecar.setLanguage().language, '');
 });
 
 test('buildInferenceBody omits the language field when unset', () => {
@@ -30,6 +40,14 @@ test('buildInferenceBody includes a language form field when set', () => {
   const { boundary, body } = buildInferenceBody(Buffer.from('RIFF-wav'), 'es');
   const text = body.toString('utf8');
   assert.match(text, new RegExp(`name="language"\\r\\n\\r\\nes\\r\\n--${boundary}--`));
+});
+
+test('buildInferenceBody normalizes locale-form and auto language codes', () => {
+  const withZhTw = buildInferenceBody(Buffer.from('RIFF-wav'), 'zh-TW');
+  assert.match(withZhTw.body.toString('utf8'), new RegExp('name="language"\\r\\n\\r\\nzh\\r\\n'));
+  assert.ok(!withZhTw.body.toString('utf8').includes('zh-TW'), 'locale-form code must not reach whisper.cpp');
+  const withAuto = buildInferenceBody(Buffer.from('RIFF-wav'), 'auto');
+  assert.ok(!withAuto.body.includes(Buffer.from(`name="language"`)), 'auto must be omitted (auto-detect)');
 });
 
 test('running is a boolean derived from state; idle leaves it restartable', () => {
