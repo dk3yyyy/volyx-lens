@@ -43,7 +43,8 @@ Status: core transport and observability implemented; measured accuracy evaluati
 - Implemented: capture reports the actual `AudioContext` rate and performs deterministic streaming resampling to 24 kHz before PCM16 encoding.
 - Implemented: Settings includes a five-second end-to-end live microphone diagnostic that requires a real transcript and returns sanitized endpoint/deployment/audio telemetry without persisting audio.
 - Implemented: microphone and system capture can be enabled independently; only enabled Realtime channels open provider sessions.
-- Remaining: build a repeatable evaluation set covering accents, noise, cross-talk, technical terms, numbers, and long pauses.
+- Implemented: repeatable VAD accuracy evaluation harness (`npm run eval:vad`) that synthesizes a deterministic test set — accents via macOS `say`, synthetic noise at fixed SNR, cross-talk overlays, technical terms, numbers, long pauses, and empty turns — and reports empty-turn rate, false negatives, boundary error, truncation, and optional WER via a configured whisper adapter.
+- Remaining: run the evaluation set against real meeting recordings and add empty-turn/truncation/WER targets from the results.
 - Implemented: track first-partial and final latency. Empty-turn, truncation-rate, and word-error-rate evaluation remains.
 - Implemented: add per-channel connection/audio health, level meters, session duration, cost warning, session limit, and explicit retry.
 
