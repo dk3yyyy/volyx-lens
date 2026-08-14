@@ -27,8 +27,9 @@ async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
   // Initialize sidecar if not already running. The instance is only published
   // to the singleton after start() succeeds, and concurrent requests share the
   // same in-flight startup, so no caller can queue against an unstarted or
-  // failed instance.
-  if (!sidecar) {
+  // failed instance. A published instance whose child has exited (running is
+  // false) is also replaced here on the next request.
+  if (!sidecar || !sidecar.running) {
     if (!starting) {
       const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
       const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));

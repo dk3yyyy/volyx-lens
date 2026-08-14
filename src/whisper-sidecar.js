@@ -154,6 +154,18 @@ class WhisperSidecar {
     this.onstate(next);
   }
 
+  // Invalidate this instance when the whisper.cpp child dies or fails to
+  // spawn, so callers see it is no longer running and spawn a replacement
+  // instead of continuing to send inference requests to a dead process.
+  _watchChild(child) {
+    const onExit = () => {
+      if (this.child === child) this.child = null;
+      this._setState('idle');
+    };
+    child.on('exit', onExit);
+    child.on('error', onExit);
+  }
+
   _allocatePort() {
     return new Promise((resolve) => {
       const dgram = require('dgram');
@@ -199,6 +211,7 @@ class WhisperSidecar {
     });
 
     this.child = child;
+    this._watchChild(child);
     let stderrAccum = '';
 
     child.stderr.on('data', (chunk) => {

@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const { WhisperSidecar } = require('../src/whisper-sidecar');
 
 test('WhisperSidecar constructs without throwing and starts not running', () => {
@@ -52,4 +53,38 @@ test('queueYou rejects and the queue continues when _transcribe fails', async ()
   const recovered = await second;
   assert.equal(recovered.text, 'recovered');
   assert.equal(recovered.channel, 'you');
+});
+
+test('child exit invalidates the instance so a replacement can be started', () => {
+  const sidecar = new WhisperSidecar({ modelId: 'tiny' });
+  const child = new EventEmitter();
+  sidecar.child = child;
+  sidecar._setState('ready');
+  sidecar._watchChild(child);
+  child.emit('exit', 1, null);
+  assert.equal(sidecar.running, false);
+  assert.equal(sidecar.state, 'idle');
+  assert.equal(sidecar.child, null, 'the dead child handle is cleared');
+});
+
+test('a spawn error invalidates the instance', () => {
+  const sidecar = new WhisperSidecar({ modelId: 'tiny' });
+  const child = new EventEmitter();
+  sidecar.child = child;
+  sidecar._setState('starting');
+  sidecar._watchChild(child);
+  child.emit('error', new Error('ENOENT'));
+  assert.equal(sidecar.running, false);
+  assert.equal(sidecar.child, null);
+});
+
+test('an exited child from a previous start does not clobber a newer child', () => {
+  const sidecar = new WhisperSidecar({ modelId: 'tiny' });
+  const first = new EventEmitter();
+  const second = new EventEmitter();
+  sidecar.child = second;
+  sidecar._setState('ready');
+  sidecar._watchChild(first);
+  first.emit('exit', 1, null);
+  assert.equal(sidecar.child, second, 'the newer child handle is preserved');
 });

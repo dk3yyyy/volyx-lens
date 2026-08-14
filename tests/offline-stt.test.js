@@ -199,3 +199,29 @@ test('concurrent requests share one in-flight startup and never queue against a 
     resetSidecar();
   }
 });
+
+test('a sidecar whose child exited is replaced on the next request', async () => {
+  resetSidecar();
+  let created = 0;
+  const instances = [];
+  const factory = () => {
+    created += 1;
+    const inst = {
+      running: true,
+      async start() {},
+      async queueYou() { return { text: `ok-${created}`, channel: 'you', timestamp: 1 }; },
+    };
+    instances.push(inst);
+    return inst;
+  };
+  try {
+    const stt = createSTT({ transcription: {}, apiKeys: {} }, { env: { VOLYX_LENS_WHISPER_SIDECAR: '1' }, sidecarFactory: factory });
+    assert.deepEqual(await stt.transcribe(Buffer.alloc(4000, 1)), { text: 'ok-1', provider: 'sidecar' });
+    instances[0].running = false; // the whisper.cpp child exited
+    const retry = await stt.transcribe(Buffer.alloc(4000, 1));
+    assert.deepEqual(retry, { text: 'ok-2', provider: 'sidecar' });
+    assert.equal(created, 2, 'a dead sidecar is replaced instead of reused');
+  } finally {
+    resetSidecar();
+  }
+});
