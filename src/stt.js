@@ -5,7 +5,57 @@ const { pcmToWav } = require('./wav');
 const { AUDIO_SAMPLE_RATE } = require('./audio-config');
 const { STT_MODELS } = require('./provider-config');
 const { validateOfflineConfig, transcribeOffline } = require('./offline-stt');
+const { WhisperSidecar } = require('./whisper-sidecar');
 const { looksLikeHallucination } = require('./transcript-hygiene');
+
+let sidecar = null; // lazily initialized, fully-started WhisperSidecar instance
+let starting = null; // in-flight startup promise shared by concurrent requests
+
+// Sidecar mode is strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR
+function shouldUseSidecar(env) {
+  return !!env.VOLYX_LENS_WHISPER_SIDECAR;
+}
+
+async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
+  const useSidecar = shouldUseSidecar(env);
+
+  if (!useSidecar) {
+    // Fall back to CLI-based offline
+    return transcribeOffline(wav, { env, language: vocab });
+  }
+
+  // Initialize sidecar if not already running. The instance is only published
+  // to the singleton after start() succeeds, and concurrent requests share the
+  // same in-flight startup, so no caller can queue against an unstarted or
+  // failed instance. A published instance whose child has exited (running is
+  // false) is also replaced here on the next request.
+  if (!sidecar || !sidecar.running) {
+    if (!starting) {
+      const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
+      const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
+      const instance = factory(modelId);
+      starting = instance.start().then(() => {
+        sidecar = instance;
+        starting = null;
+        return instance;
+      }).catch((error) => {
+        starting = null;
+        throw error;
+      });
+    }
+    await starting;
+  }
+
+  // Queue the WAV for in-memory transcription (no temp files on disk)
+  const result = await sidecar.queueYou(wav);
+  return (result.text || '').trim();
+}
+
+// Reset the lazily initialized sidecar (config changes, shutdown, tests)
+function resetSidecar() {
+  sidecar = null;
+  starting = null;
+}
 
 async function transcribeOpenAI(apiKey, wav, model, prompt = '') {
   const OpenAI = require('openai');
@@ -31,7 +81,10 @@ async function transcribeGemini(apiKey, wav, model) {
   return ((res && res.text) || '').trim();
 }
 
-function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe = transcribeOffline, openAITranscribe = transcribeOpenAI, geminiTranscribe = transcribeGemini } = {}) {
+// Speech-to-text factory. Decoupled from the LLM provider because Anthropic has
+// no audio API — we transcribe with whatever audio-capable key is available, and
+// fall back across providers. Returns { text, provider } or { text:'', error }.
+function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe = transcribeOffline, openAITranscribe = transcribeOpenAI, geminiTranscribe = transcribeGemini, sidecarFactory = (modelId) => new WhisperSidecar({ modelId }) } = {}) {
   const keys = settings.apiKeys || {};
   const chain = [];
   const transcription = settings.transcription || {};
@@ -40,6 +93,11 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   // Initial-prompt seed: explicit vocab wins, otherwise an optional setting.
   const prompt = vocab || transcription.vocabPrompt || '';
   const offline = validateOfflineConfig(env);
+  // Sidecar mode: strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR env var
+  const useSidecar = shouldUseSidecar(env);
+  if (useSidecar) {
+    chain.push({ p: 'sidecar', fn: (wav) => transcribeViaSidecar(wav, env, vocab, sidecarFactory) });
+  }
   if (transcription.offlineEnabled && offline.ready) {
     chain.push({ p: 'offline', fn: (wav) => offlineTranscribe(wav, { env, language: transcription.language || '', prompt }) });
   }
@@ -72,4 +130,4 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   };
 }
 
-module.exports = { createSTT };
+module.exports = { createSTT, resetSidecar };
