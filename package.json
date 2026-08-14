@@ -84,7 +84,6 @@
         "nsis"
       ],
       "icon": "build/icon.png",
-      "publisherName": "VolyxAI",
       "artifactName": "volyx-lens-${version}-win-${arch}.${ext}"
     },
     "linux": {
