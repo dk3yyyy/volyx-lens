@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   mulberry32, decodeWav, silencePcm, noisePcm, scaleToRms, mixPcm, insertSilenceGap,
-  buildFixtures, fixtureHash, evaluatePcm, normalizeText, wer, THRESHOLDS, checkThresholds,
+  buildFixtures, fixtureHash, buildRow, evaluatePcm, summarize, normalizeText, wer,
+  THRESHOLDS, checkThresholds,
 } = require('../scripts/vad-accuracy-eval');
 const { pcmToWav } = require('../src/wav');
 
@@ -95,7 +96,7 @@ test('checkThresholds passes a clean summary and skips unmeasured WER', () => {
 test('checkThresholds flags regressions past the baseline limits', () => {
   const summary = {
     emptyTurnRate: 0.15, falseNegativeRate: 0.1, truncationCount: 3,
-    meanStartErrorMs: 400, meanEndErrorMs: 250, werMean: 0.45,
+    meanStartErrorMs: 400, meanEndErrorMs: 1600, werMean: 0.45,
   };
   const violations = checkThresholds(summary);
   assert.deepEqual(violations.map((v) => v.name), ['emptyTurnRate', 'falseNegativeRate', 'meanStartErrorMs', 'meanEndErrorMs', 'truncationCount', 'wer']);
@@ -114,6 +115,44 @@ test('fixtureHash is stable for identical definitions and changes with any param
   assert.notEqual(fixtureHash(base), fixtureHash({ ...base, text: 'a different sentence.' }));
   assert.notEqual(fixtureHash(base), fixtureHash({ ...base, voice: 'Daniel' }));
   assert.notEqual(fixtureHash(base), fixtureHash({ ...base, rate: 120 }));
+});
+
+test('integration: endErrMs is a finite number through evaluatePcm -> buildRow -> summarize', () => {
+  // Mirror a speech fixture: LEAD_MS lead, 1s of loud speech, TRAIL_MS silence.
+  // The trail (1500ms) exceeds the VAD hangover (silenceMs 700), so the final
+  // utterance closes naturally and the end boundary is actually measurable.
+  const fixture = { id: 'int-end-test', category: 'technical', kind: 'speech', text: 'integration fixture' };
+  const lead = silencePcm(0.5, 24000);
+  const burst = Buffer.alloc(24000 * 2); // 1 second
+  for (let i = 0; i < burst.length; i += 2) burst.writeInt16LE(18000, i);
+  const trail = silencePcm(1.5, 24000);
+  const result = evaluatePcm(Buffer.concat([lead, burst, trail]), { sampleRate: 24000, fixture });
+  const row = buildRow(fixture, result);
+  // Regression guard: this was NaN (object minus number) or null (trail shorter
+  // than the hangover, later Math.abs(null) === 0) before the fix.
+  assert.equal(Number.isFinite(row.endErrMs), true, `endErrMs must be finite, got ${row.endErrMs}`);
+  assert.ok(row.endErrMs < 0, 'detected end trails the true end by the VAD hangover');
+  assert.ok(Math.abs(row.endErrMs) <= 1200, `end error within hangover tolerance, got ${row.endErrMs}`);
+  const summary = summarize([row]);
+  assert.equal(Number.isFinite(summary.meanEndErrorMs), true, 'meanEndErrorMs must be finite');
+  assert.equal(summary.truncationCount, 0, 'natural close must not count as truncated');
+});
+
+test('integration: an early-close (false gap) is counted as truncated', () => {
+  // Speech that closes early and never reopens: lead, 1s speech, then 4.5s of
+  // silence. The detector closes at ~speech end + hangover (~2.2s), but the
+  // expected end is durationMs - TRAIL_MS (6s - 1.5s = 4.5s), so endErrMs is
+  // strongly positive and exceeds the truncation tolerance.
+  const fixture = { id: 'int-trunc-test', category: 'technical', kind: 'speech', text: 'truncation fixture' };
+  const lead = silencePcm(0.5, 24000);
+  const burst = Buffer.alloc(24000 * 2); // 1 second
+  for (let i = 0; i < burst.length; i += 2) burst.writeInt16LE(18000, i);
+  const gap = silencePcm(4.5, 24000); // long trailing silence, no speech after
+  const result = evaluatePcm(Buffer.concat([lead, burst, gap]), { sampleRate: 24000, fixture });
+  const row = buildRow(fixture, result);
+  assert.equal(Number.isFinite(row.endErrMs), true);
+  const summary = summarize([row]);
+  assert.ok(summary.truncationCount >= 1, `early close must be truncated, endErrMs=${row.endErrMs}`);
 });
 
 test('evaluatePcm keeps speech continuing after the maxUtteranceMs cap', () => {
