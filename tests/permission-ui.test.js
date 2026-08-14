@@ -110,3 +110,23 @@ test('application declares only permissions it actually requests', () => {
   assert.match(pkg.build.mac.extendInfo.NSMicrophoneUsageDescription, /microphone/i);
   assert.doesNotMatch(html, /camera permission/i);
 });
+
+test('replayable tutorial covers channels, task context, auto-assist, smart toggle, and local vs cloud STT', () => {
+  assert.match(renderer, /stepLabel: 'Channels'/);
+  assert.match(renderer, /You · Mic/);
+  assert.match(renderer, /Them · System/);
+  assert.match(renderer, /stepLabel: 'Task context'/);
+  assert.match(renderer, /⌘⇧C/);
+  assert.match(renderer, /duplicate captures are folded together/);
+  assert.match(renderer, /stepLabel: 'Auto-assist'/);
+  assert.match(renderer, /stepLabel: 'Smart toggle'/);
+  assert.match(renderer, /fast.*model|fast.*model/);
+  assert.match(renderer, /stepLabel: 'Transcription'/);
+  assert.match(renderer, /Local whisper/);
+  assert.match(renderer, /Cloud STT/);
+  assert.match(renderer, /firstRun: false/);
+  assert.match(renderer, /obSteps = full \? OB_STEPS : OB_STEPS\.filter\(\(step\) => step\.firstRun !== false\)/);
+  assert.match(renderer, /\$\('#logo-btn'\)\.addEventListener\('click', \(\) => \{ obReplay = true; showOnboard\(\{ full: true \}\)/);
+  assert.match(renderer, /obReplay/);
+  assert.match(renderer, /obFromSettings \|\| obReplay \? 'Done' : 'Start using Lens'/);
+});

@@ -1784,6 +1784,51 @@
       body: '<p>Volyx Lens asks macOS to exclude its window from many captures. Modern capture tools may still ignore that request.</p><div class="permission-card"><span class="permission-mark">Z</span><div><strong>Zoom</strong><span>Choose “Advanced capture with window filtering” in Share Screen settings.</span></div></div><div class="ob-note">Never rely on capture exclusion for proctored, restricted, or consent-sensitive sessions.</div>'
     },
     {
+      stepLabel: 'Channels',
+      icon: 'mic',
+      kicker: 'Both sides of the call',
+      note: 'The audio-health panel shows each channel while listening.',
+      firstRun: false,
+      title: 'You and Them.',
+      body: '<p><span class="hl">You · Mic</span> captures your voice. <span class="hl">Them · System</span> captures the other participant through system audio loopback on macOS. Each channel is processed independently, so one side can stay clear even when the other is noisy.</p><div class="ob-note">System audio uses an internal loopback; pick the correct output device in Listening settings if a call is missing from Them.</div>'
+    },
+    {
+      stepLabel: 'Task context',
+      icon: 'camera',
+      kicker: 'The work in front of you',
+      note: 'Context persists across a session; clear it with New Session.',
+      firstRun: false,
+      title: 'Keep the screen in context.',
+      body: '<p><span class="hl">Add context</span> (<kbd class="kbd">⌘⇧C</kbd>) pins the current screen so answers have the work in front of you. Pinned screens stay relevant, recent screens are kept in order, and duplicate captures are folded together.</p><div class="ob-note">Task Context is separate from your transcript and Personal Context documents.</div>'
+    },
+    {
+      stepLabel: 'Auto-assist',
+      icon: 'sparkles',
+      kicker: 'Answers without asking',
+      note: 'Runs after a short, detectable pause in conversation.',
+      firstRun: false,
+      title: 'Auto-assist.',
+      body: '<p>Turn on <span class="hl">Auto-assist</span> in Settings to have Volyx Lens draft an answer automatically after a natural pause — no ⌘↵ needed. It uses the same providers and context as manual Assist, and you can disable it any time.</p><div class="ob-note">Auto-assist only triggers when listening is active and a pause is detected.</div>'
+    },
+    {
+      stepLabel: 'Smart toggle',
+      icon: 'zap',
+      kicker: 'Speed vs. reasoning',
+      note: 'The Smart toggle is the lightning bolt in the toolbar.',
+      firstRun: false,
+      title: 'Fast or Smart.',
+      body: '<p>The toolbar <span class="hl">Smart toggle</span> switches between your <span class="hl">fast</span> model (quick, everyday answers) and your <span class="hl">smart</span> model (deeper reasoning). Configure which model each mode uses per provider in Settings.</p><div class="ob-note">Smart mode may take noticeably longer to respond.</div>'
+    },
+    {
+      stepLabel: 'Transcription',
+      icon: 'message-circle',
+      kicker: 'Speech that stays yours',
+      note: 'Choose where audio is converted to text.',
+      firstRun: false,
+      title: 'Local or cloud STT.',
+      body: '<p><span class="hl">Local whisper</span> runs entirely on your Mac — no audio ever leaves the device. <span class="hl">Cloud STT</span> (like Deepgram) offers richer accuracy and faster setup. Choose in Listening settings, under transcription provider.</p><div class="ob-note">Your transcript is only sent to a transcription provider you have configured; otherwise it stays local.</div>'
+    },
+    {
       stepLabel: 'Ready',
       icon: 'zap',
       kicker: 'Ready when you are',
@@ -1793,9 +1838,12 @@
     }
   ];
   let obIndex = 0;
+  let obFromSettings = false;
+  let obReplay = false;
+  let obSteps = OB_STEPS;
   $('#ob-brand-mark').innerHTML = brandLogo('onboarding-brand-logo');
   function renderOnboard() {
-    const step = OB_STEPS[obIndex];
+    const step = obSteps[obIndex];
     const onboardingIcon = $('#ob-icon');
     const isBrandLogo = step.icon === 'logo';
     onboardingIcon.classList.toggle('brand-logo', isBrandLogo);
@@ -1803,7 +1851,7 @@
       ? brandLogo('onboarding-hero-logo')
       : icon(step.icon, { size: 30, stroke: 1.7 });
     $('#ob-step-label').textContent = step.stepLabel;
-    $('#ob-step-count').textContent = `${obIndex + 1} of ${OB_STEPS.length}`;
+    $('#ob-step-count').textContent = `${obIndex + 1} of ${obSteps.length}`;
     $('#ob-stage-kicker').textContent = step.kicker;
     $('#ob-stage-note').textContent = step.note;
     $('#ob-title').textContent = step.title;
@@ -1839,7 +1887,7 @@
       btns.appendChild(button);
     });
     const dots = $('#ob-dots'); dots.replaceChildren();
-    OB_STEPS.forEach((item, index) => {
+    obSteps.forEach((item, index) => {
       const dot = document.createElement('span');
       if (index === obIndex) {
         dot.className = 'on';
@@ -1849,8 +1897,8 @@
       dots.appendChild(dot);
     });
     $('#ob-back').style.visibility = obIndex === 0 ? 'hidden' : 'visible';
-    $('#ob-next').textContent = obIndex === OB_STEPS.length - 1 ? 'Start using Lens' : 'Continue';
-    $('#ob-skip').style.visibility = obIndex === OB_STEPS.length - 1 ? 'hidden' : 'visible';
+    $('#ob-next').textContent = obIndex === obSteps.length - 1 ? (obFromSettings || obReplay ? 'Done' : 'Start using Lens') : 'Continue';
+    $('#ob-skip').style.visibility = obIndex === obSteps.length - 1 ? 'hidden' : 'visible';
   }
   function onboardFocusable() {
     return [...$('#onboard').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
@@ -1859,7 +1907,7 @@
   function handleOnboardKeydown(event) {
     if (event.key === 'Escape') {
       event.preventDefault();
-      finishOnboard();
+      finishOnboard({ keepModalState: obFromSettings });
       return;
     }
     if (event.key !== 'Tab') return;
@@ -1877,10 +1925,11 @@
       focusable[focusable.length - 1].focus();
     }
   }
-  function showOnboard() {
+  function showOnboard({ full = false } = {}) {
     obPreviousFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
       ? document.activeElement
       : $('#logo-btn');
+    obSteps = full ? OB_STEPS : OB_STEPS.filter((step) => step.firstRun !== false);
     obIndex = 0;
     renderOnboard();
     obScrim.classList.remove('hidden');
@@ -1910,13 +1959,25 @@
     }
     obScrim.classList.add('hidden');
     if (!keepModalState) volyxLens.setModalState(false);
+    obFromSettings = false;
+    obReplay = false;
     if (restoreFocus) requestAnimationFrame(() => (obPreviousFocus && obPreviousFocus.isConnected ? obPreviousFocus : $('#logo-btn')).focus());
     return true;
   }
-  $('#ob-next').addEventListener('click', () => { if (obIndex === OB_STEPS.length - 1) finishOnboard(); else { obIndex++; renderOnboard(); $('#ob-title').focus(); } });
+  $('#ob-next').addEventListener('click', () => { if (obIndex === obSteps.length - 1) finishOnboard({ keepModalState: obFromSettings }); else { obIndex++; renderOnboard(); $('#ob-title').focus(); } });
   $('#ob-back').addEventListener('click', () => { if (obIndex > 0) { obIndex--; renderOnboard(); $('#ob-title').focus(); } });
-  $('#ob-skip').addEventListener('click', finishOnboard);
-  $('#logo-btn').addEventListener('click', showOnboard);
+  $('#ob-skip').addEventListener('click', () => finishOnboard({ keepModalState: obFromSettings }));
+  $('#logo-btn').addEventListener('click', () => { obReplay = true; showOnboard({ full: true }); });
+
+  // Reopen the interactive guide from Settings → Help.
+  $('#help-open-guide').addEventListener('click', () => {
+    obPreviousFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : $('#logo-btn');
+    obFromSettings = true;
+    obReplay = true;
+    showOnboard({ full: true });
+  });
 
   // ---- boot --------------------------------------------------------------
   (async function boot() {

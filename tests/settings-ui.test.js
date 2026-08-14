@@ -13,7 +13,7 @@ const styles = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8'
 const settingsHarness = fs.readFileSync(path.join(root, 'scripts', 'check-settings-ui.js'), 'utf8');
 
 test('settings use five simple pages without removing existing controls', () => {
-  for (const section of ['providers', 'listening', 'context', 'shortcuts', 'updates']) {
+  for (const section of ['providers', 'listening', 'context', 'shortcuts', 'updates', 'help']) {
     assert.match(html, new RegExp(`data-settings-section="${section}"`));
     assert.match(html, new RegExp(`data-settings-page="${section}"`));
     assert.match(html, new RegExp(`id="settings-${section}-title"`));
@@ -99,4 +99,15 @@ test('runtime fallback routing is visible and crosses only the existing event bo
   assert.match(main, /send\('llm:provider'/);
   assert.match(preload, /'llm:provider'/);
   assert.match(renderer, /Fallback provider/);
+});
+
+test('Help page reopens the interactive guide from Settings', () => {
+  assert.match(html, /data-settings-section="help"/);
+  assert.match(html, /data-settings-page="help"/);
+  assert.match(html, /id="help-open-guide"[^>]*type="button"/);
+  assert.match(html, /help-topics/);
+  assert.match(renderer, /\$\('#help-open-guide'\)\.addEventListener\('click'/);
+  assert.match(renderer, /showOnboard\(\{ full: true \}\)/);
+  assert.match(styles, /\.help-actions button\s*\{[^}]*border-radius:\s*7px/);
+  assert.match(styles, /\.help-topic-icon\s*\{[^}]*border-radius:\s*7px/);
 });
