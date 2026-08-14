@@ -950,8 +950,8 @@ async function shutdownAll() {
     await stopTranscriptionPipeline({ immediate: true });
     localOcr.cancelAll();
     clearTaskContext();
-    resetSidecar();
     resetTranscriptData();
+    resetSidecar();
     globalShortcut.unregisterAll();
     send('capture:state', { active: false });
   })();

@@ -25,6 +25,7 @@ test('defaults enable realtime Whisper with a bounded batch fallback', () => {
     offlineCloudFallback: false,
     language: '',
     delay: 'low',
+    whisperModel: 'base.en',
   });
 });
 
