@@ -44,9 +44,11 @@ const { createUpdateManager } = require('./src/update-manager');
 const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
+const { createMeetingStore } = require('./src/meeting-store');
 const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = require('./src/response-context');
 
 const chatHistory = createChatHistory();
+const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
 const personalContextStore = createPersonalContextStore({ userDataPath: currentUserDataPath, safeStorage });
 const AUTO_ANSWER_CONFIDENCE_MIN = 0.5;
 const AUTO_ANSWER_COOLDOWN_MS = 60000;
@@ -840,6 +842,22 @@ function scheduleCaptureTimers() {
   }, limitMinutes * 60 * 1000);
 }
 
+// -------- Meeting history --------
+function finalizeMeeting(reason = 'capture-stop', opts = {}) {
+  const settings = store.getSettings();
+  const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
+  if (!historyEnabled) return { saved: false, reason: 'disabled' };
+  const result = meetingStore.finalize({
+    turns: transcript,
+    enabled: true,
+    reason,
+    startedAt: opts.startedAt || null,
+    endedAt: opts.endedAt || null,
+  });
+  if (result.saved) send('history:changed', { saved: true, id: result.id, turnCount: result.turnCount });
+  return result;
+}
+
 async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
   if (active) {
@@ -879,6 +897,7 @@ async function applyCaptureState(active) {
   acousticEchoFilter.reset();
   state.capturing = false;
   lastCaptureEndedAt = Date.now();
+  const captureStartedAtEnd = captureStartedAt;
   captureStartedAt = null;
   clearCaptureTimers();
   const immediate = pendingStopImmediate;
@@ -887,6 +906,9 @@ async function applyCaptureState(active) {
   pendingStopReason = null;
   send('capture:state', { active: false, ...(reason ? { reason } : {}) });
   await stopTranscriptionPipeline({ immediate });
+  if (reason !== 'suspend' && reason !== 'lock') {
+    finalizeMeeting(reason || 'capture-stop', { startedAt: captureStartedAtEnd, endedAt: lastCaptureEndedAt });
+  }
   return false;
 }
 
@@ -948,6 +970,7 @@ async function shutdownAll() {
     pendingDisplayCapture = false;
     await systemAudioCapture.stop({ immediate: true });
     await stopTranscriptionPipeline({ immediate: true });
+    finalizeMeeting('app-quit');
     localOcr.cancelAll();
     clearTaskContext();
     resetTranscriptData();
@@ -982,6 +1005,7 @@ function startNewSession() {
     resetSidecar();
     const restartTranscription = state.capturing && desiredCapturing;
     if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
+    finalizeMeeting('new-session');
     resetTranscriptData();
     chatHistory.clear();
     clearTaskContext();
@@ -1383,6 +1407,18 @@ handleTrusted('transcript:clear', () => {
   return { cleared };
 });
 handleTrusted('transcript:export', (_event, format) => exportTranscript(String(format || 'txt')));
+handleTrusted('history:list', () => meetingStore.list());
+handleTrusted('history:get', (_event, id) => meetingStore.get(String(id || '')));
+handleTrusted('history:delete', (_event, id) => {
+  const result = meetingStore.remove(String(id || ''));
+  if (result.removed) send('history:changed', { deleted: true, id: String(id) });
+  return result;
+});
+handleTrusted('history:clear', () => {
+  const result = meetingStore.clear();
+  send('history:changed', { cleared: true, count: result.cleared });
+  return result;
+});
 handleTrusted('diagnostics:get', () => getSessionDiagnostics());
 handleTrusted('shortcuts:get', () => getShortcutStatus());
 handleTrusted('shortcuts:retry', () => registerShortcuts());

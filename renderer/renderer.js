@@ -1330,6 +1330,7 @@
     $('#stt-offline-enabled').checked = transcription.offlineEnabled === true;
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
+    $('#stt-history-enabled').checked = transcription.historyEnabled === true;
     const audio = settings.audio || {};
     $('#audio-input-device').value = audio.inputDeviceId || '';
     $('#audio-mic-enabled').checked = audio.micEnabled !== false;
@@ -1484,7 +1485,8 @@
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
       whisperModel: $('#stt-whisper-model').value,
       language: ['auto', 'automatic'].includes($('#stt-language').value.trim().toLowerCase()) ? '' : $('#stt-language').value.trim().toLowerCase(),
-      delay: $('#stt-delay').value
+      delay: $('#stt-delay').value,
+      historyEnabled: $('#stt-history-enabled').checked,
     };
     settings.audio = {
       ...(settings.audio || {}),

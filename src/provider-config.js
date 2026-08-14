@@ -100,6 +100,7 @@ function getDefaultSettings() {
       language: '',
       delay: 'low',
       whisperModel: 'base.en',
+      historyEnabled: false,
     },
   };
 }

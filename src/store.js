@@ -175,6 +175,7 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'offlineEnabled') && typeof value.offlineEnabled === 'boolean') transcription.offlineEnabled = value.offlineEnabled;
     if (Object.hasOwn(value, 'offlineCloudFallback') && typeof value.offlineCloudFallback === 'boolean') transcription.offlineCloudFallback = value.offlineCloudFallback;
     if (Object.hasOwn(value, 'language')) transcription.language = String(value.language || '').slice(0, 20);
+    if (Object.hasOwn(value, 'historyEnabled') && typeof value.historyEnabled === 'boolean') transcription.historyEnabled = value.historyEnabled;
     if (Object.hasOwn(value, 'delay') && ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(value.delay)) transcription.delay = value.delay;
     if (Object.hasOwn(value, 'whisperModel')) transcription.whisperModel = String(value.whisperModel || DEFAULTS.transcription.whisperModel).slice(0, 50);
     if (Object.keys(transcription).length) safe.transcription = transcription;
