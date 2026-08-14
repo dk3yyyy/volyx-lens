@@ -1790,7 +1790,7 @@
       note: 'The audio-health panel shows each channel while listening.',
       firstRun: false,
       title: 'You and Them.',
-      body: '<p><span class="hl">You · Mic</span> captures your voice. <span class="hl">Them · System</span> captures the other participant through system audio loopback on macOS. Each channel is processed independently, so one side can stay clear even when the other is noisy.</p><div class="ob-note">System audio uses an internal loopback; pick the correct output device in Listening settings if a call is missing from Them.</div>'
+      body: '<p><span class="hl">You · Mic</span> captures your voice. <span class="hl">Them · System</span> captures the other participant through system audio loopback on macOS. Each channel is processed independently, so one side can stay clear even when the other is noisy.</p><div class="ob-note">System audio uses an internal loopback.</div>'
     },
     {
       stepLabel: 'Task context',
