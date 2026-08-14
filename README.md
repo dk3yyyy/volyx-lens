@@ -76,8 +76,8 @@ v0.4.0 is an **Apple Developer ID–signed and notarized production release**. I
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon** — M1, M2, M3, M4, or newer | `Volyx-Lens-0.4.0-macOS-arm64.dmg` |
-| **Intel** | `Volyx-Lens-0.4.0-macOS-x64.dmg` |
+| **Apple Silicon** — M1, M2, M3, M4, or newer | `volyx-lens-0.4.0-mac-arm64.dmg` |
+| **Intel** | `volyx-lens-0.4.0-mac-x64.dmg` |
 
 **[Open the v0.4.0 release and download the matching DMG →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.4.0)**
 
