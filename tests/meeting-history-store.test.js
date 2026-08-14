@@ -187,3 +187,22 @@ test('main process wires the store, finalize points, and trusted IPC', () => {
   }
   assert.match(preload, /'history:changed'/);
 });
+
+test('finalize captures only turns new since the last finalize (independent meetings)', () => {
+  assert.match(main, /function pendingFinalizeTurns\(\)/);
+  assert.match(main, /segment\.id > finalizedSegmentWatermark/);
+  assert.match(main, /function advanceFinalizeWatermark\(\)/);
+  assert.match(main, /finalizedSegmentWatermark = 0;/);
+  assert.match(main, /turns: pendingFinalizeTurns\(\)/);
+  const watermarkOrder = main.indexOf('finalizedSegmentWatermark = 0;');
+  const advanceDef = main.indexOf('function advanceFinalizeWatermark()');
+  const resetDef = main.indexOf('function resetTranscriptData()');
+  assert.ok(watermarkOrder > -1 && advanceDef > -1 && resetDef > -1, 'watermark is declared, advanced, and reset');
+});
+
+test('finalize falls back to capture timestamps for new-session and app-quit paths', () => {
+  assert.match(main, /startedAt: opts\.startedAt \|\| captureStartedAt \|\| lastCaptureStartedAt \|\| null/);
+  assert.match(main, /endedAt: opts\.endedAt \|\| lastCaptureEndedAt \|\| null/);
+  assert.match(main, /finalizeMeeting\('new-session'\)/);
+  assert.match(main, /finalizeMeeting\('app-quit'\)/);
+});

@@ -288,7 +288,7 @@
     $('#meeting-history-count').textContent = `${records.length} ${records.length === 1 ? 'meeting' : 'meetings'}`;
     $('#meeting-history-action-count').textContent = String(meetingHistoryRecords.length);
     $('#meeting-history-action-count').classList.toggle('hidden', meetingHistoryRecords.length === 0);
-    $('#meeting-history-clear').disabled = records.length === 0;
+    $('#meeting-history-clear').disabled = meetingHistoryRecords.length === 0;
     if (!records.length) {
       const empty = document.createElement('div');
       empty.className = 'history-empty';
@@ -318,6 +318,7 @@
       remove.title = 'Delete this meeting';
       remove.setAttribute('aria-label', 'Delete meeting');
       remove.addEventListener('click', async () => {
+        if (!window.confirm('Delete this saved meeting? This cannot be undone.')) return;
         try {
           const result = await volyxLens.historyDelete(record.id);
           showStatus(result && result.removed ? 'Meeting deleted.' : 'That meeting is no longer available.');
