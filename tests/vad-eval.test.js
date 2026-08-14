@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   mulberry32, decodeWav, silencePcm, noisePcm, scaleToRms, mixPcm, insertSilenceGap,
-  buildFixtures, fixtureHash, buildRow, evaluatePcm, summarize, normalizeText, wer,
+  buildFixtures, fixtureHash, buildRow, evaluatePcm, summarize, coverageIssue, normalizeText, wer,
   THRESHOLDS, checkThresholds,
 } = require('../scripts/vad-accuracy-eval');
 const { pcmToWav } = require('../src/wav');
@@ -100,6 +100,23 @@ test('checkThresholds flags regressions past the baseline limits', () => {
   };
   const violations = checkThresholds(summary);
   assert.deepEqual(violations.map((v) => v.name), ['emptyTurnRate', 'falseNegativeRate', 'meanStartErrorMs', 'meanEndErrorMs', 'truncationCount', 'wer']);
+});
+
+test('coverageIssue reports a partial evaluation and passes on the full set', () => {
+  const full = buildFixtures();
+  const speech = full.filter((f) => f.kind === 'speech');
+  // One missing TTS voice: drop a single speech fixture.
+  const partial = full.filter((f) => f.id !== 'accent-us');
+  const issue = coverageIssue(partial, full);
+  assert.ok(issue, 'missing a speech fixture must be reported');
+  assert.match(issue, /1 of 20 speech fixture\(s\) skipped/);
+  // Full set: no issue.
+  assert.equal(coverageIssue(full, full), null);
+  // Zero speech evaluated is the vacuous-pass case: it must be reported.
+  const emptiesOnly = full.filter((f) => f.kind === 'empty');
+  assert.ok(coverageIssue(emptiesOnly, full), 'no speech fixtures evaluated must be reported');
+  // Robust against a caller that passes the same fixtures twice.
+  assert.equal(coverageIssue(speech, speech), null);
 });
 
 test('THRESHOLDS covers every enforced metric', () => {

@@ -57,8 +57,6 @@ const LEAD_MS = 500;
 // measured and the end-error metric degrades to Math.abs(null) === 0.
 const TRAIL_MS = 1500;
 const DEFAULT_RATE = 150;
-const START_TOLERANCE_MS = 400;
-const END_TOLERANCE_MS = 900;
 const TRUNCATION_TOLERANCE_MS = 1500;
 const VAD_OPTIONS = { threshold: 160, silenceMs: 700, maxUtteranceMs: 20000 };
 
@@ -465,6 +463,20 @@ function checkThresholds(summary, thresholds = THRESHOLDS) {
   return violations;
 }
 
+// The gate must never pass on a partial evaluation: on machines without every
+// TTS voice, missing speech fixtures are skipped and the remaining metrics are
+// vacuous (0% false negatives over nothing). Return a reason string when the
+// evaluated set is smaller than the full manifest, or null when coverage is
+// complete.
+function coverageIssue(evaluatedFixtures, fullFixtures) {
+  const evaluatedSpeech = evaluatedFixtures.filter((f) => f.kind === 'speech').length;
+  const fullSpeech = fullFixtures.filter((f) => f.kind === 'speech').length;
+  if (evaluatedSpeech < fullSpeech) {
+    return `${fullSpeech - evaluatedSpeech} of ${fullSpeech} speech fixture(s) skipped (TTS voice not installed)`;
+  }
+  return null;
+}
+
 function printReport(summary, rows, whisperReady) {
   console.log(`\nVAD accuracy evaluation — ${summary.fixtures} fixtures`);
   console.log(`  empty-turn rate:      ${Math.round(summary.emptyTurnRate * 100)}%`);
@@ -513,15 +525,22 @@ async function main() {
   const summary = summarize(rows);
   printReport(summary, rows, whisperReady);
   if (enforce) {
-    const violations = checkThresholds(summary, thresholds);
-    if (violations.length) {
-      console.log('\nTHRESHOLD VIOLATIONS:');
-      for (const violation of violations) {
-        console.log(`  ${violation.name}: ${violation.actual} exceeds limit ${violation.limit}`);
-      }
+    const coverage = coverageIssue(fixtures, buildFixtures());
+    if (coverage) {
+      console.log(`\nCHECK REFUSED: ${coverage}; the gate would pass vacuously.`);
+      console.log('Install the missing macOS voices (or run on a machine with the full set) before --check.');
       process.exitCode = 1;
     } else {
-      console.log('\nAll thresholds passed.');
+      const violations = checkThresholds(summary, thresholds);
+      if (violations.length) {
+        console.log('\nTHRESHOLD VIOLATIONS:');
+        for (const violation of violations) {
+          console.log(`  ${violation.name}: ${violation.actual} exceeds limit ${violation.limit}`);
+        }
+        process.exitCode = 1;
+      } else {
+        console.log('\nAll thresholds passed.');
+      }
     }
   }
   fs.writeFileSync(path.join(CACHE_DIR, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), summary, thresholds, rows }, null, 2));
@@ -550,6 +569,7 @@ module.exports = {
   normalizeText,
   wer,
   summarize,
+  coverageIssue,
   THRESHOLDS,
   checkThresholds,
 };
