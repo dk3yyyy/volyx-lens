@@ -119,14 +119,84 @@ test('reset clears detection state', () => {
   assert.equal(state.windowTurns, 0);
 });
 
+test('remove retracts a leaked contribution and can withdraw a false meeting', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  const t0 = now;
+  const turns = [
+    { id: 1, channel: 'them', text: 'One.', ts: t0 },
+    { id: 2, channel: 'you', text: 'Reply.', ts: t0 + 1 * min },
+    { id: 3, channel: 'them', text: 'Two.', ts: t0 + 2 * min },
+    { id: 4, channel: 'you', text: 'Reply again.', ts: t0 + 3 * min },
+    { id: 5, channel: 'them', text: 'Three.', ts: t0 + 4 * min },
+    { id: 6, channel: 'you', text: 'Leaked mic echo that is later suppressed.', ts: t0 + 5 * min },
+  ];
+  for (const turn of turns) detector.add(turn);
+  assert.equal(detector.snapshot().meeting, true);
+  // The leaked mic segment is removed as cross-talk; without it the two-sided
+  // threshold no longer holds, so detection is withdrawn rather than latched.
+  detector.remove(6);
+  const state = detector.snapshot();
+  assert.equal(state.meeting, false);
+  assert.equal(state.detectedSince, null);
+  assert.equal(state.youTurns, 2);
+  assert.equal(state.themTurns, 3);
+});
+
+test('remove of an unknown or untyped id is a no-op', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  detector.add({ id: 1, channel: 'you', text: 'Hi', ts: now });
+  const before = detector.snapshot().windowTurns;
+  assert.equal(detector.remove(999).windowTurns, before);
+  assert.equal(detector.remove(null).windowTurns, before);
+  assert.equal(detector.remove(undefined).windowTurns, before);
+  assert.equal(detector.remove('1').windowTurns, before);
+});
+
+test('detector entries are keyed by segment id so removed turns do not linger', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  const t0 = now;
+  const turns = [
+    { id: 1, channel: 'them', text: 'A.', ts: t0 },
+    { id: 2, channel: 'you', text: 'B.', ts: t0 + 1 * min },
+    { id: 3, channel: 'them', text: 'C.', ts: t0 + 2 * min },
+    { id: 4, channel: 'you', text: 'D.', ts: t0 + 3 * min },
+    { id: 5, channel: 'them', text: 'E.', ts: t0 + 4 * min },
+    { id: 6, channel: 'you', text: 'F.', ts: t0 + 5 * min },
+  ];
+  for (const turn of turns) detector.add(turn);
+  detector.remove(2);
+  const state = detector.snapshot();
+  assert.equal(state.meeting, false);
+  assert.equal(state.youTurns, 2);
+  assert.equal(state.windowTurns, 5);
+});
+
 test('meeting detection is opt-in, runs only in-session on finalized turns, and never calls a model', () => {
   assert.equal(providerConfig.includes('meetingDetection: false,'), true);
   assert.match(store, /meetingDetection'\) && typeof value\.meetingDetection === 'boolean'/);
   assert.match(main, /meetingDetection === true/);
-  assert.match(main, /meetingDetector\.add\(\{ channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
+  assert.match(main, /meetingDetector\.add\(\{ id: segment\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
   assert.match(main, /meetingDetector\.reset\(\)/);
   assert.match(main, /meeting:detected/);
   assert.doesNotMatch(main, /meetingDetector[\s\S]{0,200}(runFeature|\.stream\()/);
+});
+
+test('suppressed cross-talk retracts the leaked contribution and clears the indicator', () => {
+  assert.match(main, /meetingDetector\.remove\(leakedSegment\.id\)/);
+  assert.match(main, /if \(!state\.meeting && meetingDetectedNotified\)/);
+  assert.match(main, /meetingDetectedNotified = false;/);
+  assert.match(main, /send\('meeting:cleared', \{\}\)/);
+  assert.match(preload, /'meeting:cleared'/);
+  assert.match(renderer, /volyxLens\.on\('meeting:cleared'/);
+  assert.match(renderer, /meeting-indicator'\)\.classList\.add\('hidden'\)/);
+});
+
+test('capture stop resets the detector so each listening period is classified independently', () => {
+  const stopBlock = main.match(/reason !== 'suspend' && reason !== 'lock'[\s\S]{0,220}/);
+  assert.ok(stopBlock, 'capture-stop finalize block exists');
+  assert.match(stopBlock[0], /finalizeMeeting\(reason \|\| 'capture-stop'/);
+  assert.match(stopBlock[0], /meetingDetector\.reset\(\)/);
+  assert.match(stopBlock[0], /meetingDetectedNotified = false;/);
 });
 
 test('main tags finalized history records with the meeting flag', () => {

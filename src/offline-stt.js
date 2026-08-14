@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { WhisperServerSession } = require('./whisper-server-session');
+const { normalizeWhisperLanguage } = require('./whisper-language');
 
 const MAX_TRANSCRIPT_BYTES = 64 * 1024;
 const MAX_TRANSCRIPT_CHARACTERS = 20000;
@@ -54,7 +55,8 @@ async function runWhisperCli({ executable, model, wav, language = '', prompt = '
     await fs.promises.chmod(directory, 0o700);
     if (jobState.cancelled) throw offlineError('Offline transcription was cancelled.', 'offline_cancelled');
     const args = ['-m', model, '-f', '-', '--output-txt', '--output-file', outputPrefix, '--no-timestamps'];
-    if (language) args.push('-l', language);
+    const whisperLanguage = normalizeWhisperLanguage(language);
+    if (whisperLanguage) args.push('-l', whisperLanguage);
     // Seed the recognizer with expected domain terms to reduce mis-spelling of
     // model names, product names, and acronyms (whisper.cpp --prompt).
     if (prompt) args.push('--prompt', prompt);

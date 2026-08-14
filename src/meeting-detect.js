@@ -46,25 +46,43 @@ function createMeetingDetector({
     };
   }
 
+  function recomputeMeeting() {
+    const youTurns = turns.filter((turn) => turn.channel === 'you').length;
+    const themTurns = turns.filter((turn) => turn.channel === 'them').length;
+    const flips = countFlips(turns);
+    const span = turns.length ? turns[turns.length - 1].ts - turns[0].ts : 0;
+    if (youTurns >= minTurnsPerSide && themTurns >= minTurnsPerSide && flips >= minFlips && span >= minSpanMs) {
+      if (!meeting) detectedSince = turns.length ? turns[turns.length - 1].ts : null;
+      meeting = true;
+    } else {
+      meeting = false;
+      detectedSince = null;
+    }
+    return snapshot();
+  }
+
   function add(turn) {
     if (!turn || typeof turn !== 'object') return snapshot();
     const channel = turn.channel === 'you' ? 'you' : 'them';
     if (!String(turn.text || '').trim()) return snapshot();
     const ts = Number.isFinite(turn.ts) ? turn.ts : now();
-    turns.push({ channel, ts });
+    turns.push({ id: Number.isFinite(turn.id) ? turn.id : null, channel, ts });
     const cutoff = ts - windowMs;
     while (turns.length && turns[0].ts < cutoff) turns.shift();
-    if (!meeting) {
-      const youTurns = turns.filter((turn) => turn.channel === 'you').length;
-      const themTurns = turns.filter((turn) => turn.channel === 'them').length;
-      const flips = countFlips(turns);
-      const span = turns.length ? turns[turns.length - 1].ts - turns[0].ts : 0;
-      if (youTurns >= minTurnsPerSide && themTurns >= minTurnsPerSide && flips >= minFlips && span >= minSpanMs) {
-        meeting = true;
-        detectedSince = ts;
-      }
-    }
+    if (!meeting) recomputeMeeting();
     return snapshot();
+  }
+
+  function remove(id) {
+    if (!Number.isFinite(id)) return snapshot();
+    const before = turns.length;
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      if (turns[index].id === id) turns.splice(index, 1);
+    }
+    if (turns.length === before) return snapshot();
+    const cutoff = now() - windowMs;
+    while (turns.length && turns[0].ts < cutoff) turns.shift();
+    return recomputeMeeting();
   }
 
   function reset() {
@@ -74,7 +92,7 @@ function createMeetingDetector({
     return snapshot();
   }
 
-  return { add, snapshot, reset };
+  return { add, remove, snapshot, reset };
 }
 
 module.exports = { createMeetingDetector, DEFAULT_WINDOW_MS, DEFAULT_MIN_TURNS_PER_SIDE, DEFAULT_MIN_FLIPS, DEFAULT_MIN_SPAN_MS };

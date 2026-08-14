@@ -33,10 +33,10 @@ function shouldUseLocalWhisper(transcription, env) {
 // in-flight startup, so no caller can queue against an unstarted or failed
 // instance. A published instance whose child has exited (running is false) is
 // replaced here on the next request.
-async function startSidecar(modelId, factory) {
+async function startSidecar(modelId, language, factory) {
   if (!sidecar || !sidecar.running) {
     if (!starting) {
-      const instance = factory(modelId);
+      const instance = factory(modelId, language);
       const requestedGeneration = generation;
       starting = instance.start().then(() => {
         // If a reset happened while this startup was pending, do not publish the
@@ -56,26 +56,34 @@ async function startSidecar(modelId, factory) {
     }
     await starting;
   }
+  // A running singleton was constructed with the language at the time it was
+  // created. Honor a language change on a subsequent call by updating the
+  // instance instead of requiring a restart (stale-language fix).
+  if (typeof sidecar.setLanguage === 'function') sidecar.setLanguage(language);
   return sidecar;
 }
 
 // Advanced path (VOLYX_LENS_WHISPER_SIDECAR): model comes from the env var.
-async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
+async function transcribeViaSidecar(wav, env, vocab = '', language = '', sidecarFactory) {
   const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
-  const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
-  const instance = await startSidecar(modelId, factory);
-  // Queue the WAV for in-memory transcription (no temp files on disk)
-  const result = await instance.queueYou(wav);
+  const factory = sidecarFactory || ((id, lang) => new WhisperSidecar({ modelId: id, language: lang }));
+  const instance = await startSidecar(modelId, language, factory);
+  // Queue the WAV for in-memory transcription (no temp files on disk).
+  // The language is pinned per job so a later settings change cannot
+  // re-transcribe already-queued audio.
+  const result = await instance.queueYou(wav, language);
   return (result.text || '').trim();
 }
 
 // Local (whisper.cpp) provider: model comes from the Settings UI.
 async function transcribeViaLocalWhisper(wav, env, language, whisperModel, sidecarFactory) {
   const modelId = whisperModel || 'base.en';
-  const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
-  const instance = await startSidecar(modelId, factory);
-  // Queue the WAV for in-memory transcription (no temp files on disk)
-  const result = await instance.queueYou(wav);
+  const factory = sidecarFactory || ((id, lang) => new WhisperSidecar({ modelId: id, language: lang }));
+  const instance = await startSidecar(modelId, language, factory);
+  // Queue the WAV for in-memory transcription (no temp files on disk).
+  // The language is pinned per job so a later settings change cannot
+  // re-transcribe already-queued audio.
+  const result = await instance.queueYou(wav, language);
   return (result.text || '').trim();
 }
 
@@ -118,7 +126,7 @@ async function transcribeGemini(apiKey, wav, model) {
 // Speech-to-text factory. Decoupled from the LLM provider because Anthropic has
 // no audio API — we transcribe with whatever audio-capable key is available, and
 // fall back across providers. Returns { text, provider } or { text:'', error }.
-function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe = transcribeOffline, openAITranscribe = transcribeOpenAI, geminiTranscribe = transcribeGemini, sidecarFactory = (modelId) => new WhisperSidecar({ modelId }) } = {}) {
+function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe = transcribeOffline, openAITranscribe = transcribeOpenAI, geminiTranscribe = transcribeGemini, sidecarFactory = (modelId, language) => new WhisperSidecar({ modelId, language }) } = {}) {
   const keys = settings.apiKeys || {};
   const chain = [];
   const transcription = settings.transcription || {};
@@ -130,7 +138,7 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   // Sidecar mode: strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR env var
   const useSidecar = shouldUseSidecar(env);
   if (useSidecar) {
-    chain.push({ p: 'sidecar', fn: (wav) => transcribeViaSidecar(wav, env, vocab, sidecarFactory) });
+    chain.push({ p: 'sidecar', fn: (wav) => transcribeViaSidecar(wav, env, vocab, transcription.language || '', sidecarFactory) });
   }
   // Local whisper.cpp: first-class "Local (whisper.cpp)" provider, enabled when
   // offlineEnabled is on and the VOLYX_LENS_WHISPER_SIDECAR opt-in is not active.

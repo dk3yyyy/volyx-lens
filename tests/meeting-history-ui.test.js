@@ -46,7 +46,7 @@ test('renderer opens the panel, lists, searches, and shows a privacy hint when e
   assert.match(renderer, /meetingHistorySearch\.trim\(\)\.toLowerCase\(\)/);
   assert.match(renderer, /No meeting history yet\. Enable "Save meeting history"/);
   assert.match(renderer, /volyxLens\.historyDelete\(record\.id\)/);
-  assert.match(renderer, /meeting-history-clear'\)\.disabled = records\.length === 0/);
+  assert.match(renderer, /meeting-history-clear'\)\.disabled = meetingHistoryRecords\.length === 0/);
 });
 
 test('renderer opens a detail view, exports, deletes, clears, and closes back to the list', () => {
@@ -59,6 +59,14 @@ test('renderer opens a detail view, exports, deletes, clears, and closes back to
   assert.match(renderer, /volyxLens\.historyClear\(\)/);
   assert.match(renderer, /meeting-history-list'\)\.classList\.add\('hidden'\)/);
   assert.match(renderer, /meeting-history-detail'\)\.classList\.remove\('hidden'\)/);
+});
+
+test('renderer confirms every destructive history action before deleting', () => {
+  assert.match(renderer, /if \(!window\.confirm\('Delete this saved meeting\? This cannot be undone\.'\)\) return;/);
+  assert.match(renderer, /if \(!window\.confirm\('Delete ALL saved meetings\? This cannot be undone\.'\)\) return;/);
+  const rowDelete = renderer.match(/history-entry-delete[\s\S]*?historyDelete\(record\.id\)/);
+  assert.ok(rowDelete, 'list-row delete handler exists');
+  assert.match(rowDelete[0], /window\.confirm\('Delete this saved meeting\? This cannot be undone\.'\)/);
 });
 
 test('notes generation confirms long recaps and streams recap tokens into the panel', () => {
