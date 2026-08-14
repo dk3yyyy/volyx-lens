@@ -135,6 +135,7 @@ class WhisperSidecar {
     this.host = options.host || '127.0.0.1';
     this.child = null;
     this._running = false;
+    this._state = null;
     this.requestQueue = { you: [], them: [] };
     this.processingYou = false;
     this.processingThem = false;
@@ -145,10 +146,11 @@ class WhisperSidecar {
 
   get running() { return this._running; }
 
-  set running(next) { this._running = next; }
+  get state() { return this._state; }
 
   _setState(next) {
-    this.running = next;
+    this._state = next;
+    this._running = next === 'ready' || next === 'starting';
     this.onstate(next);
   }
 
@@ -240,38 +242,45 @@ class WhisperSidecar {
     }
   }
 
-  // Queue audio for transcription (non-blocking, shared between You and Them)
+  // Queue audio for transcription (non-blocking, shared between You and Them).
+  // Resolves with { text, channel, timestamp } once the sidecar transcribes it.
   queueYou(pcmBuffer) {
-    if (this.requestQueue.you.length >= 64) return; // drop oldest
-    this.requestQueue.you.push(pcmBuffer);
-    this._tryProcess();
+    if (this.requestQueue.you.length >= 64) return Promise.reject(new Error('sidecar queue full'));
+    return new Promise((resolve, reject) => {
+      this.requestQueue.you.push({ pcm: pcmBuffer, channel: 'you', resolve, reject });
+      this._tryProcess();
+    });
   }
 
   queueThem(pcmBuffer) {
-    if (this.requestQueue.them.length >= 64) return;
-    this.requestQueue.them.push(pcmBuffer);
-    this._tryProcess();
+    if (this.requestQueue.them.length >= 64) return Promise.reject(new Error('sidecar queue full'));
+    return new Promise((resolve, reject) => {
+      this.requestQueue.them.push({ pcm: pcmBuffer, channel: 'them', resolve, reject });
+      this._tryProcess();
+    });
   }
 
   _tryProcess() {
     if (this.processingYou || this.processingThem) return;
     if (this.requestQueue.you.length > 0) {
+      const item = this.requestQueue.you.shift();
       this.processingYou = true;
-      const pcm = this.requestQueue.you.shift();
-      this._transcribe(pcm, 'you').then(() => {
-        this.processingYou = false;
-        this._tryProcess();
-      }).catch(() => {
+      this._transcribe(item.pcm, item.channel).then((text) => {
+        item.resolve({ text, channel: item.channel, timestamp: Date.now() });
+      }).catch((err) => {
+        item.reject(err);
+      }).finally(() => {
         this.processingYou = false;
         this._tryProcess();
       });
     } else if (this.requestQueue.them.length > 0) {
+      const item = this.requestQueue.them.shift();
       this.processingThem = true;
-      const pcm = this.requestQueue.them.shift();
-      this._transcribe(pcm, 'them').then(() => {
-        this.processingThem = false;
-        this._tryProcess();
-      }).catch(() => {
+      this._transcribe(item.pcm, item.channel).then((text) => {
+        item.resolve({ text, channel: item.channel, timestamp: Date.now() });
+      }).catch((err) => {
+        item.reject(err);
+      }).finally(() => {
         this.processingThem = false;
         this._tryProcess();
       });

@@ -131,3 +131,11 @@ test('offline transcription children are cancelled on lifecycle shutdown', async
     await assert.rejects(pending, (error) => error.code === 'offline_cancelled');
   } finally { await fs.promises.rm(item.dir, { recursive: true, force: true }); }
 });
+
+test('the whisper sidecar is strictly opt-in and takes no precedence on its own', () => {
+  const noFlag = createSTT({ transcription: {}, apiKeys: {} }, { env: {} });
+  assert.equal(noFlag.available, false);
+  assert.deepEqual(noFlag.providers, []);
+  const flagged = createSTT({ transcription: {}, apiKeys: {} }, { env: { VOLYX_LENS_WHISPER_SIDECAR: '1' } });
+  assert.deepEqual(flagged.providers, ['sidecar']);
+});
