@@ -531,6 +531,18 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .update-actions button:disabled { opacity: 0.5; cursor: wait; }
 #update-install { border-color: rgba(54,185,120,0.38); background: rgba(54,185,120,0.10); color: #9ee2bf; }
 .s-status { color: var(--tx-mut); font-size: 11.5px; line-height: 1.4; margin-top: 14px; padding-top: 10px; min-height: 16px; border-top: 1px solid rgba(255,255,255,0.07); }
+.help-card { display: grid; gap: 12px; margin-top: 4px; padding: 14px; border: 1px solid rgba(255,255,255,0.11); border-radius: var(--r-8); background: rgba(255,255,255,0.025); }
+.help-card-head strong { color: var(--tx-1); font-size: 12px; }
+.help-card-head span { display: block; color: var(--tx-mut); font-size: 11px; line-height: 1.4; margin-top: 2px; }
+.help-actions { display: flex; gap: 8px; }
+.help-actions button { border: 1px solid rgba(102,119,255,0.35); background: rgba(102,119,255,0.09); color: #C7CEFF; border-radius: 7px; padding: 7px 12px; font: 600 11px var(--font); cursor: pointer; }
+.help-actions button:hover { border-color: rgba(102,119,255,0.65); background: rgba(102,119,255,0.17); color: #fff; }
+.help-topics { display: grid; gap: 8px; margin-top: 12px; }
+.help-topic { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.09); border-radius: var(--r-8); background: rgba(255,255,255,0.02); }
+.help-topic-icon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 26px; padding: 0 8px; border-radius: 7px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.13); font: 600 11px var(--font); color: var(--tx-2); }
+.help-topic strong { display: block; color: var(--tx-2); font-size: 11.5px; }
+.help-topic span { color: var(--tx-mut); font-size: 10.5px; line-height: 1.3; overflow-wrap: anywhere; }
+.help-topic div > span { display: block; }
 @media (max-width: 560px) {
   #settings { height: calc(100vh - 24px); }
   .s-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); }

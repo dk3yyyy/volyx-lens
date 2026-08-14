@@ -133,6 +133,7 @@
           <button type="button" data-settings-section="context"><strong>Context</strong><span>Resume and role</span></button>
           <button type="button" data-settings-section="shortcuts"><strong>Shortcuts</strong><span>Keyboard status</span></button>
           <button type="button" data-settings-section="updates"><strong>Updates</strong><span>Version and releases</span></button>
+          <button type="button" data-settings-section="help"><strong>Help</strong><span>Guide and support</span></button>
         </nav>
         <div class="s-pages">
           <section class="s-page on" data-settings-page="providers" aria-labelledby="settings-providers-title">
@@ -299,6 +300,23 @@
               </div>
             </div>
             <div class="s-note">Updates are manual: Volyx Lens does not check or download in the background. Installation is available only in signed packaged macOS builds published by VolyxAI.</div>
+          </section>
+
+          <section class="s-page" data-settings-page="help" aria-labelledby="settings-help-title" hidden>
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-help-title">Help</h2><p>Reopen the interactive guide or get oriented with the key controls.</p></div>
+            <div class="help-card">
+              <div class="help-card-head"><div><strong>Interactive guide</strong><span>A step-by-step walkthrough of permissions, listening channels, context, and transcription choices.</span></div></div>
+              <div class="help-actions">
+                <button id="help-open-guide" type="button">Open the guide</button>
+              </div>
+            </div>
+            <div class="help-topics">
+              <div class="help-topic"><span class="help-topic-icon">⌘↵</span><div><strong>Assist</strong><span>Runs an answer over the current context and screen.</span></div></div>
+              <div class="help-topic"><span class="help-topic-icon">⌘H</span><div><strong>Solve screen</strong><span>Captures and explains the active screen.</span></div></div>
+              <div class="help-topic"><span class="help-topic-icon">⌘⇧C</span><div><strong>Add context</strong><span>Pins the current screen into Task Context.</span></div></div>
+              <div class="help-topic"><span class="help-topic-icon">⌘⇧X</span><div><strong>Stop all and quit</strong><span>Clears every capture session and quits Volyx Lens.</span></div></div>
+            </div>
+            <div class="s-note">The guide is always available from the Volyx Lens logo in the toolbar.</div>
           </section>
 
         <div class="s-status" id="s-status" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></div>
