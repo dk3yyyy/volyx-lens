@@ -172,3 +172,17 @@ test('renderer surfaces the meeting indicator and a discrete status when detecte
   assert.match(renderer, /meetingDetection: \$\('#stt-meeting-detection'\)\.checked/);
   assert.match(renderer, /stt-meeting-detection'\)\.checked = transcription\.meetingDetection === true/);
 });
+
+test('Phase 4b: history entries and detail show the meeting badge', () => {
+  assert.match(renderer, /history-meeting-badge/);
+  assert.match(renderer, /record\.meeting/);
+  assert.match(renderer, /Meeting detected/);
+  assert.match(css, /\.history-meeting-badge \{/);
+});
+
+test('Phase 4b: exports and recap headers reflect the meeting flag', () => {
+  const notes = fs.readFileSync(path.join(root, 'src', 'meeting-notes.js'), 'utf8');
+  assert.match(notes, /record\.meeting === true \? 'meeting' : 'session'/);
+  assert.match(notes, /Meeting: detected as a two-sided conversation/);
+  assert.match(notes, /meeting: record\.meeting === true,/);
+});

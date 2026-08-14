@@ -27,11 +27,12 @@ function meetingFilename(format = 'md', now = Date.now()) {
 
 function meetingHeader(record = {}) {
   const turns = Array.isArray(record.turns) ? record.turns : [];
-  const lines = ['# Volyx Lens meeting'];
+  const lines = [`# Volyx Lens ${record.meeting === true ? 'meeting' : 'session'}`];
   if (Number.isFinite(record.startedAt)) lines.push(`\nStarted: ${localStamp(record.startedAt)}`);
   if (Number.isFinite(record.endedAt)) lines.push(`Ended: ${localStamp(record.endedAt)}`);
   lines.push(`Session end: ${reasonLabel(record.reason)}`);
   lines.push(`Turns: ${turns.length}`);
+  if (record.meeting === true) lines.push('Meeting: detected as a two-sided conversation');
   return lines.join('\n');
 }
 
@@ -52,6 +53,7 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
       version: 1,
       id: record.id || null,
       reason: record.reason || null,
+      meeting: record.meeting === true,
       startedAt: Number.isFinite(record.startedAt) ? record.startedAt : null,
       endedAt: Number.isFinite(record.endedAt) ? record.endedAt : null,
       exportedAt: new Date(exportedAt).toISOString(),

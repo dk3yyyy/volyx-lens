@@ -293,6 +293,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .history-entry { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 6px; padding: 5px 6px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; background: rgba(0,0,0,0.13); }
 .history-entry-open { text-align: left; border: 0 !important; background: transparent !important; color: inherit !important; padding: 0 !important; min-width: 0; display: grid; gap: 2px; }
 .history-entry-open strong { color: var(--tx-2); font-size: 8.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-meeting-badge { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 999px; font-size: 7px; font-weight: 600; vertical-align: 1px; color: #0b3b2c; background: #c6f6d5; border: 1px solid rgba(0, 0, 0, 0.08); }
 .history-entry-open span { color: var(--tx-mut); font-size: 7.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .history-entry-delete { color: #FFB5B5; border-color: rgba(255,102,120,0.22) !important; }
 .history-empty { padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.12); color: var(--tx-mut); font-size: 8.5px; text-align: center; line-height: 1.4; }
