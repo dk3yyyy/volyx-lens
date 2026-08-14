@@ -89,6 +89,31 @@
           </div>
         </div>
 
+        <div id="meeting-history-panel" class="hidden" aria-label="Meeting history">
+          <div class="history-topline">
+            <div class="history-title"><strong>History</strong><span id="meeting-history-count">0 meetings</span></div>
+            <div class="history-tools">
+              <input id="meeting-history-search" type="search" placeholder="Search meetings…" aria-label="Search saved meetings" autocomplete="off" spellcheck="false" />
+              <button id="meeting-history-clear" type="button" disabled>Clear all</button>
+            </div>
+          </div>
+          <div id="meeting-history-list" role="list" aria-label="Saved meetings"></div>
+          <div id="meeting-history-detail" class="hidden">
+            <div class="history-detail-head">
+              <button id="meeting-history-back" type="button">← All meetings</button>
+              <span id="meeting-history-detail-meta"></span>
+              <div class="history-detail-actions">
+                <select id="meeting-history-export-format" aria-label="Export format"><option value="md">Markdown</option><option value="txt">TXT</option><option value="json">JSON</option></select>
+                <button id="meeting-history-export" type="button">Export</button>
+                <button id="meeting-notes-generate" type="button">Notes</button>
+                <button id="meeting-history-delete" type="button">Delete</button>
+              </div>
+            </div>
+            <div id="meeting-history-turns" class="history-turns"></div>
+            <div id="meeting-notes-output" class="history-notes hidden"></div>
+          </div>
+        </div>
+
         <div id="action-row">
           <button class="act assist-act" data-mode="assist" type="button"><span class="ic"></span><span class="assist-label">Assist</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
           <select id="assist-context" title="Choose what Assist can use" aria-label="Assist context"><option value="both">Screen + conversation</option><option value="conversation">Conversation only</option><option value="screen">Screen only</option></select>
@@ -100,6 +125,8 @@
           <button class="act" data-mode="recap" type="button"><span class="ic"></span><span class="action-label">Recap</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
           <span class="sep">•</span>
           <button class="act" id="task-context-toggle" type="button" aria-expanded="false" aria-controls="task-context-panel"><span class="ic"></span><span>Task Context</span><span id="task-context-action-count" class="hidden">0</span></button>
+          <span class="sep">•</span>
+          <button class="act" id="meeting-history-toggle" type="button" aria-expanded="false" aria-controls="meeting-history-panel"><span class="ic"></span><span>History</span><span id="meeting-history-action-count" class="hidden">0</span></button>
         </div>
 
         <div id="composer">

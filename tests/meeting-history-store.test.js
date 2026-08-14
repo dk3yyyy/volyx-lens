@@ -66,7 +66,7 @@ test('finalize writes an atomic 0600 record and list/get round-trip it', () => {
   assert.equal(persisted.turns.length, 3);
   assert.equal(persisted.turns[0].text, 'Turn 1');
 
-  assert.deepEqual(store.list(), [{ id: result.id, reason: 'capture-stop', startedAt: 500, endedAt: 2000, turnCount: 3 }]);
+  assert.deepEqual(store.list(), [{ id: result.id, reason: 'capture-stop', startedAt: 500, endedAt: 2000, turnCount: 3, preview: 'Turn 1' }]);
   assert.equal(store.get(result.id).turns.length, 3);
   assert.equal(store.get(result.id).turns[2].text, 'Turn 3');
 });
@@ -213,4 +213,23 @@ test('main process wires the store, finalize points, and trusted IPC', () => {
     assert.match(preload, new RegExp(`${method}: \\(.*ipcRenderer\\.invoke\\('history:`));
   }
   assert.match(preload, /'history:changed'/);
+});
+
+test('finalize captures only turns new since the last finalize (independent meetings)', () => {
+  assert.match(main, /function pendingFinalizeTurns\(\)/);
+  assert.match(main, /segment\.id > finalizedSegmentWatermark/);
+  assert.match(main, /function advanceFinalizeWatermark\(\)/);
+  assert.match(main, /finalizedSegmentWatermark = 0;/);
+  assert.match(main, /turns: pendingFinalizeTurns\(\)/);
+  const watermarkOrder = main.indexOf('finalizedSegmentWatermark = 0;');
+  const advanceDef = main.indexOf('function advanceFinalizeWatermark()');
+  const resetDef = main.indexOf('function resetTranscriptData()');
+  assert.ok(watermarkOrder > -1 && advanceDef > -1 && resetDef > -1, 'watermark is declared, advanced, and reset');
+});
+
+test('finalize falls back to capture timestamps for new-session and app-quit paths', () => {
+  assert.match(main, /startedAt = opts\.startedAt \|\| captureStartedAt \|\| lastCaptureStartedAt/);
+  assert.match(main, /endedAt = opts\.endedAt \|\| lastCaptureEndedAt/);
+  assert.match(main, /finalizeMeeting\('new-session'\)/);
+  assert.match(main, /finalizeMeeting\('app-quit'\)/);
 });

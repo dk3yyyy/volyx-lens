@@ -147,6 +147,7 @@ let realtimeDiagnosticPromise = null;
 let liveRealtimeDiagnostic = null;
 let liveRealtimeDiagnosticTimer = null;
 let transcriptSequence = 0;
+let finalizedSegmentWatermark = 0;
 let captureStartedAt = null;
 let lastCaptureStartedAt = null;
 let lastCaptureEndedAt = null;
@@ -299,6 +300,7 @@ function resetTranscriptData() {
   autoAnswerPolicy.reset();
   transcriptSequence = 0;
   transcriptSegmentSequence = 0;
+  finalizedSegmentWatermark = 0;
   transcriptionDiagnostics.crossTalkSuppressed = 0;
 }
 
@@ -874,6 +876,28 @@ function scheduleCaptureTimers() {
 }
 
 // -------- Meeting history --------
+function pendingFinalizeTurns() {
+  const turns = [];
+  for (const turn of transcript) {
+    const fresh = (turn.segments || []).filter((segment) => Number.isFinite(segment.id) && segment.id > finalizedSegmentWatermark);
+    if (!fresh.length) continue;
+    const text = joinTranscriptSegments(fresh);
+    if (!String(text || '').trim()) continue;
+    turns.push({ id: turn.id, channel: turn.channel, text, ts: fresh[0].ts });
+  }
+  return turns;
+}
+
+function advanceFinalizeWatermark() {
+  let max = finalizedSegmentWatermark;
+  for (const turn of transcript) {
+    for (const segment of turn.segments || []) {
+      if (Number.isFinite(segment.id) && segment.id > max) max = segment.id;
+    }
+  }
+  finalizedSegmentWatermark = max;
+}
+
 function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   const settings = store.getSettings();
   const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
@@ -885,12 +909,13 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   const startedAt = opts.startedAt || captureStartedAt || lastCaptureStartedAt;
   const endedAt = opts.endedAt || lastCaptureEndedAt;
   const result = meetingStore.finalize({
-    turns: transcript,
+    turns: pendingFinalizeTurns(),
     enabled: true,
     reason,
     startedAt,
     endedAt,
   });
+  advanceFinalizeWatermark();
   if (result.saved) send('history:changed', { saved: true, id: result.id, turnCount: result.turnCount });
   return result;
 }
