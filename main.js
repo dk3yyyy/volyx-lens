@@ -357,8 +357,11 @@ function maybeAutoAnswer(question, ts) {
   const settings = store.getSettings();
   if (settings.autoAnswer !== true || settings.questionDetection === false) return;
   if (uiModalOpen) return;
-  if (estimateQuestionConfidence(question) < AUTO_ANSWER_CONFIDENCE_MIN) return;
-  const decision = autoAnswerPolicy.evaluate({ question, now: ts, busy: state.busy, capturing: state.capturing });
+  const minConfidence = typeof settings.autoAnswerConfidence === 'number' && settings.autoAnswerConfidence >= 0 && settings.autoAnswerConfidence <= 1
+    ? settings.autoAnswerConfidence : AUTO_ANSWER_CONFIDENCE_MIN;
+  if (estimateQuestionConfidence(question) < minConfidence) return;
+  const cooldownMs = Number(settings.autoAnswerCooldownSec) > 0 ? Number(settings.autoAnswerCooldownSec) * 1000 : AUTO_ANSWER_COOLDOWN_MS;
+  const decision = autoAnswerPolicy.evaluate({ question, now: ts, busy: state.busy, capturing: state.capturing, cooldownMs });
   if (!decision.shouldAnswer) return;
   autoAnswerPolicy.record(question, ts);
   send('question:clear', { reason: 'auto_answer' });

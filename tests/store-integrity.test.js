@@ -71,6 +71,31 @@ test('Deepgram realtime provider, model, and credential survive the atomic Setti
   assert.equal(reloaded.apiKeys.deepgram, 'saved-deepgram-key');
 });
 
+test('auto-assist preferences survive the atomic Settings save and reload', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  const updated = store.updateSettingsAndApiKeys({
+    autoAnswer: true,
+    autoAnswerConfidence: 0.8,
+    autoAnswerCooldownSec: 90,
+  }, {});
+  assert.equal(updated.autoAnswer, true);
+  assert.equal(updated.autoAnswerConfidence, 0.8);
+  assert.equal(updated.autoAnswerCooldownSec, 90);
+
+  const reloaded = loadStore(userData).getSettings();
+  assert.equal(reloaded.autoAnswer, true);
+  assert.equal(reloaded.autoAnswerConfidence, 0.8);
+  assert.equal(reloaded.autoAnswerCooldownSec, 90);
+});
+
+test('auto-assist thresholds are clamped to valid ranges', () => {
+  const store = loadStore(temporaryUserData());
+  const updated = store.setSettings({ autoAnswerConfidence: 2, autoAnswerCooldownSec: 1 });
+  assert.equal(updated.autoAnswerConfidence, 1);
+  assert.equal(updated.autoAnswerCooldownSec, 5);
+});
+
 test('legacy bundled model defaults migrate without replacing custom model names', () => {
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');

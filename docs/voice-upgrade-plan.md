@@ -57,7 +57,8 @@ Status: core implemented on `main` (opt-in Auto-assist).
 - Implemented: automatic answers are opt-in (`autoAnswer` setting, off by default) with a 60-second cooldown, duplicate suppression, a local confidence threshold, and busy/capture gating in `src/auto-assist.js`.
 - Implemented: "Draft answer" answers the detected question directly through the `auto-assist` feature mode.
 - Implemented: auto-assist includes session context, resume, job description, and enabled documents through the shared personal-context path.
-- Remaining: make cooldown and confidence configurable in Settings; measure answer usefulness on real meetings.
+- Implemented: cooldown and confidence threshold are configurable in Settings (seconds and percent).
+- Remaining: measure answer usefulness on real meetings.
 
 ## Response provider coverage
 

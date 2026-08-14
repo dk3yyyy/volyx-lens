@@ -15,13 +15,15 @@ function createAutoAssistPolicy({
 
   // Returns { shouldAnswer, reason } where reason is one of:
   // disabled | empty | busy | not-capturing | duplicate | cooldown | ok
-  function evaluate({ question, now = Date.now(), busy = false, capturing = true } = {}) {
+  // cooldownMs may be overridden per call (e.g. from user Settings); it
+  // defaults to the cooldown configured at construction.
+  function evaluate({ question, now = Date.now(), busy = false, capturing = true, cooldownMs: windowMs = cooldownMs } = {}) {
     if (!enabled) return { shouldAnswer: false, reason: 'disabled' };
     const key = normalize(question);
     if (!key) return { shouldAnswer: false, reason: 'empty' };
     if (busy) return { shouldAnswer: false, reason: 'busy' };
     if (!capturing) return { shouldAnswer: false, reason: 'not-capturing' };
-    const windowStart = now - cooldownMs;
+    const windowStart = now - windowMs;
     const insideWindow = recent.filter((entry) => entry.at >= windowStart);
     if (insideWindow.some((entry) => entry.text === key)) return { shouldAnswer: false, reason: 'duplicate' };
     if (insideWindow.length > 0) return { shouldAnswer: false, reason: 'cooldown' };
