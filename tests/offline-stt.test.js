@@ -24,9 +24,10 @@ test('offline configuration requires explicit absolute executable and model path
   finally { await fs.promises.rm(item.dir, { recursive: true, force: true }); }
 });
 
-test('offline whisper adapter uses no shell, private temp files, bounded output, and cleans up', async () => {
+test('offline whisper adapter uses no shell, streams audio over stdin (no audio file on disk), bounded output, and cleans up', async () => {
   const item = await fixture();
   let jobDirectory;
+  let streamedToStdin = null;
   try {
     const text = await runWhisperCli({
       executable: item.executable,
@@ -35,13 +36,16 @@ test('offline whisper adapter uses no shell, private temp files, bounded output,
       spawnImpl(executable, args, options) {
         assert.equal(executable, item.executable);
         assert.equal(options.shell, false);
+        assert.equal(args[args.indexOf('-f') + 1], '-', 'audio should be streamed from stdin, never written to a file');
         const child = new EventEmitter();
         child.stderr = new EventEmitter();
+        child.stdin = new EventEmitter();
+        child.stdin.write = (buffer) => { streamedToStdin = buffer; };
+        child.stdin.end = () => {};
         child.kill = () => child.emit('close', null, 'SIGKILL');
-        const input = args[args.indexOf('-f') + 1];
         const outputPrefix = args[args.indexOf('--output-file') + 1];
-        jobDirectory = path.dirname(input);
-        assert.equal(fs.statSync(input).mode & 0o777, 0o600);
+        jobDirectory = path.dirname(outputPrefix);
+        assert.equal(fs.existsSync(path.join(jobDirectory, 'audio.wav')), false, 'no audio file should exist in the working directory');
         setImmediate(async () => {
           await fs.promises.writeFile(`${outputPrefix}.txt`, 'local transcript');
           child.emit('close', 0, null);
@@ -50,6 +54,7 @@ test('offline whisper adapter uses no shell, private temp files, bounded output,
       },
     });
     assert.equal(text, 'local transcript');
+    assert.equal(streamedToStdin && streamedToStdin.toString(), 'RIFF-test');
     assert.equal(fs.existsSync(jobDirectory), false);
   } finally { await fs.promises.rm(item.dir, { recursive: true, force: true }); }
 });

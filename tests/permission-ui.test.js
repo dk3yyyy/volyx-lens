@@ -121,9 +121,14 @@ test('replayable tutorial covers channels, task context, auto-assist, smart togg
   assert.match(renderer, /stepLabel: 'Auto-assist'/);
   assert.match(renderer, /stepLabel: 'Smart toggle'/);
   assert.match(renderer, /fast.*model|fast.*model/);
+  assert.match(renderer, /exact model IDs for each tier, including on custom OpenAI-compatible endpoints like Ollama/);
   assert.match(renderer, /stepLabel: 'Transcription'/);
   assert.match(renderer, /Local whisper/);
   assert.match(renderer, /Cloud STT/);
+  assert.match(renderer, /transcribed in memory and never written to disk/);
+  assert.match(renderer, /function updateSmartToggleModelIds\(\)/);
+  assert.match(renderer, /smartBtn\.title = `Smart/);
+  assert.match(renderer, /smartBtn\.setAttribute\('aria-label', `Smart toggle/);
   assert.match(renderer, /firstRun: false/);
   assert.match(renderer, /obSteps = full \? OB_STEPS : OB_STEPS\.filter\(\(step\) => step\.firstRun !== false\)/);
   assert.match(renderer, /\$\('#logo-btn'\)\.addEventListener\('click', \(\) => \{ obReplay = true; showOnboard\(\{ full: true \}\)/);

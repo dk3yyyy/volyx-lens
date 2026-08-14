@@ -44,15 +44,16 @@ function validateOfflineConfig(env = process.env) {
 }
 
 async function runWhisperCli({ executable, model, wav, language = '', prompt = '', timeoutMs = DEFAULT_TIMEOUT_MS, spawnImpl = spawn, jobState = { cancelled: false } }) {
+  // The audio WAV is streamed to whisper.cpp over stdin (`-f -`) so no audio
+  // file is ever written to disk. Only the text transcript touches the
+  // private temp directory, which is removed before this call returns.
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'volyx-lens-offline-stt-'));
-  const input = path.join(directory, 'audio.wav');
   const outputPrefix = path.join(directory, 'transcript');
   const output = `${outputPrefix}.txt`;
   try {
     await fs.promises.chmod(directory, 0o700);
-    await fs.promises.writeFile(input, wav, { mode: 0o600, flag: 'wx' });
     if (jobState.cancelled) throw offlineError('Offline transcription was cancelled.', 'offline_cancelled');
-    const args = ['-m', model, '-f', input, '--output-txt', '--output-file', outputPrefix, '--no-timestamps'];
+    const args = ['-m', model, '-f', '-', '--output-txt', '--output-file', outputPrefix, '--no-timestamps'];
     if (language) args.push('-l', language);
     // Seed the recognizer with expected domain terms to reduce mis-spelling of
     // model names, product names, and acronyms (whisper.cpp --prompt).
@@ -61,7 +62,7 @@ async function runWhisperCli({ executable, model, wav, language = '', prompt = '
       const child = spawnImpl(executable, args, {
         shell: false,
         windowsHide: true,
-        stdio: ['ignore', 'ignore', 'pipe'],
+        stdio: ['pipe', 'ignore', 'pipe'],
         env: { PATH: process.env.PATH || '', HOME: process.env.HOME || '' },
       });
       const childState = jobState;
@@ -77,6 +78,11 @@ async function runWhisperCli({ executable, model, wav, language = '', prompt = '
         activeChildren.delete(child);
         callback(value);
       };
+      if (child.stdin) {
+        child.stdin.once('error', () => {});
+        child.stdin.write(wav);
+        child.stdin.end();
+      }
       child.stderr.on('data', (chunk) => { stderrBytes = Math.min(65536, stderrBytes + chunk.length); });
       timer = setTimeout(() => {
         childState.timedOut = true;

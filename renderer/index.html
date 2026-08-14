@@ -249,7 +249,7 @@
             <option value="distil-large-v3">distil-large-v3 (1550M params, distilled, faster than large-v3)</option>
           </select>
         </div>
-        <div class="s-note">Optional offline transcription uses a locally embedded whisper.cpp model. Requires first download on in-app selection. Does not require <code>VOLYX_LENS_WHISPER_CLI</code> or <code>VOLYX_LENS_WHISPER_MODEL</code> env vars. Cloud fallback is separately disabled by default so a local failure cannot silently upload audio.</div>
+        <div class="s-note">Optional offline transcription uses a locally embedded whisper.cpp model. Audio is transcribed in memory and streamed to the local engine — it is never written to disk and never leaves your Mac. Requires first download on in-app selection. Does not require <code>VOLYX_LENS_WHISPER_CLI</code> or <code>VOLYX_LENS_WHISPER_MODEL</code> env vars. Cloud fallback is separately disabled by default so a local failure cannot silently upload audio.</div>
         <div class="s-field"><label for="audio-input-device">Microphone</label><select id="audio-input-device"><option value="">System default</option></select></div>
         <div class="s-field"><label for="audio-mic-enabled">Capture mic</label><input id="audio-mic-enabled" type="checkbox" checked /></div>
         <div class="s-field"><label for="audio-system-enabled">Capture system</label><input id="audio-system-enabled" type="checkbox" checked /></div>
