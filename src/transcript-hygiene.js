@@ -34,13 +34,15 @@ const STOP_WORDS = new Set(
 );
 
 // Whisper silence artifacts — full closing lines the recognizer produces on
-// noise-only audio. Single filler tokens like "okay" or "you" are deliberately
-// NOT included: meetings legitimately contain short turns, and a false positive
-// here silently drops real speech. Only unambiguous, multi-word whisper
-// closers (and emoji-only output) are treated as hallucinations.
+// noise-only audio. This is an exact whole-utterance match, and the list is
+// deliberately conservative. Short, generic phrases are excluded even though
+// whisper sometimes utters them on silence: "thank you", "bye-bye", or "see
+// you next time" are perfectly normal meeting turns, and a false positive here
+// silently deletes real speech (the failure mode this filter exists to avoid).
+// Only distinctive content-creator closers — the phrasing whisper actually
+// hallucinates on noise, and that no one says as a work utterance — plus
+// emoji-only output are treated as hallucinations.
 const HALLUCINATION_ARTIFACTS = new Set([
-  'thank you',
-  'thank you very much',
   'thank you for watching',
   'thanks for watching',
   'thank you for listening',
@@ -49,9 +51,6 @@ const HALLUCINATION_ARTIFACTS = new Set([
   'please like and subscribe',
   'like and subscribe',
   'subscribe to my channel',
-  'bye bye',
-  'bye-bye',
-  'see you next time',
 ]);
 
 // Default seed vocabulary. Deliberately small and general — the real value

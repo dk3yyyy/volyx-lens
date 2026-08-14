@@ -12,13 +12,13 @@ const { createSTT } = require('../src/stt');
 const { runWhisperCli } = require('../src/offline-stt');
 
 test('looksLikeHallucination drops whisper silence artifacts', () => {
-  for (const s of ['', '   ', '👍👍', 'Thank you.', 'thanks for watching', 'Thank you for watching!', 'please like and subscribe', 'Bye-bye!', 'bye bye', 'subscribe to my channel']) {
+  for (const s of ['', '   ', '👍👍', 'thanks for watching', 'Thank you for watching!', 'thank you for listening', 'please like and subscribe', 'subscribe to my channel', 'like and subscribe']) {
     assert.equal(looksLikeHallucination(s), true, JSON.stringify(s));
   }
 });
 
 test('looksLikeHallucination keeps real speech, including short meeting turns', () => {
-  for (const s of ['Tell me about your experience with Kubernetes.', 'The budget is forty two thousand three hundred and ten dollars.', 'Okay, I think we should move forward.', 'hello', 'Thanks for the update.', 'You']) {
+  for (const s of ['Tell me about your experience with Kubernetes.', 'The budget is forty two thousand three hundred and ten dollars.', 'Okay, I think we should move forward.', 'hello', 'Thanks for the update.', 'You', 'Thank you.', 'Thank you very much.', 'Bye-bye.', 'bye bye', 'See you next time.', 'Please subscribe to the roadmap doc.']) {
     assert.equal(looksLikeHallucination(s), false, JSON.stringify(s));
   }
 });
