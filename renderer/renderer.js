@@ -33,6 +33,7 @@
   let transcriptTurns = [];
   const partialTranscript = { you: null, them: null };
   let listeningActive = false;
+  let meetingDetectedSince = null;
   let diagnosticsTimer = null;
   let activeRequestMode = null;
   let aiEl = null;       // current streaming <div class="ai-text">
@@ -1121,7 +1122,14 @@
   });
 
   // ---- events from main --------------------------------------------------
+  volyxLens.on('meeting:detected', ({ since }) => {
+    meetingDetectedSince = Number.isFinite(since) ? since : Date.now();
+    $('#meeting-indicator').classList.remove('hidden');
+    showStatus('Meeting in progress detected in this session.');
+  });
   volyxLens.on('session:cleared', () => {
+    meetingDetectedSince = null;
+    $('#meeting-indicator').classList.add('hidden');
     clearMessages();
     clearTranscriptWorkspace();
     renderTaskContext({ count: 0, totalBytes: 0, pinnedCount: 0, lastCapturedAt: null, lastEviction: null, nearDuplicatesRejected: 0, fingerprintFailures: 0, ocrBytes: 0, ocrReadyCount: 0, ocrPendingCount: 0, ocrUnavailableCount: 0, ocrFailedCount: 0, ocrEvictedCount: 0, overlapLinkedCount: 0 });
@@ -1142,6 +1150,8 @@
       if (!systemEnabled()) setAudioHealth('them', 'Disabled', 0);
       else if (volyxLens.platform !== 'darwin') startSystemAudio();
     } else {
+      meetingDetectedSince = null;
+      $('#meeting-indicator').classList.add('hidden');
       captureEpoch += 1;
       stopSessionClock();
       stopMic();
@@ -1554,6 +1564,7 @@
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
     $('#stt-history-enabled').checked = transcription.historyEnabled === true;
+    $('#stt-meeting-detection').checked = transcription.meetingDetection === true;
     const audio = settings.audio || {};
     $('#audio-input-device').value = audio.inputDeviceId || '';
     $('#audio-mic-enabled').checked = audio.micEnabled !== false;
@@ -1710,6 +1721,7 @@
       language: ['auto', 'automatic'].includes($('#stt-language').value.trim().toLowerCase()) ? '' : $('#stt-language').value.trim().toLowerCase(),
       delay: $('#stt-delay').value,
       historyEnabled: $('#stt-history-enabled').checked,
+      meetingDetection: $('#stt-meeting-detection').checked,
     };
     settings.audio = {
       ...(settings.audio || {}),

@@ -83,6 +83,17 @@ Status: implemented (Phases 3a/3b/3c).
 - Implemented: full-fidelity export of a saved record to txt/md/json (`history:export`) through a save dialog; `src/meeting-notes.js` formats the record with session metadata and all turns (no 500-turn live-transcript truncation).
 - Implemented: history browser in the panel dock ("History") with metadata + preview text search, per-meeting detail view (read-only transcript), export/notes/delete controls, and Clear all. `history:list` carries a bounded text preview so search stays local and cheap.
 
+## Milestone 6 — In-session meeting detection
+
+Status: engine and backend wired (Phase 4a); meeting-aware UI surfacing planned (Phase 4b).
+
+- Implemented: opt-in `transcription.meetingDetection` setting (off by default) exposed as "Detect meetings" in Settings > Listening, with a privacy disclosure.
+- Implemented: `src/meeting-detect.js` — a rolling-window detector that classifies a session as a meeting when, inside a 5-minute window, both the Mic (you) and System (them) channels contribute at least 3 finalized turns each, alternate at least 2 times, and the activity spans at least 30 seconds. It consumes only in-memory finalized turns — no background audio watcher, no disk writes, and no AI requests.
+- Implemented: the detector feeds on finalized turns during an active listening session only, emits a single `meeting:detected` event on the rising edge, and resets when a new session or app quit clears the transcript.
+- Implemented: a saved history record is tagged `meeting: true` when the session was classified as a meeting, and the flag round-trips through `history:list` / `history:get`.
+- Implemented: during a live session the renderer shows a subtle "Meeting in progress" pill in the transcript header on `meeting:detected`, and clears it when listening stops or a new session starts.
+- Remaining: a meeting badge on history entries and a meeting-aware meeting-notes header (Phase 4b).
+
 ## Security and privacy constraints
 
 - No audio capture before the user explicitly starts listening.

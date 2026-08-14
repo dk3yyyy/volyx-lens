@@ -43,7 +43,7 @@
 
         <section id="transcript-workspace" class="hidden" aria-label="Session transcript">
           <div class="transcript-head">
-            <div><strong>Transcript</strong><span id="transcript-count">0 turns</span></div>
+            <div><strong>Transcript</strong><span id="transcript-count">0 turns</span><span id="meeting-indicator" class="hidden">Meeting in progress</span></div>
             <div class="transcript-actions">
               <button id="transcript-copy" type="button">Copy</button>
               <select id="transcript-export-format" aria-label="Transcript export format"><option value="txt">TXT</option><option value="md">Markdown</option><option value="json">JSON</option></select>
@@ -278,6 +278,8 @@
         </div>
         <div class="s-field"><label for="stt-history-enabled">Save meeting history</label><input id="stt-history-enabled" type="checkbox" /></div>
         <div class="s-note">Off by default. When enabled, each finalized session (listening stopped, new session started, or app quit) is written to a private on-device history file under the app data directory with restricted permissions. Records contain only the final transcript text of each turn and local timestamps — raw audio is never stored and nothing ever leaves your Mac. You can delete individual records or clear all history at any time.</div>
+        <div class="s-field"><label for="stt-meeting-detection">Detect meetings</label><input id="stt-meeting-detection" type="checkbox" /></div>
+        <div class="s-note">Off by default. While listening, Volyx Lens looks for a sustained two-sided conversation between the Mic and System channels in the live transcript. When it finds one, a subtle "Meeting in progress" indicator appears and the current session is tagged as a meeting if history is enabled. Detection is local and in-session only — no background audio watcher, no disk writes, and no AI requests are made.</div>
         <div class="s-note">Optional offline transcription uses a locally embedded whisper.cpp model. Audio is transcribed in memory and streamed to the local engine — it is never written to disk and never leaves your Mac. Requires first download on in-app selection. Does not require <code>VOLYX_LENS_WHISPER_CLI</code> or <code>VOLYX_LENS_WHISPER_MODEL</code> env vars. Cloud fallback is separately disabled by default so a local failure cannot silently upload audio.</div>
         <div class="s-field"><label for="audio-input-device">Microphone</label><select id="audio-input-device"><option value="">System default</option></select></div>
         <div class="s-field"><label for="audio-mic-enabled">Capture mic</label><input id="audio-mic-enabled" type="checkbox" checked /></div>

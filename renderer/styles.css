@@ -195,6 +195,32 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .transcript-head > div:first-child { display: flex; align-items: baseline; gap: 7px; }
 .transcript-head strong { color: var(--tx-1); font-size: 12px; }
 #transcript-count { color: var(--tx-mut); font-size: 9.5px; }
+#meeting-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #0b3b2c;
+  background: #c6f6d5;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+#meeting-indicator::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: meeting-pulse 1.6s ease-in-out infinite;
+}
+@keyframes meeting-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
 .transcript-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .transcript-actions button, .transcript-actions select, .diagnostics-foot button { border: 1px solid rgba(199,206,255,0.15); background: rgba(199,206,255,0.055); color: var(--tx-2); border-radius: 6px; padding: 4px 6px; font: 600 9px var(--font); cursor: pointer; }
 .transcript-actions button:hover, .diagnostics-foot button:hover { border-color: rgba(102,119,255,0.55); background: rgba(102,119,255,0.14); color: #fff; }
