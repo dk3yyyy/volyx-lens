@@ -10,6 +10,7 @@ const { looksLikeHallucination } = require('./transcript-hygiene');
 
 let sidecar = null; // lazily initialized, fully-started WhisperSidecar instance
 let starting = null; // in-flight startup promise shared by concurrent requests
+let generation = 0; // bumped on reset to invalidate in-flight startups
 
 // Sidecar mode is strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR env var
 function shouldUseSidecar(env) {
@@ -36,7 +37,15 @@ async function startSidecar(modelId, factory) {
   if (!sidecar || !sidecar.running) {
     if (!starting) {
       const instance = factory(modelId);
+      const requestedGeneration = generation;
       starting = instance.start().then(() => {
+        // If a reset happened while this startup was pending, do not publish the
+        // now-stale worker; stop it so it does not overlap a replacement.
+        if (requestedGeneration !== generation) {
+          if (typeof instance.stop === 'function') instance.stop().catch(() => {});
+          starting = null;
+          throw new Error('sidecar reset during startup');
+        }
         sidecar = instance;
         starting = null;
         return instance;
@@ -74,6 +83,7 @@ async function transcribeViaLocalWhisper(wav, env, language, whisperModel, sidec
 // Stops the underlying whisper.cpp child before discarding the singleton so a
 // model-loaded process is not leaked into the next session.
 function resetSidecar() {
+  generation += 1; // invalidate any in-flight startup
   if (sidecar) {
     if (typeof sidecar.stop === 'function') sidecar.stop().catch(() => {});
     sidecar = null;
