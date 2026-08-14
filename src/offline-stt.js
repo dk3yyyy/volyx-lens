@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const { WhisperServerSession } = require('./whisper-server-session');
 
 const MAX_TRANSCRIPT_BYTES = 64 * 1024;
 const MAX_TRANSCRIPT_CHARACTERS = 20000;
@@ -10,6 +11,7 @@ const activeChildren = new Map();
 const pendingJobs = new Set();
 let cancellationGeneration = 0;
 let offlineQueue = Promise.resolve();
+let whisperSession = null;
 
 function offlineError(message, code) {
   const error = new Error(message);
@@ -18,9 +20,13 @@ function offlineError(message, code) {
 }
 
 function validateOfflineConfig(env = process.env) {
-  const executable = String(env.VOLYX_LENS_WHISPER_CLI || '').trim();
+  // Two backends: the CLI adapter (spawn per job) or a persistent whisper
+  // server (one process for the whole capture session). The server mode is
+  // chosen by setting VOLYX_LENS_WHISPER_SERVER instead of the CLI path.
+  const serverExecutable = String(env.VOLYX_LENS_WHISPER_SERVER || '').trim();
+  const executable = serverExecutable || String(env.VOLYX_LENS_WHISPER_CLI || '').trim();
   const model = String(env.VOLYX_LENS_WHISPER_MODEL || '').trim();
-  if (!executable || !model) return { ready: false, error: 'Set VOLYX_LENS_WHISPER_CLI and VOLYX_LENS_WHISPER_MODEL before launching Volyx Lens.' };
+  if (!executable || !model) return { ready: false, error: 'Set VOLYX_LENS_WHISPER_CLI and VOLYX_LENS_WHISPER_MODEL (or VOLYX_LENS_WHISPER_SERVER with a model) before launching Volyx Lens.' };
   if (!path.isAbsolute(executable) || !path.isAbsolute(model)) return { ready: false, error: 'Offline transcription paths must be absolute.' };
   try {
     const resolvedExecutable = fs.realpathSync(executable);
@@ -31,13 +37,13 @@ function validateOfflineConfig(env = process.env) {
     if (!executableStat.isFile()) throw new Error('adapter is not a regular file');
     if (!modelStat.isFile()) throw new Error('model is not a regular file');
     if ((executableStat.mode & 0o002) || (modelStat.mode & 0o002)) throw new Error('adapter and model must not be world-writable');
-    return { ready: true, executable: resolvedExecutable, model: resolvedModel };
+    return { ready: true, executable: resolvedExecutable, model: resolvedModel, server: !!serverExecutable };
   } catch (error) {
     return { ready: false, error: `Offline transcription is unavailable: ${error.message}` };
   }
 }
 
-async function runWhisperCli({ executable, model, wav, language = '', timeoutMs = DEFAULT_TIMEOUT_MS, spawnImpl = spawn, jobState = { cancelled: false } }) {
+async function runWhisperCli({ executable, model, wav, language = '', prompt = '', timeoutMs = DEFAULT_TIMEOUT_MS, spawnImpl = spawn, jobState = { cancelled: false } }) {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'volyx-lens-offline-stt-'));
   const input = path.join(directory, 'audio.wav');
   const outputPrefix = path.join(directory, 'transcript');
@@ -48,6 +54,9 @@ async function runWhisperCli({ executable, model, wav, language = '', timeoutMs 
     if (jobState.cancelled) throw offlineError('Offline transcription was cancelled.', 'offline_cancelled');
     const args = ['-m', model, '-f', input, '--output-txt', '--output-file', outputPrefix, '--no-timestamps'];
     if (language) args.push('-l', language);
+    // Seed the recognizer with expected domain terms to reduce mis-spelling of
+    // model names, product names, and acronyms (whisper.cpp --prompt).
+    if (prompt) args.push('--prompt', prompt);
     return await new Promise((resolve, reject) => {
       const child = spawnImpl(executable, args, {
         shell: false,
@@ -93,7 +102,7 @@ async function runWhisperCli({ executable, model, wav, language = '', timeoutMs 
   }
 }
 
-async function transcribeOffline(wav, { env = process.env, language = '', timeoutMs, spawnImpl } = {}) {
+async function transcribeOffline(wav, { env = process.env, language = '', prompt = '', timeoutMs, spawnImpl, sessionFactory } = {}) {
   const config = validateOfflineConfig(env);
   if (!config.ready) throw offlineError(config.error, 'offline_not_configured');
   const generation = cancellationGeneration;
@@ -101,7 +110,8 @@ async function transcribeOffline(wav, { env = process.env, language = '', timeou
   pendingJobs.add(jobState);
   const job = offlineQueue.catch(() => {}).then(() => {
     if (jobState.cancelled || generation !== cancellationGeneration) throw offlineError('Offline transcription was cancelled.', 'offline_cancelled');
-    return runWhisperCli({ ...config, wav, language, timeoutMs, spawnImpl, jobState });
+    if (config.server) return transcribeViaServer(wav, { config, language, prompt, sessionFactory });
+    return runWhisperCli({ ...config, wav, language, prompt, timeoutMs, spawnImpl, jobState });
   }).finally(() => pendingJobs.delete(jobState));
   offlineQueue = job.catch(() => {});
   return job;
@@ -118,6 +128,22 @@ function cancelOfflineTranscriptions() {
     }, 1000);
     if (timer.unref) timer.unref();
   }
+  if (whisperSession) {
+    whisperSession.stop().catch(() => {});
+    whisperSession = null;
+  }
+}
+
+/** Lazily start (or reuse) the persistent whisper server and transcribe one WAV. */
+async function transcribeViaServer(wav, { config, language, prompt, sessionFactory }) {
+  if (!whisperSession || !whisperSession.running) {
+    if (whisperSession) await whisperSession.stop().catch(() => {});
+    whisperSession = sessionFactory
+      ? sessionFactory(config)
+      : new WhisperServerSession({ executable: config.executable, modelPath: config.model });
+    await whisperSession.start();
+  }
+  return whisperSession.transcribe(wav, { language, prompt });
 }
 
 module.exports = {
