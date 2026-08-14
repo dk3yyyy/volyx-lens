@@ -632,6 +632,7 @@
     const epoch = captureEpoch;
     sysStartPromise = (async () => {
       let stream = null;
+      volyxLens.setDisplayCaptureIntent(true);
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         stream.getVideoTracks().forEach((track) => track.stop());
@@ -650,7 +651,7 @@
         setAudioHealth('them', 'Failed', 0);
         volyxLens.log('system audio error: ' + (error && error.message));
         return null;
-      } finally { sysStartPromise = null; }
+      } finally { sysStartPromise = null; volyxLens.setDisplayCaptureIntent(false); }
     })();
     return sysStartPromise;
   }
@@ -1313,11 +1314,11 @@
     $('#stt-realtime-provider').value = transcription.realtimeProvider || 'openai';
     renderTranscriptionProviderConfig();
     $('#stt-azure-deployment').value = transcription.azureRealtimeDeployment || '';
-    $('#stt-deepgram-model').value = transcription.deepgramModel || 'nova-3';
+    $('#stt-deepgram-model').value = transcription.deepgramModel || '';
     $('#stt-language').value = transcription.language || '';
     $('#stt-delay').value = transcription.delay || 'low';
-    $('#stt-fallback-model').value = transcription.fallbackModel || 'gpt-4o-mini-transcribe';
-    $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || 'gemini-3.5-flash';
+    $('#stt-fallback-model').value = transcription.fallbackModel || '';
+    $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || '';
     $('#stt-offline-enabled').checked = transcription.offlineEnabled === true;
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     const audio = settings.audio || {};
@@ -1338,6 +1339,8 @@
     $('#audio-cost-warning').value = String(audio.costWarningMinutes || 30);
     $('#audio-session-limit').value = String(audio.maxSessionMinutes || 60);
     renderProviderConfig();
+    const storageState = settings.credentialStatus || {};
+    $('#s-storage-warning').classList.toggle('hidden', !(storageState.secure === false && storageState.backend === 'plaintext-fallback'));
     $('#s-status').textContent = statusText();
   }
   function statusText() {
@@ -1463,11 +1466,11 @@
       ...(settings.transcription || {}),
       mode: $('#stt-mode').value,
       realtimeProvider: $('#stt-realtime-provider').value,
-      realtimeModel: 'gpt-realtime-whisper',
-      deepgramModel: $('#stt-deepgram-model').value.trim() || 'nova-3',
+      realtimeModel: (settings.transcription || {}).realtimeModel || '',
+      deepgramModel: $('#stt-deepgram-model').value.trim() || (settings.transcription || {}).deepgramModel || '',
       azureRealtimeDeployment: $('#stt-azure-deployment').value.trim(),
-      fallbackModel: $('#stt-fallback-model').value.trim() || 'gpt-4o-mini-transcribe',
-      geminiFallbackModel: $('#stt-gemini-fallback-model').value.trim() || 'gemini-3.5-flash',
+      fallbackModel: $('#stt-fallback-model').value.trim() || (settings.transcription || {}).fallbackModel || '',
+      geminiFallbackModel: $('#stt-gemini-fallback-model').value.trim() || (settings.transcription || {}).geminiFallbackModel || '',
       offlineEnabled: $('#stt-offline-enabled').checked,
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
       language: ['auto', 'automatic'].includes($('#stt-language').value.trim().toLowerCase()) ? '' : $('#stt-language').value.trim().toLowerCase(),

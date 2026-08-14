@@ -22,6 +22,6 @@ test('preload exposes only a narrow quit IPC action', () => {
 
 test('main process kill switch stops capture before quitting', () => {
   assert.match(main, /function stopAllAndQuit/);
-  assert.match(main, /function stopAllAndQuit[\s\S]*stopTranscriptionPipeline\(\{ immediate: true \}\)[\s\S]*app\.quit\(\)/);
+  assert.match(main, /app\.on\('before-quit', \(event\) => \{[\s\S]*?shutdownAll\(\)\.finally\(\s*\(\) => app\.quit\(\)\)/);
   assert.match(main, /onTrusted\('app:quit',[^)]*stopAllAndQuit/);
 });

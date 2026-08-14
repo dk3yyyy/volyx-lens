@@ -477,6 +477,9 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .key-field .key-clear:hover:not(:disabled) { color: #ffb5b5; border-color: rgba(255,102,120,0.28); }
 .key-field .key-clear:disabled { opacity: 0.35; cursor: default; }
 .s-note { color: var(--tx-mut); font-size: 11px; line-height: 1.4; margin-top: 2px; }
+.s-warn { display: grid; gap: 3px; padding: 9px 11px; border: 1px solid rgba(255, 196, 87, 0.38); border-radius: 9px; background: rgba(255, 196, 87, 0.10); color: var(--tx-1); font-size: 11px; line-height: 1.4; }
+.s-warn strong { color: #FFD28A; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.s-warn.hidden { display: none; }
 .context-document { padding: 10px; border: 1px solid rgba(255,255,255,0.1); border-radius: var(--r-8); background: rgba(255,255,255,0.025); display: grid; gap: 7px; }
 .context-document-head { display: flex; align-items: center; justify-content: space-between; color: var(--tx-1); font-size: 12px; }
 .context-enable { display: inline-flex; align-items: center; gap: 5px; color: var(--tx-2); font-size: 11px; }

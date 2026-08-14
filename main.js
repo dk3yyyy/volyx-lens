@@ -67,13 +67,7 @@ let lastSystemAudioLevelAt = 0;
 function publishSystemAudioLevel(pcm, now = Date.now()) {
   if (!Buffer.isBuffer(pcm) || pcm.length < 2 || now - lastSystemAudioLevelAt < 100) return;
   lastSystemAudioLevelAt = now;
-  const sampleCount = Math.floor(pcm.length / 2);
-  let sumSquares = 0;
-  for (let offset = 0; offset < sampleCount * 2; offset += 2) {
-    const normalized = pcm.readInt16LE(offset) / 32768;
-    sumSquares += normalized * normalized;
-  }
-  send('audio:level', { channel: 'them', level: Math.min(1, sumSquares / sampleCount) });
+  send('audio:level', { channel: 'them', level: Math.min(1, rms16(pcm) / 32768) });
 }
 const systemAudioCapture = createSystemAudioCapture({
   app,
@@ -111,7 +105,11 @@ function activeDisplayId() {
 
 // -------- capture / transcript state --------
 const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
-let sttDisabled = false; // set when the key can't reach any speech model (stops retry spam)
+let sttDisabled = false; // hard-stop latch; set only for auth/model errors (401/403/model_not_found)
+let sttFailures = 0; // consecutive transient failures, drives exponential backoff
+let sttBackoffUntil = 0; // epoch ms; batch flushing is skipped while now < this
+const STT_RETRY_BASE_MS = 8000;
+const STT_RETRY_MAX_MS = 120000;
 const buffers = { you: [], them: [] };
 const flushPromises = { you: null, them: null };
 const transcript = []; // grouped conversation turns: { id, channel, text, ts, segments }
@@ -122,6 +120,7 @@ let transcriptSegmentSequence = 0;
 let captureWarningTimer = null;
 let captureLimitTimer = null;
 let desiredCapturing = false;
+let pendingDisplayCapture = false; // true only while the app's own getDisplayMedia flow is in flight
 let captureTransition = Promise.resolve(false);
 let pendingStopImmediate = false;
 let pendingStopReason = null;
@@ -566,12 +565,16 @@ function createWindow() {
 }
 
 // -------- STT flushing --------
-async function flushChannel(channel) {
+async function flushChannel(channel, { drain = false } = {}) {
   if (flushPromises[channel]) return flushPromises[channel];
   const task = (async () => {
     const generation = sessionGeneration;
     const epoch = transcriptEpoch;
     if (sttDisabled) { buffers[channel] = []; return; }
+    // Transient backoff: postpone transcription and keep the buffered speech instead
+    // of discarding it. A final drain on stop still flushes best-effort so nothing
+    // captured up to that point is lost. Buffering stays bounded by MAX_BATCH_CHUNKS.
+    if (!drain && sttBackoffUntil && Date.now() < sttBackoffUntil) return;
     const chunks = buffers[channel];
     if (!chunks.length) return;
     const pcm = Buffer.concat(chunks);
@@ -596,6 +599,7 @@ async function flushChannel(channel) {
         handleSttError(res.error);
         return;
       }
+      if (sttFailures || sttBackoffUntil) { sttFailures = 0; sttBackoffUntil = 0; } // recovered
       if (res.text && res.text.trim()) recordTranscript({ channel, text: res.text }, generation, epoch);
     } catch (e) {
       console.log('[stt] unexpected error', String(e && e.code || 'unknown').slice(0, 80));
@@ -610,7 +614,7 @@ async function flushChannel(channel) {
 
 async function drainBatchBuffers() {
   await Promise.all(['you', 'them'].map(async (channel) => {
-    do { await flushChannel(channel); } while (buffers[channel].length);
+    do { await flushChannel(channel, { drain: true }); } while (buffers[channel].length);
   }));
 }
 
@@ -620,13 +624,23 @@ function handleSttError(err) {
   const code = String((err && err.code) || '').slice(0, 80);
   console.log('[stt] error', provider, status || 'no-status', code || 'unknown');
   if (sttDisabled) return;
-  const noAccess = status === 403 || status === 401 || code === 'model_not_found';
-  sttDisabled = true; // stop hammering the API every few seconds
-  if (noAccess) {
+  const permanent = status === 403 || status === 401 || code === 'model_not_found';
+  if (permanent) {
+    sttDisabled = true; // auth/model errors are not transient; stop hammering the API
     send('status', { message: `Transcription off: your ${provider} credential cannot access the configured speech-to-text model. Screen features still work. Check Listening settings, then restart listening.` });
-  } else {
-    send('status', { message: `Transcription stopped after a ${provider} error. Check Listening settings and retry.` });
+    return;
   }
+  // Transient 429/5xx/network errors: exponential backoff, keep the pipeline alive.
+  sttFailures += 1;
+  const backoffMs = Math.min(STT_RETRY_BASE_MS * Math.pow(2, sttFailures - 1), STT_RETRY_MAX_MS);
+  sttBackoffUntil = Date.now() + backoffMs;
+  send('status', { message: `Transcription hit a ${provider} error (${status || code || 'unknown'}); retrying in ${Math.round(backoffMs / 1000)}s.` });
+}
+
+function resetSttErrorState() {
+  sttDisabled = false;
+  sttFailures = 0;
+  sttBackoffUntil = 0;
 }
 
 function startFlushLoop() {
@@ -909,35 +923,44 @@ function cancelActiveFeature(reason = 'user', { notify = reason === 'user', inva
   return true;
 }
 
+let shutdownPromise = null;
+let relaunchRequested = false;
+
+async function shutdownAll() {
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    cancelActiveFeature(relaunchRequested ? 'relaunch' : 'quit', { notify: false, invalidate: true });
+    state.busy = false;
+    desiredCapturing = false;
+    state.capturing = false;
+    lastCaptureEndedAt = Date.now();
+    captureStartedAt = null;
+    clearCaptureTimers();
+    cancelLiveRealtimeDiagnostic();
+    pendingDisplayCapture = false;
+    await systemAudioCapture.stop({ immediate: true });
+    await stopTranscriptionPipeline({ immediate: true });
+    localOcr.cancelAll();
+    clearTaskContext();
+    resetTranscriptData();
+    globalShortcut.unregisterAll();
+    send('capture:state', { active: false });
+  })();
+  return shutdownPromise;
+}
+
 function stopAllAndQuit() {
-  cancelActiveFeature('quit', { notify: false, invalidate: true });
-  state.busy = false;
-  desiredCapturing = false;
-  state.capturing = false;
-  lastCaptureEndedAt = Date.now();
-  captureStartedAt = null;
-  clearCaptureTimers();
-  cancelLiveRealtimeDiagnostic();
-  systemAudioCapture.stop({ immediate: true });
-  stopTranscriptionPipeline({ immediate: true });
-  send('capture:state', { active: false });
-  resetTranscriptData();
-  clearTaskContext();
-  app.quit();
+  relaunchRequested = false;
+  app.quit(); // before-quit runs the awaited cleanup once
 }
 
 function relaunchApp() {
-  cancelActiveFeature('relaunch', { notify: false, invalidate: true });
-  state.busy = false;
-  desiredCapturing = false;
-  state.capturing = false;
-  clearCaptureTimers();
-  cancelLiveRealtimeDiagnostic();
-  systemAudioCapture.stop({ immediate: true });
-  stopTranscriptionPipeline({ immediate: true });
-  clearTaskContext();
-  app.relaunch();
-  app.exit(0);
+  relaunchRequested = true;
+  shutdownAll().finally(() => {
+    if (!relaunchRequested) return; // superseded by a quit issued during cleanup
+    app.relaunch();
+    app.exit(0); // bypasses before-quit/will-quit; cleanup was awaited above
+  });
 }
 
 function startNewSession() {
@@ -946,7 +969,7 @@ function startNewSession() {
     sessionGeneration += 1;
     featureRunId += 1;
     state.busy = false;
-    sttDisabled = false;
+    resetSttErrorState();
     const restartTranscription = state.capturing && desiredCapturing;
     if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
     resetTranscriptData();
@@ -1237,7 +1260,7 @@ function cancelLiveRealtimeDiagnostic() {
 
 async function retryTranscription() {
   if (!state.capturing) return { ok: false, message: 'Start listening before retrying Realtime.' };
-  sttDisabled = false;
+  resetSttErrorState();
   await stopTranscriptionPipeline({ immediate: true });
   if (!state.capturing) return { ok: false, message: 'Listening stopped before Realtime could restart.' };
   startTranscriptionPipeline();
@@ -1288,7 +1311,7 @@ handleTrusted('settings:set', (_e, patch) => {
   const updates = patch && patch.apiKeyUpdates;
   const updated = store.updateSettingsAndApiKeys(patch, updates && typeof updates === 'object' ? updates : {});
   if (transcriptionSettingsChanged(previous, updated)) {
-    sttDisabled = false;
+    resetSttErrorState();
     if (state.capturing) {
       send('status', { message: 'Transcription changes will apply the next time you stop and restart listening.' });
     }
@@ -1299,7 +1322,7 @@ handleTrusted('credentials:clear', (_e, provider) => {
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
   const result = store.clearApiKey(String(provider || ''));
   if (transcriptionSettingsChanged(previous, store.getSettings())) {
-    sttDisabled = false;
+    resetSttErrorState();
     if (state.capturing) send('status', { message: 'Credential removal will apply the next time you stop and restart listening.' });
   }
   return result;
@@ -1311,6 +1334,7 @@ handleTrusted('personal-context:set-enabled', (_e, kind, enabled) => personalCon
 handleTrusted('capture:toggle', () => setCapturing(!desiredCapturing));
 handleTrusted('capture:stop', () => setCapturing(false));
 handleTrusted('capture:state', () => ({ active: state.capturing, transitioning: state.capturing !== desiredCapturing }));
+onTrusted('capture:display-intent', (_e, active) => { pendingDisplayCapture = active === true; });
 handleTrusted('session:new', () => startNewSession());
 handleTrusted('task-context:get', () => taskContextState());
 handleTrusted('task-context:list', (_event, payload = {}) => taskContext.list({ offset: Number(payload.offset), limit: Number(payload.limit) }));
@@ -1490,7 +1514,8 @@ app.whenReady().then(() => {
   };
   const allowMedia = (permission, details = {}) => {
     if (permission === 'media') return audioOnlyMediaRequest(details);
-    return permission === 'microphone' || permission === 'audioCapture' || permission === 'display-capture';
+    if (permission === 'display-capture') return pendingDisplayCapture || state.capturing;
+    return permission === 'microphone' || permission === 'audioCapture';
   };
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const trustedMainFrame = details && details.isMainFrame === true && details.requestingUrl === APP_ENTRY_URL
@@ -1508,19 +1533,21 @@ app.whenReady().then(() => {
   // System-audio loopback for getDisplayMedia. Requests are accepted only from
   // the exact top-level application renderer and use the display containing Lens.
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    pendingDisplayCapture = true;
+    const finish = (result) => { pendingDisplayCapture = false; callback(result); };
     const trustedRequest = () => Boolean(win && !win.isDestroyed() && request.frame
       && isTrustedRenderer(win.webContents, request.frame));
     if (!trustedRequest() || !isTrustedFileOrigin(request.securityOrigin) || request.userGesture !== true || request.videoRequested !== true || request.audioRequested !== true) {
-      callback({});
+      finish({});
       return;
     }
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      if (!trustedRequest()) { callback({}); return; }
+      if (!trustedRequest()) { finish({}); return; }
       const targetDisplay = screen.getDisplayMatching(win.getBounds());
       const source = sources.find((item) => String(item.display_id) === String(targetDisplay.id));
-      if (source) callback({ video: source, audio: 'loopback' });
-      else callback({});
-    }).catch(() => callback({}));
+      if (source) finish({ video: source, audio: 'loopback' });
+      else finish({});
+    }).catch(() => finish({}));
   }, { useSystemPicker: false });
 
   createWindow();
@@ -1529,21 +1556,18 @@ app.whenReady().then(() => {
   powerMonitor.on('lock-screen', () => stopCaptureForSystem('lock'));
   powerMonitor.on('resume', () => send('status', { message: 'Mac resumed. Listening remains off until you start it again.' }));
   powerMonitor.on('unlock-screen', () => send('status', { message: 'Mac unlocked. Listening remains off until you start it again.' }));
-  powerMonitor.on('shutdown', () => {
-    clearCaptureTimers();
-    systemAudioCapture.stop({ immediate: true });
-    stopTranscriptionPipeline({ immediate: true });
-  });
+  powerMonitor.on('shutdown', () => { shutdownAll(); });
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
+app.on('before-quit', (event) => {
+  relaunchRequested = false; // any quit supersedes a pending relaunch (incl. window-all-closed / native menu)
+  if (shutdownPromise) return; // cleanup already ran (or is in progress)
+  event.preventDefault();
+  shutdownAll().finally(() => app.quit());
+});
 app.on('will-quit', () => {
-  clearCaptureTimers();
-  systemAudioCapture.stop({ immediate: true });
-  stopTranscriptionPipeline({ immediate: true });
-  localOcr.cancelAll();
-  taskContext.clear();
   globalShortcut.unregisterAll();
 });
 app.on('window-all-closed', () => app.quit());
