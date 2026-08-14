@@ -180,7 +180,11 @@ app.whenReady().then(async () => {
   assert.deepEqual(modalIsolation, { onboardOpen: true, settingsOpen: false }, 'global Settings shortcut must be suppressed while onboarding is open');
 
   const replayed = await win.webContents.executeJavaScript("document.querySelector('#ob-step-count').textContent");
-  assert.match(replayed, /^2 of 10$/, 'reopening the guide from the logo should walk all tutorial topics');
+  assert.match(replayed, /^1 of 10$/, 'reopening the guide from the logo should walk all tutorial topics');
+  for (let i = 0; i < 9; i += 1) {
+    await win.webContents.executeJavaScript("document.querySelector('#ob-next').click()");
+    await waitFor(win, `document.querySelector('#ob-step-count').textContent === '${i + 2} of 10'`, 'replayed guide advance');
+  }
   const replayFinal = await win.webContents.executeJavaScript("document.querySelector('#ob-next').textContent");
   assert.equal(replayFinal, 'Done', 'replayed guide should finish with Done rather than Start using Lens');
   await win.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
