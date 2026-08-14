@@ -70,27 +70,27 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current test release: v0.3.1
+### Current release: v0.4.0
 
-The current public binaries are **ad-hoc signed test builds**. They are not signed with an Apple Developer ID certificate and are not notarized by Apple, so GitHub publishes them as a **pre-release**, not as a trusted production release.
+v0.4.0 is an **Apple Developer ID–signed and notarized production release**. It launches without Gatekeeper workarounds and supports one-click in-app updates.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon** — M1, M2, M3, M4, or newer | `Volyx-Lens-0.3.1-macOS-arm64-adhoc.dmg` |
-| **Intel** | `Volyx-Lens-0.3.1-macOS-x64-adhoc.dmg` |
+| **Apple Silicon** — M1, M2, M3, M4, or newer | `volyx-lens-0.4.0-mac-arm64.dmg` |
+| **Intel** | `volyx-lens-0.4.0-mac-x64.dmg` |
 
-**[Open the v0.3.1 release and download the matching DMG →](https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1)**
+**[Open the v0.4.0 release and download the matching DMG →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.4.0)**
 
-SHA-256 checksum files and ZIP packages are included in the release.
+SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 
 ### Install the DMG
 
 1. Download the DMG matching your Mac architecture.
 2. Open it and drag **Volyx Lens** into **Applications**.
-3. Because this test build is not notarized, macOS may block its first launch. In Finder, Control-click or right-click **Volyx Lens**, choose **Open**, then confirm **Open**.
+3. Launch **Volyx Lens** normally — the signed and notarized build opens without right-click workarounds.
 4. Grant Microphone and Screen & System Audio Recording access when prompted.
 
-Do **not** disable Gatekeeper globally. Ad-hoc builds cannot use the in-app updater; install later test releases manually. A normal one-click launch and trusted automatic update path requires an Apple Developer ID–signed and notarized release.
+Ad-hoc test builds remain available under their own pre-release tags for early validation.
 
 ## What it can do
 

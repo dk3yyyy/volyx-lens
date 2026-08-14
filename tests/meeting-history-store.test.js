@@ -87,6 +87,21 @@ test('finalize is idempotent: identical transcript is not written twice', () => 
   assert.equal(store.list().length, 2);
 });
 
+test('finalize saves grown text on the last turn after a capture restart', () => {
+  const directory = temporaryDirectory();
+  const store = createMeetingStore({ dir: directory });
+  const base = [{ id: 3, channel: 'you', text: 'First', ts: 1000 }];
+  const first = store.finalize({ turns: base, enabled: true });
+  assert.equal(first.saved, true);
+  // Restart keeps the same last turn id/ts and count but the text grows.
+  const grown = [{ id: 3, channel: 'you', text: 'First, then more', ts: 1000 }];
+  const second = store.finalize({ turns: grown, enabled: true });
+  assert.equal(second.saved, true, 'grown text must not be dropped as no_new_content');
+  assert.equal(store.list().length, 2);
+  const saved = store.get(second.id);
+  assert.equal(saved.turns[0].text, 'First, then more');
+});
+
 test('remove and clear delete records', () => {
   const directory = temporaryDirectory();
   const store = createMeetingStore({ dir: directory });
@@ -154,7 +169,11 @@ test('snapshotTurns normalizes channels, drops blank text, and caps turn count',
   assert.equal(normalized[2].channel, 'them');
   assert.equal(fingerprint([]), null);
   const fp = fingerprint([{ id: 7, channel: 'you', text: 'x', ts: 9 }]);
-  assert.deepEqual(fp, { count: 1, lastId: 7, lastTs: 9 });
+  assert.equal(fp.count, 1);
+  assert.equal(fp.lastId, 7);
+  assert.equal(fp.lastTs, 9);
+  assert.equal(typeof fp.contentHash, 'string');
+  assert.notEqual(fp.contentHash, fingerprint([{ id: 7, channel: 'you', text: 'y', ts: 9 }]).contentHash, 'text must affect the fingerprint');
 });
 
 test('history is opt-in by default and sanitized only as a boolean', () => {
@@ -178,6 +197,14 @@ test('main process wires the store, finalize points, and trusted IPC', () => {
   assert.match(main, /finalizeMeeting\('app-quit'\)/);
   assert.match(main, /finalizeMeeting\(reason \|\| 'capture-stop', \{ startedAt: captureStartedAtEnd/);
   assert.match(main, /reason !== 'suspend' && reason !== 'lock'/);
+  assert.match(main, /const startedAt = opts\.startedAt \|\| captureStartedAt \|\| lastCaptureStartedAt/);
+  assert.match(main, /const endedAt = opts\.endedAt \|\| lastCaptureEndedAt/);
+  assert.match(main, /async function writePrivateExport\(filePath, content\)/);
+  assert.match(main, /writeFile\(tmpPath, content, \{ encoding: 'utf8', mode: 0o600 \}\)/);
+  assert.match(main, /rename\(tmpPath, filePath\)/);
+  assert.match(main, /writePrivateExport\(result\.filePath, formatTranscript/);
+  assert.match(main, /writePrivateExport\(result\.filePath, formatMeetingRecord/);
+  assert.ok(!/chmod\(result\.filePath, 0o600\)/.test(main), 'no separate path-based chmod after write');
   for (const channel of ['history:list', 'history:get', 'history:delete', 'history:clear']) {
     assert.match(main, new RegExp(`handleTrusted\\('${channel}'`));
   }
@@ -201,8 +228,8 @@ test('finalize captures only turns new since the last finalize (independent meet
 });
 
 test('finalize falls back to capture timestamps for new-session and app-quit paths', () => {
-  assert.match(main, /startedAt: opts\.startedAt \|\| captureStartedAt \|\| lastCaptureStartedAt \|\| null/);
-  assert.match(main, /endedAt: opts\.endedAt \|\| lastCaptureEndedAt \|\| null/);
+  assert.match(main, /startedAt = opts\.startedAt \|\| captureStartedAt \|\| lastCaptureStartedAt/);
+  assert.match(main, /endedAt = opts\.endedAt \|\| lastCaptureEndedAt/);
   assert.match(main, /finalizeMeeting\('new-session'\)/);
   assert.match(main, /finalizeMeeting\('app-quit'\)/);
 });

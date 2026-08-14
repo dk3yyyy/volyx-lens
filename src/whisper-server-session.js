@@ -19,6 +19,7 @@
 const net = require('net');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const { normalizeWhisperLanguage } = require('./whisper-language');
 
 const LOOPBACK_HOST = '127.0.0.1';
 const STARTUP_TIMEOUT_MS = 120000; // first model load can be slow for large models
@@ -60,7 +61,8 @@ function buildInferenceBody(wav, { language = '', prompt = '' } = {}) {
   );
   parts.push(field('response_format', 'json'));
   parts.push(field('temperature', '0.0'));
-  if (language) parts.push(field('language', language));
+  const whisperLanguage = normalizeWhisperLanguage(language);
+  if (whisperLanguage) parts.push(field('language', whisperLanguage));
   if (prompt) parts.push(field('prompt', prompt));
   parts.push(Buffer.from(
     `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n`, 'utf8'

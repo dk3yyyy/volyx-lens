@@ -50,6 +50,16 @@ test('buildInferenceBody includes json format, zero temperature, language, and p
   assert.ok(body.includes(wav), 'raw WAV bytes are embedded');
 });
 
+test('buildInferenceBody omits the language field entirely for auto and empty values', () => {
+  const wav = Buffer.from('RIFF-test');
+  const withAuto = buildInferenceBody(wav, { language: 'auto' });
+  assert.ok(!withAuto.body.toString('utf8').includes('name="language"'), 'auto must omit the field, not emit it empty');
+  const withEmpty = buildInferenceBody(wav, { language: 'zh-TW' });
+  const text = withEmpty.body.toString('utf8');
+  assert.match(text, /name="language"\r\n\r\nzh/, 'locale-form codes are normalized to the base code');
+  assert.ok(!text.includes('zh-TW'), 'locale-form code must not reach whisper.cpp');
+});
+
 test('start polls until the server is healthy, then reports ready', async () => {
   let calls = 0;
   const session = new WhisperServerSession(sessionOptions({
