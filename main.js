@@ -565,13 +565,16 @@ function createWindow() {
 }
 
 // -------- STT flushing --------
-async function flushChannel(channel) {
+async function flushChannel(channel, { drain = false } = {}) {
   if (flushPromises[channel]) return flushPromises[channel];
   const task = (async () => {
     const generation = sessionGeneration;
     const epoch = transcriptEpoch;
     if (sttDisabled) { buffers[channel] = []; return; }
-    if (sttBackoffUntil && Date.now() < sttBackoffUntil) { buffers[channel] = []; return; } // transient backoff; do not latch
+    // Transient backoff: postpone transcription and keep the buffered speech instead
+    // of discarding it. A final drain on stop still flushes best-effort so nothing
+    // captured up to that point is lost. Buffering stays bounded by MAX_BATCH_CHUNKS.
+    if (!drain && sttBackoffUntil && Date.now() < sttBackoffUntil) return;
     const chunks = buffers[channel];
     if (!chunks.length) return;
     const pcm = Buffer.concat(chunks);
@@ -611,7 +614,7 @@ async function flushChannel(channel) {
 
 async function drainBatchBuffers() {
   await Promise.all(['you', 'them'].map(async (channel) => {
-    do { await flushChannel(channel); } while (buffers[channel].length);
+    do { await flushChannel(channel, { drain: true }); } while (buffers[channel].length);
   }));
 }
 
@@ -954,6 +957,7 @@ function stopAllAndQuit() {
 function relaunchApp() {
   relaunchRequested = true;
   shutdownAll().finally(() => {
+    if (!relaunchRequested) return; // superseded by a quit issued during cleanup
     app.relaunch();
     app.exit(0); // bypasses before-quit/will-quit; cleanup was awaited above
   });

@@ -164,12 +164,20 @@ test('transient STT errors back off instead of latching transcription off', () =
   assert.match(main, /if \(sttFailures \|\| sttBackoffUntil\) \{ sttFailures = 0; sttBackoffUntil = 0; \} \/\/ recovered/);
 });
 
+test('transient STT backoff postpones instead of discarding buffered speech', () => {
+  assert.match(main, /async function flushChannel\(channel, \{ drain = false \} = \{\}\)/);
+  assert.match(main, /if \(!drain && sttBackoffUntil && Date\.now\(\) < sttBackoffUntil\) return;/);
+  assert.doesNotMatch(main, /if \(sttBackoffUntil && Date\.now\(\) < sttBackoffUntil\) \{ buffers\[channel\] = \[\]; return; \}/);
+  assert.match(main, /do \{ await flushChannel\(channel, \{ drain: true \}\);\s*\} while \(buffers\[channel\]\.length\)/);
+});
+
 test('shutdown is centralized into one awaited shutdownAll', () => {
   assert.match(main, /async function shutdownAll\(\)/);
   assert.match(main, /await systemAudioCapture\.stop\(\{ immediate: true \}\)/);
   assert.match(main, /await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
   assert.match(main, /app\.on\('before-quit', \(event\) => \{[\s\S]*event\.preventDefault\(\)[\s\S]*shutdownAll\(\)\.finally\(\(\) => app\.quit\(\)\)/);
   assert.match(main, /function relaunchApp\(\) \{[\s\S]*shutdownAll\(\)\.finally/);
+  assert.match(main, /if \(!relaunchRequested\) return; \/\/ superseded by a quit issued during cleanup/);
   assert.match(main, /app\.on\('will-quit', \(\) => \{[\s\S]*globalShortcut\.unregisterAll\(\)/);
   assert.doesNotMatch(main, /function stopAllAndQuit\(\) \{[\s\S]{0,120}stopTranscriptionPipeline/);
   assert.doesNotMatch(main, /function relaunchApp\(\) \{[\s\S]{0,120}stopTranscriptionPipeline/);
