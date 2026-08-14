@@ -442,13 +442,12 @@
   // Smart toggle
   const smartBtn = $('#smart-toggle');
   function updateSmartToggleModelIds() {
-    const provider = settings.provider || 'openai';
-    const models = (settings.models && settings.models[provider]) || {};
+    const provider = (settings && settings.provider) || 'openai';
+    const models = (settings && settings.models && settings.models[provider]) || {};
     const label = (id) => (id && id.trim() ? id.trim() : 'not set in Settings');
-    smartBtn.title = `Smart ${settings.smart ? '· active' : ''}\nFast: ${label(models.fast)}\nSmart: ${label(models.smart)}`;
+    smartBtn.title = `Smart ${settings && settings.smart ? '· active' : ''}\nFast: ${label(models.fast)}\nSmart: ${label(models.smart)}`;
     smartBtn.setAttribute('aria-label', `Smart toggle · Fast: ${label(models.fast)} · Smart: ${label(models.smart)}`);
   }
-  updateSmartToggleModelIds();
   $('#assist-context').addEventListener('change', async () => {
     settings.assistContext = $('#assist-context').value;
     await volyxLens.settingsSet({ assistContext: settings.assistContext });
