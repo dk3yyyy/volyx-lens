@@ -950,6 +950,7 @@ async function shutdownAll() {
     await stopTranscriptionPipeline({ immediate: true });
     localOcr.cancelAll();
     clearTaskContext();
+    resetSidecar();
     resetTranscriptData();
     globalShortcut.unregisterAll();
     send('capture:state', { active: false });
@@ -978,6 +979,7 @@ function startNewSession() {
     featureRunId += 1;
     state.busy = false;
     resetSttErrorState();
+    resetSidecar();
     const restartTranscription = state.capturing && desiredCapturing;
     if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
     resetTranscriptData();

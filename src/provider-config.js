@@ -1,3 +1,6 @@
+// Model specifications for local whisper.cpp models (from whisper-sidecar.js)
+const { MODEL_SPECS } = require('./whisper-sidecar');
+
 const PROVIDERS = Object.freeze({
   openai: {
     label: 'OpenAI',
@@ -64,6 +67,10 @@ function getDefaultSettings() {
     models[id] = { ...provider.models };
   }
 
+  const whisperModels = Object.fromEntries(
+    Object.entries(MODEL_SPECS).map(([id, spec]) => [id, { sizeMB: spec.sizeMB, params: spec.params }])
+  );
+
   return {
     provider: 'openai',
     fallbackProvider: '',
@@ -99,6 +106,8 @@ function getDefaultSettings() {
       offlineCloudFallback: false,
       language: '',
       delay: 'low',
+      whisperModel: 'base.en',
+      whisperModels,
     },
   };
 }

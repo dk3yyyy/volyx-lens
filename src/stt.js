@@ -11,29 +11,32 @@ const { looksLikeHallucination } = require('./transcript-hygiene');
 let sidecar = null; // lazily initialized, fully-started WhisperSidecar instance
 let starting = null; // in-flight startup promise shared by concurrent requests
 
-// Sidecar mode is strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR
+// Sidecar mode is strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR env var
 function shouldUseSidecar(env) {
   return !!env.VOLYX_LENS_WHISPER_SIDECAR;
 }
 
-async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
-  const useSidecar = shouldUseSidecar(env);
+// Use the local whisper.cpp sidecar when offlineEnabled is on and the
+// VOLYX_LENS_WHISPER_SIDECAR opt-in is not active. This is the new first-class
+// "Local (whisper.cpp)" provider.
+function shouldUseLocalWhisper(transcription, env) {
+  return !!(
+    transcription.offlineEnabled &&
+    !env.VOLYX_LENS_WHISPER_SIDECAR &&
+    !!transcription.whisperModel
+  );
+}
 
-  if (!useSidecar) {
-    // Fall back to CLI-based offline
-    return transcribeOffline(wav, { env, language: vocab });
-  }
-
-  // Initialize sidecar if not already running. The instance is only published
-  // to the singleton after start() succeeds, and concurrent requests share the
-  // same in-flight startup, so no caller can queue against an unstarted or
-  // failed instance. A published instance whose child has exited (running is
-  // false) is also replaced here on the next request.
+async function transcribeViaLocalWhisper(wav, env, language, whisperModel) {
+  // Initialize sidecar if not already running. Uses the whisperModel from
+  // settings (falls back to 'base.en'). The sidecar downloads the model in-app
+  // if not already cached, transcribes in-memory (no temp files), and supports
+  // a shared inference queue for You/Them channels.
   if (!sidecar || !sidecar.running) {
     if (!starting) {
-      const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
-      const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
-      const instance = factory(modelId);
+      const factory =
+        sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
+      const instance = factory(whisperModel);
       starting = instance.start().then(() => {
         sidecar = instance;
         starting = null;
@@ -98,6 +101,14 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   if (useSidecar) {
     chain.push({ p: 'sidecar', fn: (wav) => transcribeViaSidecar(wav, env, vocab, sidecarFactory) });
   }
+  // Local whisper.cpp: first-class "Local (whisper.cpp)" provider, enabled when
+  // offlineEnabled is on and the VOLYX_LENS_WHISPER_SIDECAR opt-in is not active.
+  // The model is selected from the Settings UI (base.en, small, medium, large-v3,
+  // quantized variants, etc.) and downloaded in-app if not already cached.
+  const useLocalWhisper = shouldUseLocalWhisper(transcription, env);
+  if (useLocalWhisper) {
+    chain.push({ p: 'local-whisper', fn: (wav) => transcribeViaLocalWhisper(wav, env, transcription.language || '', transcription.whisperModel) });
+  }
   if (transcription.offlineEnabled && offline.ready) {
     chain.push({ p: 'offline', fn: (wav) => offlineTranscribe(wav, { env, language: transcription.language || '', prompt }) });
   }
@@ -105,10 +116,17 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   if (allowCloud && keys.openai) chain.push({ p: 'openai', fn: (wav) => openAITranscribe(keys.openai, wav, fallbackModel, prompt) });
   if (allowCloud && keys.gemini) chain.push({ p: 'gemini', fn: (wav) => geminiTranscribe(keys.gemini, wav, geminiFallbackModel) });
 
+  // Determine offline error: show if offlineEnabled is on but no path is available.
+  // Paths available: sidecar (opt-in via env), local-whisper (in-app model picker),
+  // CLI (VOLYX_LENS_WHISPER_CLI + VOLYX_LENS_WHISPER_MODEL env vars).
+  const hasAnyOfflinePath =
+    useSidecar || useLocalWhisper || (transcription.offlineEnabled && offline.ready);
+  const offlineError = transcription.offlineEnabled && !hasAnyOfflinePath ? offline.error : '';
+
   return {
     available: chain.length > 0,
     providers: chain.map((c) => c.p),
-    offlineError: transcription.offlineEnabled && !offline.ready ? offline.error : '',
+    offlineError,
     async transcribe(pcm) {
       if (!chain.length || !pcm || pcm.length < 3200) return { text: '' };
       const wav = pcmToWav(pcm, AUDIO_SAMPLE_RATE, 1);
