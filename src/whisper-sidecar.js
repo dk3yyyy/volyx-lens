@@ -134,7 +134,7 @@ class WhisperSidecar {
     this.port = options.port || 0;
     this.host = options.host || '127.0.0.1';
     this.child = null;
-    this.running = false;
+    this._running = false;
     this.requestQueue = { you: [], them: [] };
     this.processingYou = false;
     this.processingThem = false;
@@ -143,7 +143,9 @@ class WhisperSidecar {
     this.abortCtrl = null;
   }
 
-  get running() { return this.running; }
+  get running() { return this._running; }
+
+  set running(next) { this._running = next; }
 
   _setState(next) {
     this.running = next;
