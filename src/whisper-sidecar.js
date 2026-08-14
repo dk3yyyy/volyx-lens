@@ -126,6 +126,44 @@ function verifyModel(modelId, expectedSha256) {
   return { valid: actual === expectedSha256, actual };
 }
 
+// Resolve the whisper.cpp server binary used by the sidecar.
+// Precedence: VOLYX_LENS_WHISPER_SIDECAR_BIN env var, then a bundled
+// resources/native/whisper-server binary (packaged builds). Fails with an
+// actionable message instead of a bare MODULE_NOT_FOUND so a missing binary
+// is never surfaced as a confusing require error.
+function resolveWhisperBinary({
+  env = process.env,
+  platform = process.platform,
+  resourcesPath = typeof process.resourcesPath === 'string' ? process.resourcesPath : '',
+  fsImpl = fs,
+} = {}) {
+  const candidates = [];
+  const fromEnv = String(env.VOLYX_LENS_WHISPER_SIDECAR_BIN || '').trim();
+  if (fromEnv) candidates.push({ path: fromEnv, source: 'VOLYX_LENS_WHISPER_SIDECAR_BIN' });
+  if (resourcesPath) candidates.push({
+    path: path.join(resourcesPath, 'native', platform === 'win32' ? 'whisper-server.exe' : 'whisper-server'),
+    source: 'bundled resources',
+  });
+  for (const { path: candidate, source } of candidates) {
+    if (isExecutableFile(candidate, platform, fsImpl)) return { binary: candidate, source };
+  }
+  const detail = candidates.length
+    ? `Tried ${candidates.map((candidate) => `"${candidate.path}" (${candidate.source})`).join(', ')}.`
+    : 'No whisper.cpp server binary source is available.';
+  throw new Error(`Whisper sidecar binary not found. Set VOLYX_LENS_WHISPER_SIDECAR_BIN to the whisper-server executable, or provide a bundled binary. ${detail}`);
+}
+
+function isExecutableFile(candidate, platform = process.platform, fsImpl = fs) {
+  try {
+    const stat = fsImpl.statSync(candidate);
+    if (!stat.isFile()) return false;
+    if (platform !== 'win32') fsImpl.accessSync(candidate, fsImpl.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // WhisperSidecar class - persistent sidecar process with shared inference queue
 class WhisperSidecar {
   constructor(options = {}) {
@@ -204,7 +242,7 @@ class WhisperSidecar {
     ];
 
     this._setState('starting');
-    const execArg = process.env.VOLYX_LENS_WHISPER_SIDECAR_BIN || require.resolve('./whisper-sidecar-binary');
+    const { binary: execArg } = resolveWhisperBinary();
     const child = require('child_process').spawn(execArg, args, {
       stdio: ['ignore', 'ignore', 'pipe'],
       env: { ...process.env, PATH: process.env.PATH },
@@ -355,5 +393,7 @@ module.exports = {
   downloadModel,
   verifyModel,
   sha256File,
+  resolveWhisperBinary,
+  isExecutableFile,
   WhisperSidecar,
 };
