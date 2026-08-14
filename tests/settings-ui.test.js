@@ -86,6 +86,12 @@ test('renderer loads credential presence and sends only explicit key updates', (
   assert.match(renderer, /function stashCurrentModels/);
 });
 
+test('plaintext credential fallback surfaces a visible Settings warning', () => {
+  assert.match(html, /id="s-storage-warning"[^>]*role="alert"/);
+  assert.match(renderer, /s-storage-warning'\)\.classList\.toggle\('hidden', !\(storageState\.secure === false && storageState\.backend === 'plaintext-fallback'\)\)/);
+  assert.match(styles, /\.s-warn/);
+});
+
 test('runtime fallback routing is visible and crosses only the existing event boundary', () => {
   assert.match(main, /createResponseRoute\(settings\)/);
   assert.match(main, /streamWithFallback/);

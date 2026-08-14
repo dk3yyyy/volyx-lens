@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   captureToggle: () => ipcRenderer.invoke('capture:toggle'),
   captureStop: () => ipcRenderer.invoke('capture:stop'),
   captureState: () => ipcRenderer.invoke('capture:state'),
+  setDisplayCaptureIntent: (active) => ipcRenderer.send('capture:display-intent', active === true),
   newSession: () => ipcRenderer.invoke('session:new'),
   taskContextGet: () => ipcRenderer.invoke('task-context:get'),
   taskContextList: (offset = 0, limit = 50) => ipcRenderer.invoke('task-context:list', { offset, limit }),

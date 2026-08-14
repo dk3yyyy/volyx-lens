@@ -3,6 +3,7 @@
 // fall back across providers. Returns { text, provider } or { text:'', error }.
 const { pcmToWav } = require('./wav');
 const { AUDIO_SAMPLE_RATE } = require('./audio-config');
+const { STT_MODELS } = require('./provider-config');
 const { validateOfflineConfig, transcribeOffline } = require('./offline-stt');
 
 async function transcribeOpenAI(apiKey, wav, model) {
@@ -18,7 +19,7 @@ async function transcribeGemini(apiKey, wav, model) {
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
   const res = await ai.models.generateContent({
-    model: model || 'gemini-3.5-flash',
+    model: model || STT_MODELS.geminiFallback,
     contents: [{ role: 'user', parts: [
       { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
       { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } }
@@ -31,8 +32,8 @@ function createSTT(settings, { env = process.env, offlineTranscribe = transcribe
   const keys = settings.apiKeys || {};
   const chain = [];
   const transcription = settings.transcription || {};
-  const fallbackModel = transcription.fallbackModel || settings.sttModel || 'gpt-4o-mini-transcribe';
-  const geminiFallbackModel = transcription.geminiFallbackModel || 'gemini-3.5-flash';
+  const fallbackModel = transcription.fallbackModel || settings.sttModel || STT_MODELS.openaiFallback;
+  const geminiFallbackModel = transcription.geminiFallbackModel || STT_MODELS.geminiFallback;
   const offline = validateOfflineConfig(env);
   if (transcription.offlineEnabled && offline.ready) {
     chain.push({ p: 'offline', fn: (wav) => offlineTranscribe(wav, { env, language: transcription.language || '' }) });

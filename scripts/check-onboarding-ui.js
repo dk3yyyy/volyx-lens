@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
+const { STT_MODELS } = require('../src/provider-config');
 const screenshotDir = process.env.VOLYX_LENS_ONBOARDING_SCREENSHOT_DIR || '';
 const emptyContext = { count: 0, maxCaptures: null, maxTotalBytes: 96 * 1024 * 1024, totalBytes: 0, pinnedCount: 0, revision: 0 };
 const settings = {

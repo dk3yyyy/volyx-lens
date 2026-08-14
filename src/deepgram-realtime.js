@@ -1,6 +1,9 @@
 'use strict';
 
-const DEFAULT_MODEL = 'nova-3';
+const { STT_MODELS } = require('./provider-config');
+const { classifyRealtimeError } = require('./realtime-errors');
+
+const DEFAULT_MODEL = STT_MODELS.deepgram;
 const DEFAULT_ENDPOINTING_MS = 300;
 const DEFAULT_UTTERANCE_END_MS = 1000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
@@ -25,22 +28,9 @@ function buildDeepgramOptions({ model = DEFAULT_MODEL, language = '', sampleRate
   return options;
 }
 
-function sanitizeDeepgramError(error, channel) {
-  const candidate = [error && error.code, error && error.type, error && error.message]
-    .filter(Boolean)
-    .map((value) => String(value).toLowerCase())
-    .join(' ');
-  if (/(auth|token|api.?key|401|403)/.test(candidate)) {
-    return { code: 'realtime_authentication_failed', message: 'Deepgram authentication failed.', channel };
-  }
-  if (candidate.includes('timeout')) {
-    return { code: 'realtime_connection_timeout', message: 'Deepgram transcription connection timed out.', channel };
-  }
-  if (/(rate|limit|429)/.test(candidate)) {
-    return { code: 'realtime_rate_limited', message: 'Deepgram transcription rate limit was reached.', channel };
-  }
-  return { code: 'realtime_transport_failed', message: 'Deepgram transcription connection failed.', channel };
-}
+// Thin provider-tuned alias to the shared classifier in realtime-errors.js;
+// Deepgram adds a rate-limit category and uses its own provider wording.
+const sanitizeDeepgramError = (error, channel) => classifyRealtimeError(error, channel, { providerLabel: 'Deepgram transcription', includeRateLimit: true });
 
 class DeepgramRealtimeChannel {
   constructor({

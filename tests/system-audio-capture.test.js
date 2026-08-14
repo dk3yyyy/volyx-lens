@@ -97,11 +97,12 @@ test('renderer keeps macOS system PCM out of the preload boundary', () => {
   assert.match(main, /createSystemAudioCapture/);
   assert.match(main, /onPcm: \(pcm\) => \{ publishSystemAudioLevel\(pcm\); acceptPcm\('them', pcm\); \}/);
   assert.match(main, /now - lastSystemAudioLevelAt < 100/);
-  assert.match(main, /pcm\.readInt16LE\(offset\) \/ 32768/);
+  assert.match(main, /Math\.min\(1, rms16\(pcm\) \/ 32768\)/);
   assert.match(preload, /'audio:level'/);
   assert.match(renderer, /volyxLens\.on\('audio:level'/);
   assert.doesNotMatch(preload, /systemAudioPcm|systemAudioSamples|systemAudioWaveform/);
-  assert.ok((main.match(/systemAudioCapture\.stop\(\{ immediate: true \}\)/g) || []).length >= 4);
+  assert.match(main, /await systemAudioCapture\.stop\(\{ immediate: true \}\)/);
+  assert.match(main, /async function shutdownAll\(\)[\s\S]*?await systemAudioCapture\.stop\(\{ immediate: true \}\)[\s\S]*?await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
   assert.match(renderer, /volyxLens\.platform !== 'darwin'/);
   assert.match(preload, /platform: process\.platform/);
   const swift = fs.readFileSync(path.join(root, 'native', 'macos-system-audio.swift'), 'utf8');
