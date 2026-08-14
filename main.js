@@ -31,6 +31,7 @@ const { joinTranscriptSegments, appendConversationSegment } = require('./src/tra
 const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
 const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap } = require('./src/meeting-recap');
+const { buildSttVocab } = require('./src/transcript-hygiene');
 const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
 const { createLocalOcr } = require('./src/local-ocr');
@@ -585,7 +586,14 @@ async function flushChannel(channel, { drain = false } = {}) {
     state.transcribing[channel] = true;
     try {
       const settings = store.getSettings();
-      const stt = createSTT(settings);
+      // Seed batch/offline STT with domain terms from the user's enabled
+      // personal-context documents so model names and acronyms transcribe
+      // correctly (see src/transcript-hygiene.js).
+      const stt = createSTT(settings, {
+        vocab: buildSttVocab({
+          personalContext: personalContextStore.getEnabledDocuments().map((document) => document.text || '').join(' '),
+        }),
+      });
       if (!stt.available) {
         if (!sttDisabled) {
           sttDisabled = true;

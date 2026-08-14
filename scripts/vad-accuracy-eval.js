@@ -408,7 +408,12 @@ async function runEvaluation(fixtures) {
     const row = buildRow(fixture, result);
     if (whisper.ready && fixture.kind === 'speech' && !fixture.overlay) {
       try {
-        const transcript = await transcribeOffline(pcmToWav(pcm, sampleRate), { env: process.env });
+        const transcript = await transcribeOffline(pcmToWav(pcm, sampleRate), {
+          env: process.env,
+          // Optional STT seed prompt (whisper.cpp --prompt) for measuring how
+          // domain-term seeding improves WER: VOLYX_LENS_WHISPER_VOCAB="...".
+          prompt: process.env.VOLYX_LENS_WHISPER_VOCAB || '',
+        });
         row.wer = Math.round(wer(fixture.text, transcript) * 1000) / 1000;
       } catch (error) {
         row.wer = null;

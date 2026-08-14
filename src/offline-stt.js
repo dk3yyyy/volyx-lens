@@ -37,7 +37,7 @@ function validateOfflineConfig(env = process.env) {
   }
 }
 
-async function runWhisperCli({ executable, model, wav, language = '', timeoutMs = DEFAULT_TIMEOUT_MS, spawnImpl = spawn, jobState = { cancelled: false } }) {
+async function runWhisperCli({ executable, model, wav, language = '', prompt = '', timeoutMs = DEFAULT_TIMEOUT_MS, spawnImpl = spawn, jobState = { cancelled: false } }) {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'volyx-lens-offline-stt-'));
   const input = path.join(directory, 'audio.wav');
   const outputPrefix = path.join(directory, 'transcript');
@@ -48,6 +48,9 @@ async function runWhisperCli({ executable, model, wav, language = '', timeoutMs 
     if (jobState.cancelled) throw offlineError('Offline transcription was cancelled.', 'offline_cancelled');
     const args = ['-m', model, '-f', input, '--output-txt', '--output-file', outputPrefix, '--no-timestamps'];
     if (language) args.push('-l', language);
+    // Seed the recognizer with expected domain terms to reduce mis-spelling of
+    // model names, product names, and acronyms (whisper.cpp --prompt).
+    if (prompt) args.push('--prompt', prompt);
     return await new Promise((resolve, reject) => {
       const child = spawnImpl(executable, args, {
         shell: false,
@@ -93,7 +96,7 @@ async function runWhisperCli({ executable, model, wav, language = '', timeoutMs 
   }
 }
 
-async function transcribeOffline(wav, { env = process.env, language = '', timeoutMs, spawnImpl } = {}) {
+async function transcribeOffline(wav, { env = process.env, language = '', prompt = '', timeoutMs, spawnImpl } = {}) {
   const config = validateOfflineConfig(env);
   if (!config.ready) throw offlineError(config.error, 'offline_not_configured');
   const generation = cancellationGeneration;
@@ -101,7 +104,7 @@ async function transcribeOffline(wav, { env = process.env, language = '', timeou
   pendingJobs.add(jobState);
   const job = offlineQueue.catch(() => {}).then(() => {
     if (jobState.cancelled || generation !== cancellationGeneration) throw offlineError('Offline transcription was cancelled.', 'offline_cancelled');
-    return runWhisperCli({ ...config, wav, language, timeoutMs, spawnImpl, jobState });
+    return runWhisperCli({ ...config, wav, language, prompt, timeoutMs, spawnImpl, jobState });
   }).finally(() => pendingJobs.delete(jobState));
   offlineQueue = job.catch(() => {});
   return job;
