@@ -18,6 +18,8 @@
 //   npm run eval:vad                 generate fixtures if needed, then evaluate
 //   npm run eval:vad -- --regenerate rebuild the cached audio fixtures
 //   npm run eval:vad -- --report     only re-evaluate the existing fixtures
+//   npm run eval:vad -- --check      exit 1 when metrics regress past thresholds
+//   npm run eval:vad -- --thresholds=file.json  override thresholds (JSON keys below)
 //
 // The generated WAVs live in node_modules/.cache/vad-eval (gitignored), so the
 // evaluation set definition here is the repeatable artifact, not binary audio.
@@ -31,6 +33,19 @@ const { rms16, pcmToWav } = require('../src/wav');
 const { validateOfflineConfig, transcribeOffline } = require('../src/offline-stt');
 
 const CACHE_DIR = path.join(__dirname, '..', 'node_modules', '.cache', 'vad-eval');
+
+// Pass/fail guards, derived from the measured baselines (whisper.cpp base.en:
+// empty-turn 0%, false-negative 0%, boundary 92ms start / 0ms end, WER 17%).
+// WER is only enforced when a whisper adapter actually ran.
+const THRESHOLDS = Object.freeze({
+  emptyTurnRate: 0.02,
+  falseNegativeRate: 0.02,
+  meanStartErrorMs: 200,
+  meanEndErrorMs: 200,
+  truncationCount: 1,
+  wer: 0.3,
+});
+
 const CHUNK_MS = 50;
 const LEAD_MS = 500;
 const DEFAULT_RATE = 150;
@@ -394,6 +409,21 @@ function summarize(rows) {
   };
 }
 
+function checkThresholds(summary, thresholds = THRESHOLDS) {
+  const violations = [];
+  const enforce = (name, actual, limit) => {
+    if (actual === null || actual === undefined || limit === null || limit === undefined) return;
+    if (actual > limit) violations.push({ name, actual, limit });
+  };
+  enforce('emptyTurnRate', summary.emptyTurnRate, thresholds.emptyTurnRate);
+  enforce('falseNegativeRate', summary.falseNegativeRate, thresholds.falseNegativeRate);
+  enforce('meanStartErrorMs', summary.meanStartErrorMs, thresholds.meanStartErrorMs);
+  enforce('meanEndErrorMs', summary.meanEndErrorMs, thresholds.meanEndErrorMs);
+  enforce('truncationCount', summary.truncationCount, thresholds.truncationCount);
+  enforce('wer', summary.werMean, thresholds.wer);
+  return violations;
+}
+
 function printReport(summary, rows, whisperReady) {
   console.log(`\nVAD accuracy evaluation — ${summary.fixtures} fixtures`);
   console.log(`  empty-turn rate:      ${Math.round(summary.emptyTurnRate * 100)}%`);
@@ -420,6 +450,13 @@ async function main() {
   const args = process.argv.slice(2);
   const regenerate = args.includes('--regenerate');
   const reportOnly = args.includes('--report');
+  const enforce = args.includes('--check');
+  const thresholdsArg = args.find((arg) => arg.startsWith('--thresholds='));
+  let thresholds = THRESHOLDS;
+  if (thresholdsArg) {
+    const file = path.resolve(thresholdsArg.slice('--thresholds='.length));
+    thresholds = JSON.parse(fs.readFileSync(file, 'utf8'));
+  }
   if (!reportOnly) {
     const { fixtures, generated, skippedVoices } = await generateAll(regenerate);
     if (skippedVoices) console.log(`Skipped ${skippedVoices} accent fixture(s) whose voice is not installed.`);
@@ -433,7 +470,19 @@ async function main() {
   const { rows, whisperReady } = await runEvaluation(fixtures);
   const summary = summarize(rows);
   printReport(summary, rows, whisperReady);
-  fs.writeFileSync(path.join(CACHE_DIR, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), summary, rows }, null, 2));
+  if (enforce) {
+    const violations = checkThresholds(summary, thresholds);
+    if (violations.length) {
+      console.log('\nTHRESHOLD VIOLATIONS:');
+      for (const violation of violations) {
+        console.log(`  ${violation.name}: ${violation.actual} exceeds limit ${violation.limit}`);
+      }
+      process.exitCode = 1;
+    } else {
+      console.log('\nAll thresholds passed.');
+    }
+  }
+  fs.writeFileSync(path.join(CACHE_DIR, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), summary, thresholds, rows }, null, 2));
   console.log(`\nFull report: ${path.join(CACHE_DIR, 'report.json')}`);
 }
 
@@ -456,4 +505,6 @@ module.exports = {
   evaluatePcm,
   normalizeText,
   wer,
+  THRESHOLDS,
+  checkThresholds,
 };
