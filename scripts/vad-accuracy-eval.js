@@ -24,6 +24,7 @@
 // The generated WAVs live in node_modules/.cache/vad-eval (gitignored), so the
 // evaluation set definition here is the repeatable artifact, not binary audio.
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -166,6 +167,14 @@ function insertSilenceGap(pcm, gapMs, sampleRate = AUDIO_SAMPLE_RATE) {
 }
 
 // -------- fixture manifest (the repeatable evaluation set) --------
+function fixtureHash(fixture) {
+  const canonical = JSON.stringify(Object.keys(fixture).sort().reduce((acc, key) => {
+    acc[key] = fixture[key];
+    return acc;
+  }, {}));
+  return crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 16);
+}
+
 function buildFixtures() {
   const speech = (id, category, text, extra = {}) => ({ id, category, kind: 'speech', text, ...extra });
   return [
@@ -278,8 +287,14 @@ function evaluatePcm(pcm, { sampleRate = AUDIO_SAMPLE_RATE, vadOptions = {}, fix
   const utterances = [];
   let openStart = null;
   for (const event of events) {
-    if (event.type === 'start') openStart = event.ms;
-    else if (openStart !== null) { utterances.push({ startMs: openStart, endMs: event.ms, forced: event.type === 'forced' }); openStart = null; }
+    if (event.type === 'start') {
+      openStart = event.ms;
+    } else if (openStart !== null) {
+      utterances.push({ startMs: openStart, endMs: event.ms, forced: event.type === 'forced' });
+      // A forced cap stops the segment but the detector stays active, so keep
+      // the segment open at the cap boundary to preserve the continuing speech.
+      openStart = event.type === 'forced' ? event.ms : null;
+    }
   }
   if (openStart !== null) utterances.push({ startMs: openStart, endMs: ms, forced: false }); // speech still active at stream end
   return { events, starts, stops, utterances, durationMs: Math.round((pcm.length / 2 / sampleRate) * 1000) };
@@ -334,18 +349,23 @@ async function generateAll(force) {
   const fixtures = buildFixtures();
   const voices = availableVoices();
   const usable = fixtures.filter((fixture) => fixture.kind !== 'speech' || voices.has(fixture.voice || 'Samantha'));
-  const cached = fs.existsSync(manifestPath)
-    ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')).map((id) => id)
-    : [];
+  const cached = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : [];
+  const cachedHash = new Map();
+  for (const entry of cached) {
+    if (entry && typeof entry === 'object' && entry.id && typeof entry.hash === 'string') {
+      cachedHash.set(entry.id, entry.hash);
+    }
+  }
   let generated = 0;
   for (const fixture of usable) {
     const outFile = path.join(CACHE_DIR, `${fixture.id}.wav`);
-    if (!force && fs.existsSync(outFile) && cached.includes(fixture.id)) continue;
+    const hash = fixtureHash(fixture);
+    if (!force && fs.existsSync(outFile) && cachedHash.get(fixture.id) === hash) continue;
     const pcm = generateFixture(fixture);
     fs.writeFileSync(outFile, pcmToWav(pcm, AUDIO_SAMPLE_RATE));
     generated += 1;
   }
-  fs.writeFileSync(manifestPath, JSON.stringify(usable.map((f) => f.id)));
+  fs.writeFileSync(manifestPath, JSON.stringify(usable.map((f) => ({ id: f.id, hash: fixtureHash(f) }))));
   return { fixtures: usable, generated, skippedVoices: fixtures.length - usable.length };
 }
 
@@ -402,6 +422,7 @@ function summarize(rows) {
     emptyTurnRate: Math.round(emptyTurnRate * 1000) / 1000,
     falseNegativeRate: Math.round(falseNegativeRate * 1000) / 1000,
     truncationCount: truncations,
+    forcedCaps: rows.filter((r) => r.forced).length,
     meanStartErrorMs: mean(startErrs),
     meanEndErrorMs: mean(endErrs),
     werMean: werRows.length ? Math.round((werRows.reduce((a, b) => a + b.wer, 0) / werRows.length) * 1000) / 1000 : null,
@@ -429,6 +450,7 @@ function printReport(summary, rows, whisperReady) {
   console.log(`  empty-turn rate:      ${Math.round(summary.emptyTurnRate * 100)}%`);
   console.log(`  false-negative rate:  ${Math.round(summary.falseNegativeRate * 100)}%`);
   console.log(`  truncated utterances: ${summary.truncationCount}`);
+  console.log(`  forced caps:          ${summary.forcedCaps}`);
   console.log(`  mean boundary error:  start ${summary.meanStartErrorMs} ms, end ${summary.meanEndErrorMs} ms`);
   console.log(`  WER: ${summary.werMean === null ? 'skipped' : `${Math.round(summary.werMean * 100)}% over ${summary.werSamples} samples`}${whisperReady ? '' : ' (set VOLYX_LENS_WHISPER_CLI and VOLYX_LENS_WHISPER_MODEL to include WER)'}`);
   const byCategory = {};
@@ -502,6 +524,7 @@ module.exports = {
   mixPcm,
   insertSilenceGap,
   buildFixtures,
+  fixtureHash,
   evaluatePcm,
   normalizeText,
   wer,
