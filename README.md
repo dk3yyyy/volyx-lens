@@ -101,6 +101,8 @@ Do **not** disable Gatekeeper globally. Ad-hoc builds cannot use the in-app upda
 | **Add Task Context screen** | `⌘` `⇧` `C` or Add screen | local capture only; no AI request |
 | **What should I say?** | action button | conversation transcript |
 | **Follow-up questions** | action button | conversation transcript |
+| **Draft answer** | button on a detected question | conversation transcript |
+| **Auto-assist** | opt-in Setting (off by default) — auto-drafts replies to confidently detected questions | conversation transcript |
 | **Recap** | action button | bounded meeting transcript |
 | **Ask anything** | type and press `↵` | selected screen/conversation context |
 | **New Session** | `/new` or New Session | clears in-memory session context |
