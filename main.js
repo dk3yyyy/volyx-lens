@@ -30,7 +30,8 @@ const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = 
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
 const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
 const { createAutoAssistPolicy } = require('./src/auto-assist');
-const { planMeetingRecap } = require('./src/meeting-recap');
+const { planMeetingRecap, transcriptText } = require('./src/meeting-recap');
+const { meetingFilename, formatMeetingRecord } = require('./src/meeting-notes');
 const { buildSttVocab } = require('./src/transcript-hygiene');
 const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
@@ -445,6 +446,20 @@ async function exportTranscript(format) {
   if (result.canceled || !result.filePath) return { canceled: true };
   await fs.promises.writeFile(result.filePath, formatTranscript(transcript, normalizedFormat), { encoding: 'utf8', mode: 0o600 });
   return { canceled: false, filename: path.basename(result.filePath), turns: transcript.length };
+}
+
+async function exportMeetingRecord(id, format) {
+  const normalizedFormat = ['txt', 'md', 'json'].includes(format) ? format : 'md';
+  const record = meetingStore.get(String(id || ''));
+  if (!record) throw new Error('That meeting record is no longer available.');
+  const result = await dialog.showSaveDialog(win, {
+    title: 'Export meeting notes',
+    defaultPath: meetingFilename(normalizedFormat, record.endedAt || Date.now()),
+    filters: [{ name: normalizedFormat.toUpperCase(), extensions: [normalizedFormat] }],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  await fs.promises.writeFile(result.filePath, formatMeetingRecord(record, normalizedFormat), { encoding: 'utf8', mode: 0o600 });
+  return { canceled: false, filename: path.basename(result.filePath), turns: record.turns.length };
 }
 
 // -------- window --------
@@ -970,6 +985,7 @@ async function shutdownAll() {
     pendingDisplayCapture = false;
     await systemAudioCapture.stop({ immediate: true });
     await stopTranscriptionPipeline({ immediate: true });
+    if (historyRecapController) historyRecapController.abort();
     finalizeMeeting('app-quit');
     localOcr.cancelAll();
     clearTaskContext();
@@ -1232,6 +1248,67 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
   }
 }
 
+let historyRecapController = null;
+async function recapMeetingRecord(id, options = {}) {
+  const confirmed = options.confirmed === true;
+  const record = meetingStore.get(String(id || ''));
+  if (!record) throw new Error('That meeting record is no longer available.');
+  if (state.busy) return { ok: false, code: 'answer_active', message: 'Wait for the active answer to finish before generating meeting notes.' };
+  if (historyRecapController) return { ok: false, code: 'recap_active', message: 'Meeting notes are already being generated.' };
+  const settings = store.getSettings();
+  const route = createResponseRoute(settings);
+  const selection = chooseInitialProvider(route, { requiresVision: false });
+  const llm = selection.llm;
+  if (!llm.ready) {
+    return { ok: false, code: 'not_configured', message: llm.configurationError || ('Configure ' + settings.provider + ' in Settings to generate meeting notes.') };
+  }
+  const plan = planMeetingRecap(record.turns);
+  if (plan.requiresChunking && !confirmed) {
+    return {
+      ok: false,
+      code: 'requires_confirmation',
+      plan: { requestCount: plan.requestCount, sourceCharacters: plan.sourceCharacters, sampled: plan.sampled },
+      message: `Generating notes for this long meeting needs ${plan.requestCount} model requests.`,
+    };
+  }
+  const controller = new AbortController();
+  historyRecapController = controller;
+  const isCurrent = () => historyRecapController === controller;
+  try {
+    const system = `${MODES.recap.system}\n\n${SOURCE_UNCERTAINTY_RULE}\n\n${UNTRUSTED_INPUT_RULE}\n\n${PLAIN_TEXT_OUTPUT_RULE}`;
+    let built;
+    if (plan.requiresChunking) {
+      built = await summarizeMeetingChunks({ plan, llm, fallback: selection.fallback, isCurrent, signal: controller.signal });
+    } else {
+      built = `Full transcript:\n${transcriptText(record.turns)}\n\nRecap this.`;
+    }
+    if (!built || !isCurrent()) return { ok: false, code: 'canceled' };
+    const fullAnswer = await streamWithFallback({
+      llm,
+      fallback: selection.fallback,
+      params: {
+        system,
+        turns: [{ role: 'user', text: built }],
+        imageDataUrl: null,
+        signal: controller.signal,
+        onToken: (token) => {
+          if (!isCurrent()) return;
+          send('history:recap-token', { id: record.id, text: token });
+        },
+      },
+      onFallback: ({ from, to }) => {
+        if (!isCurrent()) return;
+        send('status', { message: `${from.label} failed before producing text. Using fallback ${to.label} for meeting notes.` });
+        send('llm:provider', { label: to.label, fallback: true });
+      },
+    });
+    if (!isCurrent()) return { ok: false, code: 'canceled' };
+    return { ok: true, id: record.id, text: fullAnswer };
+  } finally {
+    if (historyRecapController === controller) historyRecapController = null;
+  }
+}
+
 async function testResponseConfiguration(payload = {}) {
   if (state.busy) return { ok: false, code: 'answer_active', message: 'Wait for the active answer to finish or stop it before testing a provider.' };
   if (responseDiagnosticPromise) return { ok: false, code: 'test_active', message: 'A response-provider test is already running.' };
@@ -1419,6 +1496,8 @@ handleTrusted('history:clear', () => {
   send('history:changed', { cleared: true, count: result.cleared });
   return result;
 });
+handleTrusted('history:export', (_event, payload) => exportMeetingRecord(payload && payload.id, payload && payload.format));
+handleTrusted('history:recap', (_event, payload) => recapMeetingRecord(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));
 handleTrusted('diagnostics:get', () => getSessionDiagnostics());
 handleTrusted('shortcuts:get', () => getShortcutStatus());
 handleTrusted('shortcuts:retry', () => registerShortcuts());
