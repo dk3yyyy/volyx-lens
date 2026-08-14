@@ -10,31 +10,42 @@ const { looksLikeHallucination } = require('./transcript-hygiene');
 
 let sidecar = null; // lazily initialized, fully-started WhisperSidecar instance
 let starting = null; // in-flight startup promise shared by concurrent requests
+let generation = 0; // bumped on reset to invalidate in-flight startups
 
-// Sidecar mode is strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR
+// Sidecar mode is strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR env var
 function shouldUseSidecar(env) {
   return !!env.VOLYX_LENS_WHISPER_SIDECAR;
 }
 
-async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
-  const useSidecar = shouldUseSidecar(env);
+// Use the local whisper.cpp sidecar when offlineEnabled is on and the
+// VOLYX_LENS_WHISPER_SIDECAR opt-in is not active. This is the new first-class
+// "Local (whisper.cpp)" provider.
+function shouldUseLocalWhisper(transcription, env) {
+  return !!(
+    transcription.offlineEnabled &&
+    !env.VOLYX_LENS_WHISPER_SIDECAR &&
+    !!transcription.whisperModel
+  );
+}
 
-  if (!useSidecar) {
-    // Fall back to CLI-based offline
-    return transcribeOffline(wav, { env, language: vocab });
-  }
-
-  // Initialize sidecar if not already running. The instance is only published
-  // to the singleton after start() succeeds, and concurrent requests share the
-  // same in-flight startup, so no caller can queue against an unstarted or
-  // failed instance. A published instance whose child has exited (running is
-  // false) is also replaced here on the next request.
+// Start (or reuse) the sidecar singleton. The instance is only published to the
+// singleton after start() succeeds, and concurrent requests share the same
+// in-flight startup, so no caller can queue against an unstarted or failed
+// instance. A published instance whose child has exited (running is false) is
+// replaced here on the next request.
+async function startSidecar(modelId, factory) {
   if (!sidecar || !sidecar.running) {
     if (!starting) {
-      const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
-      const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
       const instance = factory(modelId);
+      const requestedGeneration = generation;
       starting = instance.start().then(() => {
+        // If a reset happened while this startup was pending, do not publish the
+        // now-stale worker; stop it so it does not overlap a replacement.
+        if (requestedGeneration !== generation) {
+          if (typeof instance.stop === 'function') instance.stop().catch(() => {});
+          starting = null;
+          throw new Error('sidecar reset during startup');
+        }
         sidecar = instance;
         starting = null;
         return instance;
@@ -45,15 +56,38 @@ async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
     }
     await starting;
   }
+  return sidecar;
+}
 
+// Advanced path (VOLYX_LENS_WHISPER_SIDECAR): model comes from the env var.
+async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
+  const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
+  const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
+  const instance = await startSidecar(modelId, factory);
   // Queue the WAV for in-memory transcription (no temp files on disk)
-  const result = await sidecar.queueYou(wav);
+  const result = await instance.queueYou(wav);
   return (result.text || '').trim();
 }
 
-// Reset the lazily initialized sidecar (config changes, shutdown, tests)
+// Local (whisper.cpp) provider: model comes from the Settings UI.
+async function transcribeViaLocalWhisper(wav, env, language, whisperModel, sidecarFactory) {
+  const modelId = whisperModel || 'base.en';
+  const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
+  const instance = await startSidecar(modelId, factory);
+  // Queue the WAV for in-memory transcription (no temp files on disk)
+  const result = await instance.queueYou(wav);
+  return (result.text || '').trim();
+}
+
+// Reset the lazily initialized sidecar (config changes, shutdown, tests).
+// Stops the underlying whisper.cpp child before discarding the singleton so a
+// model-loaded process is not leaked into the next session.
 function resetSidecar() {
-  sidecar = null;
+  generation += 1; // invalidate any in-flight startup
+  if (sidecar) {
+    if (typeof sidecar.stop === 'function') sidecar.stop().catch(() => {});
+    sidecar = null;
+  }
   starting = null;
 }
 
@@ -98,6 +132,14 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   if (useSidecar) {
     chain.push({ p: 'sidecar', fn: (wav) => transcribeViaSidecar(wav, env, vocab, sidecarFactory) });
   }
+  // Local whisper.cpp: first-class "Local (whisper.cpp)" provider, enabled when
+  // offlineEnabled is on and the VOLYX_LENS_WHISPER_SIDECAR opt-in is not active.
+  // The model is selected from the Settings UI (base.en, small, medium, large-v3,
+  // quantized variants, etc.) and downloaded in-app if not already cached.
+  const useLocalWhisper = shouldUseLocalWhisper(transcription, env);
+  if (useLocalWhisper) {
+    chain.push({ p: 'local-whisper', fn: (wav) => transcribeViaLocalWhisper(wav, env, transcription.language || '', transcription.whisperModel, sidecarFactory) });
+  }
   if (transcription.offlineEnabled && offline.ready) {
     chain.push({ p: 'offline', fn: (wav) => offlineTranscribe(wav, { env, language: transcription.language || '', prompt }) });
   }
@@ -105,10 +147,17 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   if (allowCloud && keys.openai) chain.push({ p: 'openai', fn: (wav) => openAITranscribe(keys.openai, wav, fallbackModel, prompt) });
   if (allowCloud && keys.gemini) chain.push({ p: 'gemini', fn: (wav) => geminiTranscribe(keys.gemini, wav, geminiFallbackModel) });
 
+  // Determine offline error: show if offlineEnabled is on but no path is available.
+  // Paths available: sidecar (opt-in via env), local-whisper (in-app model picker),
+  // CLI (VOLYX_LENS_WHISPER_CLI + VOLYX_LENS_WHISPER_MODEL env vars).
+  const hasAnyOfflinePath =
+    useSidecar || useLocalWhisper || (transcription.offlineEnabled && offline.ready);
+  const offlineError = transcription.offlineEnabled && !hasAnyOfflinePath ? offline.error : '';
+
   return {
     available: chain.length > 0,
     providers: chain.map((c) => c.p),
-    offlineError: transcription.offlineEnabled && !offline.ready ? offline.error : '',
+    offlineError,
     async transcribe(pcm) {
       if (!chain.length || !pcm || pcm.length < 3200) return { text: '' };
       const wav = pcmToWav(pcm, AUDIO_SAMPLE_RATE, 1);

@@ -200,6 +200,36 @@ test('concurrent requests share one in-flight startup and never queue against a 
   }
 });
 
+test('a reset during pending sidecar startup invalidates and stops the stale worker', async () => {
+  resetSidecar();
+  let created = 0;
+  let stopped = 0;
+  const factory = () => {
+    created += 1;
+    return {
+      running: false,
+      async start() {
+        await new Promise((resolve) => setTimeout(resolve, 30)); // pending startup
+      },
+      async stop() { stopped += 1; },
+      async queueYou() { return { text: `stale-${created}`, channel: 'you', timestamp: 1 }; },
+    };
+  };
+  try {
+    const stt = createSTT({ transcription: { offlineEnabled: true, whisperModel: 'base.en' } }, { env: {}, sidecarFactory: factory });
+    const pending = stt.transcribe(Buffer.alloc(4000, 1));
+    setTimeout(() => resetSidecar(), 5); // reset while startup is in flight
+    const result = await pending;
+    assert.equal(result.text, '');
+    assert.match(result.error && result.error.message, /reset during startup/);
+    await new Promise((resolve) => setTimeout(resolve, 40)); // let stale start resolve
+    assert.equal(stopped, 1, 'the stale worker is stopped, never published');
+    assert.equal(created, 1, 'no replacement worker was created for the stale request');
+  } finally {
+    resetSidecar();
+  }
+});
+
 test('a sidecar whose child exited is replaced on the next request', async () => {
   resetSidecar();
   let created = 0;

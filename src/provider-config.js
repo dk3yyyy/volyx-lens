@@ -99,6 +99,7 @@ function getDefaultSettings() {
       offlineCloudFallback: false,
       language: '',
       delay: 'low',
+      whisperModel: 'base.en',
     },
   };
 }

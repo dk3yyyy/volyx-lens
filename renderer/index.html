@@ -226,7 +226,29 @@
         <div class="s-field"><label for="stt-gemini-fallback-model">Gemini fallback</label><input id="stt-gemini-fallback-model" type="text" placeholder="gemini-3.5-flash" autocomplete="off" /></div>
         <div class="s-field"><label for="stt-offline-enabled">Offline first</label><input id="stt-offline-enabled" type="checkbox" /></div>
         <div class="s-field"><label for="stt-offline-cloud-fallback">Cloud fallback</label><input id="stt-offline-cloud-fallback" type="checkbox" /></div>
-        <div class="s-note">Optional offline transcription uses a locally installed <code>whisper-cli</code> only when Volyx Lens is launched with absolute <code>VOLYX_LENS_WHISPER_CLI</code> and <code>VOLYX_LENS_WHISPER_MODEL</code> paths. Cloud fallback is separately disabled by default so a local failure cannot silently upload audio. Volyx Lens never downloads or executes a renderer-selected binary.</div>
+        <div class="s-field"><label for="stt-whisper-model">Whisper model</label>
+          <select id="stt-whisper-model">
+            <option value="tiny">tiny (39M params, very fast, lowest quality)</option>
+            <option value="tiny.en">tiny.en (39M params, English-only, very fast)</option>
+            <option value="tiny.int8">tiny.int8 (39M params, English-only int8 quantized, very fast)</option>
+            <option value="base">base (139M params, multilingual, fast, good quality)</option>
+            <option value="base.en">base.en (139M params, English-only, fast, good quality)</option>
+            <option value="base.int8">base.int8 (139M params, English-only int8 quantized, fast)</option>
+            <option value="small">small (466M params, multilingual, balanced speed/quality)</option>
+            <option value="small.en">small.en (466M params, English-only, balanced)</option>
+            <option value="small.int8">small.int8 (466M params, English-only int8 quantized, balanced)</option>
+            <option value="medium">medium (1550M params, multilingual, better quality)</option>
+            <option value="medium.en">medium.en (1550M params, English-only, better quality)</option>
+            <option value="medium.int8">medium.int8 (1550M params, English-only int8 quantized, better)</option>
+            <option value="large-v3">large-v3 (3036M params, multilingual, best quality)</option>
+            <option value="large-v3.en">large-v3.en (3036M params, English-only, best quality)</option>
+            <option value="large-v3.int8">large-v3.int8 (3036M params, English-only int8 quantized, best)</option>
+            <option value="large">large (3036M params, multilingual, largest/slowest)</option>
+            <option value="large.int8">large.int8 (3036M params, multilingual int8 quantized)</option>
+            <option value="distil-large-v3">distil-large-v3 (1550M params, distilled, faster than large-v3)</option>
+          </select>
+        </div>
+        <div class="s-note">Optional offline transcription uses a locally embedded whisper.cpp model. Requires first download on in-app selection. Does not require <code>VOLYX_LENS_WHISPER_CLI</code> or <code>VOLYX_LENS_WHISPER_MODEL</code> env vars. Cloud fallback is separately disabled by default so a local failure cannot silently upload audio.</div>
         <div class="s-field"><label for="audio-input-device">Microphone</label><select id="audio-input-device"><option value="">System default</option></select></div>
         <div class="s-field"><label for="audio-mic-enabled">Capture mic</label><input id="audio-mic-enabled" type="checkbox" checked /></div>
         <div class="s-field"><label for="audio-system-enabled">Capture system</label><input id="audio-system-enabled" type="checkbox" checked /></div>

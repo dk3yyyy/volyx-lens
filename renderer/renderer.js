@@ -1321,6 +1321,7 @@
     $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || '';
     $('#stt-offline-enabled').checked = transcription.offlineEnabled === true;
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
+    $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
     const audio = settings.audio || {};
     $('#audio-input-device').value = audio.inputDeviceId || '';
     $('#audio-mic-enabled').checked = audio.micEnabled !== false;
@@ -1473,6 +1474,7 @@
       geminiFallbackModel: $('#stt-gemini-fallback-model').value.trim() || (settings.transcription || {}).geminiFallbackModel || '',
       offlineEnabled: $('#stt-offline-enabled').checked,
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
+      whisperModel: $('#stt-whisper-model').value,
       language: ['auto', 'automatic'].includes($('#stt-language').value.trim().toLowerCase()) ? '' : $('#stt-language').value.trim().toLowerCase(),
       delay: $('#stt-delay').value
     };
