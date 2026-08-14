@@ -348,18 +348,20 @@ class WhisperSidecar {
 
   // Queue audio for transcription (non-blocking, shared between You and Them).
   // Resolves with { text, channel, timestamp } once the sidecar transcribes it.
-  queueYou(pcmBuffer) {
+  // The language is captured at enqueue time so audio queued under one language
+  // is not re-transcribed under a later setLanguage change.
+  queueYou(pcmBuffer, language = this.language) {
     if (this.requestQueue.you.length >= 64) return Promise.reject(new Error('sidecar queue full'));
     return new Promise((resolve, reject) => {
-      this.requestQueue.you.push({ pcm: pcmBuffer, channel: 'you', resolve, reject });
+      this.requestQueue.you.push({ pcm: pcmBuffer, channel: 'you', language, resolve, reject });
       this._tryProcess();
     });
   }
 
-  queueThem(pcmBuffer) {
+  queueThem(pcmBuffer, language = this.language) {
     if (this.requestQueue.them.length >= 64) return Promise.reject(new Error('sidecar queue full'));
     return new Promise((resolve, reject) => {
-      this.requestQueue.them.push({ pcm: pcmBuffer, channel: 'them', resolve, reject });
+      this.requestQueue.them.push({ pcm: pcmBuffer, channel: 'them', language, resolve, reject });
       this._tryProcess();
     });
   }
@@ -369,7 +371,7 @@ class WhisperSidecar {
     if (this.requestQueue.you.length > 0) {
       const item = this.requestQueue.you.shift();
       this.processingYou = true;
-      this._transcribe(item.pcm, item.channel).then((text) => {
+      this._transcribe(item.pcm, item.channel, item.language).then((text) => {
         item.resolve({ text, channel: item.channel, timestamp: Date.now() });
       }).catch((err) => {
         item.reject(err);
@@ -380,7 +382,7 @@ class WhisperSidecar {
     } else if (this.requestQueue.them.length > 0) {
       const item = this.requestQueue.them.shift();
       this.processingThem = true;
-      this._transcribe(item.pcm, item.channel).then((text) => {
+      this._transcribe(item.pcm, item.channel, item.language).then((text) => {
         item.resolve({ text, channel: item.channel, timestamp: Date.now() });
       }).catch((err) => {
         item.reject(err);
@@ -391,10 +393,10 @@ class WhisperSidecar {
     }
   }
 
-  async _transcribe(pcmBuffer, channel) {
+  async _transcribe(pcmBuffer, channel, language = this.language) {
     if (!this.modelPath) throw new Error('No model loaded');
 
-    const { boundary, body } = buildInferenceBody(pcmBuffer, this.language);
+    const { boundary, body } = buildInferenceBody(pcmBuffer, language);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000); // 2min inference timeout

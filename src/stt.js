@@ -68,8 +68,10 @@ async function transcribeViaSidecar(wav, env, vocab = '', language = '', sidecar
   const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
   const factory = sidecarFactory || ((id, lang) => new WhisperSidecar({ modelId: id, language: lang }));
   const instance = await startSidecar(modelId, language, factory);
-  // Queue the WAV for in-memory transcription (no temp files on disk)
-  const result = await instance.queueYou(wav);
+  // Queue the WAV for in-memory transcription (no temp files on disk).
+  // The language is pinned per job so a later settings change cannot
+  // re-transcribe already-queued audio.
+  const result = await instance.queueYou(wav, language);
   return (result.text || '').trim();
 }
 
@@ -78,8 +80,10 @@ async function transcribeViaLocalWhisper(wav, env, language, whisperModel, sidec
   const modelId = whisperModel || 'base.en';
   const factory = sidecarFactory || ((id, lang) => new WhisperSidecar({ modelId: id, language: lang }));
   const instance = await startSidecar(modelId, language, factory);
-  // Queue the WAV for in-memory transcription (no temp files on disk)
-  const result = await instance.queueYou(wav);
+  // Queue the WAV for in-memory transcription (no temp files on disk).
+  // The language is pinned per job so a later settings change cannot
+  // re-transcribe already-queued audio.
+  const result = await instance.queueYou(wav, language);
   return (result.text || '').trim();
 }
 

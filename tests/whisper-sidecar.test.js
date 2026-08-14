@@ -80,6 +80,29 @@ test('queueYou and queueThem resolve with the transcript produced by _transcribe
   assert.equal(them.channel, 'them');
 });
 
+test('queued audio keeps the language it was enqueued under', async () => {
+  const sidecar = new WhisperSidecar({ modelId: 'tiny', language: 'fr' });
+  const languages = [];
+  let releaseFirst;
+  const gate = new Promise((resolve) => { releaseFirst = resolve; });
+  let firstCall = true;
+  sidecar._transcribe = async (pcm, channel, language) => {
+    languages.push(language);
+    if (firstCall) {
+      firstCall = false;
+      await gate;
+    }
+    return `${channel}:${language}`;
+  };
+  const first = sidecar.queueYou(Buffer.from('a'));
+  const second = sidecar.queueYou(Buffer.from('b'), 'de');
+  sidecar.setLanguage('es');
+  releaseFirst();
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+  assert.equal(firstResult.text, 'you:fr', 'audio enqueued under fr must not be re-transcribed as es');
+  assert.equal(secondResult.text, 'you:de', 'the per-job language must win over a later setLanguage');
+});
+
 test('queueYou rejects and the queue continues when _transcribe fails', async () => {
   const sidecar = new WhisperSidecar({ modelId: 'tiny' });
   let calls = 0;
