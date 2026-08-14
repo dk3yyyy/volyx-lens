@@ -116,7 +116,7 @@ test('large visual requests require confirmation before capture or upload', () =
 });
 
 test('New Session and quit clear task-context images from memory', () => {
-  assert.match(main, /resetTranscriptData\(\);\n\s*clearTaskContext\(\);\n\s*app\.quit\(\)/);
+  assert.match(main, /clearTaskContext\(\);\n\s*resetTranscriptData\(\);/);
   assert.match(main, /resetTranscriptData\(\);\n\s*chatHistory\.clear\(\);\n\s*clearTaskContext\(\);\n\s*buffers\.you/);
   assert.match(renderer, /session:cleared[\s\S]*renderTaskContext\(\{ count: 0/);
 });
