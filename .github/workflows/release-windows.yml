@@ -1,0 +1,122 @@
+name: Signed Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: volyx-lens-windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-sign:
+    name: Build ${{ matrix.arch }} NSIS installer
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+    runs-on: windows-latest
+    timeout-minutes: 40
+    environment: windows-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify tagged commit is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$env:GITHUB_SHA" "origin/main"
+        shell: pwsh
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 20
+          cache: npm
+      - name: Verify tag matches package version
+        run: test "$env:GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
+        shell: bash
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:syntax
+      - run: npm run security:secrets
+      - run: npm audit --audit-level=low
+      - name: Build NSIS installer
+        shell: bash
+        run: |
+          npm pkg set "build.publish[0].channel=latest"
+          npm pkg set "build.extraMetadata.volyxReleaseBuild=true" --json
+          npx electron-builder --win nsis --x64 --publish never
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+      - name: Smoke launch packaged application
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "dist" -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "No NSIS installer produced" }
+          Write-Host "Built: $($exe.Name)"
+      - name: Generate checksum and SBOM
+        shell: bash
+        run: |
+          NSIS_PATH="$(find dist -maxdepth 1 -type f -name "*.exe" -print -quit)"
+          NSIS_NAME="$(basename "$NSIS_PATH")"
+          test -f "dist/latest.yml"
+          VERSION="$(node -p "require('./package.json').version")"
+          node scripts/validate-update-metadata.js "dist/latest.yml" "$NSIS_PATH" "$VERSION" "x64" "win32"
+          (cd dist && shasum -a 256 "$NSIS_NAME" > "$NSIS_NAME.sha256")
+          npm sbom --sbom-format cyclonedx > "dist/volyx-lens-windows.cdx.json"
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: dist/*.exe
+      - name: Attest signed archive SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: dist/*.exe
+          sbom-path: dist/volyx-lens-windows.cdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: volyx-lens-windows-${{ matrix.arch }}
+          path: |
+            dist/*.exe
+            dist/*.exe.sha256
+            dist/latest.yml
+            dist/volyx-lens-windows.cdx.json
+          if-no-files-found: error
+
+  publish-release:
+    needs: build-sign
+    runs-on: ubuntu-latest
+    environment: windows-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          pattern: volyx-lens-windows-*
+          path: dist
+          merge-multiple: true
+      - name: Publish immutable GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          if gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --title "Volyx Lens $TAG" --generate-notes; then
+            echo "Release created by this workflow."
+          elif gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; uploading assets."
+          else
+            echo "Failed to create or locate release $TAG." >&2
+            exit 1
+          fi
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 
-const { createUpdateManager } = require('../src/update-manager');
+const { createUpdateManager, releaseChannel } = require('../src/update-manager');
 
 function fixture({ packaged = true, platform = 'darwin', releaseBuild = true } = {}) {
   const updater = new EventEmitter();
@@ -111,4 +111,42 @@ test('a resolved verified download reaches install-ready state even if its event
   await manager.download();
   assert.equal(manager.getState().status, 'downloaded');
   assert.equal(manager.getState().progress, 100);
+});
+
+test('Windows and Linux packaged builds support release updates on their platform channel', async () => {
+  const updater = new EventEmitter();
+  updater.checkForUpdates = async () => ({ updateInfo: { version: '0.3.0' } });
+  const states = [];
+  const manager = createUpdateManager({
+    app: { isPackaged: true, getVersion: () => '0.2.0' },
+    platform: 'win32',
+    arch: 'x64',
+    releaseBuild: true,
+    updaterFactory: () => updater,
+    emit: (state) => states.push(state),
+  });
+  assert.equal(manager.getState().supported, true);
+  const checking = manager.check();
+  updater.emit('update-available', { version: '0.3.0' });
+  await checking;
+  assert.equal(updater.channel, 'latest');
+  assert.equal(manager.getState().status, 'available');
+});
+
+test('Linux release updates use per-architecture channels', () => {
+  assert.equal(releaseChannel('linux', 'x64'), 'latest-x64');
+  assert.equal(releaseChannel('linux', 'arm64'), 'latest-arm64');
+});
+
+test('development Windows builds explain that packaged builds are required', async () => {
+  const { manager } = fixture({ packaged: false, platform: 'win32' });
+  assert.deepEqual(manager.getState(), {
+    supported: false,
+    currentVersion: '0.2.0',
+    status: 'unsupported',
+    message: 'Updates are available in official Windows release builds.',
+    availableVersion: null,
+    progress: null,
+  });
+  await assert.rejects(manager.check(), /official Windows release builds/);
 });

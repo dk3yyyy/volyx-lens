@@ -105,3 +105,36 @@ test('invalid permission types fail closed', async () => {
   const { dependencies } = harness();
   await assert.rejects(requestMediaPermission('camera', dependencies), /Unsupported permission type/);
 });
+
+test('Windows and Linux use browser-managed permission status without macOS settings panes', () => {
+  const result = mediaPermissionStatus('microphone', {
+    platform: 'win32',
+    systemPreferences: {},
+    isPackaged: true,
+  });
+  assert.deepEqual(result, { kind: 'microphone', status: 'not-determined', granted: false, developmentClient: false });
+  assert.equal(requestMediaPermission.name, 'requestMediaPermission');
+});
+
+test('Windows and Linux screen permission is reported granted when sources are available', async () => {
+  const result = await requestMediaPermission('screen', {
+    platform: 'linux',
+    desktopCapturer: { async getSources() { return [{ id: 'screen:1' }]; } },
+    openExternal: async () => {},
+    isPackaged: true,
+  });
+  assert.equal(result.granted, true);
+  assert.equal(result.settingsOpened, false);
+});
+
+test('Windows and Linux microphone permission defers to the browser prompt', async () => {
+  const result = await requestMediaPermission('microphone', {
+    platform: 'win32',
+    desktopCapturer: { async getSources() { return []; } },
+    openExternal: async () => {},
+    isPackaged: true,
+  });
+  assert.equal(result.granted, false);
+  assert.equal(result.settingsOpened, false);
+  assert.match(result.message, /browser prompt/);
+});

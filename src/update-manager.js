@@ -1,10 +1,32 @@
 'use strict';
 
+const SUPPORTED_PLATFORMS = new Set(['darwin', 'win32', 'linux']);
+
+function platformName(platform) {
+  if (platform === 'darwin') return 'macOS';
+  if (platform === 'win32') return 'Windows';
+  if (platform === 'linux') return 'Linux';
+  return platform;
+}
+
+function unsupportedMessage(platform) {
+  if (platform === 'darwin') return 'Updates are available in official signed macOS release builds.';
+  return `Updates are available in official ${platformName(platform)} release builds.`;
+}
+
+function releaseChannel(platform, arch) {
+  // macOS and Linux publish per-arch update metadata (latest-arm64 / latest-x64)
+  // so multi-arch release assets never overwrite each other; Windows publishes a
+  // single latest.yml for all architectures.
+  if (platform === 'darwin' || platform === 'linux') return `latest-${arch === 'arm64' ? 'arm64' : 'x64'}`;
+  return 'latest';
+}
+
 function createUpdateManager({ app, platform = process.platform, arch = process.arch, releaseBuild = false, updaterFactory, emit = () => {} }) {
-  const supported = Boolean(app && app.isPackaged && platform === 'darwin' && releaseBuild === true);
+  const supported = Boolean(app && app.isPackaged && SUPPORTED_PLATFORMS.has(platform) && releaseBuild === true);
   let state = supported
     ? publicState('idle', 'Check GitHub Releases for a signed Volyx Lens update.')
-    : publicState('unsupported', 'Updates are available in official signed macOS release builds.');
+    : publicState('unsupported', unsupportedMessage(platform));
   let updater = null;
   let activeCheck = null;
   let activeDownload = null;
@@ -35,7 +57,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   }
 
   function ensureSupported() {
-    if (!supported) throw new Error('Updates are available in official signed macOS release builds.');
+    if (!supported) throw new Error(unsupportedMessage(platform));
   }
 
   function initialize() {
@@ -44,7 +66,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = false;
     updater.allowPrerelease = false;
-    updater.channel = `latest-${arch === 'arm64' ? 'arm64' : 'x64'}`;
+    updater.channel = releaseChannel(platform, arch);
     // electron-updater enables downgrades when its channel setter is used.
     updater.allowDowngrade = false;
     updater.on('checking-for-update', () => setState('checking', 'Checking for updates…', { availableVersion: null }));
@@ -121,4 +143,4 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   };
 }
 
-module.exports = { createUpdateManager };
+module.exports = { createUpdateManager, SUPPORTED_PLATFORMS, releaseChannel };
