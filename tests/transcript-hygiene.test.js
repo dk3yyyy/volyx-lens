@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
+const Module = require('node:module');
 const { buildSttVocab, looksLikeHallucination, filterTranscript, extractDomainTerms, BASE_STT_VOCAB } = require('../src/transcript-hygiene');
 const { createSTT } = require('../src/stt');
 const { runWhisperCli } = require('../src/offline-stt');
@@ -122,4 +123,57 @@ test('createSTT drops whisper silence artifacts instead of emitting phantom rows
   });
   const result = await stt.transcribe(Buffer.alloc(4000, 1));
   assert.deepEqual(result, { text: '', provider: 'openai' });
+});
+
+test('real transcribeOpenAI uploads the audio file and forwards the vocab prompt', async () => {
+  const originalLoad = Module._load;
+  const createCalls = [];
+  let uploaded;
+  Module._load = function load(request, parent, isMain) {
+    if (request === 'openai') {
+      return class FakeOpenAI {
+        static toFile = async (wav, filename, options) => { uploaded = { wav, filename, options }; return { kind: 'file' }; };
+        constructor() {
+          this.audio = { transcriptions: { create: async (body) => { createCalls.push(body); return { text: 'hello world' }; } } };
+        }
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  try {
+    const stt = createSTT({ apiKeys: { openai: 'k' } }, { env: {}, vocab: 'nova-3, EKS' });
+    const result = await stt.transcribe(Buffer.alloc(4000, 1));
+    assert.deepEqual(result, { text: 'hello world', provider: 'openai' });
+    assert.equal(uploaded.filename, 'audio.wav');
+    assert.deepEqual(uploaded.options, { type: 'audio/wav' });
+    assert.equal(createCalls.length, 1);
+    assert.deepEqual(createCalls[0].file, { kind: 'file' });
+    assert.equal(createCalls[0].model, 'gpt-4o-mini-transcribe');
+    assert.equal(createCalls[0].prompt, 'nova-3, EKS');
+  } finally {
+    Module._load = originalLoad;
+  }
+});
+
+test('real transcribeOpenAI omits the prompt when no vocab is configured', async () => {
+  const originalLoad = Module._load;
+  const createCalls = [];
+  Module._load = function load(request, parent, isMain) {
+    if (request === 'openai') {
+      return class FakeOpenAI {
+        static toFile = async () => ({ kind: 'file' });
+        constructor() {
+          this.audio = { transcriptions: { create: async (body) => { createCalls.push(body); return { text: 'hello world' }; } } };
+        }
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  try {
+    const stt = createSTT({ apiKeys: { openai: 'k' } }, { env: {} });
+    await stt.transcribe(Buffer.alloc(4000, 1));
+    assert.equal('prompt' in createCalls[0], false);
+  } finally {
+    Module._load = originalLoad;
+  }
 });

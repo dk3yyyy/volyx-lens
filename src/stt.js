@@ -11,6 +11,7 @@ async function transcribeOpenAI(apiKey, wav, model, prompt = '') {
   const OpenAI = require('openai');
   const toFile = OpenAI.toFile || require('openai/uploads').toFile;
   const client = new OpenAI({ apiKey });
+  const file = await toFile(wav, 'audio.wav', { type: 'audio/wav' });
   const body = { file, model: model || 'whisper-1' };
   if (prompt) body.prompt = prompt;
   const res = await client.audio.transcriptions.create(body);
