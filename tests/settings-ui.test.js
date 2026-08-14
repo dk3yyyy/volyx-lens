@@ -111,3 +111,7 @@ test('Help page reopens the interactive guide from Settings', () => {
   assert.match(styles, /\.help-actions button\s*\{[^}]*border-radius:\s*7px/);
   assert.match(styles, /\.help-topic-icon\s*\{[^}]*border-radius:\s*7px/);
 });
+
+test('local transcription disclosure states audio is never written to disk', () => {
+  assert.match(html, /never written to disk and never leaves your Mac/);
+});

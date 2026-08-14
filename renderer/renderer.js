@@ -441,6 +441,13 @@
 
   // Smart toggle
   const smartBtn = $('#smart-toggle');
+  function updateSmartToggleModelIds() {
+    const provider = (settings && settings.provider) || 'openai';
+    const models = (settings && settings.models && settings.models[provider]) || {};
+    const label = (id) => (id && id.trim() ? id.trim() : 'not set in Settings');
+    smartBtn.title = `Smart ${settings && settings.smart ? '· active' : ''}\nFast: ${label(models.fast)}\nSmart: ${label(models.smart)}`;
+    smartBtn.setAttribute('aria-label', `Smart toggle · Fast: ${label(models.fast)} · Smart: ${label(models.smart)}`);
+  }
   $('#assist-context').addEventListener('change', async () => {
     settings.assistContext = $('#assist-context').value;
     await volyxLens.settingsSet({ assistContext: settings.assistContext });
@@ -449,6 +456,7 @@
   smartBtn.addEventListener('click', async () => {
     settings.smart = !settings.smart;
     smartBtn.classList.toggle('on', settings.smart);
+    updateSmartToggleModelIds();
     await volyxLens.settingsSet({ smart: settings.smart });
   });
 
@@ -1493,6 +1501,7 @@
     stashCurrentModels();
     settings = await volyxLens.settingsSet({ ...settings, apiKeyUpdates });
     fillSettings();
+    updateSmartToggleModelIds();
   }
 
   $('#provider-test-btn').addEventListener('click', async () => {
@@ -1817,7 +1826,7 @@
       note: 'The Smart toggle is the lightning bolt in the toolbar.',
       firstRun: false,
       title: 'Fast or Smart.',
-      body: '<p>The toolbar <span class="hl">Smart toggle</span> switches between your <span class="hl">fast</span> model (quick, everyday answers) and your <span class="hl">smart</span> model (deeper reasoning). Configure which model each mode uses per provider in Settings.</p><div class="ob-note">Smart mode may take noticeably longer to respond.</div>'
+      body: '<p>The toolbar <span class="hl">Smart toggle</span> switches between your <span class="hl">fast</span> model (quick, everyday answers) and your <span class="hl">smart</span> model (deeper reasoning). Hover the toggle to see the exact model IDs for each tier, including on custom OpenAI-compatible endpoints like Ollama. Configure which model each mode uses per provider in Settings.</p><div class="ob-note">Smart mode may take noticeably longer to respond.</div>'
     },
     {
       stepLabel: 'Transcription',
@@ -1826,7 +1835,7 @@
       note: 'Choose where audio is converted to text.',
       firstRun: false,
       title: 'Local or cloud STT.',
-      body: '<p><span class="hl">Local whisper</span> runs entirely on your Mac — no audio ever leaves the device. <span class="hl">Cloud STT</span> (like Deepgram) offers richer accuracy and faster setup. Choose in Listening settings, under transcription provider.</p><div class="ob-note">Your transcript is only sent to a transcription provider you have configured; otherwise it stays local.</div>'
+      body: '<p><span class="hl">Local whisper</span> runs entirely on your Mac — audio is transcribed in memory and never written to disk. <span class="hl">Cloud STT</span> (like Deepgram) offers richer accuracy and faster setup. Choose in Listening settings, under transcription provider.</p><div class="ob-note">Your transcript is only sent to a transcription provider you have configured; otherwise it stays local.</div>'
     },
     {
       stepLabel: 'Ready',
@@ -1986,6 +1995,7 @@
     transcriptTurns = (Array.isArray(existingTranscript) ? existingTranscript : []).map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
     renderTaskContext(taskContext);
     smartBtn.classList.toggle('on', !!settings.smart);
+    updateSmartToggleModelIds();
     $('#assist-context').value = settings.assistContext || 'both';
     clearMessages();
     syncPlaceholder();
