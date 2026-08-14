@@ -8,7 +8,8 @@ const { validateOfflineConfig, transcribeOffline } = require('./offline-stt');
 const { WhisperSidecar } = require('./whisper-sidecar');
 const { looksLikeHallucination } = require('./transcript-hygiene');
 
-let sidecar = null; // lazily initialized WhisperSidecar instance
+let sidecar = null; // lazily initialized, fully-started WhisperSidecar instance
+let starting = null; // in-flight startup promise shared by concurrent requests
 
 // Sidecar mode is strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR
 function shouldUseSidecar(env) {
@@ -23,19 +24,25 @@ async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
     return transcribeOffline(wav, { env, language: vocab });
   }
 
-  // Initialize sidecar if not already running
+  // Initialize sidecar if not already running. The instance is only published
+  // to the singleton after start() succeeds, and concurrent requests share the
+  // same in-flight startup, so no caller can queue against an unstarted or
+  // failed instance.
   if (!sidecar) {
-    const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
-    const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
-    sidecar = factory(modelId);
-    try {
-      await sidecar.start();
-    } catch (error) {
-      // A failed start must not poison the singleton: drop the broken
-      // instance so the next request creates a fresh one and retries.
-      sidecar = null;
-      throw error;
+    if (!starting) {
+      const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
+      const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
+      const instance = factory(modelId);
+      starting = instance.start().then(() => {
+        sidecar = instance;
+        starting = null;
+        return instance;
+      }).catch((error) => {
+        starting = null;
+        throw error;
+      });
     }
+    await starting;
   }
 
   // Queue the WAV for in-memory transcription (no temp files on disk)
@@ -46,6 +53,7 @@ async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
 // Reset the lazily initialized sidecar (config changes, shutdown, tests)
 function resetSidecar() {
   sidecar = null;
+  starting = null;
 }
 
 async function transcribeOpenAI(apiKey, wav, model, prompt = '') {

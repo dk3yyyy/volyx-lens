@@ -163,3 +163,39 @@ test('a failed sidecar startup resets the singleton so the next request retries'
     resetSidecar();
   }
 });
+
+test('concurrent requests share one in-flight startup and never queue against a failed instance', async () => {
+  resetSidecar();
+  let created = 0;
+  let starts = 0;
+  let failStartup;
+  const factory = () => {
+    created += 1;
+    const instance = {
+      async start() {
+        starts += 1;
+        if (created === 1) return new Promise((resolve, reject) => { failStartup = () => reject(new Error('health check failed')); });
+        return undefined;
+      },
+      async queueYou() { return { text: `ok-${created}`, channel: 'you', timestamp: 1 }; },
+    };
+    return instance;
+  };
+  try {
+    const stt = createSTT({ transcription: {}, apiKeys: {} }, { env: { VOLYX_LENS_WHISPER_SIDECAR: '1' }, sidecarFactory: factory });
+    const one = stt.transcribe(Buffer.alloc(4000, 1));
+    const two = stt.transcribe(Buffer.alloc(4000, 1));
+    await new Promise((resolve) => setImmediate(resolve));
+    failStartup();
+    const [resultOne, resultTwo] = await Promise.all([one, two]);
+    assert.equal(resultOne.text, '');
+    assert.equal(resultTwo.text, '');
+    assert.equal(starts, 1, 'concurrent requests share a single startup attempt');
+    assert.equal(created, 1, 'no extra instance was created for the concurrent caller');
+    const retry = await stt.transcribe(Buffer.alloc(4000, 1));
+    assert.deepEqual(retry, { text: 'ok-2', provider: 'sidecar' });
+    assert.equal(created, 2, 'a fresh instance retries after the shared startup fails');
+  } finally {
+    resetSidecar();
+  }
+});
