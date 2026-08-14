@@ -1,4 +1,4 @@
-// LLM factory — OpenAI / Anthropic / Gemini / Azure Foundry / DeepSeek.
+// LLM factory — OpenAI / Anthropic / Gemini / Azure Foundry / OpenAI-compatible providers (DeepSeek, Groq, OpenRouter, ...).
 // stream({ system, turns:[{role,text}], imageDataUrl?, imageDataUrls?, maxTokens, onToken }) -> Promise<fullText>
 const { resolveProvider } = require('./provider-config');
 
@@ -159,12 +159,15 @@ function createLLM(settings, dependencies = {}) {
           },
         });
       }
-      if (resolved.provider === 'deepseek') {
+      // Any provider with a fixed baseURL is OpenAI-compatible (DeepSeek, Groq, OpenRouter, local Ollama, ...).
+      // Azure is handled separately because it authenticates with an api-key header.
+      if (resolved.baseURL) {
         const OpenAI = dependencies.OpenAI || require('openai');
         return streamOpenAICompatible({
           ...args,
           OpenAI,
-          clientOptions: { apiKey: resolved.apiKey, baseURL: resolved.baseURL },
+          // Keyless local endpoints (Ollama) still require a placeholder so the SDK builds a client.
+          clientOptions: { apiKey: resolved.apiKey || 'ollama', baseURL: resolved.baseURL },
         });
       }
       if (resolved.provider === 'anthropic') {

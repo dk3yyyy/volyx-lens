@@ -26,6 +26,25 @@ const PROVIDERS = Object.freeze({
     supportsVision: false,
     baseURL: 'https://api.deepseek.com',
   },
+  groq: {
+    label: 'Groq',
+    models: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },
+    supportsVision: false,
+    baseURL: 'https://api.groq.com/openai/v1',
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    models: { fast: 'meta-llama/llama-3.1-8b-instruct', smart: 'openai/gpt-4o' },
+    supportsVision: true,
+    baseURL: 'https://openrouter.ai/api/v1',
+  },
+  ollama: {
+    label: 'Ollama',
+    models: { fast: 'llama3.2', smart: 'llama3.3' },
+    supportsVision: true,
+    requiresKey: false,
+    baseURL: 'http://localhost:11434/v1',
+  },
 });
 
 function getDefaultSettings() {
@@ -41,6 +60,7 @@ function getDefaultSettings() {
     fallbackProvider: '',
     smart: false,
     questionDetection: true,
+    autoAnswer: false,
     assistContext: 'both',
     apiKeys: { ...apiKeys, deepgram: '', azureRealtime: '' },
     models,
@@ -122,6 +142,7 @@ function resolveProvider(settings) {
   const apiKey = (settings.apiKeys || {})[provider] || '';
   const tier = settings.smart ? 'smart' : 'fast';
   const model = ((settings.models || {})[provider] || {})[tier] || '';
+  const requiresKey = definition.requiresKey !== false;
   let baseURL = definition.baseURL || null;
   let configurationError = null;
 
@@ -133,7 +154,7 @@ function resolveProvider(settings) {
     }
   }
 
-  if (!apiKey) configurationError = `${definition.label} API key is required.`;
+  if (requiresKey && !apiKey) configurationError = `${definition.label} API key is required.`;
   else if (!model) configurationError = `${definition.label} ${tier} model or deployment name is required.`;
 
   return {

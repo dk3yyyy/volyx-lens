@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
-const { getDefaultSettings } = require('./provider-config');
+const { getDefaultSettings, PROVIDERS } = require('./provider-config');
 const { createCredentialVault } = require('./credential-vault');
 
 const FILE = path.join(app.getPath('userData'), 'volyx-lens-data.json');
@@ -121,6 +121,15 @@ function publicSettings() {
     secure: vault.isSecure() && !credentialRecordLocked,
     backend: credentialRecordLocked ? 'locked-safeStorage' : vault.backend(),
   };
+  // Read-only capability metadata so the renderer can derive UI (e.g. which
+  // providers are text-only) instead of hardcoding provider lists.
+  result.providerCapabilities = Object.fromEntries(
+    Object.entries(PROVIDERS).map(([id, definition]) => [id, {
+      label: definition.label,
+      supportsVision: definition.supportsVision === true,
+      requiresKey: definition.requiresKey !== false,
+    }]),
+  );
   return result;
 }
 

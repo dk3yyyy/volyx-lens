@@ -9,7 +9,7 @@ const emptyContext = { count: 0, maxCaptures: null, maxTotalBytes: 96 * 1024 * 1
 const settings = {
   provider: 'openai', fallbackProvider: '', smart: false, onboarded: false, questionDetection: true, assistContext: 'both',
   credentialStatus: { present: {}, secure: true, backend: 'safeStorage' },
-  models: { openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }, anthropic: {}, gemini: {}, azure: {}, deepseek: {} },
+  models: { openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }, anthropic: {}, gemini: {}, azure: {}, deepseek: {}, groq: {}, openrouter: {}, ollama: {} },
   endpoints: { azure: '', azureRealtime: '' },
   transcription: { mode: 'realtime', realtimeProvider: 'openai', fallbackModel: 'gpt-4o-mini-transcribe', geminiFallbackModel: 'gemini-3.5-flash', offlineEnabled: false, offlineCloudFallback: false, language: '', delay: 'low' },
   audio: { inputDeviceId: '', micEnabled: true, systemEnabled: true, sensitivity: 'balanced', silenceMs: 700, costWarningMinutes: 30, maxSessionMinutes: 60 }

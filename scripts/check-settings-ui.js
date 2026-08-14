@@ -8,7 +8,7 @@ const screenshotDir = process.env.VOLYX_LENS_SETTINGS_SCREENSHOT_DIR || '';
 const settings = {
   provider: 'azure', fallbackProvider: 'openai', smart: true, onboarded: true, questionDetection: true, assistContext: 'both',
   credentialStatus: { present: { azure: true }, secure: true, backend: 'safeStorage' },
-  models: { openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }, anthropic: { fast: '', smart: '' }, gemini: { fast: '', smart: '' }, azure: { fast: 'gpt-5.6-sol', smart: 'gpt-5.6-sol' }, deepseek: { fast: '', smart: '' } },
+  models: { openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }, anthropic: { fast: '', smart: '' }, gemini: { fast: '', smart: '' }, azure: { fast: 'gpt-5.6-sol', smart: 'gpt-5.6-sol' }, deepseek: { fast: '', smart: '' }, groq: { fast: '', smart: '' }, openrouter: { fast: '', smart: '' }, ollama: { fast: '', smart: '' } },
   endpoints: { azure: 'https://resource.openai.azure.com/openai/v1', azureRealtime: '' },
   transcription: { mode: 'realtime', realtimeProvider: 'azure', azureRealtimeDeployment: 'gpt-realtime-whisper', fallbackModel: 'gpt-4o-mini-transcribe', geminiFallbackModel: 'gemini-3.5-flash', offlineEnabled: false, offlineCloudFallback: false, language: '', delay: 'low' },
   audio: { inputDeviceId: '', micEnabled: true, systemEnabled: true, sensitivity: 'balanced', silenceMs: 700, costWarningMinutes: 30, maxSessionMinutes: 60 }

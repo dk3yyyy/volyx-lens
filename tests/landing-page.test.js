@@ -32,13 +32,13 @@ test('landing page ships a semantic, truthful static entry point', () => {
 
 test('landing page presents the response providers the app actually supports', () => {
   const html = read('index.html');
-  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek'];
+  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'Ollama'];
 
   for (const provider of expectedProviders) {
     assert.match(html, new RegExp(`>${provider.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}<`, 'i'));
   }
-  assert.match(html, /Five routes/i);
-  assert.doesNotMatch(html, />Groq<|>OpenRouter<|>Ollama<|Azure OpenAI/i);
+  assert.match(html, /Eight routes/i);
+  assert.doesNotMatch(html, /Azure OpenAI/i);
 });
 
 test('landing page describes both architectures published by the current test release', () => {
@@ -90,7 +90,8 @@ test('landing page explains the implemented context, meeting, coding, and offlin
   assert.match(html, /reply suggestions/i);
   assert.match(html, /meeting recaps/i);
   assert.match(html, /coding/i);
-  assert.match(html, /AI responses require an internet connection/i);
+  assert.match(html, /AI responses require a configured provider/i);
+  assert.match(html, /run fully offline/i);
   assert.match(html, /Local Whisper/i);
   assert.match(html, /cloud fallback remains off by default/i);
   assert.match(html, /plaintext credential record/i);
