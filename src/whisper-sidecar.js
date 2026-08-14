@@ -126,6 +126,24 @@ function verifyModel(modelId, expectedSha256) {
   return { valid: actual === expectedSha256, actual };
 }
 
+// Build the multipart body for the whisper.cpp server /inference endpoint.
+// A non-empty language code is forwarded as a `language` form field so local
+// transcription honors the selected language; empty means auto-detection.
+function buildInferenceBody(pcmBuffer, language = '') {
+  const boundary = `volyx-${crypto.randomBytes(16).toString('hex')}`;
+  const parts = [
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n`, 'utf8'),
+    pcmBuffer,
+    Buffer.from('\r\n', 'utf8'),
+  ];
+  const normalizedLanguage = String(language || '').trim();
+  if (normalizedLanguage) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${normalizedLanguage}\r\n`, 'utf8'));
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`, 'utf8'));
+  return { boundary, body: Buffer.concat(parts) };
+}
+
 // WhisperSidecar class - persistent sidecar process with shared inference queue
 class WhisperSidecar {
   constructor(options = {}) {
@@ -133,6 +151,7 @@ class WhisperSidecar {
     this.modelPath = null;
     this.port = options.port || 0;
     this.host = options.host || '127.0.0.1';
+    this.language = String(options.language || '').trim();
     this.child = null;
     this._running = false;
     this._state = null;
@@ -303,12 +322,7 @@ class WhisperSidecar {
   async _transcribe(pcmBuffer, channel) {
     if (!this.modelPath) throw new Error('No model loaded');
 
-    const boundary = `volyx-${crypto.randomBytes(16).toString('hex')}`;
-    const body = Buffer.concat([
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n`, 'utf8'),
-      pcmBuffer,
-      Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'),
-    ]);
+    const { boundary, body } = buildInferenceBody(pcmBuffer, this.language);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000); // 2min inference timeout
@@ -355,5 +369,6 @@ module.exports = {
   downloadModel,
   verifyModel,
   sha256File,
+  buildInferenceBody,
   WhisperSidecar,
 };

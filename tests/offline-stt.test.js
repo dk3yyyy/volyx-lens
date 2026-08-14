@@ -145,6 +145,41 @@ test('the whisper sidecar is strictly opt-in and takes no precedence on its own'
   assert.deepEqual(flagged.providers, ['sidecar']);
 });
 
+test('local whisper forwards the selected language to the sidecar factory', async () => {
+  resetSidecar();
+  let captured;
+  const factory = (modelId, language) => {
+    captured = { modelId, language };
+    return { async start() {}, async queueYou() { return { text: 'bonjour', channel: 'you', timestamp: 1 }; } };
+  };
+  try {
+    const stt = createSTT({ transcription: { offlineEnabled: true, whisperModel: 'base.en', language: 'fr' }, apiKeys: {} }, { env: {}, sidecarFactory: factory });
+    const result = await stt.transcribe(Buffer.alloc(4000, 1));
+    assert.equal(result.text, 'bonjour');
+    assert.equal(captured.modelId, 'base.en');
+    assert.equal(captured.language, 'fr', 'the settings language must reach the sidecar');
+  } finally {
+    resetSidecar();
+  }
+});
+
+test('env sidecar path forwards the settings language to the factory', async () => {
+  resetSidecar();
+  let captured;
+  const factory = (modelId, language) => {
+    captured = { modelId, language };
+    return { async start() {}, async queueYou() { return { text: 'hallo', channel: 'you', timestamp: 1 }; } };
+  };
+  try {
+    const stt = createSTT({ transcription: { language: 'de' }, apiKeys: {} }, { env: { VOLYX_LENS_WHISPER_SIDECAR: '1', VOLYX_LENS_WHISPER_MODEL: 'small' }, sidecarFactory: factory });
+    const result = await stt.transcribe(Buffer.alloc(4000, 1));
+    assert.equal(result.text, 'hallo');
+    assert.equal(captured.language, 'de');
+  } finally {
+    resetSidecar();
+  }
+});
+
 test('a failed sidecar startup resets the singleton so the next request retries', async () => {
   resetSidecar();
   let created = 0;

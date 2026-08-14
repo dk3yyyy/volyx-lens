@@ -3,13 +3,33 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { WhisperSidecar } = require('../src/whisper-sidecar');
+const { WhisperSidecar, buildInferenceBody } = require('../src/whisper-sidecar');
 
 test('WhisperSidecar constructs without throwing and starts not running', () => {
   const sidecar = new WhisperSidecar({ modelId: 'tiny' });
   assert.equal(sidecar.running, false);
   assert.equal(sidecar.state, null);
   assert.equal(sidecar.modelId, 'tiny');
+});
+
+test('WhisperSidecar stores a normalized language option', () => {
+  assert.equal(new WhisperSidecar({ modelId: 'tiny', language: ' fr ' }).language, 'fr');
+  assert.equal(new WhisperSidecar({ modelId: 'tiny', language: '' }).language, '');
+  assert.equal(new WhisperSidecar({ modelId: 'tiny' }).language, '');
+});
+
+test('buildInferenceBody omits the language field when unset', () => {
+  const { boundary, body } = buildInferenceBody(Buffer.from('RIFF-wav'));
+  assert.ok(boundary.length > 0);
+  assert.ok(body.includes(Buffer.from(`name="file"`)));
+  assert.ok(!body.includes(Buffer.from(`name="language"`)), 'no language part when unset');
+  assert.ok(body.toString('utf8').trim().endsWith(`--${boundary}--`));
+});
+
+test('buildInferenceBody includes a language form field when set', () => {
+  const { boundary, body } = buildInferenceBody(Buffer.from('RIFF-wav'), 'es');
+  const text = body.toString('utf8');
+  assert.match(text, new RegExp(`name="language"\\r\\n\\r\\nes\\r\\n--${boundary}--`));
 });
 
 test('running is a boolean derived from state; idle leaves it restartable', () => {

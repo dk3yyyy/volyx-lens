@@ -115,3 +115,12 @@ test('Help page reopens the interactive guide from Settings', () => {
 test('local transcription disclosure states audio is never written to disk', () => {
   assert.match(html, /never written to disk and never leaves your Mac/);
 });
+
+test('language field offers curated options and per-provider support disclosure', () => {
+  assert.match(html, /id="stt-language"[^>]*list="stt-language-options"/);
+  assert.match(html, /id="stt-language-options"/);
+  assert.match(html, /<option value="fr">French<\/option>/);
+  assert.match(html, /<option value="zh-TW">Chinese \(Traditional\)<\/option>/);
+  assert.match(html, /Local whisper\.cpp supports 50\+ languages/);
+  assert.match(html, /OpenAI and Gemini batch fallbacks auto-detect and ignore this field/);
+});
