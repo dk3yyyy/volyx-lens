@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   mulberry32, decodeWav, silencePcm, noisePcm, scaleToRms, mixPcm, insertSilenceGap,
-  buildFixtures, fixtureHash, buildRow, evaluatePcm, summarize, coverageIssue, normalizeText, wer,
+  buildFixtures, fixtureHash, staleFixtureIds, buildRow, evaluatePcm, summarize, coverageIssue, normalizeText, wer,
   THRESHOLDS, checkThresholds,
 } = require('../scripts/vad-accuracy-eval');
 const { pcmToWav } = require('../src/wav');
@@ -170,6 +170,16 @@ test('integration: an early-close (false gap) is counted as truncated', () => {
   assert.equal(Number.isFinite(row.endErrMs), true);
   const summary = summarize([row]);
   assert.ok(summary.truncationCount >= 1, `early close must be truncated, endErrMs=${row.endErrMs}`);
+});
+
+test('staleFixtureIds refuses report-only evaluation of an incompatible cache', () => {
+  const fixtures = buildFixtures();
+  const current = fixtures.map((f) => ({ id: f.id, hash: fixtureHash(f) }));
+  assert.deepEqual(staleFixtureIds(fixtures, current), [], 'current manifest has no stale fixtures');
+  const oneStale = current.map((e) => e.id === 'noise-white-6' ? { id: e.id, hash: 'stale-hash' } : e);
+  assert.deepEqual(staleFixtureIds(fixtures, oneStale), ['noise-white-6']);
+  assert.deepEqual(staleFixtureIds(fixtures, fixtures.map((f) => f.id)), fixtures.map((f) => f.id), 'legacy id-only manifest is all stale');
+  assert.deepEqual(staleFixtureIds(fixtures, []), fixtures.map((f) => f.id), 'missing manifest is all stale');
 });
 
 test('evaluatePcm keeps speech continuing after the maxUtteranceMs cap', () => {
