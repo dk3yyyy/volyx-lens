@@ -445,6 +445,9 @@ async function exportTranscript(format) {
   });
   if (result.canceled || !result.filePath) return { canceled: true };
   await fs.promises.writeFile(result.filePath, formatTranscript(transcript, normalizedFormat), { encoding: 'utf8', mode: 0o600 });
+  // writeFile's mode only applies at creation; explicitly restrict an
+  // overwritten file so transcript content is never left readable by others.
+  await fs.promises.chmod(result.filePath, 0o600);
   return { canceled: false, filename: path.basename(result.filePath), turns: transcript.length };
 }
 
@@ -459,6 +462,9 @@ async function exportMeetingRecord(id, format) {
   });
   if (result.canceled || !result.filePath) return { canceled: true };
   await fs.promises.writeFile(result.filePath, formatMeetingRecord(record, normalizedFormat), { encoding: 'utf8', mode: 0o600 });
+  // writeFile's mode only applies at creation; explicitly restrict an
+  // overwritten file so transcript content is never left readable by others.
+  await fs.promises.chmod(result.filePath, 0o600);
   return { canceled: false, filename: path.basename(result.filePath), turns: record.turns.length };
 }
 
@@ -862,12 +868,18 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   const settings = store.getSettings();
   const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
   if (!historyEnabled) return { saved: false, reason: 'disabled' };
+  // Retain session timestamps when the caller does not pass them explicitly:
+  // new-session and app-quit finalize without opts, and shutdown clears
+  // captureStartedAt before the quit finalize runs, so fall back to the last
+  // known capture start/end.
+  const startedAt = opts.startedAt || captureStartedAt || lastCaptureStartedAt;
+  const endedAt = opts.endedAt || lastCaptureEndedAt;
   const result = meetingStore.finalize({
     turns: transcript,
     enabled: true,
     reason,
-    startedAt: opts.startedAt || null,
-    endedAt: opts.endedAt || null,
+    startedAt,
+    endedAt,
   });
   if (result.saved) send('history:changed', { saved: true, id: result.id, turnCount: result.turnCount });
   return result;
