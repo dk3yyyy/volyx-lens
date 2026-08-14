@@ -36,6 +36,14 @@ function fingerprint(turns) {
   return { count: normalized.length, lastId: last.id, lastTs: last.ts };
 }
 
+function previewText(turns) {
+  for (const turn of Array.isArray(turns) ? turns : []) {
+    const text = String((turn && turn.text) || '').trim();
+    if (text) return text.slice(0, 120);
+  }
+  return '';
+}
+
 function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   if (!dir || typeof dir !== 'string') throw new Error('Meeting store requires a directory.');
   let lastSavedFingerprint = null;
@@ -128,6 +136,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
           startedAt: Number.isFinite(record.startedAt) ? record.startedAt : null,
           endedAt: Number.isFinite(record.endedAt) ? record.endedAt : null,
           turnCount: Array.isArray(record.turns) ? record.turns.length : 0,
+          preview: previewText(record.turns),
         });
       } catch {
         // Skip corrupt records rather than breaking the whole list.

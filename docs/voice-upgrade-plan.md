@@ -74,14 +74,14 @@ OpenAI-compatible response routes: DeepSeek, Groq, OpenRouter, and local Ollama 
 
 ## Milestone 5 — On-device meeting history
 
-Status: persistence and structured notes/export implemented (Phases 3a/3b); history browser UI remains (Phase 3c).
+Status: implemented (Phases 3a/3b/3c).
 
 - Implemented: opt-in `transcription.historyEnabled` setting (off by default) exposed as "Save meeting history" in Settings > Listening, with a privacy disclosure.
 - Implemented: a finalized session (listening stopped, new session started, or app quit) persists only the final transcript turns to `<userData>/meetings/*.json` with 0600 permissions and atomic writes; raw audio is never stored.
 - Implemented: bounded retention (200 records, 5000 turns each), traversal-safe record ids, skip-when-unchanged dedupe, and list/get/delete/clear IPC surfaced through the preload bridge.
 - Implemented: structured notes for a saved record via the recap pipeline (`history:recap`), streamed through `history:recap-token`; long meetings require explicit confirmation before multi-request chunking so notes cannot create surprise usage charges.
 - Implemented: full-fidelity export of a saved record to txt/md/json (`history:export`) through a save dialog; `src/meeting-notes.js` formats the record with session metadata and all turns (no 500-turn live-transcript truncation).
-- Remaining: a history browser with search and note/export controls in the UI (Phase 3c).
+- Implemented: history browser in the panel dock ("History") with metadata + preview text search, per-meeting detail view (read-only transcript), export/notes/delete controls, and Clear all. `history:list` carries a bounded text preview so search stays local and cheap.
 
 ## Security and privacy constraints
 

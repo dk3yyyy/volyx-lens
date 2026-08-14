@@ -15,6 +15,7 @@
   document.querySelector('.act[data-mode="followup"] .ic').innerHTML = icon('message-circle', { size: 16 });
   document.querySelector('.act[data-mode="recap"] .ic').innerHTML = icon('refresh-cw', { size: 16 });
   $('#task-context-toggle .ic').innerHTML = icon('camera', { size: 16 });
+  $('#meeting-history-toggle .ic').innerHTML = icon('history', { size: 16 });
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
   $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
   $('#send-btn').innerHTML = icon('play', { size: 15 });
@@ -256,6 +257,216 @@
   });
   $('#task-context-prev').addEventListener('click', () => refreshTaskContextList({ offset: Math.max(0, taskContextPage.offset - taskContextPage.limit) }));
   $('#task-context-next').addEventListener('click', () => refreshTaskContextList({ offset: taskContextPage.offset + taskContextPage.limit }));
+
+  // ---- meeting history ---------------------------------------------------
+  let meetingHistoryRecords = [];
+  let meetingHistorySearch = '';
+  let meetingHistoryRequest = 0;
+  let meetingDetail = null;
+  let meetingNotesText = '';
+  let meetingHistorySearchTimer = null;
+
+  function meetingReasonLabel(reason) {
+    if (reason === 'capture-stop') return 'listening stopped';
+    if (reason === 'new-session') return 'new session started';
+    if (reason === 'app-quit') return 'app quit';
+    return reason || 'saved meeting';
+  }
+
+  function meetingDateLabel(ms) {
+    try { return new Date(Number(ms)).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    catch { return 'Unknown time'; }
+  }
+
+  function renderMeetingHistory() {
+    const list = $('#meeting-history-list');
+    const query = meetingHistorySearch.trim().toLowerCase();
+    const records = query
+      ? meetingHistoryRecords.filter((record) => [meetingDateLabel(record.endedAt || record.startedAt), meetingReasonLabel(record.reason), record.preview || ''].join(' ').toLowerCase().includes(query))
+      : meetingHistoryRecords;
+    list.replaceChildren();
+    $('#meeting-history-count').textContent = `${records.length} ${records.length === 1 ? 'meeting' : 'meetings'}`;
+    $('#meeting-history-action-count').textContent = String(meetingHistoryRecords.length);
+    $('#meeting-history-action-count').classList.toggle('hidden', meetingHistoryRecords.length === 0);
+    $('#meeting-history-clear').disabled = records.length === 0;
+    if (!records.length) {
+      const empty = document.createElement('div');
+      empty.className = 'history-empty';
+      empty.textContent = meetingHistoryRecords.length
+        ? 'No saved meetings match this search.'
+        : 'No meeting history yet. Enable "Save meeting history" in Settings → Listening, then stop listening or start a new session to save one.';
+      list.appendChild(empty);
+      return;
+    }
+    for (const record of records) {
+      const row = document.createElement('div');
+      row.className = 'history-entry';
+      row.dataset.meetingId = record.id;
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'history-entry-open';
+      const when = document.createElement('strong');
+      when.textContent = meetingDateLabel(record.endedAt || record.startedAt);
+      const meta = document.createElement('span');
+      meta.textContent = `${record.turnCount} ${record.turnCount === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(record.reason)}${record.preview ? ' · ' + record.preview : ''}`;
+      open.append(when, meta);
+      open.addEventListener('click', () => openMeetingDetail(record.id));
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'history-entry-delete';
+      remove.textContent = '×';
+      remove.title = 'Delete this meeting';
+      remove.setAttribute('aria-label', 'Delete meeting');
+      remove.addEventListener('click', async () => {
+        try {
+          const result = await volyxLens.historyDelete(record.id);
+          showStatus(result && result.removed ? 'Meeting deleted.' : 'That meeting is no longer available.');
+          await loadMeetingHistory();
+        } catch (error) { showStatus(error && error.message ? error.message : 'The meeting could not be deleted.'); }
+      });
+      row.append(open, remove);
+      list.appendChild(row);
+    }
+  }
+
+  async function loadMeetingHistory({ quiet = false } = {}) {
+    const request = ++meetingHistoryRequest;
+    try {
+      const records = await volyxLens.historyList();
+      if (request !== meetingHistoryRequest) return;
+      meetingHistoryRecords = Array.isArray(records) ? records : [];
+      renderMeetingHistory();
+    } catch (error) {
+      if (request !== meetingHistoryRequest) return;
+      if (!quiet) showStatus(error && error.message ? error.message : 'Meeting history could not be loaded.');
+    }
+  }
+
+  function setMeetingHistoryOpen(open) {
+    $('#meeting-history-panel').classList.toggle('hidden', !open);
+    $('#meeting-history-toggle').setAttribute('aria-expanded', String(open));
+    if (open) loadMeetingHistory({ quiet: true });
+  }
+
+  $('#meeting-history-toggle').addEventListener('click', () => {
+    setMeetingHistoryOpen($('#meeting-history-toggle').getAttribute('aria-expanded') !== 'true');
+  });
+
+  function renderMeetingTurns() {
+    const container = $('#meeting-history-turns');
+    container.replaceChildren();
+    if (!meetingDetail) return;
+    for (const turn of meetingDetail.turns) {
+      const row = document.createElement('div');
+      row.className = `history-turn ${turn.channel === 'you' ? 'you' : 'them'}`;
+      const speaker = document.createElement('span'); speaker.className = 'history-speaker'; speaker.textContent = turn.channel === 'you' ? 'You' : 'Them';
+      const text = document.createElement('span'); text.className = 'history-text'; text.textContent = turn.text;
+      const time = document.createElement('time'); time.className = 'history-time'; time.dateTime = new Date(turn.ts).toISOString(); time.textContent = transcriptTime(turn.ts);
+      row.append(speaker, text, time);
+      container.appendChild(row);
+    }
+    const count = meetingDetail.turns.length;
+    $('#meeting-history-detail-meta').textContent = `${count} ${count === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(meetingDetail.reason)} · ${meetingDateLabel(meetingDetail.endedAt || meetingDetail.startedAt)}`;
+  }
+
+  async function openMeetingDetail(id) {
+    try {
+      const record = await volyxLens.historyGet(id);
+      if (!record) { showStatus('That meeting is no longer available.'); return; }
+      meetingDetail = record;
+      meetingNotesText = '';
+      const out = $('#meeting-notes-output');
+      out.classList.add('hidden');
+      out.textContent = '';
+      renderMeetingTurns();
+      $('#meeting-history-list').classList.add('hidden');
+      $('#meeting-history-detail').classList.remove('hidden');
+    } catch (error) { showStatus(error && error.message ? error.message : 'That meeting could not be opened.'); }
+  }
+
+  function closeMeetingDetail() {
+    meetingDetail = null;
+    meetingNotesText = '';
+    $('#meeting-notes-output').classList.add('hidden');
+    $('#meeting-history-detail').classList.add('hidden');
+    $('#meeting-history-list').classList.remove('hidden');
+  }
+
+  $('#meeting-history-back').addEventListener('click', closeMeetingDetail);
+
+  $('#meeting-history-export').addEventListener('click', async () => {
+    if (!meetingDetail) return;
+    const button = $('#meeting-history-export'); button.disabled = true;
+    try {
+      const result = await volyxLens.historyExport(meetingDetail.id, $('#meeting-history-export-format').value);
+      if (result && !result.canceled) showStatus(`Exported ${result.turns} ${result.turns === 1 ? 'turn' : 'turns'} to ${result.filename}.`);
+    } catch (error) { showStatus(error && error.message ? error.message : 'This meeting could not be exported.'); }
+    finally { button.disabled = false; }
+  });
+
+  $('#meeting-history-delete').addEventListener('click', async () => {
+    if (!meetingDetail) return;
+    if (!window.confirm('Delete this saved meeting? This cannot be undone.')) return;
+    try {
+      const result = await volyxLens.historyDelete(meetingDetail.id);
+      closeMeetingDetail();
+      await loadMeetingHistory();
+      showStatus(result && result.removed ? 'Meeting deleted.' : 'That meeting is no longer available.');
+    } catch (error) { showStatus(error && error.message ? error.message : 'The meeting could not be deleted.'); }
+  });
+
+  $('#meeting-history-clear').addEventListener('click', async () => {
+    if (!meetingHistoryRecords.length) return;
+    if (!window.confirm('Delete ALL saved meetings? This cannot be undone.')) return;
+    try {
+      const result = await volyxLens.historyClear();
+      closeMeetingDetail();
+      await loadMeetingHistory();
+      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'}.`);
+    } catch (error) { showStatus(error && error.message ? error.message : 'Meeting history could not be cleared.'); }
+  });
+
+  $('#meeting-notes-generate').addEventListener('click', async () => {
+    if (!meetingDetail) return;
+    const button = $('#meeting-notes-generate');
+    const original = button.textContent;
+    button.disabled = true;
+    meetingNotesText = '';
+    const out = $('#meeting-notes-output');
+    out.classList.add('hidden');
+    out.textContent = '';
+    try {
+      let confirmed = false;
+      for (;;) {
+        const result = await volyxLens.historyRecap(meetingDetail.id, confirmed);
+        if (result && result.ok) {
+          meetingNotesText = result.text || '';
+          out.textContent = meetingNotesText;
+          out.classList.remove('hidden');
+          showStatus('Meeting notes ready.');
+          break;
+        }
+        if (result && result.code === 'requires_confirmation') {
+          const plan = result.plan || {};
+          if (!window.confirm(`${result.message} This uses ${plan.requestCount} model request${plan.requestCount === 1 ? '' : 's'} and may incur a small provider charge. Continue?`)) {
+            showStatus('Meeting notes canceled.');
+            break;
+          }
+          confirmed = true;
+          continue;
+        }
+        showStatus(result && result.message ? result.message : 'Meeting notes could not be generated.');
+        break;
+      }
+    } catch (error) { showStatus(error && error.message ? error.message : 'Meeting notes could not be generated.'); }
+    finally { button.disabled = false; button.textContent = original; }
+  });
+
+  $('#meeting-history-search').addEventListener('input', () => {
+    meetingHistorySearch = $('#meeting-history-search').value;
+    clearTimeout(meetingHistorySearchTimer);
+    meetingHistorySearchTimer = setTimeout(renderMeetingHistory, 120);
+  });
 
   function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
@@ -990,6 +1201,18 @@
   volyxLens.on('status', ({ message }) => { volyxLens.log('[status] ' + message); showStatus(message); });
 
   volyxLens.on('task-context:state', renderTaskContext);
+  volyxLens.on('history:changed', (event = {}) => {
+    if (event.deleted && meetingDetail && event.id === meetingDetail.id) closeMeetingDetail();
+    else if (event.cleared) closeMeetingDetail();
+    loadMeetingHistory({ quiet: true });
+  });
+  volyxLens.on('history:recap-token', ({ id, text }) => {
+    if (!meetingDetail || meetingDetail.id !== id) return;
+    const out = $('#meeting-notes-output');
+    out.classList.remove('hidden');
+    meetingNotesText += text;
+    out.textContent = meetingNotesText;
+  });
   volyxLens.on('transcript:partial', setPartialTranscript);
   volyxLens.on('transcript', addTranscriptTurn);
   volyxLens.on('transcript:update', updateTranscriptTurn);
@@ -1996,6 +2219,7 @@
     [settings, personalContext, existingTranscript, taskContext] = await Promise.all([volyxLens.settingsGet(), volyxLens.personalContextGet(), volyxLens.transcriptGet(), volyxLens.taskContextGet()]);
     transcriptTurns = (Array.isArray(existingTranscript) ? existingTranscript : []).map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
     renderTaskContext(taskContext);
+    loadMeetingHistory({ quiet: true });
     smartBtn.classList.toggle('on', !!settings.smart);
     updateSmartToggleModelIds();
     $('#assist-context').value = settings.assistContext || 'both';

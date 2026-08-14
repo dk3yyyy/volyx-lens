@@ -66,7 +66,7 @@ test('finalize writes an atomic 0600 record and list/get round-trip it', () => {
   assert.equal(persisted.turns.length, 3);
   assert.equal(persisted.turns[0].text, 'Turn 1');
 
-  assert.deepEqual(store.list(), [{ id: result.id, reason: 'capture-stop', startedAt: 500, endedAt: 2000, turnCount: 3 }]);
+  assert.deepEqual(store.list(), [{ id: result.id, reason: 'capture-stop', startedAt: 500, endedAt: 2000, turnCount: 3, preview: 'Turn 1' }]);
   assert.equal(store.get(result.id).turns.length, 3);
   assert.equal(store.get(result.id).turns[2].text, 'Turn 3');
 });
