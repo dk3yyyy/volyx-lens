@@ -22,6 +22,8 @@ test('defaults include Azure Foundry and DeepSeek without changing the app name'
   assert.equal(settings.apiKeys.deepseek, '');
   assert.equal(settings.apiKeys.ollama, '');
   assert.equal(settings.autoAnswer, false);
+  assert.equal(settings.autoAnswerConfidence, 0.5);
+  assert.equal(settings.autoAnswerCooldownSec, 60);
   assert.equal(settings.apiKeys.groq, '');
   assert.equal(settings.apiKeys.openrouter, '');
   assert.deepEqual(settings.models.azure, { fast: '', smart: '' });

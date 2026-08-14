@@ -139,6 +139,9 @@ function sanitizeSettingsPatch(patch = {}) {
   if (typeof patch.fallbackProvider === 'string' && (patch.fallbackProvider === '' || Object.hasOwn(DEFAULTS.models, patch.fallbackProvider))) safe.fallbackProvider = patch.fallbackProvider;
   if (typeof patch.smart === 'boolean') safe.smart = patch.smart;
   if (typeof patch.questionDetection === 'boolean') safe.questionDetection = patch.questionDetection;
+  if (typeof patch.autoAnswer === 'boolean') safe.autoAnswer = patch.autoAnswer;
+  if (Object.hasOwn(patch, 'autoAnswerConfidence')) safe.autoAnswerConfidence = Math.max(0, Math.min(1, Number(patch.autoAnswerConfidence) || 0.5));
+  if (Object.hasOwn(patch, 'autoAnswerCooldownSec')) safe.autoAnswerCooldownSec = Math.max(5, Math.min(600, Number(patch.autoAnswerCooldownSec) || 60));
   if (typeof patch.onboarded === 'boolean') safe.onboarded = patch.onboarded;
   if (['both', 'screen', 'conversation'].includes(patch.assistContext)) safe.assistContext = patch.assistContext;
   if (patch.endpoints && typeof patch.endpoints === 'object') {

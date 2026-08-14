@@ -46,6 +46,16 @@ test('applies cooldown to a different question after answering', () => {
   assert.equal(decision.reason, 'cooldown');
 });
 
+test('a per-evaluate cooldown override can tighten or widen the window', () => {
+  const policy = createAutoAssistPolicy({ enabled: true, cooldownMs: 60000 });
+  policy.record('What is the plan?', 1000);
+  const wide = policy.evaluate({ question: 'What is the plan?', now: 20000, busy: false, capturing: true });
+  assert.equal(wide.shouldAnswer, false);
+  assert.equal(wide.reason, 'duplicate');
+  const narrow = policy.evaluate({ question: 'What is the plan?', now: 20000, busy: false, capturing: true, cooldownMs: 5000 });
+  assert.equal(narrow.shouldAnswer, true);
+});
+
 test('allows the same question again after the cooldown expires', () => {
   const policy = createAutoAssistPolicy({ enabled: true, cooldownMs: 60000 });
   policy.record('What is the plan?', 1000);

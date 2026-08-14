@@ -11,6 +11,8 @@ test('question detection stays local; auto-assist only fires with explicit opt-i
   assert.match(main, /detectQuestion\(turn\.text\)/);
   assert.match(main, /send\('question:detected'/);
   assert.match(main, /settings\.autoAnswer !== true/);
+  assert.match(main, /settings\.autoAnswerConfidence/);
+  assert.match(main, /settings\.autoAnswerCooldownSec/);
   assert.match(main, /autoAnswerPolicy\.evaluate/);
   assert.match(main, /estimateQuestionConfidence\(question\)/);
   assert.doesNotMatch(main, /question:detected[\s\S]{0,300}runFeature\('auto-assist'/);

@@ -61,6 +61,8 @@ function getDefaultSettings() {
     smart: false,
     questionDetection: true,
     autoAnswer: false,
+    autoAnswerConfidence: 0.5,
+    autoAnswerCooldownSec: 60,
     assistContext: 'both',
     apiKeys: { ...apiKeys, deepgram: '', azureRealtime: '' },
     models,
