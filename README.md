@@ -271,10 +271,10 @@ A trusted production release is a separate path. It fails closed unless Develope
 
 ## License
 
-Copyright © 2026 Joshua Nwachinemere.
+Copyright © 2026 Joshua Nwachinemere and VolyxAI contributors.
 
-Volyx Lens is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Personal and other noncommercial use is permitted under its terms. Commercial use, resale, paid redistribution, or use in a commercial product or service requires a separate licence from VolyxAI.
+Volyx Lens is open source under the [Apache License 2.0](LICENSE.md). You are free to use, modify, and redistribute the software, including commercially, under the terms of the license.
 
 ## Contributing
 
-Issues and pull requests are welcome. Keep changes focused, preserve the privacy boundaries above, and include tests for behavior changes.
+Volyx Lens is open source and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, and please keep changes focused, preserve the privacy boundaries above, and include tests for behavior changes.

@@ -26,7 +26,7 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, /ad-hoc signed test build/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /there is no Volyx Lens-operated intermediary server/i);
-  assert.match(html, /PolyForm Noncommercial 1\.0\.0/i);
+  assert.match(html, /Apache License 2\.0/i);
   assert.doesNotMatch(html, /customer(s)?|trusted by|SOC\s?2|guaranteed invisible/i);
 });
 
@@ -129,8 +129,8 @@ test('landing page publishes complete canonical and social metadata with a stric
   assert.deepEqual(directives['base-uri'], ["'none'"]);
   assert.deepEqual(directives['form-action'], ["'none'"]);
   assert.doesNotMatch(match[1], /(?:\*|https?:|unsafe-inline|unsafe-eval)/i);
-  assert.match(html, /"license":\s*"https:\/\/polyformproject\.org\/licenses\/noncommercial\/1\.0\.0"/);
-  assert.doesNotMatch(html, /polyformproject\.org\/licenses\/noncommercial\/1\.0\.0\//);
+  assert.match(html, /"license":\s*"https:\/\/www\.apache\.org\/licenses\/LICENSE-2\.0"/);
+  assert.doesNotMatch(html, /polyformproject\.org/i);
 });
 
 test('landing page links to existing license and security documents', () => {

@@ -3,7 +3,7 @@
   "version": "0.3.1",
   "description": "Private macOS context assistant for screen, voice, meetings, and coding workflows.",
   "author": "VolyxAI",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=20"
   },

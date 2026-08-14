@@ -37,17 +37,18 @@ test('renderer and preload share the canonical bridge name', () => {
   assert.doesNotMatch(renderer, new RegExp(`\\b${retiredIdentifier}\\.`, 'i'));
 });
 
-test('repository declares the PolyForm noncommercial license', () => {
+test('repository declares the Apache-2.0 license', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
   const license = fs.readFileSync(path.join(root, 'LICENSE.md'), 'utf8');
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
 
-  assert.equal(pkg.license, 'SEE LICENSE IN LICENSE.md');
+  assert.equal(pkg.license, 'Apache-2.0');
   assert.ok(pkg.build.files.includes('LICENSE.md'));
-  assert.equal(lock.packages[''].license, 'SEE LICENSE IN LICENSE.md');
-  assert.match(license, /^# PolyForm Noncommercial License 1\.0\.0/m);
-  assert.match(license, /https:\/\/polyformproject\.org\/licenses\/noncommercial\/1\.0\.0/);
-  assert.match(license, /Required Notice: Copyright 2026 Joshua Nwachinemere/);
-  assert.match(readme, /source-available under the \[PolyForm Noncommercial License 1\.0\.0\]/);
+  assert.equal(lock.packages[''].license, 'Apache-2.0');
+  assert.match(license, /^\s*Apache License/m);
+  assert.match(license, /Version 2\.0, January 2004/);
+  assert.match(license, /http:\/\/www\.apache\.org\/licenses\/LICENSE-2\.0/);
+  assert.match(license, /Copyright © 2026 Joshua Nwachinemere/);
+  assert.match(readme, /open source under the \[Apache License 2\.0\]/);
 });
