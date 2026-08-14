@@ -33,7 +33,11 @@ function fingerprint(turns) {
   const normalized = snapshotTurns(turns);
   if (!normalized.length) return null;
   const last = normalized[normalized.length - 1];
-  return { count: normalized.length, lastId: last.id, lastTs: last.ts };
+  const digest = crypto.createHash('sha256');
+  for (const turn of normalized) {
+    digest.update(`${turn.id ?? ''}|${turn.channel}|${turn.text}|${turn.ts ?? ''}\n`);
+  }
+  return { count: normalized.length, lastId: last.id, lastTs: last.ts, contentHash: digest.digest('hex') };
 }
 
 function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
@@ -83,8 +87,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     const normalized = snapshotTurns(turns);
     if (!normalized.length) return { saved: false, reason: 'empty' };
     const fp = fingerprint(normalized);
-    if (lastSavedFingerprint && fp && fp.count === lastSavedFingerprint.count
-      && fp.lastId === lastSavedFingerprint.lastId && fp.lastTs === lastSavedFingerprint.lastTs) {
+    if (lastSavedFingerprint && fp && fp.contentHash === lastSavedFingerprint.contentHash) {
       return { saved: false, reason: 'no_new_content' };
     }
     ensureDir();
