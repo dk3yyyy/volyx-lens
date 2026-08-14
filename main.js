@@ -1562,6 +1562,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', (event) => {
+  relaunchRequested = false; // any quit supersedes a pending relaunch (incl. window-all-closed / native menu)
   if (shutdownPromise) return; // cleanup already ran (or is in progress)
   event.preventDefault();
   shutdownAll().finally(() => app.quit());
