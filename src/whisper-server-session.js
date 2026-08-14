@@ -61,7 +61,8 @@ function buildInferenceBody(wav, { language = '', prompt = '' } = {}) {
   );
   parts.push(field('response_format', 'json'));
   parts.push(field('temperature', '0.0'));
-  if (language) parts.push(field('language', normalizeWhisperLanguage(language)));
+  const whisperLanguage = normalizeWhisperLanguage(language);
+  if (whisperLanguage) parts.push(field('language', whisperLanguage));
   if (prompt) parts.push(field('prompt', prompt));
   parts.push(Buffer.from(
     `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n`, 'utf8'
