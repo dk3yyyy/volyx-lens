@@ -5,11 +5,16 @@ function cleanQuestion(text) {
   return String(text || '').trim().replace(/\s+/g, ' ').slice(-1000);
 }
 
-function detectQuestion(text) {
+function questionCandidate(text) {
   const clean = cleanQuestion(text);
   if (!clean) return null;
   const sentences = clean.split(/(?<=[.!?])\s+/).filter(Boolean);
-  const candidate = (sentences[sentences.length - 1] || clean).trim();
+  return (sentences[sentences.length - 1] || clean).trim();
+}
+
+function detectQuestion(text) {
+  const candidate = questionCandidate(text);
+  if (!candidate) return null;
   const words = candidate.match(/[\p{L}\p{N}']+/gu) || [];
   if (words.length < 3) return null;
   const questionLike = candidate.endsWith('?') || QUESTION_START.test(candidate) || EMBEDDED_QUESTION.test(candidate);
@@ -17,4 +22,20 @@ function detectQuestion(text) {
   return candidate.slice(-500);
 }
 
-module.exports = { detectQuestion, cleanQuestion };
+// Rough local confidence heuristic (0..1) used to gate opt-in automatic
+// answers. Explicit question words and a closing question mark raise the
+// score; long run-on turns lower it. Manual "Draft answer" is unaffected.
+function estimateQuestionConfidence(text) {
+  const candidate = questionCandidate(text);
+  if (!candidate) return 0;
+  let score = 0;
+  if (candidate.endsWith('?')) score += 0.5;
+  if (QUESTION_START.test(candidate)) score += 0.4;
+  if (EMBEDDED_QUESTION.test(candidate)) score += 0.2;
+  const words = candidate.match(/[\p{L}\p{N}']+/gu) || [];
+  if (words.length >= 3) score += 0.1;
+  if (words.length > 28) score -= 0.15;
+  return Math.min(1, Math.max(0, score));
+}
+
+module.exports = { detectQuestion, cleanQuestion, questionCandidate, estimateQuestionConfidence };

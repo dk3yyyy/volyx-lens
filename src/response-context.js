@@ -1,7 +1,7 @@
 'use strict';
 
 const ALWAYS_SCREEN_MODES = new Set(['assist', 'assist-screen', 'leetcode']);
-const CONVERSATION_REQUIRED_MODES = new Set(['assist-conversation', 'say', 'followup', 'recap']);
+const CONVERSATION_REQUIRED_MODES = new Set(['assist-conversation', 'say', 'followup', 'recap', 'auto-assist']);
 const SCREEN_REFERENCE = /(^\s*(?:screen|screenshot)\s*:)|\b(?:on|from|in)\s+(?:my|the|this|current)\s+(?:screen|screenshot|image|diagram|window|page)\b|\b(?:this|current)\s+(?:screen|screenshot|image|diagram|window|page)\b|\b(?:look at|analyze|check|read|use|capture|inspect|view)\s+(?:my|the|this|current)?\s*(?:screen|screenshot|image|diagram|window|page)\b|\b(?:visible|shown|displayed)\b.*\b(?:screen|screenshot|image|diagram|window|page)\b|\bshown (?:here|above|on[- ]screen)\b/i;
 const SOURCE_UNCERTAINTY_RULE = 'If supplied source context is missing, unclear, ambiguous, conflicting, or insufficient, say exactly what is uncertain and ask for the smallest missing detail when useful. Do not guess, invent visible details, or present an inference as fact.';
 

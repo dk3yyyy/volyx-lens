@@ -6,3 +6,4 @@ native-bin/
 *.log
 .DS_Store
 cue-data.json
+.freebuff/

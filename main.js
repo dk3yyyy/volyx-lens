@@ -28,7 +28,8 @@ const { buildPersonalContext } = require('./src/personal-context');
 const { normalizeSpokenDigits, formatTranscript, transcriptFilename } = require('./src/transcript-tools');
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
-const { detectQuestion } = require('./src/question-detection');
+const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
+const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap } = require('./src/meeting-recap');
 const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
@@ -46,6 +47,9 @@ const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = r
 
 const chatHistory = createChatHistory();
 const personalContextStore = createPersonalContextStore({ userDataPath: currentUserDataPath, safeStorage });
+const AUTO_ANSWER_CONFIDENCE_MIN = 0.5;
+const AUTO_ANSWER_COOLDOWN_MS = 60000;
+const autoAnswerPolicy = createAutoAssistPolicy({ cooldownMs: AUTO_ANSWER_COOLDOWN_MS });
 const taskContext = createTaskContext({
   createFingerprint: (dataUrl) => fingerprintDataUrl(dataUrl, nativeImage),
   isNearDuplicate: isNearDuplicateFingerprint,
@@ -288,6 +292,7 @@ function resetTranscriptData() {
   recentTranscriptSegments.length = 0;
   transcriptSegmentArrivalTimes.clear();
   detectedQuestionsByTurn.clear();
+  autoAnswerPolicy.reset();
   transcriptSequence = 0;
   transcriptSegmentSequence = 0;
   transcriptionDiagnostics.crossTalkSuppressed = 0;
@@ -338,8 +343,27 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     if (question && detectedQuestionsByTurn.get(turn.id) !== question) {
       detectedQuestionsByTurn.set(turn.id, question);
       send('question:detected', { turnId: turn.id, text: question, ts: timestamp });
+      maybeAutoAnswer(question, timestamp);
     }
   }
+}
+
+// Opt-in automatic assistance (Milestone 3). Manual "Draft answer" stays
+// available regardless; this only fires when the user enabled Auto-assist,
+// the question is confidently a question, no dialog is open, and the cooldown
+// / dedupe policy permits it. Partials never reach this path — only finalized
+// Them turns are recorded.
+function maybeAutoAnswer(question, ts) {
+  const settings = store.getSettings();
+  if (settings.autoAnswer !== true || settings.questionDetection === false) return;
+  if (uiModalOpen) return;
+  if (estimateQuestionConfidence(question) < AUTO_ANSWER_CONFIDENCE_MIN) return;
+  const decision = autoAnswerPolicy.evaluate({ question, now: ts, busy: state.busy, capturing: state.capturing });
+  if (!decision.shouldAnswer) return;
+  autoAnswerPolicy.record(question, ts);
+  send('question:clear', { reason: 'auto_answer' });
+  send('status', { message: 'Auto-assist is drafting a reply to the detected question…' });
+  runFeature('auto-assist', question);
 }
 
 function updateTranscriptionDiagnostics(event = {}) {
@@ -1002,7 +1026,7 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
   let requestTimeout = null;
   try {
     const orderedTranscript = [...transcript].sort((a, b) => a.ts - b.ts);
-    const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' ? userText : null);
+    const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' || mode === 'auto-assist' ? userText : null);
     const contextError = missingContextMessage({ mode, transcript: orderedTranscript });
     if (contextError) {
       if (isCurrent()) {

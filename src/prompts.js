@@ -74,6 +74,26 @@ const MODES = {
     }
   },
 
+  // Reply to a question detected from Them — used by the manual "Draft
+  // answer" button and by opt-in auto-assist.
+  'auto-assist': {
+    needsScreen: false,
+    usesPersonalContext: true,
+    userBubble: null, // the detected question becomes the visible bubble
+    small: false,
+    system:
+      'You are Volyx Lens, whispering suggested replies during a live conversation. ' +
+      '"Them" is the other participant; "You" is the user. Them just asked a question. ' +
+      'Draft ONE concise, natural reply the user can say out loud, in the first person, ' +
+      'grounded only in the supplied conversation and personal context. No quotes, no preamble, 1\u20133 sentences.',
+    build(ctx) {
+      const t = formatTranscript(ctx.transcript, 16);
+      return 'Conversation so far:\n' + (t || '(nothing captured yet)') +
+        '\n\nThem asked: "' + String(ctx.userText || '').trim() + '"\n\nWhat should You say? ' +
+        'Answer the question directly and concisely.';
+    }
+  },
+
   // Smart follow-up questions to keep the conversation going.
   followup: {
     needsScreen: false,
