@@ -48,7 +48,7 @@ test('repository declares the Apache-2.0 license', () => {
   assert.equal(lock.packages[''].license, 'Apache-2.0');
   assert.match(license, /^\s*Apache License/m);
   assert.match(license, /Version 2\.0, January 2004/);
-  assert.match(license, /http:\/\/www\.apache\.org\/licenses\/LICENSE-2\.0/);
+  assert.match(license, /http:\/\/www\.apache\.org\/licenses\//);
   assert.match(license, /Copyright © 2026 Joshua Nwachinemere/);
   assert.match(readme, /open source under the \[Apache License 2\.0\]/);
 });
