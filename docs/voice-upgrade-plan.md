@@ -72,12 +72,21 @@ OpenAI-compatible response routes: DeepSeek, Groq, OpenRouter, and local Ollama 
 - Local transcription: evaluate whisper.cpp or another offline engine for privacy-sensitive sessions.
 - Keep provider selection behind one streaming STT interface so the renderer and Auto Assist pipeline do not change.
 
+## Milestone 5 — On-device meeting history
+
+Status: persistence layer implemented (Phase 3a).
+
+- Implemented: opt-in `transcription.historyEnabled` setting (off by default) exposed as "Save meeting history" in Settings > Listening, with a privacy disclosure.
+- Implemented: a finalized session (listening stopped, new session started, or app quit) persists only the final transcript turns to `<userData>/meetings/*.json` with 0600 permissions and atomic writes; raw audio is never stored.
+- Implemented: bounded retention (200 records, 5000 turns each), traversal-safe record ids, skip-when-unchanged dedupe, and list/get/delete/clear IPC surfaced through the preload bridge.
+- Remaining: structured recap/notes built from a saved session and export (Phase 3b), plus a history browser with search in the UI (Phase 3c).
+
 ## Security and privacy constraints
 
 - No audio capture before the user explicitly starts listening.
 - No background meeting watcher in the initial implementation.
 - No automatic reconnect or retry loop that can create surprise usage charges.
-- No transcript or audio persistence unless a future session-history feature is explicitly enabled.
+- No audio persistence; transcript history is written to disk only when the opt-in "Save meeting history" setting is enabled, and records contain final text turns only.
 - No secrets in URLs, renderer events, logs, error messages, tests, or repository files.
 - Emergency quit stops capture, clears in-memory session data, and closes sockets immediately.
 
