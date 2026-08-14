@@ -168,12 +168,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          TAG="$GITHUB_REF_NAME"
+          if gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --title "Volyx Lens $TAG" --generate-notes; then
+            echo "Release created by this workflow."
+          elif gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; uploading assets."
           else
-            gh release create "$GITHUB_REF_NAME" dist/* \
-              --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --title "Volyx Lens $GITHUB_REF_NAME" \
-              --generate-notes
+            echo "Failed to create or locate release $TAG." >&2
+            exit 1
           fi
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber

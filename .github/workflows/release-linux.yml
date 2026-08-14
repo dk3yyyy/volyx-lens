@@ -29,7 +29,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -37,7 +37,7 @@ jobs:
         run: |
           git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: npm
@@ -50,7 +50,7 @@ jobs:
       - run: npm audit --audit-level=low
       - name: Build AppImage
         run: |
-          npm pkg set "build.publish[0].channel=latest"
+          npm pkg set "build.publish[0].channel=latest-${{ matrix.arch }}"
           npm pkg set "build.extraMetadata.volyxReleaseBuild=true" --json
           npx electron-builder --linux AppImage --${{ matrix.arch }} --publish never
       - name: Smoke launch packaged application
@@ -63,27 +63,27 @@ jobs:
         run: |
           APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*.AppImage" -print -quit)"
           APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
-          test -f "dist/latest-linux.yml"
+          test -f "dist/latest-${{ matrix.arch }}-linux.yml"
           VERSION="$(node -p "require('./package.json').version")"
-          node scripts/validate-update-metadata.js "dist/latest-linux.yml" "$APPIMAGE_PATH" "$VERSION" "${{ matrix.arch }}" "linux"
+          node scripts/validate-update-metadata.js "dist/latest-${{ matrix.arch }}-linux.yml" "$APPIMAGE_PATH" "$VERSION" "${{ matrix.arch }}" "linux"
           (cd dist && shasum -a 256 "$APPIMAGE_NAME" > "$APPIMAGE_NAME.sha256")
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json"
       - name: Attest build provenance
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: dist/*.AppImage
       - name: Attest signed archive SBOM
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: dist/*.AppImage
           sbom-path: dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: volyx-lens-linux-${{ matrix.arch }}
           path: |
             dist/*.AppImage
             dist/*.AppImage.sha256
-            dist/latest-linux.yml
+            dist/latest-${{ matrix.arch }}-linux.yml
             dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json
           if-no-files-found: error
 
@@ -94,7 +94,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with:
           pattern: volyx-lens-linux-*
           path: dist
@@ -103,12 +103,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          TAG="$GITHUB_REF_NAME"
+          if gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --title "Volyx Lens $TAG" --generate-notes; then
+            echo "Release created by this workflow."
+          elif gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; uploading assets."
           else
-            gh release create "$GITHUB_REF_NAME" dist/* \
-              --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --title "Volyx Lens $GITHUB_REF_NAME" \
-              --generate-notes
+            echo "Failed to create or locate release $TAG." >&2
+            exit 1
           fi
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber

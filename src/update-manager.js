@@ -15,9 +15,10 @@ function unsupportedMessage(platform) {
 }
 
 function releaseChannel(platform, arch) {
-  // macOS uses per-arch channels (latest-arm64 / latest-x64); Windows and Linux
-  // both publish to their platform default (latest / latest-linux).
-  if (platform === 'darwin') return `latest-${arch === 'arm64' ? 'arm64' : 'x64'}`;
+  // macOS and Linux publish per-arch update metadata (latest-arm64 / latest-x64)
+  // so multi-arch release assets never overwrite each other; Windows publishes a
+  // single latest.yml for all architectures.
+  if (platform === 'darwin' || platform === 'linux') return `latest-${arch === 'arm64' ? 'arm64' : 'x64'}`;
   return 'latest';
 }
 

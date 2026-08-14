@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 
-const { createUpdateManager } = require('../src/update-manager');
+const { createUpdateManager, releaseChannel } = require('../src/update-manager');
 
 function fixture({ packaged = true, platform = 'darwin', releaseBuild = true } = {}) {
   const updater = new EventEmitter();
@@ -131,6 +131,11 @@ test('Windows and Linux packaged builds support release updates on their platfor
   await checking;
   assert.equal(updater.channel, 'latest');
   assert.equal(manager.getState().status, 'available');
+});
+
+test('Linux release updates use per-architecture channels', () => {
+  assert.equal(releaseChannel('linux', 'x64'), 'latest-x64');
+  assert.equal(releaseChannel('linux', 'arm64'), 'latest-arm64');
 });
 
 test('development Windows builds explain that packaged builds are required', async () => {
