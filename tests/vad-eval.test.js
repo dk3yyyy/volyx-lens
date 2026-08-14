@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   mulberry32, decodeWav, silencePcm, noisePcm, scaleToRms, mixPcm, insertSilenceGap,
-  buildFixtures, evaluatePcm, normalizeText, wer,
+  buildFixtures, evaluatePcm, normalizeText, wer, THRESHOLDS, checkThresholds,
 } = require('../scripts/vad-accuracy-eval');
 const { pcmToWav } = require('../src/wav');
 
@@ -81,6 +81,30 @@ test('evaluatePcm detects one loud burst and reports the utterance window', () =
   assert.equal(result.utterances.length, 1);
   assert.ok(Math.abs(result.utterances[0].startMs) <= 100);
   assert.ok(Math.abs(result.utterances[0].endMs - 1000) <= 150);
+});
+
+test('checkThresholds passes a clean summary and skips unmeasured WER', () => {
+  const clean = {
+    emptyTurnRate: 0, falseNegativeRate: 0, truncationCount: 0,
+    meanStartErrorMs: 92, meanEndErrorMs: 0, werMean: null,
+  };
+  assert.deepEqual(checkThresholds(clean), []);
+  assert.deepEqual(checkThresholds({ ...clean, werMean: 0.17 }), []);
+});
+
+test('checkThresholds flags regressions past the baseline limits', () => {
+  const summary = {
+    emptyTurnRate: 0.15, falseNegativeRate: 0.1, truncationCount: 3,
+    meanStartErrorMs: 400, meanEndErrorMs: 250, werMean: 0.45,
+  };
+  const violations = checkThresholds(summary);
+  assert.deepEqual(violations.map((v) => v.name), ['emptyTurnRate', 'falseNegativeRate', 'meanStartErrorMs', 'meanEndErrorMs', 'truncationCount', 'wer']);
+});
+
+test('THRESHOLDS covers every enforced metric', () => {
+  for (const key of ['emptyTurnRate', 'falseNegativeRate', 'meanStartErrorMs', 'meanEndErrorMs', 'truncationCount', 'wer']) {
+    assert.equal(typeof THRESHOLDS[key], 'number', `missing threshold ${key}`);
+  }
 });
 
 test('evaluatePcm applies the maxUtteranceMs cap as a forced stop', () => {
