@@ -6,7 +6,7 @@ Turn Volyx Lens's fixed 3.5-second upload loop into a low-latency, provider-neut
 
 ## Milestone 1 — OpenAI and Azure Realtime transcription
 
-Status: implemented on `feat/azure-foundry-deepseek`.
+Status: implemented and merged into `main`.
 
 - Use `gpt-realtime-whisper` through either the direct OpenAI Realtime API or Azure OpenAI's GA Realtime endpoint.
 - Stream 24 kHz mono PCM to `gpt-realtime-whisper` over WebSocket.
@@ -49,13 +49,19 @@ Status: core transport and observability implemented; measured accuracy evaluati
 
 ## Milestone 3 — Automatic assistance
 
-- Detect likely questions only from finalized **Them** turns.
-- Merge corrections and adjacent transcript fragments before classification.
-- Deduplicate repeated questions.
-- Add cooldown and confidence thresholds.
-- Default to manual approval; make automatic answer generation opt-in.
-- Never generate from a partial transcript when a final turn is pending.
-- Include session context, resume, job description, and selected documents.
+Status: core implemented on `main` (opt-in Auto-assist).
+
+- Implemented: question detection runs only on finalized **Them** turns, never partials.
+- Implemented: merged speaker turns are grouped before classification.
+- Implemented: repeated questions are deduplicated per turn and across automatic answers.
+- Implemented: automatic answers are opt-in (`autoAnswer` setting, off by default) with a 60-second cooldown, duplicate suppression, a local confidence threshold, and busy/capture gating in `src/auto-assist.js`.
+- Implemented: "Draft answer" answers the detected question directly through the `auto-assist` feature mode.
+- Implemented: auto-assist includes session context, resume, job description, and enabled documents through the shared personal-context path.
+- Remaining: make cooldown and confidence configurable in Settings; measure answer usefulness on real meetings.
+
+## Response provider coverage
+
+OpenAI-compatible response routes: DeepSeek, Groq, OpenRouter, and local Ollama (keyless, `http://localhost:11434/v1`). All are handled by the single `baseURL` branch in `src/llm.js`; Azure remains separate because it authenticates with an `api-key` header. `src/provider-config.js` is the single source of truth — `tests/provider-consistency.test.js` keeps the renderer, README, and landing page in sync with it.
 
 ## Milestone 4 — Additional STT providers
 

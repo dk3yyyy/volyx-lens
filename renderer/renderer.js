@@ -824,16 +824,18 @@
     $('#question-suggestion-text').textContent = '';
   }
 
+  let question = '';
   function showQuestionSuggestion(event) {
     const text = String((event && event.text) || '').trim();
     if (!text) return;
+    question = text;
     $('#question-suggestion-text').textContent = text;
     $('#question-suggestion').classList.remove('hidden');
   }
 
   $('#question-answer').addEventListener('click', () => {
     clearQuestionSuggestion();
-    runMode('say', '');
+    runMode(question ? 'auto-assist' : 'say', question || '');
   });
   $('#question-dismiss').addEventListener('click', clearQuestionSuggestion);
 
@@ -1324,6 +1326,8 @@
     $('#audio-system-enabled').checked = audio.systemEnabled !== false;
     $('#audio-browser-processing').checked = audio.browserMicProcessing !== false;
     $('#question-detection-enabled').checked = settings.questionDetection !== false;
+    $('#auto-answer-enabled').checked = settings.autoAnswer === true;
+    $('#auto-answer-enabled').disabled = settings.questionDetection === false;
     updateAudioSessionCount();
     $('#audio-sensitivity').value = audio.sensitivity || 'balanced';
     $('#audio-silence').value = String(audio.silenceMs || 700);
@@ -1444,6 +1448,8 @@
     settings.endpoints.azure = $('#endpoint-azure').value.trim();
     settings.endpoints.azureRealtime = $('#endpoint-azure-realtime').value.trim();
     settings.questionDetection = $('#question-detection-enabled').checked;
+    settings.autoAnswer = $('#auto-answer-enabled').checked;
+    $('#auto-answer-enabled').disabled = settings.questionDetection === false;
     if (!settings.questionDetection) clearQuestionSuggestion();
     settings.transcription = {
       ...(settings.transcription || {}),

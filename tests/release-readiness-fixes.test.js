@@ -37,8 +37,8 @@ test('Gemini batch STT uses its independently configured model without a network
 
 test('all primary Settings fields have explicit programmatic labels', () => {
   const ids = [
-    'provider-fallback', 'key-openai', 'key-anthropic', 'key-gemini', 'key-azure', 'key-deepseek',
-    'endpoint-azure', 'model-fast', 'model-smart', 'provider-test-tier', 'stt-mode',
+    'provider-fallback', 'key-openai', 'key-anthropic', 'key-gemini', 'key-azure', 'key-deepseek', 'key-groq', 'key-openrouter',
+    'endpoint-azure', 'model-fast', 'model-smart', 'provider-test-tier', 'stt-mode', 'auto-answer-enabled',
     'stt-realtime-provider', 'key-azureRealtime', 'endpoint-azure-realtime', 'stt-azure-deployment',
     'key-deepgram', 'stt-deepgram-model',
     'stt-language', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model',
