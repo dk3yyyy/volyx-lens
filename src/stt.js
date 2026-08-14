@@ -27,16 +27,15 @@ function shouldUseLocalWhisper(transcription, env) {
   );
 }
 
-async function transcribeViaLocalWhisper(wav, env, language, whisperModel) {
-  // Initialize sidecar if not already running. Uses the whisperModel from
-  // settings (falls back to 'base.en'). The sidecar downloads the model in-app
-  // if not already cached, transcribes in-memory (no temp files), and supports
-  // a shared inference queue for You/Them channels.
+// Start (or reuse) the sidecar singleton. The instance is only published to the
+// singleton after start() succeeds, and concurrent requests share the same
+// in-flight startup, so no caller can queue against an unstarted or failed
+// instance. A published instance whose child has exited (running is false) is
+// replaced here on the next request.
+async function startSidecar(modelId, factory) {
   if (!sidecar || !sidecar.running) {
     if (!starting) {
-      const factory =
-        sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
-      const instance = factory(whisperModel);
+      const instance = factory(modelId);
       starting = instance.start().then(() => {
         sidecar = instance;
         starting = null;
@@ -48,15 +47,37 @@ async function transcribeViaLocalWhisper(wav, env, language, whisperModel) {
     }
     await starting;
   }
+  return sidecar;
+}
 
+// Advanced path (VOLYX_LENS_WHISPER_SIDECAR): model comes from the env var.
+async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
+  const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
+  const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
+  const instance = await startSidecar(modelId, factory);
   // Queue the WAV for in-memory transcription (no temp files on disk)
-  const result = await sidecar.queueYou(wav);
+  const result = await instance.queueYou(wav);
   return (result.text || '').trim();
 }
 
-// Reset the lazily initialized sidecar (config changes, shutdown, tests)
+// Local (whisper.cpp) provider: model comes from the Settings UI.
+async function transcribeViaLocalWhisper(wav, env, language, whisperModel, sidecarFactory) {
+  const modelId = whisperModel || 'base.en';
+  const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
+  const instance = await startSidecar(modelId, factory);
+  // Queue the WAV for in-memory transcription (no temp files on disk)
+  const result = await instance.queueYou(wav);
+  return (result.text || '').trim();
+}
+
+// Reset the lazily initialized sidecar (config changes, shutdown, tests).
+// Stops the underlying whisper.cpp child before discarding the singleton so a
+// model-loaded process is not leaked into the next session.
 function resetSidecar() {
-  sidecar = null;
+  if (sidecar) {
+    if (typeof sidecar.stop === 'function') sidecar.stop().catch(() => {});
+    sidecar = null;
+  }
   starting = null;
 }
 
@@ -107,7 +128,7 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   // quantized variants, etc.) and downloaded in-app if not already cached.
   const useLocalWhisper = shouldUseLocalWhisper(transcription, env);
   if (useLocalWhisper) {
-    chain.push({ p: 'local-whisper', fn: (wav) => transcribeViaLocalWhisper(wav, env, transcription.language || '', transcription.whisperModel) });
+    chain.push({ p: 'local-whisper', fn: (wav) => transcribeViaLocalWhisper(wav, env, transcription.language || '', transcription.whisperModel, sidecarFactory) });
   }
   if (transcription.offlineEnabled && offline.ready) {
     chain.push({ p: 'offline', fn: (wav) => offlineTranscribe(wav, { env, language: transcription.language || '', prompt }) });
