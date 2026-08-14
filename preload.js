@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('volyxLens', {
   historyGet: (id) => ipcRenderer.invoke('history:get', id),
   historyDelete: (id) => ipcRenderer.invoke('history:delete', id),
   historyClear: () => ipcRenderer.invoke('history:clear'),
+  historyExport: (id, format) => ipcRenderer.invoke('history:export', { id, format }),
+  historyRecap: (id, confirmed = false) => ipcRenderer.invoke('history:recap', { id, confirmed }),
   diagnosticsGet: () => ipcRenderer.invoke('diagnostics:get'),
   shortcutsGet: () => ipcRenderer.invoke('shortcuts:get'),
   shortcutsRetry: () => ipcRenderer.invoke('shortcuts:retry'),
@@ -62,7 +64,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   relaunch: () => ipcRenderer.send('app:relaunch'),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['audio:level', 'capture:state', 'session:cleared', 'task-context:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcription:state', 'update:state', 'window:dock-state', 'history:changed'];
+    const allowed = ['audio:level', 'capture:state', 'session:cleared', 'task-context:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcription:state', 'update:state', 'window:dock-state', 'history:changed', 'history:recap-token'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }
