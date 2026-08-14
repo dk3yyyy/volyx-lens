@@ -47,6 +47,15 @@ const PROVIDERS = Object.freeze({
   },
 });
 
+// Single source of truth for speech-to-text model defaults shared by the
+// transcription pipeline (realtime-stt, deepgram-realtime, stt) and Settings.
+const STT_MODELS = Object.freeze({
+  realtime: 'gpt-realtime-whisper',
+  deepgram: 'nova-3',
+  openaiFallback: 'gpt-4o-mini-transcribe',
+  geminiFallback: 'gemini-3.5-flash',
+});
+
 function getDefaultSettings() {
   const apiKeys = {};
   const models = {};
@@ -81,11 +90,11 @@ function getDefaultSettings() {
     transcription: {
       mode: 'realtime',
       realtimeProvider: 'openai',
-      realtimeModel: 'gpt-realtime-whisper',
-      deepgramModel: 'nova-3',
+      realtimeModel: STT_MODELS.realtime,
+      deepgramModel: STT_MODELS.deepgram,
       azureRealtimeDeployment: '',
-      fallbackModel: 'gpt-4o-mini-transcribe',
-      geminiFallbackModel: 'gemini-3.5-flash',
+      fallbackModel: STT_MODELS.openaiFallback,
+      geminiFallbackModel: STT_MODELS.geminiFallback,
       offlineEnabled: false,
       offlineCloudFallback: false,
       language: '',
@@ -184,7 +193,7 @@ function resolveRealtimeTranscription(settings) {
   const apiKey = String(isAzure ? (keys.azureRealtime || keys.azure || '') : (keys[provider] || '')).trim();
   const model = String(isAzure
     ? (transcription.azureRealtimeDeployment || '')
-    : (isDeepgram ? (transcription.deepgramModel || 'nova-3') : (transcription.realtimeModel || 'gpt-realtime-whisper'))).trim();
+    : (isDeepgram ? (transcription.deepgramModel || STT_MODELS.deepgram) : (transcription.realtimeModel || STT_MODELS.realtime))).trim();
   let endpoint = null;
   let configurationError = null;
 
@@ -211,6 +220,7 @@ function resolveRealtimeTranscription(settings) {
 
 module.exports = {
   PROVIDERS,
+  STT_MODELS,
   getDefaultSettings,
   normalizeAzureEndpoint,
   normalizeTranscriptionLanguage,

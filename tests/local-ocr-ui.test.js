@@ -75,7 +75,7 @@ test('OCR work and private text are cleared on remove, Undo, Clear, relaunch, qu
   assert.match(main, /result\.removedCapture\) localOcr\.cancel\(result\.removedCapture\.id\)/);
   assert.match(main, /localOcr\.cancelAll\(\)/);
   assert.match(main, /pendingTaskContextOcr\.clear\(\)/);
-  assert.match(main, /relaunchApp\(\)[\s\S]*?clearTaskContext\(\);[\s\S]*?app\.relaunch\(\)/);
-  assert.match(main, /app\.on\('will-quit'[\s\S]*?localOcr\.cancelAll\(\)[\s\S]*?taskContext\.clear\(\)/);
+  assert.match(main, /async function shutdownAll\(\)[\s\S]*?localOcr\.cancelAll\(\);\n\s*clearTaskContext\(\);/);
+  assert.match(main, /app\.on\('before-quit'[\s\S]*?shutdownAll\(\)\.finally\(\s*\(\) => app\.quit\(\)\)/);
   assert.match(main, /if \(!taskContext\.has\(captureId\)\) localOcr\.cancel\(captureId\)/);
 });

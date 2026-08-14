@@ -85,6 +85,10 @@ test('privileged IPC, navigation, and media permission paths are bound to the ex
   assert.match(main, /isTrustedFileOrigin\(request\.securityOrigin\)/);
   assert.match(main, /request\.videoRequested !== true/);
   assert.doesNotMatch(main, /\|\| sources\[0\]/);
+  assert.match(main, /permission === 'display-capture'\) return pendingDisplayCapture \|\| state\.capturing/);
+  assert.match(main, /onTrusted\('capture:display-intent'/);
+  assert.match(preload, /setDisplayCaptureIntent:/);
+  assert.match(renderer, /setDisplayCaptureIntent\(true\)/);
   assert.match(renderer, /\['dragover', 'drop'\]/);
 });
 
@@ -122,16 +126,18 @@ test('capture selection, disconnect cleanup, and settings durability are explici
 
 test('cancellation and realtime failures expose one bounded announcement and fixed error categories', () => {
   const realtime = fs.readFileSync(path.join(root, 'src', 'realtime-stt.js'), 'utf8');
+  const realtimeErrors = fs.readFileSync(path.join(root, 'src', 'realtime-errors.js'), 'utf8');
   assert.doesNotMatch(html, /class="act[^>]+aria-live=/);
   const cancelStart = renderer.indexOf("volyxLens.on('llm:canceled'");
   const cancelEnd = renderer.indexOf("volyxLens.on('llm:confirm-task-context'", cancelStart);
   const cancellation = renderer.slice(cancelStart, cancelEnd);
   assert.match(cancellation, /#assistant-status/);
   assert.doesNotMatch(cancellation, /showStatus\(/);
-  assert.match(realtime, /code: 'realtime_authentication_failed'/);
-  assert.match(realtime, /code: 'realtime_audio_failed'/);
-  assert.match(realtime, /code: 'realtime_transport_failed'/);
-  assert.doesNotMatch(realtime, /code,\s*message,\s*channel/);
+  assert.match(realtimeErrors, /code: 'realtime_authentication_failed'/);
+  assert.match(realtimeErrors, /code: 'realtime_audio_failed'/);
+  assert.match(realtimeErrors, /code: 'realtime_transport_failed'/);
+  assert.match(realtime, /classifyRealtimeError\(error, channel\)/);
+  assert.doesNotMatch(realtimeErrors, /code,\s*message,\s*channel/);
 });
 
 test('permission state is refreshed from macOS rather than trusted as a cached grant', () => {
@@ -148,6 +154,25 @@ test('source startup builds required native helpers before launching Electron', 
   const buildNative = fs.readFileSync(path.join(root, 'scripts', 'build-native.js'), 'utf8');
   assert.match(buildNative, /buildVisionOcr/);
   assert.match(buildNative, /catch\(.*process\.exitCode = 1/s);
+});
+
+test('transient STT errors back off instead of latching transcription off', () => {
+  assert.match(main, /const permanent = status === 403 \|\| status === 401 \|\| code === 'model_not_found'/);
+  assert.match(main, /sttDisabled = true; \/\/ auth\/model errors are not transient/);
+  assert.match(main, /STT_RETRY_BASE_MS \* Math\.pow\(2, sttFailures - 1\)/);
+  assert.match(main, /sttBackoffUntil \&\& Date\.now\(\) < sttBackoffUntil/);
+  assert.match(main, /if \(sttFailures \|\| sttBackoffUntil\) \{ sttFailures = 0; sttBackoffUntil = 0; \} \/\/ recovered/);
+});
+
+test('shutdown is centralized into one awaited shutdownAll', () => {
+  assert.match(main, /async function shutdownAll\(\)/);
+  assert.match(main, /await systemAudioCapture\.stop\(\{ immediate: true \}\)/);
+  assert.match(main, /await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
+  assert.match(main, /app\.on\('before-quit', \(event\) => \{[\s\S]*event\.preventDefault\(\)[\s\S]*shutdownAll\(\)\.finally\(\(\) => app\.quit\(\)\)/);
+  assert.match(main, /function relaunchApp\(\) \{[\s\S]*shutdownAll\(\)\.finally/);
+  assert.match(main, /app\.on\('will-quit', \(\) => \{[\s\S]*globalShortcut\.unregisterAll\(\)/);
+  assert.doesNotMatch(main, /function stopAllAndQuit\(\) \{[\s\S]{0,120}stopTranscriptionPipeline/);
+  assert.doesNotMatch(main, /function relaunchApp\(\) \{[\s\S]{0,120}stopTranscriptionPipeline/);
 });
 
 test('release tags must point to a commit reachable from main', () => {

@@ -1,6 +1,7 @@
 const { VoiceActivityDetector } = require('./voice-activity');
-const { normalizeAzureEndpoint, normalizeTranscriptionLanguage } = require('./provider-config');
+const { STT_MODELS, normalizeAzureEndpoint, normalizeTranscriptionLanguage } = require('./provider-config');
 const { DeepgramRealtimeChannel } = require('./deepgram-realtime');
+const { classifyRealtimeError } = require('./realtime-errors');
 
 const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime';
 
@@ -20,25 +21,8 @@ function buildRealtimeConnection({ provider = 'openai', endpoint, apiKey, model 
   };
 }
 
-function cleanError(error, channel) {
-  const candidate = [error && error.code, error && error.type, error && error.message]
-    .filter(Boolean)
-    .map((value) => String(value).toLowerCase())
-    .join(' ');
-  if (/(auth|api.?key|401|403)/.test(candidate)) {
-    return { code: 'realtime_authentication_failed', message: 'Realtime transcription authentication failed.', channel };
-  }
-  if (candidate.includes('timeout')) {
-    return { code: 'realtime_connection_timeout', message: 'Realtime transcription connection timed out.', channel };
-  }
-  if (/(network|socket|transport|connect|closed|backpressure|ws_)/.test(candidate)) {
-    return { code: 'realtime_transport_failed', message: 'Realtime transcription connection failed.', channel };
-  }
-  if (/(audio|transcription)/.test(candidate)) {
-    return { code: 'realtime_audio_failed', message: 'Realtime transcription could not process this audio segment.', channel };
-  }
-  return { code: 'realtime_failed', message: 'Realtime transcription failed.', channel };
-}
+// Thin provider-tuned alias to the shared classifier in realtime-errors.js.
+const cleanError = (error, channel) => classifyRealtimeError(error, channel);
 
 class OpenAIRealtimeChannel {
   constructor({
@@ -46,7 +30,7 @@ class OpenAIRealtimeChannel {
     channel,
     provider = 'openai',
     endpoint = null,
-    model = 'gpt-realtime-whisper',
+    model = STT_MODELS.realtime,
     language = '',
     delay = 'low',
     sampleRate = 24000,
@@ -329,7 +313,7 @@ class RealtimeTranscriptionManager {
     apiKey,
     provider = 'openai',
     endpoint = null,
-    model = 'gpt-realtime-whisper',
+    model = STT_MODELS.realtime,
     language = '',
     delay = 'low',
     sampleRate = 24000,
