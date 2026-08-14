@@ -36,3 +36,28 @@ test('package.json build.files stays scoped to shipped directories', () => {
     assert.ok(!entry.includes('dev/'), `scaffolding directory must not be packaged (got "${entry}")`);
   }
 });
+
+test('the sidecar resolver and packaging agree on the bundled whisper-server binary', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const resolver = fs.readFileSync(path.join(root, 'src', 'whisper-sidecar.js'), 'utf8');
+
+  const filter = pkg.build.extraResources[0].filter;
+  assert.ok(filter.includes('whisper-server'), 'bundled whisper-server binary must be shippable via extraResources');
+  assert.ok(filter.includes('whisper-server.exe'), 'bundled whisper-server.exe must be shippable via extraResources');
+
+  assert.ok(
+    /path\.join\(resourcesPath, 'native', platform === 'win32' \? 'whisper-server\.exe' : 'whisper-server'\)/.test(resolver),
+    'resolver must look for the packaged whisper-server binary under resources/native',
+  );
+  assert.ok(
+    /whisper-binaries/.test(resolver),
+    'resolver must also look in the runtime-provisioned whisper-binaries directory',
+  );
+});
+
+test('the provisioning downloader is pinned to a whisper.cpp release with real assets', () => {
+  const downloader = fs.readFileSync(path.join(root, 'dev', 'whisper-binary.js'), 'utf8');
+  assert.ok(!/whisper-macos-arm64\.tar\.gz/.test(downloader), 'dead macOS asset names must be removed');
+  assert.ok(!/whisper-linux-x86_64\.tar\.gz/.test(downloader), 'dead Linux asset names must be removed');
+  assert.match(downloader, /WHISPER_CPP_VERSION = 'v1\.9\.2'/, 'downloader must pin to a release that publishes server binaries');
+});

@@ -153,6 +153,47 @@ test('resolveWhisperBinary prefers the env binary over bundled resources', () =>
   }
 });
 
+test('resolveWhisperBinary finds a runtime-provisioned binary in the whisper-binaries dir', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-wsp-'));
+  try {
+    const binariesDir = path.join(dir, 'whisper-binaries', 'v1.9.2');
+    fs.mkdirSync(binariesDir, { recursive: true });
+    const binary = path.join(binariesDir, 'whisper-server');
+    fs.writeFileSync(binary, '#!/bin/sh\nexit 0', { mode: 0o755 });
+    const resolved = resolveWhisperBinary({ env: {}, binariesDir, platform: 'darwin' });
+    assert.equal(resolved.binary, binary);
+    assert.equal(resolved.source, 'provisioned binaries');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolveWhisperBinary prefers env, then provisioned, then bundled resources', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-wsp-'));
+  try {
+    const fromEnv = path.join(dir, 'env-server');
+    fs.writeFileSync(fromEnv, '#!/bin/sh\nexit 0', { mode: 0o755 });
+    const binariesDir = path.join(dir, 'whisper-binaries', 'v1.9.2');
+    fs.mkdirSync(binariesDir, { recursive: true });
+    fs.writeFileSync(path.join(binariesDir, 'whisper-server'), '#!/bin/sh\nexit 0', { mode: 0o755 });
+    const resourcesPath = path.join(dir, 'Resources');
+    const nativeDir = path.join(resourcesPath, 'native');
+    fs.mkdirSync(nativeDir, { recursive: true });
+    fs.writeFileSync(path.join(nativeDir, 'whisper-server'), '#!/bin/sh\nexit 0', { mode: 0o755 });
+
+    const envFirst = resolveWhisperBinary({ env: { VOLYX_LENS_WHISPER_SIDECAR_BIN: fromEnv }, binariesDir, resourcesPath, platform: 'darwin' });
+    assert.equal(envFirst.binary, fromEnv);
+
+    const provisionedSecond = resolveWhisperBinary({ env: {}, binariesDir, resourcesPath, platform: 'darwin' });
+    assert.equal(provisionedSecond.source, 'provisioned binaries');
+
+    const bundledLast = resolveWhisperBinary({ env: {}, binariesDir: '', resourcesPath, platform: 'darwin' });
+    assert.equal(bundledLast.source, 'bundled resources');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('resolveWhisperBinary ignores a non-executable env path and falls back to bundled', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-wsp-'));
   try {

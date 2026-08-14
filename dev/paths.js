@@ -34,7 +34,7 @@ function getModelsDir() {
   return path.join(getUserDataPath(), 'whisper-models');
 }
 
-function getBinariesDir(version = 'v1.7.4') {
+function getBinariesDir(version = 'v1.9.2') {
   return path.join(getUserDataPath(), 'whisper-binaries', version);
 }
 

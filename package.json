@@ -53,7 +53,9 @@
         "to": "native",
         "filter": [
           "volyx-lens-vision-ocr",
-          "volyx-lens-system-audio"
+          "volyx-lens-system-audio",
+          "whisper-server",
+          "whisper-server.exe"
         ]
       }
     ],

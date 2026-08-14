@@ -126,20 +126,30 @@ function verifyModel(modelId, expectedSha256) {
   return { valid: actual === expectedSha256, actual };
 }
 
+// Version of whisper.cpp the runtime-provisioned binaries directory maps to.
+// Must match dev/whisper-binary.js so a downloaded binary is found here.
+const PROVISIONED_BINARY_VERSION = 'v1.9.2';
+
 // Resolve the whisper.cpp server binary used by the sidecar.
-// Precedence: VOLYX_LENS_WHISPER_SIDECAR_BIN env var, then a bundled
-// resources/native/whisper-server binary (packaged builds). Fails with an
-// actionable message instead of a bare MODULE_NOT_FOUND so a missing binary
-// is never surfaced as a confusing require error.
+// Precedence: VOLYX_LENS_WHISPER_SIDECAR_BIN env var, then the runtime
+// provisioned binaries directory (userData/whisper-binaries/<version>), then a
+// bundled resources/native/whisper-server binary when packaging ships one.
+// Fails with an actionable message instead of a bare MODULE_NOT_FOUND so a
+// missing binary is never surfaced as a confusing require error.
 function resolveWhisperBinary({
   env = process.env,
   platform = process.platform,
   resourcesPath = typeof process.resourcesPath === 'string' ? process.resourcesPath : '',
+  binariesDir = '',
   fsImpl = fs,
 } = {}) {
   const candidates = [];
   const fromEnv = String(env.VOLYX_LENS_WHISPER_SIDECAR_BIN || '').trim();
   if (fromEnv) candidates.push({ path: fromEnv, source: 'VOLYX_LENS_WHISPER_SIDECAR_BIN' });
+  if (binariesDir) candidates.push({
+    path: path.join(binariesDir, platform === 'win32' ? 'whisper-server.exe' : 'whisper-server'),
+    source: 'provisioned binaries',
+  });
   if (resourcesPath) candidates.push({
     path: path.join(resourcesPath, 'native', platform === 'win32' ? 'whisper-server.exe' : 'whisper-server'),
     source: 'bundled resources',
@@ -150,7 +160,7 @@ function resolveWhisperBinary({
   const detail = candidates.length
     ? `Tried ${candidates.map((candidate) => `"${candidate.path}" (${candidate.source})`).join(', ')}.`
     : 'No whisper.cpp server binary source is available.';
-  throw new Error(`Whisper sidecar binary not found. Set VOLYX_LENS_WHISPER_SIDECAR_BIN to the whisper-server executable, or provide a bundled binary. ${detail}`);
+  throw new Error(`Whisper sidecar binary not found. Set VOLYX_LENS_WHISPER_SIDECAR_BIN to the whisper-server executable, or run the binary provisioning step that downloads it into the whisper-binaries directory. ${detail}`);
 }
 
 function isExecutableFile(candidate, platform = process.platform, fsImpl = fs) {
@@ -162,6 +172,21 @@ function isExecutableFile(candidate, platform = process.platform, fsImpl = fs) {
   } catch {
     return false;
   }
+}
+
+// Runtime location where the app provisions whisper.cpp server binaries
+// (userData/whisper-binaries/<version>). Mirrors dev/paths.js getBinariesDir
+// so a binary downloaded by the provisioning step is found by the sidecar.
+function defaultBinariesDir(userDataPath = getUserDataPath()) {
+  return path.join(userDataPath, 'whisper-binaries', PROVISIONED_BINARY_VERSION);
+}
+
+function getUserDataPath() {
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getPath === 'function') return app.getPath('userData');
+  } catch {}
+  return path.join(os.homedir(), '.volyx-lens');
 }
 
 // WhisperSidecar class - persistent sidecar process with shared inference queue
@@ -242,7 +267,7 @@ class WhisperSidecar {
     ];
 
     this._setState('starting');
-    const { binary: execArg } = resolveWhisperBinary();
+    const { binary: execArg } = resolveWhisperBinary({ binariesDir: defaultBinariesDir() });
     const child = require('child_process').spawn(execArg, args, {
       stdio: ['ignore', 'ignore', 'pipe'],
       env: { ...process.env, PATH: process.env.PATH },

@@ -18,23 +18,24 @@ const { ensureDir, getBinariesDir } = require('./paths');
 
 const BINARY_BASE_URL = process.env.WHISPER_BINARY_BASE || 'https://github.com/ggerganov/whisper.cpp/releases/download';
 
-// whisper.cpp version to use - pin to a known good release
-const WHISPER_CPP_VERSION = 'v1.7.4';
+// whisper.cpp version to use - pin to a known good release with real assets
+const WHISPER_CPP_VERSION = 'v1.9.2';
 
-// Platform/arch mapping to whisper.cpp release assets
+// Platform/arch mapping to whisper.cpp release assets.
+// Note: whisper.cpp does not publish a prebuilt whisper-server binary for
+// macOS; the darwin asset is an XCFramework (a library, not an executable).
+// macOS must build whisper-server from source or set VOLYX_LENS_WHISPER_SIDECAR_BIN.
 const BINARY_MAP = {
-  'darwin-arm64': { asset: 'whisper-macos-arm64.tar.gz', binary: 'whisper-server' },
-  'darwin-x64': { asset: 'whisper-macos-x86_64.tar.gz', binary: 'whisper-server' },
-  'linux-arm64': { asset: 'whisper-linux-arm64.tar.gz', binary: 'whisper-server' },
-  'linux-x64': { asset: 'whisper-linux-x86_64.tar.gz', binary: 'whisper-server' },
-  'win32-x64': { asset: 'whisper-win64-x86_64.zip', binary: 'whisper-server.exe' },
+  'linux-arm64': { asset: 'whisper-bin-ubuntu-arm64.tar.gz', binary: 'whisper-server' },
+  'linux-x64': { asset: 'whisper-bin-ubuntu-x64.tar.gz', binary: 'whisper-server' },
+  'win32-x64': { asset: 'whisper-bin-x64.zip', binary: 'whisper-server.exe' },
 };
 
 function getPlatformKey() {
   const platform = os.platform();
   const arch = os.arch();
   if (platform === 'win32') return 'win32-x64';
-  if (platform === 'darwin') return arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+  if (platform === 'darwin') return 'darwin';
   if (platform === 'linux') return arch === 'arm64' ? 'linux-arm64' : 'linux-x64';
   throw new Error(`Unsupported platform: ${platform} ${arch}`);
 }
@@ -95,6 +96,12 @@ async function extractZip(zipPath, destDir) {
 
 async function ensureBinary(onProgress) {
   const key = getPlatformKey();
+  if (key === 'darwin') {
+    throw new Error(
+      'whisper.cpp does not publish a prebuilt whisper-server binary for macOS. ' +
+      'Build whisper-server from source or set VOLYX_LENS_WHISPER_SIDECAR_BIN.',
+    );
+  }
   const info = BINARY_MAP[key];
   const binaryPath = getBinaryPath();
 
