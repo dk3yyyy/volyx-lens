@@ -36,22 +36,27 @@ const { validateOfflineConfig, transcribeOffline } = require('../src/offline-stt
 const CACHE_DIR = path.join(__dirname, '..', 'node_modules', '.cache', 'vad-eval');
 
 // Pass/fail guards, derived from the measured baselines (whisper.cpp base.en:
-// empty-turn 0%, false-negative 0%, boundary 92ms start / 0ms end, WER 17%).
-// WER is only enforced when a whisper adapter actually ran.
+// empty-turn 0%, false-negative 0%, boundary 92ms start / 634ms end, WER 17%).
+// The end boundary includes the detector's inherent hangover (silenceMs 700),
+// so the mean sits well above zero; the threshold allows ~2.4x headroom and
+// trips on genuine end-detection regressions (double hangover, stuck-open
+// detector). WER is only enforced when a whisper adapter actually ran.
 const THRESHOLDS = Object.freeze({
   emptyTurnRate: 0.02,
   falseNegativeRate: 0.02,
   meanStartErrorMs: 200,
-  meanEndErrorMs: 200,
+  meanEndErrorMs: 1500,
   truncationCount: 1,
   wer: 0.3,
 });
 
 const CHUNK_MS = 50;
 const LEAD_MS = 500;
+// Trailing silence must exceed the VAD hangover (silenceMs 700) so the final
+// utterance closes inside the fixture; otherwise the end boundary is never
+// measured and the end-error metric degrades to Math.abs(null) === 0.
+const TRAIL_MS = 1500;
 const DEFAULT_RATE = 150;
-const START_TOLERANCE_MS = 400;
-const END_TOLERANCE_MS = 900;
 const TRUNCATION_TOLERANCE_MS = 1500;
 const VAD_OPTIONS = { threshold: 160, silenceMs: 700, maxUtteranceMs: 20000 };
 
@@ -167,11 +172,16 @@ function insertSilenceGap(pcm, gapMs, sampleRate = AUDIO_SAMPLE_RATE) {
 }
 
 // -------- fixture manifest (the repeatable evaluation set) --------
+// Audio-generation constants are part of the cache key: changing the lead/trail
+// length or sample rate must invalidate cached WAVs, not just fixture text.
 function fixtureHash(fixture) {
-  const canonical = JSON.stringify(Object.keys(fixture).sort().reduce((acc, key) => {
-    acc[key] = fixture[key];
-    return acc;
-  }, {}));
+  const canonical = JSON.stringify({
+    gen: [LEAD_MS, TRAIL_MS, AUDIO_SAMPLE_RATE].join(','),
+    ...Object.keys(fixture).sort().reduce((acc, key) => {
+      acc[key] = fixture[key];
+      return acc;
+    }, {}),
+  });
   return crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 16);
 }
 
@@ -257,7 +267,7 @@ function generateFixture(fixture) {
 
 function buildFixtureAudio(speech, fixture) {
   const lead = silencePcm(LEAD_MS / 1000);
-  const trail = silencePcm(LEAD_MS / 1000);
+  const trail = silencePcm(TRAIL_MS / 1000);
   let pcmOut = Buffer.concat([lead, speech, trail]);
   if (fixture.pauseMs) pcmOut = insertSilenceGap(pcmOut, fixture.pauseMs);
   if (fixture.noise) {
@@ -369,6 +379,25 @@ async function generateAll(force) {
   return { fixtures: usable, generated, skippedVoices: fixtures.length - usable.length };
 }
 
+// Fixture ids whose cached WAVs no longer match the current definitions
+// (text, voice, rate, pause, noise, SNR, overlay, or generation constants).
+// Report-only mode must refuse these: evaluating them with the current
+// boundary math would produce invalid metrics from stale audio.
+function staleFixtureIds(fixtures, manifestEntries = null) {
+  if (manifestEntries === null) {
+    const manifestPath = path.join(CACHE_DIR, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) return fixtures.map((f) => f.id);
+    manifestEntries = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  }
+  const hashById = new Map();
+  for (const entry of manifestEntries) {
+    if (entry && typeof entry === 'object' && entry.id && typeof entry.hash === 'string') {
+      hashById.set(entry.id, entry.hash);
+    }
+  }
+  return fixtures.filter((f) => hashById.get(f.id) !== fixtureHash(f)).map((f) => f.id);
+}
+
 async function runEvaluation(fixtures) {
   const whisper = validateOfflineConfig(process.env);
   const rows = [];
@@ -376,22 +405,7 @@ async function runEvaluation(fixtures) {
     const wav = fs.readFileSync(path.join(CACHE_DIR, `${fixture.id}.wav`));
     const { pcm, sampleRate } = decodeWav(wav);
     const result = evaluatePcm(pcm, { sampleRate, fixture });
-    const region = fixtureRegion(fixture);
-    const expectedEndMs = region ? result.durationMs - LEAD_MS : null;
-    const firstStart = result.starts[0];
-    const lastStop = result.stops.length ? result.stops[result.stops.length - 1] : null;
-    const row = {
-      id: fixture.id,
-      category: fixture.category,
-      kind: fixture.kind,
-      durationMs: result.durationMs,
-      utterances: result.utterances.length,
-      splits: Math.max(0, result.utterances.length - (fixture.kind === 'speech' ? 1 : 0)),
-      forced: result.utterances.some((u) => u.forced),
-      startErrMs: region && firstStart !== undefined ? firstStart - region.startMs : null,
-      endErrMs: region && lastStop !== null ? expectedEndMs - lastStop : null,
-      detected: result.starts.length > 0,
-    };
+    const row = buildRow(fixture, result);
     if (whisper.ready && fixture.kind === 'speech' && !fixture.overlay) {
       try {
         const transcript = await transcribeOffline(pcmToWav(pcm, sampleRate), { env: process.env });
@@ -406,16 +420,39 @@ async function runEvaluation(fixtures) {
   return { rows, whisperReady: whisper.ready };
 }
 
+// One evaluated row. The detected end is the last utterance's endMs — a number
+// covering natural close, forced cap, and speech still open at stream end — not
+// the raw stop events, which are {type, ms} objects (subtracting one yields NaN).
+function buildRow(fixture, result) {
+  const region = fixtureRegion(fixture);
+  const expectedEndMs = region ? result.durationMs - TRAIL_MS : null;
+  const firstStart = result.starts[0];
+  const lastEndMs = result.utterances.length ? result.utterances[result.utterances.length - 1].endMs : null;
+  return {
+    id: fixture.id,
+    category: fixture.category,
+    kind: fixture.kind,
+    durationMs: result.durationMs,
+    utterances: result.utterances.length,
+    splits: Math.max(0, result.utterances.length - (fixture.kind === 'speech' ? 1 : 0)),
+    forced: result.utterances.some((u) => u.forced),
+    startErrMs: region && firstStart !== undefined ? firstStart - region.startMs : null,
+    endErrMs: region && lastEndMs !== null ? expectedEndMs - lastEndMs : null,
+    detected: result.starts.length > 0,
+  };
+}
+
 function summarize(rows) {
   const speech = rows.filter((r) => r.kind === 'speech');
   const empty = rows.filter((r) => r.kind === 'empty');
   const boundaryRows = rows.filter((r) => r.startErrMs !== null && r.startErrMs !== undefined);
+  const endMeasured = boundaryRows.filter((r) => r.endErrMs !== null && r.endErrMs !== undefined);
   const werRows = speech.filter((r) => typeof r.wer === 'number');
   const emptyTurnRate = empty.length ? empty.filter((r) => r.detected).length / empty.length : 0;
   const falseNegativeRate = speech.length ? speech.filter((r) => !r.detected).length / speech.length : 0;
-  const truncations = boundaryRows.filter((r) => r.endErrMs !== null && r.endErrMs > TRUNCATION_TOLERANCE_MS).length;
+  const truncations = endMeasured.filter((r) => r.endErrMs > TRUNCATION_TOLERANCE_MS).length;
   const startErrs = boundaryRows.map((r) => Math.abs(r.startErrMs)).filter((v) => Number.isFinite(v));
-  const endErrs = boundaryRows.map((r) => Math.abs(r.endErrMs)).filter((v) => Number.isFinite(v));
+  const endErrs = endMeasured.map((r) => Math.abs(r.endErrMs));
   const mean = (values) => (values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null);
   return {
     fixtures: rows.length,
@@ -443,6 +480,20 @@ function checkThresholds(summary, thresholds = THRESHOLDS) {
   enforce('truncationCount', summary.truncationCount, thresholds.truncationCount);
   enforce('wer', summary.werMean, thresholds.wer);
   return violations;
+}
+
+// The gate must never pass on a partial evaluation: on machines without every
+// TTS voice, missing speech fixtures are skipped and the remaining metrics are
+// vacuous (0% false negatives over nothing). Return a reason string when the
+// evaluated set is smaller than the full manifest, or null when coverage is
+// complete.
+function coverageIssue(evaluatedFixtures, fullFixtures) {
+  const evaluatedSpeech = evaluatedFixtures.filter((f) => f.kind === 'speech').length;
+  const fullSpeech = fullFixtures.filter((f) => f.kind === 'speech').length;
+  if (evaluatedSpeech < fullSpeech) {
+    return `${fullSpeech - evaluatedSpeech} of ${fullSpeech} speech fixture(s) skipped (TTS voice not installed)`;
+  }
+  return null;
 }
 
 function printReport(summary, rows, whisperReady) {
@@ -479,29 +530,44 @@ async function main() {
     const file = path.resolve(thresholdsArg.slice('--thresholds='.length));
     thresholds = JSON.parse(fs.readFileSync(file, 'utf8'));
   }
-  if (!reportOnly) {
-    const { fixtures, generated, skippedVoices } = await generateAll(regenerate);
-    if (skippedVoices) console.log(`Skipped ${skippedVoices} accent fixture(s) whose voice is not installed.`);
-    if (generated) console.log(`Generated ${generated} fixture(s) into ${CACHE_DIR}.`);
-  }
   const fixtures = buildFixtures().filter((fixture) => {
     if (fixture.kind !== 'speech') return true;
     const voice = fixture.voice || 'Samantha';
     return availableVoices().has(voice);
   });
+  if (!reportOnly) {
+    const { generated, skippedVoices } = await generateAll(regenerate);
+    if (skippedVoices) console.log(`Skipped ${skippedVoices} accent fixture(s) whose voice is not installed.`);
+    if (generated) console.log(`Generated ${generated} fixture(s) into ${CACHE_DIR}.`);
+  } else {
+    const stale = staleFixtureIds(fixtures);
+    if (stale.length) {
+      console.error(`[vad-eval] ${stale.length} fixture(s) cached with stale or missing definitions: ${stale.join(', ')}.`);
+      console.error('Re-run without --report (or with --regenerate) so the cache is rebuilt, then report again.');
+      process.exitCode = 1;
+      return;
+    }
+  }
   const { rows, whisperReady } = await runEvaluation(fixtures);
   const summary = summarize(rows);
   printReport(summary, rows, whisperReady);
   if (enforce) {
-    const violations = checkThresholds(summary, thresholds);
-    if (violations.length) {
-      console.log('\nTHRESHOLD VIOLATIONS:');
-      for (const violation of violations) {
-        console.log(`  ${violation.name}: ${violation.actual} exceeds limit ${violation.limit}`);
-      }
+    const coverage = coverageIssue(fixtures, buildFixtures());
+    if (coverage) {
+      console.log(`\nCHECK REFUSED: ${coverage}; the gate would pass vacuously.`);
+      console.log('Install the missing macOS voices (or run on a machine with the full set) before --check.');
       process.exitCode = 1;
     } else {
-      console.log('\nAll thresholds passed.');
+      const violations = checkThresholds(summary, thresholds);
+      if (violations.length) {
+        console.log('\nTHRESHOLD VIOLATIONS:');
+        for (const violation of violations) {
+          console.log(`  ${violation.name}: ${violation.actual} exceeds limit ${violation.limit}`);
+        }
+        process.exitCode = 1;
+      } else {
+        console.log('\nAll thresholds passed.');
+      }
     }
   }
   fs.writeFileSync(path.join(CACHE_DIR, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), summary, thresholds, rows }, null, 2));
@@ -525,9 +591,13 @@ module.exports = {
   insertSilenceGap,
   buildFixtures,
   fixtureHash,
+  staleFixtureIds,
+  buildRow,
   evaluatePcm,
   normalizeText,
   wer,
+  summarize,
+  coverageIssue,
   THRESHOLDS,
   checkThresholds,
 };

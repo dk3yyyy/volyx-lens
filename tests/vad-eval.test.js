@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   mulberry32, decodeWav, silencePcm, noisePcm, scaleToRms, mixPcm, insertSilenceGap,
-  buildFixtures, fixtureHash, evaluatePcm, normalizeText, wer, THRESHOLDS, checkThresholds,
+  buildFixtures, fixtureHash, staleFixtureIds, buildRow, evaluatePcm, summarize, coverageIssue, normalizeText, wer,
+  THRESHOLDS, checkThresholds,
 } = require('../scripts/vad-accuracy-eval');
 const { pcmToWav } = require('../src/wav');
 
@@ -95,10 +96,27 @@ test('checkThresholds passes a clean summary and skips unmeasured WER', () => {
 test('checkThresholds flags regressions past the baseline limits', () => {
   const summary = {
     emptyTurnRate: 0.15, falseNegativeRate: 0.1, truncationCount: 3,
-    meanStartErrorMs: 400, meanEndErrorMs: 250, werMean: 0.45,
+    meanStartErrorMs: 400, meanEndErrorMs: 1600, werMean: 0.45,
   };
   const violations = checkThresholds(summary);
   assert.deepEqual(violations.map((v) => v.name), ['emptyTurnRate', 'falseNegativeRate', 'meanStartErrorMs', 'meanEndErrorMs', 'truncationCount', 'wer']);
+});
+
+test('coverageIssue reports a partial evaluation and passes on the full set', () => {
+  const full = buildFixtures();
+  const speech = full.filter((f) => f.kind === 'speech');
+  // One missing TTS voice: drop a single speech fixture.
+  const partial = full.filter((f) => f.id !== 'accent-us');
+  const issue = coverageIssue(partial, full);
+  assert.ok(issue, 'missing a speech fixture must be reported');
+  assert.match(issue, /1 of 20 speech fixture\(s\) skipped/);
+  // Full set: no issue.
+  assert.equal(coverageIssue(full, full), null);
+  // Zero speech evaluated is the vacuous-pass case: it must be reported.
+  const emptiesOnly = full.filter((f) => f.kind === 'empty');
+  assert.ok(coverageIssue(emptiesOnly, full), 'no speech fixtures evaluated must be reported');
+  // Robust against a caller that passes the same fixtures twice.
+  assert.equal(coverageIssue(speech, speech), null);
 });
 
 test('THRESHOLDS covers every enforced metric', () => {
@@ -114,6 +132,54 @@ test('fixtureHash is stable for identical definitions and changes with any param
   assert.notEqual(fixtureHash(base), fixtureHash({ ...base, text: 'a different sentence.' }));
   assert.notEqual(fixtureHash(base), fixtureHash({ ...base, voice: 'Daniel' }));
   assert.notEqual(fixtureHash(base), fixtureHash({ ...base, rate: 120 }));
+});
+
+test('integration: endErrMs is a finite number through evaluatePcm -> buildRow -> summarize', () => {
+  // Mirror a speech fixture: LEAD_MS lead, 1s of loud speech, TRAIL_MS silence.
+  // The trail (1500ms) exceeds the VAD hangover (silenceMs 700), so the final
+  // utterance closes naturally and the end boundary is actually measurable.
+  const fixture = { id: 'int-end-test', category: 'technical', kind: 'speech', text: 'integration fixture' };
+  const lead = silencePcm(0.5, 24000);
+  const burst = Buffer.alloc(24000 * 2); // 1 second
+  for (let i = 0; i < burst.length; i += 2) burst.writeInt16LE(18000, i);
+  const trail = silencePcm(1.5, 24000);
+  const result = evaluatePcm(Buffer.concat([lead, burst, trail]), { sampleRate: 24000, fixture });
+  const row = buildRow(fixture, result);
+  // Regression guard: this was NaN (object minus number) or null (trail shorter
+  // than the hangover, later Math.abs(null) === 0) before the fix.
+  assert.equal(Number.isFinite(row.endErrMs), true, `endErrMs must be finite, got ${row.endErrMs}`);
+  assert.ok(row.endErrMs < 0, 'detected end trails the true end by the VAD hangover');
+  assert.ok(Math.abs(row.endErrMs) <= 1200, `end error within hangover tolerance, got ${row.endErrMs}`);
+  const summary = summarize([row]);
+  assert.equal(Number.isFinite(summary.meanEndErrorMs), true, 'meanEndErrorMs must be finite');
+  assert.equal(summary.truncationCount, 0, 'natural close must not count as truncated');
+});
+
+test('integration: an early-close (false gap) is counted as truncated', () => {
+  // Speech that closes early and never reopens: lead, 1s speech, then 4.5s of
+  // silence. The detector closes at ~speech end + hangover (~2.2s), but the
+  // expected end is durationMs - TRAIL_MS (6s - 1.5s = 4.5s), so endErrMs is
+  // strongly positive and exceeds the truncation tolerance.
+  const fixture = { id: 'int-trunc-test', category: 'technical', kind: 'speech', text: 'truncation fixture' };
+  const lead = silencePcm(0.5, 24000);
+  const burst = Buffer.alloc(24000 * 2); // 1 second
+  for (let i = 0; i < burst.length; i += 2) burst.writeInt16LE(18000, i);
+  const gap = silencePcm(4.5, 24000); // long trailing silence, no speech after
+  const result = evaluatePcm(Buffer.concat([lead, burst, gap]), { sampleRate: 24000, fixture });
+  const row = buildRow(fixture, result);
+  assert.equal(Number.isFinite(row.endErrMs), true);
+  const summary = summarize([row]);
+  assert.ok(summary.truncationCount >= 1, `early close must be truncated, endErrMs=${row.endErrMs}`);
+});
+
+test('staleFixtureIds refuses report-only evaluation of an incompatible cache', () => {
+  const fixtures = buildFixtures();
+  const current = fixtures.map((f) => ({ id: f.id, hash: fixtureHash(f) }));
+  assert.deepEqual(staleFixtureIds(fixtures, current), [], 'current manifest has no stale fixtures');
+  const oneStale = current.map((e) => e.id === 'noise-white-6' ? { id: e.id, hash: 'stale-hash' } : e);
+  assert.deepEqual(staleFixtureIds(fixtures, oneStale), ['noise-white-6']);
+  assert.deepEqual(staleFixtureIds(fixtures, fixtures.map((f) => f.id)), fixtures.map((f) => f.id), 'legacy id-only manifest is all stale');
+  assert.deepEqual(staleFixtureIds(fixtures, []), fixtures.map((f) => f.id), 'missing manifest is all stale');
 });
 
 test('evaluatePcm keeps speech continuing after the maxUtteranceMs cap', () => {
