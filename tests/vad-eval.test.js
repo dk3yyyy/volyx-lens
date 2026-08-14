@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   mulberry32, decodeWav, silencePcm, noisePcm, scaleToRms, mixPcm, insertSilenceGap,
-  buildFixtures, evaluatePcm, normalizeText, wer, THRESHOLDS, checkThresholds,
+  buildFixtures, fixtureHash, evaluatePcm, normalizeText, wer, THRESHOLDS, checkThresholds,
 } = require('../scripts/vad-accuracy-eval');
 const { pcmToWav } = require('../src/wav');
 
@@ -107,11 +107,22 @@ test('THRESHOLDS covers every enforced metric', () => {
   }
 });
 
-test('evaluatePcm applies the maxUtteranceMs cap as a forced stop', () => {
+test('fixtureHash is stable for identical definitions and changes with any parameter', () => {
+  const base = buildFixtures().find((f) => f.id === 'noise-white-6');
+  assert.equal(fixtureHash(base), fixtureHash({ ...base }));
+  assert.notEqual(fixtureHash(base), fixtureHash({ ...base, snrDb: 12 }));
+  assert.notEqual(fixtureHash(base), fixtureHash({ ...base, text: 'a different sentence.' }));
+  assert.notEqual(fixtureHash(base), fixtureHash({ ...base, voice: 'Daniel' }));
+  assert.notEqual(fixtureHash(base), fixtureHash({ ...base, rate: 120 }));
+});
+
+test('evaluatePcm keeps speech continuing after the maxUtteranceMs cap', () => {
   const burst = Buffer.alloc(24000 * 2); // 1 second
   for (let i = 0; i < burst.length; i += 2) burst.writeInt16LE(18000, i);
   const result = evaluatePcm(burst, { vadOptions: { maxUtteranceMs: 300 } });
-  assert.equal(result.utterances.length, 1);
+  assert.ok(result.utterances.length > 1, 'post-cap speech must not be dropped');
   assert.equal(result.utterances[0].forced, true);
   assert.ok(result.utterances[0].endMs <= 500);
+  assert.equal(result.utterances.at(-1).forced, false);
+  assert.ok(result.utterances.at(-1).endMs >= 950, 'continuation reaches the end of the buffer');
 });
