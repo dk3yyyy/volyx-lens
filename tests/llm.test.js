@@ -68,6 +68,60 @@ test('DeepSeek routes through its official OpenAI-compatible endpoint', async ()
   assert.equal(fake.instances[0].requests[0].model, 'deepseek-v4-flash');
 });
 
+test('Groq routes through its official OpenAI-compatible endpoint', async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'groq';
+  settings.apiKeys.groq = 'groq-test-key';
+
+  const fake = fakeOpenAI();
+  const llm = createLLM(settings, { OpenAI: fake.FakeOpenAI });
+  await llm.stream(baseParams);
+
+  assert.equal(fake.instances[0].options.baseURL, 'https://api.groq.com/openai/v1');
+  assert.equal(fake.instances[0].requests[0].model, 'llama-3.1-8b-instant');
+});
+
+test('OpenRouter routes through its official OpenAI-compatible endpoint', async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'openrouter';
+  settings.apiKeys.openrouter = 'openrouter-test-key';
+
+  const fake = fakeOpenAI();
+  const llm = createLLM(settings, { OpenAI: fake.FakeOpenAI });
+  await llm.stream(baseParams);
+
+  assert.equal(fake.instances[0].options.baseURL, 'https://openrouter.ai/api/v1');
+  assert.equal(fake.instances[0].requests[0].model, 'meta-llama/llama-3.1-8b-instruct');
+});
+
+test('Groq refuses to send screenshots to its text-only API', async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'groq';
+  settings.apiKeys.groq = 'groq-test-key';
+
+  const fake = fakeOpenAI();
+  const llm = createLLM(settings, { OpenAI: fake.FakeOpenAI });
+
+  await assert.rejects(
+    llm.stream({ ...baseParams, imageDataUrl: null, imageDataUrls: ['data:image/png;base64,AA=='] }),
+    /does not support image input/i,
+  );
+  assert.equal(fake.instances.length, 0);
+});
+
+test('Ollama routes to a local OpenAI-compatible endpoint without an API key', async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'ollama';
+
+  const fake = fakeOpenAI();
+  const llm = createLLM(settings, { OpenAI: fake.FakeOpenAI });
+  await llm.stream(baseParams);
+
+  assert.equal(fake.instances[0].options.baseURL, 'http://localhost:11434/v1');
+  assert.equal(fake.instances[0].options.apiKey, 'ollama');
+  assert.equal(fake.instances[0].requests[0].model, 'llama3.2');
+});
+
 test('OpenAI-compatible providers preserve multiple screen images in capture order', async () => {
   const settings = getDefaultSettings();
   settings.provider = 'openai';

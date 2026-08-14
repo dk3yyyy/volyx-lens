@@ -144,12 +144,15 @@
           <button id="provider-tab-gemini" role="tab" aria-controls="provider-config-panel" data-provider="gemini"><span>Gemini</span><small class="provider-default-mark">Default</small></button>
           <button id="provider-tab-azure" role="tab" aria-controls="provider-config-panel" data-provider="azure"><span>Azure Foundry</span><small class="provider-default-mark">Default</small></button>
           <button id="provider-tab-deepseek" role="tab" aria-controls="provider-config-panel" data-provider="deepseek"><span>DeepSeek</span><small class="provider-default-mark">Default</small></button>
+          <button id="provider-tab-groq" role="tab" aria-controls="provider-config-panel" data-provider="groq"><span>Groq</span><small class="provider-default-mark">Default</small></button>
+          <button id="provider-tab-openrouter" role="tab" aria-controls="provider-config-panel" data-provider="openrouter"><span>OpenRouter</span><small class="provider-default-mark">Default</small></button>
+          <button id="provider-tab-ollama" role="tab" aria-controls="provider-config-panel" data-provider="ollama"><span>Ollama</span><small class="provider-default-mark">Default</small></button>
         </div>
 
         <div class="provider-config-panel" id="provider-config-panel" role="tabpanel" tabindex="0" aria-labelledby="provider-tab-openai">
         <div class="provider-routing-card">
           <div class="provider-routing-head"><div><strong id="provider-view-title">OpenAI</strong><span id="provider-view-state">Default response provider</span></div><button id="provider-default-btn" type="button">Use as default</button></div>
-          <div class="s-field"><label for="provider-fallback">Fallback</label><select id="provider-fallback"><option value="">None</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="azure">Azure Foundry</option><option value="deepseek">DeepSeek</option></select></div>
+          <div class="s-field"><label for="provider-fallback">Fallback</label><select id="provider-fallback"><option value="">None</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="azure">Azure Foundry</option><option value="deepseek">DeepSeek</option><option value="groq">Groq</option><option value="openrouter">OpenRouter</option><option value="ollama">Ollama</option></select></div>
           <div class="s-note">Volyx Lens uses the default provider for answers. The fallback is tried only when the default is unavailable or fails before producing any text; it never mixes two partial answers. Transcription provider settings remain separate below.</div>
         </div>
 
@@ -159,16 +162,23 @@
         <div class="s-field key-field provider-config-row hidden" data-provider-config="gemini"><label for="key-gemini">API key</label><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="new-password" /><button class="key-clear" data-key="gemini" type="button">Clear</button></div>
         <div class="s-field key-field provider-config-row hidden" data-provider-config="azure"><label for="key-azure">API key</label><input id="key-azure" type="password" placeholder="Foundry resource key" autocomplete="new-password" /><button class="key-clear" data-key="azure" type="button">Clear</button></div>
         <div class="s-field key-field provider-config-row hidden" data-provider-config="deepseek"><label for="key-deepseek">API key</label><input id="key-deepseek" type="password" placeholder="sk-..." autocomplete="new-password" /><button class="key-clear" data-key="deepseek" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="groq"><label for="key-groq">API key</label><input id="key-groq" type="password" placeholder="gsk_..." autocomplete="new-password" /><button class="key-clear" data-key="groq" type="button">Clear</button></div>
+        <div class="s-field key-field provider-config-row hidden" data-provider-config="openrouter"><label for="key-openrouter">API key</label><input id="key-openrouter" type="password" placeholder="sk-or-v1-..." autocomplete="new-password" /><button class="key-clear" data-key="openrouter" type="button">Clear</button></div>
 
         <div class="provider-config-row hidden" data-provider-config="azure">
           <label class="s-label">Azure Foundry endpoint <span class="s-hint">unified OpenAI-compatible endpoint</span></label>
           <div class="s-field"><label for="endpoint-azure">Endpoint</label><input id="endpoint-azure" type="url" placeholder="https://resource.services.ai.azure.com/openai/v1" autocomplete="off" /></div>
         </div>
 
+        <div class="provider-config-row hidden" data-provider-config="ollama">
+          <label class="s-label">Local server <span class="s-hint">no API key required</span></label>
+          <div class="s-note">Connects to a local Ollama server's OpenAI-compatible API at <code>http://localhost:11434/v1</code>. Install and run Ollama, then pull a model (for example <code>ollama pull llama3.2</code>). Vision support depends on the model you pull.</div>
+        </div>
+
         <label class="s-label">Models <span class="s-hint" id="provider-model-hint">used by the selected provider</span></label>
         <div class="s-field"><label for="model-fast">Fast</label><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><label for="model-smart">Smart</label><input id="model-smart" type="text" autocomplete="off" /></div>
-        <div id="provider-capability-note" class="s-note hidden">DeepSeek is text-only in Volyx Lens. Meeting and transcript modes work; screen-only analysis requires a vision-capable provider.</div>
+        <div id="provider-capability-note" class="s-note hidden">This provider is text-only in Volyx Lens. Meeting and transcript modes work; screen-only analysis requires a vision-capable provider.</div>
 
         <div class="provider-test-card">
           <div class="provider-test-copy"><strong>Connection test</strong><span>Sends one minimal text-only request to the selected provider. It never includes screenshots, transcript, or personal context, but a small provider charge may apply.</span></div>

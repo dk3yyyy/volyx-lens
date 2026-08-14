@@ -40,7 +40,7 @@ Nothing is routed through a VolyxAI server. Provider requests go directly from t
 - **Screen-aware assistance** — ask about the visible screen, a conversation, or both.
 - **Separated meeting transcript** — stable timestamped **You** and **Them** turns.
 - **Task Context** — save multiple screens locally, pin important captures, deduplicate near-identical views, and attach a bounded relevant set only when you explicitly ask.
-- **Provider choice** — OpenAI, Anthropic, Gemini, Azure Foundry, and DeepSeek for responses; OpenAI, Azure, Deepgram, or optional local Whisper for transcription.
+- **Provider choice** — OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, or a local Ollama server for responses; OpenAI, Azure, Deepgram, or optional local Whisper for transcription.
 - **Personal context** — import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls** — clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
 - **Native macOS behavior** — compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
@@ -130,6 +130,9 @@ Open Settings with `⌘` `,` or the `…` button. Choose a response provider, en
 | **Google Gemini** | responses + batch transcription | Gemini API key |
 | **Azure Foundry** | responses + realtime transcription | resource key, official resource endpoint, and exact deployment names |
 | **DeepSeek** | text responses | screen analysis requires a vision-capable default/fallback |
+| **Groq** | text responses | API key; fast Llama models served on Groq's LPU |
+| **OpenRouter** | responses | API key; routes to many hosted models with one key |
+| **Ollama** | local responses | no key; local server with the OpenAI-compatible API (`http://localhost:11434/v1`); pull a model first |
 | **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
 | **Local Whisper** | optional offline batch transcription | externally installed `whisper-cli` and model; disabled by default |
 

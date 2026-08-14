@@ -1238,7 +1238,7 @@
   $('#audio-mic-enabled').addEventListener('change', enforceAudioChannelSelection);
   $('#audio-system-enabled').addEventListener('change', enforceAudioChannelSelection);
 
-  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek' });
+  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', openrouter: 'OpenRouter', ollama: 'Ollama' });
   function clearProviderTestResult() {
     const result = $('#provider-test-result');
     result.className = 'provider-test-result hidden';
@@ -1264,12 +1264,19 @@
     document.querySelectorAll('[data-provider-config]').forEach((row) => row.classList.toggle('hidden', row.dataset.providerConfig !== providerView));
     $('#provider-view-title').textContent = label;
     const isDefault = providerView === settings.provider;
-    $('#provider-view-state').textContent = isDefault ? 'Default response provider' : (present[providerView] ? 'API key saved' : 'Not configured');
+    const keyless = providerView === 'ollama';
+    if (keyless) {
+      $('#provider-view-state').textContent = isDefault ? 'Default response provider · local' : 'Local · no API key required';
+    } else {
+      $('#provider-view-state').textContent = isDefault ? 'Default response provider' : (present[providerView] ? 'API key saved' : 'Not configured');
+    }
     $('#provider-default-btn').disabled = isDefault;
     $('#provider-default-btn').textContent = isDefault ? 'Current default' : 'Use as default';
+    $('#provider-key-label').classList.toggle('hidden', keyless);
     $('#provider-key-label').childNodes[0].nodeValue = `${label} API key `;
     $('#provider-model-hint').textContent = providerView === 'azure' ? 'exact Azure deployment names' : `used by ${label}`;
-    $('#provider-capability-note').classList.toggle('hidden', providerView !== 'deepseek');
+    const capability = (settings.providerCapabilities || {})[providerView] || {};
+    $('#provider-capability-note').classList.toggle('hidden', capability.supportsVision !== false);
     const models = settings.models[providerView] || { fast: '', smart: '' };
     $('#model-fast').value = models.fast || '';
     $('#model-smart').value = models.smart || '';
@@ -1289,7 +1296,7 @@
 
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
-    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key' };
+    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key' };
     for (const provider of Object.keys(keyPlaceholders)) {
       const input = $(`#key-${provider}`);
       input.value = '';
@@ -1429,7 +1436,7 @@
 
   async function saveSettings() {
     const apiKeyUpdates = {};
-    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'deepgram', 'azureRealtime']) {
+    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'deepgram', 'azureRealtime']) {
       const value = $(`#key-${provider}`).value.trim();
       if (value) apiKeyUpdates[provider] = value;
     }
@@ -1744,7 +1751,7 @@
       kicker: 'Bring your own model',
       note: 'Keys stay in the main process and use macOS Keychain-backed safeStorage when available.',
       title: 'Connect your AI provider.',
-      body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, or DeepSeek. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
+      body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, DeepSeek, Groq, OpenRouter, or a local <span class="hl">Ollama</span> server. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
       buttons: [{ icon: 'settings', label: 'Open provider settings', detail: 'Add a key, endpoint, and model names', action: async () => {
         if (await finishOnboard({ restoreFocus: false, keepModalState: true })) await openSettings();
       } }]
