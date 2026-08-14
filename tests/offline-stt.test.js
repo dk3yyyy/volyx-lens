@@ -75,6 +75,45 @@ test('offline mode never uploads audio unless cloud fallback is explicitly enabl
   assert.deepEqual(enabledFallback.providers, ['openai']);
 });
 
+test('offline server mode routes through one persistent session reused across jobs', async () => {
+  cancelOfflineTranscriptions(); // clear any session state left by earlier tests
+  const item = await fixture();
+  let starts = 0;
+  try {
+    const serverEnv = { ...item.env, VOLYX_LENS_WHISPER_SERVER: item.executable };
+    const fakeSession = {
+      running: true,
+      async start() { starts += 1; },
+      async stop() {},
+      async transcribe(wav, options) { return options.prompt ? 'with prompt' : 'no prompt'; },
+    };
+    const factory = () => fakeSession;
+    const one = await transcribeOffline(Buffer.from('RIFF-test'), { env: serverEnv, prompt: 'nova-3', sessionFactory: factory });
+    const two = await transcribeOffline(Buffer.from('RIFF-test'), { env: serverEnv, sessionFactory: factory });
+    assert.equal(one, 'with prompt');
+    assert.equal(two, 'no prompt');
+    assert.equal(starts, 1, 'the persistent session is started once and reused');
+  } finally { await fs.promises.rm(item.dir, { recursive: true, force: true }); }
+});
+
+test('cancelling offline transcription stops the persistent server session', async () => {
+  cancelOfflineTranscriptions(); // clear any session state left by earlier tests
+  const item = await fixture();
+  let stopped = 0;
+  try {
+    const serverEnv = { ...item.env, VOLYX_LENS_WHISPER_SERVER: item.executable };
+    const fakeSession = {
+      running: true,
+      async start() {},
+      async stop() { stopped += 1; },
+      async transcribe() { return 'x'; },
+    };
+    await transcribeOffline(Buffer.from('RIFF-test'), { env: serverEnv, sessionFactory: () => fakeSession });
+    cancelOfflineTranscriptions();
+    assert.equal(stopped, 1);
+  } finally { await fs.promises.rm(item.dir, { recursive: true, force: true }); }
+});
+
 test('offline transcription children are cancelled on lifecycle shutdown', async () => {
   const item = await fixture();
   try {
