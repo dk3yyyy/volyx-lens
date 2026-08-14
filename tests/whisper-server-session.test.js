@@ -147,3 +147,32 @@ test('a crash while ready marks the session stopped so calls fail fast', async (
   child.emit('close', 1);
   assert.equal(session.running, false);
 });
+
+test('stop resolves promptly after the child already exited (no hang)', async () => {
+  const child = fakeChild();
+  const session = new WhisperServerSession(sessionOptions({ spawnImpl: () => child }));
+  await session.start();
+  // A real child sets exitCode when it closes; stop() must not wait on a
+  // 'close' event that has already fired.
+  child.emit('close', 1);
+  child.exitCode = 1;
+  assert.equal(session.running, false);
+  const t0 = Date.now();
+  await session.stop();
+  assert.ok(Date.now() - t0 < 5000, 'stop() must not hang on an already-exited child');
+});
+
+test('stop returns promptly when the child ignores SIGTERM and only dies on SIGKILL', async () => {
+  let closed = false;
+  const child = fakeChild();
+  child.kill = (signal) => {
+    if (signal === 'SIGKILL') setImmediate(() => { closed = true; child.emit('close', null, 'SIGKILL'); });
+    return true;
+  };
+  const session = new WhisperServerSession(sessionOptions({ spawnImpl: () => child }));
+  await session.start();
+  const t0 = Date.now();
+  await session.stop();
+  assert.equal(closed, true);
+  assert.ok(Date.now() - t0 < 5000, 'stop() must resolve even when the close never fires');
+});

@@ -164,6 +164,9 @@ class WhisperServerSession {
     }
     this._setState('stopped');
     this.child = null;
+    // A process that is still alive after the startup deadline would otherwise
+    // be orphaned with the model loaded; reap it instead of leaking it.
+    if (exitCode === null) { try { child.kill('SIGKILL'); } catch { /* already gone */ } }
     const tail = stderrTail.trim().slice(-400);
     throw new Error(
       `Whisper server did not become ready within ${STARTUP_TIMEOUT_MS / 1000}s` +
@@ -220,11 +223,16 @@ class WhisperServerSession {
     this.child = null;
     if (this.state === 'starting' || this.state === 'ready') this._setState('stopped');
     if (!child) return;
+    // If the process already exited, 'close' has fired and can never fire again;
+    // resolve immediately instead of waiting on a promise that never settles.
+    if (child.exitCode !== null || child.signalCode !== null) return;
     const closed = new Promise((resolve) => child.once('close', resolve));
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    child.kill('SIGTERM');
     const winner = await Promise.race([closed.then(() => 'closed'), this.wait(STOP_GRACE_MS).then(() => 'timeout')]);
     if (winner === 'timeout' && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    if (winner === 'timeout') await closed.catch(() => {});
+    // Never hang the caller: even a child that ignores SIGKILL must not block
+    // transcription forever, so bound the wait here too.
+    if (winner === 'timeout') await Promise.race([closed, this.wait(STOP_GRACE_MS)]);
   }
 }
 
