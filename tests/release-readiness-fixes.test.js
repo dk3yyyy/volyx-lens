@@ -175,7 +175,7 @@ test('shutdown is centralized into one awaited shutdownAll', () => {
   assert.match(main, /async function shutdownAll\(\)/);
   assert.match(main, /await systemAudioCapture\.stop\(\{ immediate: true \}\)/);
   assert.match(main, /await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
-  assert.match(main, /app\.on\('before-quit', \(event\) => \{[\s\S]*event\.preventDefault\(\)[\s\S]*shutdownAll\(\)\.finally\(\(\) => app\.quit\(\)\)/);
+  assert.match(main, /app\.on\('before-quit', \(event\) => \{[\s\S]*relaunchRequested = false;[\s\S]*event\.preventDefault\(\)[\s\S]*shutdownAll\(\)\.finally\(\(\) => app\.quit\(\)\)/);
   assert.match(main, /function relaunchApp\(\) \{[\s\S]*shutdownAll\(\)\.finally/);
   assert.match(main, /if \(!relaunchRequested\) return; \/\/ superseded by a quit issued during cleanup/);
   assert.match(main, /app\.on\('will-quit', \(\) => \{[\s\S]*globalShortcut\.unregisterAll\(\)/);
