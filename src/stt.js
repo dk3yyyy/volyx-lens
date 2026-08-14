@@ -15,7 +15,7 @@ function shouldUseSidecar(env) {
   return !!env.VOLYX_LENS_WHISPER_SIDECAR;
 }
 
-async function transcribeViaSidecar(wav, env, vocab = '') {
+async function transcribeViaSidecar(wav, env, vocab = '', sidecarFactory) {
   const useSidecar = shouldUseSidecar(env);
 
   if (!useSidecar) {
@@ -26,13 +26,26 @@ async function transcribeViaSidecar(wav, env, vocab = '') {
   // Initialize sidecar if not already running
   if (!sidecar) {
     const modelId = env.VOLYX_LENS_WHISPER_MODEL || 'base.en';
-    sidecar = new WhisperSidecar({ modelId });
-    await sidecar.start();
+    const factory = sidecarFactory || ((id) => new WhisperSidecar({ modelId: id }));
+    sidecar = factory(modelId);
+    try {
+      await sidecar.start();
+    } catch (error) {
+      // A failed start must not poison the singleton: drop the broken
+      // instance so the next request creates a fresh one and retries.
+      sidecar = null;
+      throw error;
+    }
   }
 
   // Queue the WAV for in-memory transcription (no temp files on disk)
   const result = await sidecar.queueYou(wav);
   return (result.text || '').trim();
+}
+
+// Reset the lazily initialized sidecar (config changes, shutdown, tests)
+function resetSidecar() {
+  sidecar = null;
 }
 
 async function transcribeOpenAI(apiKey, wav, model, prompt = '') {
@@ -62,7 +75,7 @@ async function transcribeGemini(apiKey, wav, model) {
 // Speech-to-text factory. Decoupled from the LLM provider because Anthropic has
 // no audio API — we transcribe with whatever audio-capable key is available, and
 // fall back across providers. Returns { text, provider } or { text:'', error }.
-function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe = transcribeOffline, openAITranscribe = transcribeOpenAI, geminiTranscribe = transcribeGemini } = {}) {
+function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe = transcribeOffline, openAITranscribe = transcribeOpenAI, geminiTranscribe = transcribeGemini, sidecarFactory = (modelId) => new WhisperSidecar({ modelId }) } = {}) {
   const keys = settings.apiKeys || {};
   const chain = [];
   const transcription = settings.transcription || {};
@@ -74,7 +87,7 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   // Sidecar mode: strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR env var
   const useSidecar = shouldUseSidecar(env);
   if (useSidecar) {
-    chain.push({ p: 'sidecar', fn: (wav) => transcribeViaSidecar(wav, env, vocab) });
+    chain.push({ p: 'sidecar', fn: (wav) => transcribeViaSidecar(wav, env, vocab, sidecarFactory) });
   }
   if (transcription.offlineEnabled && offline.ready) {
     chain.push({ p: 'offline', fn: (wav) => offlineTranscribe(wav, { env, language: transcription.language || '', prompt }) });
@@ -108,4 +121,4 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   };
 }
 
-module.exports = { createSTT };
+module.exports = { createSTT, resetSidecar };

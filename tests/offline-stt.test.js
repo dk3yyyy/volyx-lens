@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { validateOfflineConfig, runWhisperCli, transcribeOffline, cancelOfflineTranscriptions } = require('../src/offline-stt');
-const { createSTT } = require('../src/stt');
+const { createSTT, resetSidecar } = require('../src/stt');
 
 async function fixture() {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'volyx-lens-offline-test-'));
@@ -138,4 +138,28 @@ test('the whisper sidecar is strictly opt-in and takes no precedence on its own'
   assert.deepEqual(noFlag.providers, []);
   const flagged = createSTT({ transcription: {}, apiKeys: {} }, { env: { VOLYX_LENS_WHISPER_SIDECAR: '1' } });
   assert.deepEqual(flagged.providers, ['sidecar']);
+});
+
+test('a failed sidecar startup resets the singleton so the next request retries', async () => {
+  resetSidecar();
+  let created = 0;
+  const factory = () => {
+    created += 1;
+    if (created === 1) return { async start() { throw new Error('model download failed'); } };
+    return {
+      async start() {},
+      async queueYou() { return { text: 'hello', channel: 'you', timestamp: 1 }; },
+    };
+  };
+  try {
+    const stt = createSTT({ transcription: {}, apiKeys: {} }, { env: { VOLYX_LENS_WHISPER_SIDECAR: '1' }, sidecarFactory: factory });
+    const first = await stt.transcribe(Buffer.alloc(4000, 1));
+    assert.equal(first.text, '');
+    assert.equal(first.error && first.error.provider, 'sidecar');
+    const second = await stt.transcribe(Buffer.alloc(4000, 1));
+    assert.deepEqual(second, { text: 'hello', provider: 'sidecar' });
+    assert.equal(created, 2, 'a fresh sidecar is created after the failed start');
+  } finally {
+    resetSidecar();
+  }
 });
