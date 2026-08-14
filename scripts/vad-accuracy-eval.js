@@ -379,6 +379,25 @@ async function generateAll(force) {
   return { fixtures: usable, generated, skippedVoices: fixtures.length - usable.length };
 }
 
+// Fixture ids whose cached WAVs no longer match the current definitions
+// (text, voice, rate, pause, noise, SNR, overlay, or generation constants).
+// Report-only mode must refuse these: evaluating them with the current
+// boundary math would produce invalid metrics from stale audio.
+function staleFixtureIds(fixtures, manifestEntries = null) {
+  if (manifestEntries === null) {
+    const manifestPath = path.join(CACHE_DIR, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) return fixtures.map((f) => f.id);
+    manifestEntries = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  }
+  const hashById = new Map();
+  for (const entry of manifestEntries) {
+    if (entry && typeof entry === 'object' && entry.id && typeof entry.hash === 'string') {
+      hashById.set(entry.id, entry.hash);
+    }
+  }
+  return fixtures.filter((f) => hashById.get(f.id) !== fixtureHash(f)).map((f) => f.id);
+}
+
 async function runEvaluation(fixtures) {
   const whisper = validateOfflineConfig(process.env);
   const rows = [];
@@ -511,16 +530,24 @@ async function main() {
     const file = path.resolve(thresholdsArg.slice('--thresholds='.length));
     thresholds = JSON.parse(fs.readFileSync(file, 'utf8'));
   }
-  if (!reportOnly) {
-    const { fixtures, generated, skippedVoices } = await generateAll(regenerate);
-    if (skippedVoices) console.log(`Skipped ${skippedVoices} accent fixture(s) whose voice is not installed.`);
-    if (generated) console.log(`Generated ${generated} fixture(s) into ${CACHE_DIR}.`);
-  }
   const fixtures = buildFixtures().filter((fixture) => {
     if (fixture.kind !== 'speech') return true;
     const voice = fixture.voice || 'Samantha';
     return availableVoices().has(voice);
   });
+  if (!reportOnly) {
+    const { generated, skippedVoices } = await generateAll(regenerate);
+    if (skippedVoices) console.log(`Skipped ${skippedVoices} accent fixture(s) whose voice is not installed.`);
+    if (generated) console.log(`Generated ${generated} fixture(s) into ${CACHE_DIR}.`);
+  } else {
+    const stale = staleFixtureIds(fixtures);
+    if (stale.length) {
+      console.error(`[vad-eval] ${stale.length} fixture(s) cached with stale or missing definitions: ${stale.join(', ')}.`);
+      console.error('Re-run without --report (or with --regenerate) so the cache is rebuilt, then report again.');
+      process.exitCode = 1;
+      return;
+    }
+  }
   const { rows, whisperReady } = await runEvaluation(fixtures);
   const summary = summarize(rows);
   printReport(summary, rows, whisperReady);
@@ -564,6 +591,7 @@ module.exports = {
   insertSilenceGap,
   buildFixtures,
   fixtureHash,
+  staleFixtureIds,
   buildRow,
   evaluatePcm,
   normalizeText,
