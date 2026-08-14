@@ -180,7 +180,12 @@ test('main process wires the store, finalize points, and trusted IPC', () => {
   assert.match(main, /reason !== 'suspend' && reason !== 'lock'/);
   assert.match(main, /const startedAt = opts\.startedAt \|\| captureStartedAt \|\| lastCaptureStartedAt/);
   assert.match(main, /const endedAt = opts\.endedAt \|\| lastCaptureEndedAt/);
-  assert.match(main, /chmod\(result\.filePath, 0o600\)/);
+  assert.match(main, /async function writePrivateExport\(filePath, content\)/);
+  assert.match(main, /writeFile\(tmpPath, content, \{ encoding: 'utf8', mode: 0o600 \}\)/);
+  assert.match(main, /rename\(tmpPath, filePath\)/);
+  assert.match(main, /writePrivateExport\(result\.filePath, formatTranscript/);
+  assert.match(main, /writePrivateExport\(result\.filePath, formatMeetingRecord/);
+  assert.ok(!/chmod\(result\.filePath, 0o600\)/.test(main), 'no separate path-based chmod after write');
   for (const channel of ['history:list', 'history:get', 'history:delete', 'history:clear']) {
     assert.match(main, new RegExp(`handleTrusted\\('${channel}'`));
   }

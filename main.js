@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, systemPreferences, powerMonitor, dialog, safeStorage, clipboard, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { migrateLegacyUserData } = require('./src/identity-migration');
 const currentUserDataPath = app.getPath('userData');
@@ -444,10 +445,7 @@ async function exportTranscript(format) {
     filters: [{ name: normalizedFormat.toUpperCase(), extensions: [normalizedFormat] }],
   });
   if (result.canceled || !result.filePath) return { canceled: true };
-  await fs.promises.writeFile(result.filePath, formatTranscript(transcript, normalizedFormat), { encoding: 'utf8', mode: 0o600 });
-  // writeFile's mode only applies at creation; explicitly restrict an
-  // overwritten file so transcript content is never left readable by others.
-  await fs.promises.chmod(result.filePath, 0o600);
+  await writePrivateExport(result.filePath, formatTranscript(transcript, normalizedFormat));
   return { canceled: false, filename: path.basename(result.filePath), turns: transcript.length };
 }
 
@@ -461,11 +459,23 @@ async function exportMeetingRecord(id, format) {
     filters: [{ name: normalizedFormat.toUpperCase(), extensions: [normalizedFormat] }],
   });
   if (result.canceled || !result.filePath) return { canceled: true };
-  await fs.promises.writeFile(result.filePath, formatMeetingRecord(record, normalizedFormat), { encoding: 'utf8', mode: 0o600 });
-  // writeFile's mode only applies at creation; explicitly restrict an
-  // overwritten file so transcript content is never left readable by others.
-  await fs.promises.chmod(result.filePath, 0o600);
+  await writePrivateExport(result.filePath, formatMeetingRecord(record, normalizedFormat));
   return { canceled: false, filename: path.basename(result.filePath), turns: record.turns.length };
+}
+
+// Write a transcript export privately and atomically. The content is written
+// to a 0600 temp file in the same directory as the destination and renamed
+// into place, so the sensitive bytes never exist at permissive permissions
+// even if the destination is replaced or a chmod-style second step fails.
+async function writePrivateExport(filePath, content) {
+  const tmpPath = `${filePath}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await fs.promises.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
+    await fs.promises.rename(tmpPath, filePath);
+  } catch (error) {
+    await fs.promises.unlink(tmpPath).catch(() => {});
+    throw error;
+  }
 }
 
 // -------- window --------
