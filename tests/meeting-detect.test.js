@@ -171,24 +171,97 @@ test('detector entries are keyed by segment id so removed turns do not linger', 
   assert.equal(state.windowTurns, 5);
 });
 
+test('update retimestamps a surviving grouped turn instead of dropping it', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  const t0 = now;
+  const turns = [
+    { id: 1, channel: 'them', text: 'One.', ts: t0 },
+    { id: 2, channel: 'you', text: 'Reply.', ts: t0 + 1 * min },
+    { id: 3, channel: 'them', text: 'Two.', ts: t0 + 2 * min },
+    { id: 4, channel: 'you', text: 'Reply again.', ts: t0 + 3 * min },
+    { id: 5, channel: 'them', text: 'Three.', ts: t0 + 4 * min },
+    { id: 6, channel: 'you', text: 'Leaked mic echo trimmed from the first you-turn.', ts: t0 + 5 * min },
+  ];
+  for (const turn of turns) detector.add(turn);
+  assert.equal(detector.snapshot().meeting, true);
+  // The first you-turn's initial segment was trimmed as cross-talk, but the
+  // turn survives with a later timestamp; its detector entry must be refreshed,
+  // not removed, so the two-sided classification is preserved.
+  const state = detector.update(2, t0 + 4.5 * min);
+  assert.equal(state.meeting, true);
+  assert.equal(state.youTurns, 3);
+  assert.equal(state.windowTurns, 6);
+});
+
+test('update of an unknown or untyped id is a no-op', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  detector.add({ id: 1, channel: 'you', text: 'Hi', ts: now });
+  const before = detector.snapshot().windowTurns;
+  assert.equal(detector.update(999, now + min).windowTurns, before);
+  assert.equal(detector.update(null, now + min).windowTurns, before);
+  assert.equal(detector.update(undefined, now + min).windowTurns, before);
+  assert.equal(detector.update('1', now + min).windowTurns, before);
+});
+
+test('update keeps detector entries in chronological order for span and flips', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  const t0 = now;
+  const turns = [
+    { id: 1, channel: 'them', text: 'One.', ts: t0 },
+    { id: 2, channel: 'you', text: 'Reply.', ts: t0 + 1 * min },
+    { id: 3, channel: 'them', text: 'Two.', ts: t0 + 2 * min },
+    { id: 4, channel: 'you', text: 'Reply again.', ts: t0 + 3 * min },
+    { id: 5, channel: 'them', text: 'Three.', ts: t0 + 4 * min },
+    { id: 6, channel: 'you', text: 'Four.', ts: t0 + 5 * min },
+  ];
+  for (const turn of turns) detector.add(turn);
+  assert.equal(detector.snapshot().meeting, true);
+  // Advance the earliest entry to the latest time. Without re-sorting, the span
+  // would go negative and drop the classification; with chronological order the
+  // conversation still spans the window and the meeting is preserved.
+  const state = detector.update(1, t0 + 6 * min);
+  assert.equal(state.meeting, true);
+  assert.equal(state.windowTurns, 6);
+  assert.equal(state.flips, 5);
+});
+
 test('meeting detection is opt-in, runs only in-session on finalized turns, and never calls a model', () => {
   assert.equal(providerConfig.includes('meetingDetection: false,'), true);
   assert.match(store, /meetingDetection'\) && typeof value\.meetingDetection === 'boolean'/);
   assert.match(main, /meetingDetection === true/);
-  assert.match(main, /meetingDetector\.add\(\{ id: segment\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
+  assert.match(main, /meetingDetector\.add\(\{ id: turn\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
+  assert.match(main, /meetingDetection === true && !updated/);
   assert.match(main, /meetingDetector\.reset\(\)/);
   assert.match(main, /meeting:detected/);
   assert.doesNotMatch(main, /meetingDetector[\s\S]{0,200}(runFeature|\.stream\()/);
 });
 
-test('suppressed cross-talk retracts the leaked contribution and clears the indicator', () => {
-  assert.match(main, /meetingDetector\.remove\(leakedSegment\.id\)/);
+test('grouped-turn segment updates do not inflate the detector turn count', () => {
+  assert.match(main, /meetingDetector\.add\(\{ id: turn\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
+  const addBlock = main.match(/meetingDetection === true && !updated[\s\S]{0,120}/);
+  assert.ok(addBlock, 'detector add is gated on a newly created turn');
+  assert.match(addBlock[0], /meetingDetector\.add/);
+});
+
+test('suppressed cross-talk retracts a fully removed leaked turn and clears the indicator', () => {
+  assert.match(main, /const survivingTs = removeTranscriptSegment\(leakedSegment\)/);
+  assert.match(main, /if \(survivingTs === null\)/);
+  assert.match(main, /meetingDetector\.remove\(leakedSegment\.turnId\)/);
+  assert.match(main, /meetingDetector\.update\(leakedSegment\.turnId, survivingTs\)/);
   assert.match(main, /if \(!state\.meeting && meetingDetectedNotified\)/);
   assert.match(main, /meetingDetectedNotified = false;/);
   assert.match(main, /send\('meeting:cleared', \{\}\)/);
   assert.match(preload, /'meeting:cleared'/);
   assert.match(renderer, /volyxLens\.on\('meeting:cleared'/);
   assert.match(renderer, /meeting-indicator'\)\.classList\.add\('hidden'\)/);
+});
+
+test('cross-talk that only trims one segment of a surviving turn keeps its detector entry and refreshes its timestamp', () => {
+  assert.match(main, /if \(survivingTs === null\)/);
+  assert.match(main, /meetingDetector\.update\(leakedSegment\.turnId, survivingTs\)/);
+  assert.match(main, /function removeTranscriptSegment\(segment\)[\s\S]{0,600}return turn\.ts;/);
+  assert.match(main, /turn\.ts = turn\.segments\[0\]\.ts;/);
+  assert.match(main, /if \(!turn\.segments\.length\)[\s\S]{0,180}return null;/);
 });
 
 test('capture stop resets the detector so each listening period is classified independently', () => {
@@ -241,4 +314,18 @@ test('renderer surfaces the meeting indicator and a discrete status when detecte
   assert.match(css, /#meeting-indicator \{/);
   assert.match(renderer, /meetingDetection: \$\('#stt-meeting-detection'\)\.checked/);
   assert.match(renderer, /stt-meeting-detection'\)\.checked = transcription\.meetingDetection === true/);
+});
+
+test('Phase 4b: history entries and detail show the meeting badge', () => {
+  assert.match(renderer, /history-meeting-badge/);
+  assert.match(renderer, /record\.meeting/);
+  assert.match(renderer, /Meeting detected/);
+  assert.match(css, /\.history-meeting-badge \{/);
+});
+
+test('Phase 4b: exports and recap headers reflect the meeting flag', () => {
+  const notes = fs.readFileSync(path.join(root, 'src', 'meeting-notes.js'), 'utf8');
+  assert.match(notes, /record\.meeting === true \? 'meeting' : 'session'/);
+  assert.match(notes, /Meeting: detected as a two-sided conversation/);
+  assert.match(notes, /meeting: record\.meeting === true,/);
 });

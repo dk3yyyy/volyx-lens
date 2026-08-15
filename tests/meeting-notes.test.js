@@ -36,11 +36,15 @@ test('meetingFilename stamps a supported extension with the default markdown', (
 
 test('meetingHeader and reasonLabel describe the session', () => {
   const header = meetingHeader(sampleRecord());
-  assert.match(header, /^# Volyx Lens meeting/);
+  assert.match(header, /^# Volyx Lens session/);
+  assert.ok(!header.includes('detected as a two-sided conversation'), 'no meeting line without the flag');
   assert.match(header, new RegExp(`Started: ${localStamp(1700000000000)}`));
   assert.match(header, new RegExp(`Ended: ${localStamp(1700003600000)}`));
   assert.match(header, /Session end: listening stopped/);
   assert.match(header, /Turns: 3/);
+  const meetingHeader2 = meetingHeader(sampleRecord({ meeting: true }));
+  assert.match(meetingHeader2, /^# Volyx Lens meeting/);
+  assert.match(meetingHeader2, /Meeting: detected as a two-sided conversation/);
   assert.equal(reasonLabel('new-session'), 'new session started');
   assert.equal(reasonLabel('app-quit'), 'app quit');
   assert.equal(reasonLabel(undefined), 'unknown');
@@ -48,8 +52,9 @@ test('meetingHeader and reasonLabel describe the session', () => {
 });
 
 test('markdown export keeps all turns with speaker labels and headers', () => {
-  const out = formatMeetingRecord(sampleRecord(), 'md', 1700009999999);
+  const out = formatMeetingRecord(sampleRecord({ meeting: true }), 'md', 1700009999999);
   assert.match(out, /^# Volyx Lens meeting/);
+  assert.match(out, /Meeting: detected as a two-sided conversation/);
   assert.match(out, /- \*\*22:13:25 · You:\*\* Hello everyone/);
   assert.match(out, /- \*\*22:13:35 · Them:\*\* Welcome to the review/);
   assert.equal((out.match(/- \*\*/g) || []).length, 3, 'all three turns present');
@@ -59,14 +64,15 @@ test('markdown export keeps all turns with speaker labels and headers', () => {
 test('txt export uses bracketed timestamps', () => {
   const out = formatMeetingRecord(sampleRecord(), 'txt');
   assert.match(out, /\[22:13:25\] You: Hello everyone/);
-  assert.match(out, /# Volyx Lens meeting/);
+  assert.match(out, /# Volyx Lens session/);
 });
 
 test('json export preserves metadata and full turn fidelity', () => {
-  const parsed = JSON.parse(formatMeetingRecord(sampleRecord(), 'json', 1700009999999));
+  const parsed = JSON.parse(formatMeetingRecord(sampleRecord({ meeting: true }), 'json', 1700009999999));
   assert.equal(parsed.version, 1);
   assert.equal(parsed.id, sampleRecord().id);
   assert.equal(parsed.reason, 'capture-stop');
+  assert.equal(parsed.meeting, true);
   assert.equal(parsed.startedAt, 1700000000000);
   assert.equal(parsed.endedAt, 1700003600000);
   assert.equal(parsed.exportedAt, '2023-11-15T00:59:59.999Z');

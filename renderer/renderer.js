@@ -308,6 +308,12 @@
       open.className = 'history-entry-open';
       const when = document.createElement('strong');
       when.textContent = meetingDateLabel(record.endedAt || record.startedAt);
+      if (record.meeting) {
+        const badge = document.createElement('span');
+        badge.className = 'history-meeting-badge';
+        badge.textContent = 'Meeting';
+        when.append(' ', badge);
+      }
       const meta = document.createElement('span');
       meta.textContent = `${record.turnCount} ${record.turnCount === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(record.reason)}${record.preview ? ' · ' + record.preview : ''}`;
       open.append(when, meta);
@@ -368,7 +374,9 @@
       container.appendChild(row);
     }
     const count = meetingDetail.turns.length;
-    $('#meeting-history-detail-meta').textContent = `${count} ${count === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(meetingDetail.reason)} · ${meetingDateLabel(meetingDetail.endedAt || meetingDetail.startedAt)}`;
+    const parts = [`${count} ${count === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(meetingDetail.reason)} · ${meetingDateLabel(meetingDetail.endedAt || meetingDetail.startedAt)}`];
+    if (meetingDetail.meeting) parts.unshift('Meeting detected');
+    $('#meeting-history-detail-meta').textContent = parts.join(' · ');
   }
 
   async function openMeetingDetail(id) {

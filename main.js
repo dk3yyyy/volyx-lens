@@ -273,17 +273,18 @@ function removeRecentTranscriptSegment(segmentId) {
 
 function removeTranscriptSegment(segment) {
   const turnIndex = transcript.findIndex((turn) => turn.id === segment.turnId);
-  if (turnIndex < 0) return;
+  if (turnIndex < 0) return null;
   const turn = transcript[turnIndex];
   turn.segments = turn.segments.filter((entry) => entry.id !== segment.id);
   if (!turn.segments.length) {
     transcript.splice(turnIndex, 1);
     send('transcript:remove', { id: turn.id, channel: turn.channel, reason: 'cross_talk' });
-    return;
+    return null;
   }
   turn.text = joinTranscriptSegments(turn.segments);
   turn.ts = turn.segments[0].ts;
   send('transcript:update', publicTranscriptTurn(turn));
+  return turn.ts;
 }
 
 function rememberTranscriptSegment(segment, receivedAt) {
@@ -329,9 +330,14 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     }
     for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
       removeRecentTranscriptSegment(leakedSegment.id);
-      removeTranscriptSegment(leakedSegment);
+      const survivingTs = removeTranscriptSegment(leakedSegment);
       if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true) {
-        const state = meetingDetector.remove(leakedSegment.id);
+        let state;
+        if (survivingTs === null) {
+          state = meetingDetector.remove(leakedSegment.turnId);
+        } else {
+          state = meetingDetector.update(leakedSegment.turnId, survivingTs);
+        }
         if (!state.meeting && meetingDetectedNotified) {
           meetingDetectedNotified = false;
           send('meeting:cleared', {});
@@ -364,8 +370,8 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
       maybeAutoAnswer(question, timestamp);
     }
   }
-  if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true) {
-    const state = meetingDetector.add({ id: segment.id, channel: normalizedChannel, text: turn.text, ts: timestamp });
+  if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true && !updated) {
+    const state = meetingDetector.add({ id: turn.id, channel: normalizedChannel, text: turn.text, ts: timestamp });
     if (state.meeting && !meetingDetectedNotified) {
       meetingDetectedNotified = true;
       send('meeting:detected', { since: state.detectedSince });
