@@ -6,7 +6,7 @@
 
 **Private, context-aware assistance for your Mac.**
 
-Use your screen, voice, meeting audio, and saved Task Context without routing requests through a VolyxAI server. Bring your own AI provider and choose what leaves your Mac.
+Use your screen, voice, meeting audio, and saved Task Context without routing requests through a Volyx Lens-operated server. Bring your own AI provider and choose what leaves your Mac.
 
 [**Explore the live site**](https://volyxlens.pages.dev/) · [Download for macOS](#download) · [Product tour](#product-tour) · [Architecture](#how-it-works) · [Privacy](#privacy-and-security)
 
@@ -33,14 +33,18 @@ Volyx Lens is a compact glass overlay that can use three intentionally separate 
 - **Microphone / “You”** — your voice is transcribed on its own channel.
 - **System audio / “Them”** — a native ScreenCaptureKit helper captures meeting audio on a separate channel.
 
-Nothing is routed through a VolyxAI server. Provider requests go directly from the app to the AI or transcription provider you configure.
+Nothing is routed through a Volyx Lens-operated server. Provider requests go directly from the app to the AI or transcription provider you configure.
 
 ### Highlights
 
 - **Screen-aware assistance** — ask about the visible screen, a conversation, or both.
 - **Separated meeting transcript** — stable timestamped **You** and **Them** turns.
 - **Task Context** — save multiple screens locally, pin important captures, deduplicate near-identical views, and attach a bounded relevant set only when you explicitly ask.
-- **Provider choice** — OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, or a local Ollama server for responses; OpenAI, Azure, Deepgram, or optional local Whisper for transcription.
+- **Meeting detection** — opt-in detection flags a sustained two-sided conversation while listening, tags the session, and shows a "Meeting in progress" indicator. Local and in-session only: no audio watcher, no disk writes, no model calls.
+- **Meeting history** — opt-in on-device history saves meetings with a meeting badge, search, notes, and Markdown/TXT/JSON export.
+- **Meeting notes** — generate structured meeting notes for saved records using your configured provider, with long-meeting confirmation before paid requests.
+- **Provider choice** — OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, or a local Ollama server for responses; OpenAI, Azure, Deepgram, Azure AI Speech, or optional local Whisper for transcription.
+- **Transcription language** — pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context** — import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls** — clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
 - **Native macOS behavior** — compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
@@ -104,6 +108,10 @@ Ad-hoc test builds remain available under their own pre-release tags for early v
 | **Draft answer** | button on a detected question | conversation transcript |
 | **Auto-assist** | opt-in Setting (off by default) — auto-drafts replies to confidently detected questions; cooldown and confidence are configurable | conversation transcript |
 | **Recap** | action button | bounded meeting transcript |
+| **Detect meetings** | opt-in Setting (off by default) — tags a sustained two-sided conversation while listening, with a "Meeting in progress" indicator | finalized transcript turns only, in memory |
+| **Save meeting history** | opt-in Setting (off by default) — keeps the session record on device when listening stops | transcript + meeting flag |
+| **Search meetings** | history browser | on-device meeting history |
+| **Generate meeting notes** | button on a saved meeting | saved transcript through your provider |
 | **Ask anything** | type and press `↵` | selected screen/conversation context |
 | **New Session** | `/new` or New Session | clears in-memory session context |
 | **Emergency quit** | `⌘` `⇧` `X` or power button | stops capture and clears session media context |
@@ -136,6 +144,7 @@ Open Settings with `⌘` `,` or the `…` button. Choose a response provider, en
 | **OpenRouter** | responses | API key; routes to many hosted models with one key |
 | **Ollama** | local responses | no key; local server with the OpenAI-compatible API (`http://localhost:11434/v1`); pull a model first |
 | **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
+| **Azure AI Speech** | realtime transcription | Speech resource key and region (bare region name, e.g. `eastus`); no model name required |
 | **Local Whisper** | optional offline batch transcription | externally installed `whisper-cli` and model; disabled by default |
 
 Keys stay in the Electron main process and are protected with `safeStorage` / macOS Keychain where available. The renderer receives credential status, not stored secret values. Settings warns if secure storage is unavailable.
@@ -166,6 +175,17 @@ Task Context is for work revealed across multiple screens—for example a proble
 
 Task Context cannot read files or code that never appeared on screen. Use it only when external assistance is permitted.
 
+## Meetings
+
+Meeting features are opt-in from Settings → Listening, and they are local and in-session only.
+
+- **Detect meetings** looks for a sustained two-sided conversation between the Mic and System channels while listening, then shows a subtle "Meeting in progress" indicator and tags the session as a meeting. Detection runs only on finalized in-memory transcript turns: no background audio watcher, no disk writes, and no AI requests.
+- **Save meeting history** keeps the session record on device when listening stops (capture stop, new session, or app quit). Saved records are searchable in the history browser and show a meeting badge when the session was detected as a meeting.
+- **Export** a saved record as Markdown, TXT, or structured JSON through a native save dialog.
+- **Generate meeting notes** turns a saved transcript into structured notes using your configured provider. Long meetings need multiple model requests and require explicit confirmation before paid requests are made.
+
+History is stored on device and cleared with the Clear history action; it is never uploaded to a Volyx Lens-operated server.
+
 ## How it works
 
 <div align="center">
@@ -177,14 +197,14 @@ Volyx Lens is an Electron application with a sandboxed renderer and a privileged
 1. **Capture stays separated.** Screens, microphone PCM, and system-audio PCM have distinct lifecycles.
 2. **Local controls run first.** Permission checks, memory budgets, deduplication, OCR ranking, cancellation, and secure credential access happen locally.
 3. **The user triggers a request.** Screen and transcript context is attached only for the selected action.
-4. **The main process routes directly.** Requests go to the configured response or transcription provider—never through a VolyxAI intermediary.
+4. **The main process routes directly.** Requests go to the configured response or transcription provider—never through a Volyx Lens-operated intermediary.
 5. **Results stream into the overlay.** Provider failures are reduced to sanitized, actionable states rather than exposing credentials or raw SDK errors.
 
 Realtime microphone audio is deterministically resampled to 24 kHz mono PCM. System audio comes from a bundled ScreenCaptureKit helper and remains a separate **Them** channel. Optional local Whisper is operator-configured, disabled by default, and does not silently fall back to cloud transcription unless cloud fallback is separately enabled.
 
 ## Privacy and security
 
-- **No VolyxAI account, intermediary server, or product telemetry.** Selected third-party providers still receive the data required for explicit requests and apply their own terms and pricing.
+- **No Volyx Lens-operated account, intermediary server, or product telemetry.** Selected third-party providers still receive the data required for explicit requests and apply their own terms and pricing.
 - **No persistent screenshots or audio.** Volyx Lens keeps active session media in memory; New Session or emergency quit clears it.
 - **Bounded personal context.** Imported documents store extracted text and status—not the original file path or raw document—and send only relevant bounded excerpts for answer-oriented actions.
 - **Sandboxed UI.** Chromium sandboxing, context isolation, no renderer Node integration, restrictive CSP, denied popup/navigation requests, and bounded IPC payloads are enabled.

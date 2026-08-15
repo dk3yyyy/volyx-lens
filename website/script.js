@@ -85,3 +85,51 @@ document.querySelectorAll('details').forEach((details) => {
 
 const year = document.querySelector('[data-year]');
 if (year) year.textContent = String(new Date().getFullYear());
+
+// ---- theme toggle -------------------------------------------------------
+const THEME_KEY = 'volyx-lens-theme';
+const themeToggle = document.querySelector('[data-theme-toggle]');
+const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+
+function applyTheme(theme, { persist = false } = {}) {
+  const isLight = theme === 'light';
+  document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+  if (themeColorMeta) {
+    themeColorMeta.setAttribute('content', isLight ? '#f5f2ff' : '#0d0b1e');
+  }
+  if (themeToggle) {
+    themeToggle.setAttribute('aria-label', isLight ? 'Switch to dark mode' : 'Switch to light mode');
+    themeToggle.setAttribute('aria-pressed', String(isLight));
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_KEY, isLight ? 'light' : 'dark');
+    } catch (error) {
+      // storage may be unavailable; fall back to per-visit theme
+    }
+  }
+}
+
+function currentTheme() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem(THEME_KEY);
+  } catch (error) {
+    // ignore storage failures
+  }
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+applyTheme(currentTheme());
+
+if (themeToggle) {
+  themeToggle.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(next, { persist: true });
+  });
+}
+
+window.addEventListener('storage', (event) => {
+  if (event.key === THEME_KEY && event.newValue) applyTheme(event.newValue);
+});
