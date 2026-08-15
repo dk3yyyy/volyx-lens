@@ -1554,7 +1554,7 @@
 
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
-    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key' };
+    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key', azureSpeech: 'Azure AI Speech resource key' };
     for (const provider of Object.keys(keyPlaceholders)) {
       const input = $(`#key-${provider}`);
       input.value = '';
@@ -1570,6 +1570,8 @@
     renderTranscriptionProviderConfig();
     $('#stt-azure-deployment').value = transcription.azureRealtimeDeployment || '';
     $('#stt-deepgram-model').value = transcription.deepgramModel || '';
+    $('#stt-azure-speech-region').value = transcription.azureSpeechRegion || '';
+    $('#stt-azure-speech-phrases').value = transcription.azureSpeechPhrases || '';
     $('#stt-language').value = transcription.language || '';
     $('#stt-delay').value = transcription.delay || 'low';
     $('#stt-fallback-model').value = transcription.fallbackModel || '';
@@ -1608,6 +1610,7 @@
     if (transcription.mode === 'batch') stt = present.openai ? 'OpenAI batch' : (present.gemini ? 'Gemini batch' : 'none');
     else if (transcription.realtimeProvider === 'azure') stt = (present.azureRealtime || present.azure) ? 'Azure Realtime' : 'Azure Realtime (key missing)';
     else if (transcription.realtimeProvider === 'deepgram') stt = present.deepgram ? 'Deepgram Realtime' : 'Deepgram Realtime (key missing)';
+    else if (transcription.realtimeProvider === 'azureSpeech') stt = present.azureSpeech ? 'Azure AI Speech Realtime' : 'Azure AI Speech Realtime (key missing)';
     else stt = present.openai ? 'OpenAI Realtime' : 'OpenAI Realtime (key missing)';
     const backend = settings.credentialStatus && settings.credentialStatus.backend;
     const storage = settings.credentialStatus && settings.credentialStatus.secure ? 'secure storage' : (backend === 'locked-safeStorage' ? 'secure storage locked' : 'plaintext fallback');
@@ -1705,7 +1708,7 @@
 
   async function saveSettings() {
     const apiKeyUpdates = {};
-    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'deepgram', 'azureRealtime']) {
+    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'deepgram', 'azureRealtime', 'azureSpeech']) {
       const value = $(`#key-${provider}`).value.trim();
       if (value) apiKeyUpdates[provider] = value;
     }
@@ -1727,6 +1730,8 @@
       realtimeModel: (settings.transcription || {}).realtimeModel || '',
       deepgramModel: $('#stt-deepgram-model').value.trim() || (settings.transcription || {}).deepgramModel || '',
       azureRealtimeDeployment: $('#stt-azure-deployment').value.trim(),
+      azureSpeechRegion: $('#stt-azure-speech-region').value.trim().toLowerCase(),
+      azureSpeechPhrases: $('#stt-azure-speech-phrases').value.trim(),
       fallbackModel: $('#stt-fallback-model').value.trim() || (settings.transcription || {}).fallbackModel || '',
       geminiFallbackModel: $('#stt-gemini-fallback-model').value.trim() || (settings.transcription || {}).geminiFallbackModel || '',
       offlineEnabled: $('#stt-offline-enabled').checked,

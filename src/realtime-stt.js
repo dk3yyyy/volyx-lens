@@ -1,6 +1,7 @@
 const { VoiceActivityDetector } = require('./voice-activity');
 const { STT_MODELS, normalizeAzureEndpoint, normalizeTranscriptionLanguage } = require('./provider-config');
 const { DeepgramRealtimeChannel } = require('./deepgram-realtime');
+const { AzureSpeechRealtimeChannel } = require('./azure-speech-realtime');
 const { classifyRealtimeError } = require('./realtime-errors');
 
 const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime';
@@ -313,6 +314,8 @@ class RealtimeTranscriptionManager {
     apiKey,
     provider = 'openai',
     endpoint = null,
+    region = null,
+    phrases = [],
     model = STT_MODELS.realtime,
     language = '',
     delay = 'low',
@@ -322,6 +325,7 @@ class RealtimeTranscriptionManager {
     fallbackCommitMs = 2500,
     fallbackThresholdRatio = 0.45,
     azureCommitMs = 3000,
+    flushGraceMs = 500,
     enabledChannels = ['you', 'them'],
     WebSocketImpl,
     DeepgramClientImpl,
@@ -344,6 +348,7 @@ class RealtimeTranscriptionManager {
     this.enabledChannels = [...new Set((Array.isArray(enabledChannels) ? enabledChannels : []).filter((channel) => ['you', 'them'].includes(channel)))];
     if (!this.enabledChannels.length) this.enabledChannels.push('you');
     this.azureCommitMs = Math.max(500, Math.min(10000, Number(azureCommitMs) || 3000));
+    this.flushGraceMs = Math.max(0, Number(flushGraceMs) || 0);
     this.azureStreams = {
       you: { durationMs: 0, maxLevel: 0 },
       them: { durationMs: 0, maxLevel: 0 },
@@ -361,18 +366,23 @@ class RealtimeTranscriptionManager {
     this.channelStates = Object.fromEntries(this.enabledChannels.map((channel) => [channel, 'idle']));
     for (const channel of this.enabledChannels) {
       this.vads[channel] = new VoiceActivityDetector({ sampleRate, ...vad });
-      const ChannelImpl = provider === 'deepgram' ? DeepgramRealtimeChannel : OpenAIRealtimeChannel;
+      const ChannelImpl = provider === 'deepgram'
+        ? DeepgramRealtimeChannel
+        : (provider === 'azureSpeech' ? AzureSpeechRealtimeChannel : OpenAIRealtimeChannel);
       this.channels[channel] = new ChannelImpl({
         apiKey,
         channel,
         provider,
         endpoint,
+        region,
+        phrases,
         model,
         language,
         delay,
         sampleRate,
         WebSocketImpl,
         DeepgramClientImpl,
+        flushGraceMs: this.flushGraceMs,
         onPartial,
         onFinal,
         onError: (error) => this._fail(error),
@@ -395,6 +405,7 @@ class RealtimeTranscriptionManager {
     if (!buffer.length) return true;
     if (this.provider === 'azure') return this._appendAzure(channelName, buffer);
     if (this.provider === 'deepgram') return this._appendDeepgram(channelName, buffer);
+    if (this.provider === 'azureSpeech') return this._appendAzureSpeech(channelName, buffer);
     const wasActive = this.vads[channelName].active;
     const durationMs = (buffer.length / 2 / this.vads[channelName].sampleRate) * 1000;
     const fallback = this.fallbackCandidates[channelName];
@@ -464,6 +475,18 @@ class RealtimeTranscriptionManager {
     return accepted;
   }
 
+  _appendAzureSpeech(channelName, buffer) {
+    const result = this.vads[channelName].push(buffer);
+    const accepted = this.channels[channelName].append(buffer);
+    if (result.speechStarted) {
+      this.onState({ mode: 'realtime', status: 'activity', channel: channelName, activity: 'speech' });
+    }
+    if (result.speechStopped) {
+      this.onState({ mode: 'realtime', status: 'activity', channel: channelName, activity: 'processing' });
+    }
+    return accepted;
+  }
+
   _fallbackEligible(channelName) {
     const vad = this.vads[channelName];
     const fallback = this.fallbackCandidates[channelName];
@@ -509,11 +532,13 @@ class RealtimeTranscriptionManager {
       this.preRoll[channel] = Buffer.alloc(0);
       this._resetFallback(channel);
     }
-    const close = () => {
+    const close = async () => {
       if (this.closed) return;
       this.closed = true;
       this.closeTimer = null;
-      for (const channel of Object.values(this.channels)) channel.close();
+      // Await channel teardown (which includes any end-of-audio flush window)
+      // so the manager keeps accepting finals until they can no longer arrive.
+      await Promise.all(Object.values(this.channels).map((channel) => channel.close()));
       this.onState({ mode: 'realtime', status: 'stopped' });
       if (this.resolveStop) { this.resolveStop(); this.resolveStop = null; }
     };

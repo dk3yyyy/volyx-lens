@@ -56,6 +56,11 @@ const STT_MODELS = Object.freeze({
   geminiFallback: 'gemini-3.5-flash',
 });
 
+// Azure AI Speech is configured with a region (its Speech resource has no
+// deployment name), so a dedicated key slot keeps it independent of the Azure
+// Foundry / Azure Realtime credentials used by the OpenAI-compatible paths.
+const REALTIME_PROVIDERS = Object.freeze(['openai', 'azure', 'deepgram', 'azureSpeech']);
+
 function getDefaultSettings() {
   const apiKeys = {};
   const models = {};
@@ -73,7 +78,7 @@ function getDefaultSettings() {
     autoAnswerConfidence: 0.5,
     autoAnswerCooldownSec: 60,
     assistContext: 'both',
-    apiKeys: { ...apiKeys, deepgram: '', azureRealtime: '' },
+    apiKeys: { ...apiKeys, deepgram: '', azureRealtime: '', azureSpeech: '' },
     models,
     endpoints: { azure: '', azureRealtime: '' },
     audio: {
@@ -93,6 +98,8 @@ function getDefaultSettings() {
       realtimeModel: STT_MODELS.realtime,
       deepgramModel: STT_MODELS.deepgram,
       azureRealtimeDeployment: '',
+      azureSpeechRegion: '',
+      azureSpeechPhrases: '',
       fallbackModel: STT_MODELS.openaiFallback,
       geminiFallbackModel: STT_MODELS.geminiFallback,
       offlineEnabled: false,
@@ -139,6 +146,26 @@ function normalizeAzureEndpoint(value) {
 function normalizeTranscriptionLanguage(value) {
   const language = String(value || '').trim().toLowerCase();
   return ['auto', 'automatic'].includes(language) ? '' : language;
+}
+
+// A Speech resource region is a short lowercase identifier (e.g. eastus,
+// westeurope). It builds the wss://<region>.stt.speech.microsoft.com host, so
+// it must be a bare region, not a URL.
+function normalizeAzureSpeechRegion(value) {
+  const region = String(value || '').trim().toLowerCase();
+  if (!region) return '';
+  if (/^[a-z0-9][a-z0-9-]{1,62}$/.test(region)) return region;
+  throw new Error('Azure AI Speech region must be a bare region name (e.g. "eastus"), not a URL.');
+}
+
+// The phrase list is an optional comma- or newline-separated string of words
+// Azure AI Speech should prioritize recognizing (product names, names, jargon).
+function normalizePhraseList(value) {
+  return String(value || '')
+    .split(/[\n,]+/)
+    .map((phrase) => phrase.trim())
+    .filter(Boolean)
+    .slice(0, 50);
 }
 
 function resolveProvider(settings) {
@@ -190,31 +217,45 @@ function resolveRealtimeTranscription(settings) {
   const provider = transcription.realtimeProvider || 'openai';
   const isAzure = provider === 'azure';
   const isDeepgram = provider === 'deepgram';
-  const label = isAzure ? 'Azure Foundry' : (isDeepgram ? 'Deepgram' : 'OpenAI');
+  const isAzureSpeech = provider === 'azureSpeech';
+  const label = isAzure ? 'Azure Foundry' : (isDeepgram ? 'Deepgram' : (isAzureSpeech ? 'Azure AI Speech' : 'OpenAI'));
   const keys = settings.apiKeys || {};
   const endpoints = settings.endpoints || {};
-  const apiKey = String(isAzure ? (keys.azureRealtime || keys.azure || '') : (keys[provider] || '')).trim();
+  const apiKey = String(isAzureSpeech
+    ? (keys.azureSpeech || '')
+    : (isAzure ? (keys.azureRealtime || keys.azure || '') : (keys[provider] || ''))).trim();
   const model = String(isAzure
     ? (transcription.azureRealtimeDeployment || '')
-    : (isDeepgram ? (transcription.deepgramModel || STT_MODELS.deepgram) : (transcription.realtimeModel || STT_MODELS.realtime))).trim();
+    : (isAzureSpeech ? ''
+      : (isDeepgram ? (transcription.deepgramModel || STT_MODELS.deepgram) : (transcription.realtimeModel || STT_MODELS.realtime)))).trim();
   let endpoint = null;
+  let region = null;
+  let phrases = [];
   let configurationError = null;
 
-  if (!['openai', 'azure', 'deepgram'].includes(provider)) {
+  if (!REALTIME_PROVIDERS.includes(provider)) {
     configurationError = `Unsupported realtime transcription provider: ${provider}`;
+  } else if (isAzureSpeech) {
+    try {
+      region = normalizeAzureSpeechRegion(transcription.azureSpeechRegion || '');
+      phrases = normalizePhraseList(transcription.azureSpeechPhrases || '');
+    } catch (error) { configurationError = error.message; }
   } else if (isAzure) {
     try { endpoint = normalizeAzureEndpoint((endpoints.azureRealtime || endpoints.azure || '')); }
     catch (error) { configurationError = error.message; }
   }
 
   if (!apiKey) configurationError = `${label} API key is required for realtime transcription.`;
-  else if (!model) configurationError = `${label} realtime deployment or model name is required.`;
+  else if (isAzureSpeech && !region) configurationError = `${label} region is required for realtime transcription.`;
+  else if (!isAzureSpeech && !model) configurationError = `${label} realtime deployment or model name is required.`;
 
   return {
     provider,
     label,
     apiKey,
     endpoint,
+    region,
+    phrases,
     model,
     ready: !configurationError,
     configurationError,
@@ -224,9 +265,12 @@ function resolveRealtimeTranscription(settings) {
 module.exports = {
   PROVIDERS,
   STT_MODELS,
+  REALTIME_PROVIDERS,
   getDefaultSettings,
   normalizeAzureEndpoint,
   normalizeTranscriptionLanguage,
+  normalizeAzureSpeechRegion,
+  normalizePhraseList,
   resolveProvider,
   resolveRealtimeTranscription,
 };

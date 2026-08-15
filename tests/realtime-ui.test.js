@@ -19,6 +19,8 @@ test('defaults enable realtime Whisper with a bounded batch fallback', () => {
     realtimeModel: 'gpt-realtime-whisper',
     deepgramModel: 'nova-3',
     azureRealtimeDeployment: '',
+    azureSpeechRegion: '',
+    azureSpeechPhrases: '',
     fallbackModel: 'gpt-4o-mini-transcribe',
     geminiFallbackModel: 'gemini-3.5-flash',
     offlineEnabled: false,
@@ -32,13 +34,16 @@ test('defaults enable realtime Whisper with a bounded batch fallback', () => {
 });
 
 test('settings UI exposes realtime transcription controls and persists them', () => {
-  for (const id of ['stt-mode', 'stt-realtime-provider', 'stt-azure-deployment', 'stt-deepgram-model', 'stt-language', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model', 'stt-offline-enabled', 'stt-offline-cloud-fallback']) {
+  for (const id of ['stt-mode', 'stt-realtime-provider', 'stt-azure-deployment', 'stt-deepgram-model', 'stt-language', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model', 'stt-offline-enabled', 'stt-offline-cloud-fallback', 'stt-azure-speech-region', 'stt-azure-speech-phrases']) {
     assert.match(html, new RegExp(`id="${id}"`));
     assert.match(renderer, new RegExp(`\\$\\('#${id}'\\)`));
   }
   assert.match(html, /id="key-deepgram"/);
+  assert.match(html, /id="key-azureSpeech"/);
   assert.match(renderer, /deepgram: 'Deepgram API key'/);
+  assert.match(renderer, /azureSpeech: 'Azure AI Speech resource key'/);
   assert.match(renderer, /'deepgram', 'azureRealtime'/);
+  assert.match(renderer, /'azureRealtime', 'azureSpeech'/);
   assert.match(renderer, /settings\.transcription/);
 });
 
