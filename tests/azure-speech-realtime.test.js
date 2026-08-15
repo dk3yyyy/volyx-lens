@@ -275,7 +275,7 @@ test('close signals end-of-audio and delivers a pending final during the flush w
   socket.sent.length = 0;
 
   channel.append(Buffer.alloc(480 * 2));
-  channel.close();
+  const closing = channel.close();
 
   assert.equal(socket.readyState, FakeWebSocket.OPEN);
   const endOfAudio = socket.sent.filter(Buffer.isBuffer).at(-1);
@@ -296,7 +296,7 @@ test('close signals end-of-audio and delivers a pending final during the flush w
   assert.equal(events.final.length, 1);
   assert.equal(events.final[0].text, 'last words.');
 
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await closing;
   assert.equal(socket.readyState, 3);
   assert.equal(channel.socket, null);
 });
@@ -310,13 +310,52 @@ test('commit signals end-of-audio and a later close does not send a second signa
   socket.sent.length = 0;
 
   channel.commit();
-  channel.close();
+  const closing = channel.close();
 
   const frames = socket.sent.filter(Buffer.isBuffer);
   assert.equal(frames.length, 1);
   assert.equal(frames[0].length, 2 + frames[0].readUInt16BE(0));
 
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await closing;
+  assert.equal(socket.readyState, 3);
+});
+
+test('manager.stop resolves only after the channel flush window so a trailing final is delivered', async () => {
+  const finals = [];
+  const manager = new RealtimeTranscriptionManager({
+    apiKey: 'speech-secret',
+    provider: 'azureSpeech',
+    region: 'eastus',
+    flushGraceMs: 50,
+    enabledChannels: ['you'],
+    WebSocketImpl: FakeWebSocket,
+    onFinal: (event) => finals.push(event),
+  });
+  const connecting = manager.start();
+  FakeWebSocket.instances[0].open();
+  await connecting;
+  FakeWebSocket.instances[0].sent.length = 0;
+
+  let resolved = false;
+  const stopping = manager.stop().then(() => { resolved = true; });
+
+  const socket = FakeWebSocket.instances[0];
+  assert.equal(socket.readyState, FakeWebSocket.OPEN);
+  const phrase = [
+    'path:speech.phrase',
+    'x-requestid:flush',
+    'x-timestamp:2026-01-01T00:00:02.000Z',
+    '',
+    '',
+    '{"RecognitionStatus":"Success","DisplayText":"tail words."}',
+  ].join('\r\n');
+  socket.emit('message', phrase);
+  assert.equal(finals.length, 1);
+  assert.equal(finals[0].text, 'tail words.');
+  assert.equal(resolved, false);
+
+  await stopping;
+  assert.equal(resolved, true);
   assert.equal(socket.readyState, 3);
 });
 
@@ -326,6 +365,7 @@ test('manager streams continuous Azure Speech audio without a local commit', asy
     provider: 'azureSpeech',
     region: 'eastus',
     phrases: ['Volyx Lens'],
+    flushGraceMs: 25,
     enabledChannels: ['you', 'them'],
     WebSocketImpl: FakeWebSocket,
   });

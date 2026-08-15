@@ -158,6 +158,8 @@ class AzureSpeechRealtimeChannel {
     this.failureReported = false;
     this.endOfAudioSent = false;
     this.flushCloseTimer = null;
+    this.closePromise = null;
+    this._resolveClose = null;
   }
 
   connect() {
@@ -220,6 +222,7 @@ class AzureSpeechRealtimeChannel {
       socket.on('close', (code, reason) => {
         this._clearConnectTimer();
         this._clearFlushTimer();
+        this._settleClose();
         this.onState({ channel: this.channel, state: this.intentionalClose ? 'stopped' : 'disconnected' });
         if (!settled) {
           settled = true;
@@ -263,25 +266,32 @@ class AzureSpeechRealtimeChannel {
     this._sendEndOfAudio();
   }
 
+  // Signals end-of-audio and waits a bounded flush window for the service to
+  // emit a pending final before tearing the socket down. Resolves once the
+  // socket is fully torn down so callers (e.g. the manager's graceful stop)
+  // can hold ownership until every trailing final has been delivered.
   close() {
+    if (this.closePromise) return this.closePromise;
     this.intentionalClose = true;
     this._clearConnectTimer();
-    this._clearFlushTimer();
     this.queuedAudio = Buffer.alloc(0);
     this.pendingAudioBytes = 0;
     this.completed.clear();
-    if (this._isOpen()) {
-      this._sendEndOfAudio();
-      if (this.flushGraceMs > 0) {
-        // Keep the message handler live for a bounded window so a final phrase
-        // the service emits in response to the end-of-audio frame is delivered
-        // before the socket is torn down.
-        this.flushCloseTimer = setTimeout(() => this._teardownSocket(), this.flushGraceMs);
-        if (typeof this.flushCloseTimer.unref === 'function') this.flushCloseTimer.unref();
-        return;
+    this.closePromise = new Promise((resolve) => {
+      this._resolveClose = resolve;
+      if (this._isOpen()) {
+        this._sendEndOfAudio();
+        if (this.flushGraceMs > 0) {
+          // Keep the message handler live for a bounded window so a final phrase
+          // the service emits in response to the end-of-audio frame is delivered
+          // before the socket is torn down.
+          this.flushCloseTimer = setTimeout(() => this._teardownSocket(), this.flushGraceMs);
+          return;
+        }
       }
-    }
-    this._teardownSocket();
+      this._teardownSocket();
+    });
+    return this.closePromise;
   }
 
   _sendEndOfAudio() {
@@ -298,13 +308,21 @@ class AzureSpeechRealtimeChannel {
     this._clearFlushTimer();
     const socket = this.socket;
     this.socket = null;
-    if (!socket) return;
-    if (socket.readyState === this.WebSocketImpl.OPEN) {
+    if (socket && socket.readyState === this.WebSocketImpl.OPEN) {
       socket.close(1000, 'capture stopped');
-    } else if (typeof socket.terminate === 'function') {
+    } else if (socket && typeof socket.terminate === 'function') {
       socket.terminate();
-    } else if (typeof socket.close === 'function') {
+    } else if (socket && typeof socket.close === 'function') {
       try { socket.close(); } catch { /* connecting sockets may reject close */ }
+    }
+    this._settleClose();
+  }
+
+  _settleClose() {
+    if (this._resolveClose) {
+      const resolve = this._resolveClose;
+      this._resolveClose = null;
+      resolve();
     }
   }
 

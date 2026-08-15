@@ -325,6 +325,7 @@ class RealtimeTranscriptionManager {
     fallbackCommitMs = 2500,
     fallbackThresholdRatio = 0.45,
     azureCommitMs = 3000,
+    flushGraceMs = 500,
     enabledChannels = ['you', 'them'],
     WebSocketImpl,
     DeepgramClientImpl,
@@ -347,6 +348,7 @@ class RealtimeTranscriptionManager {
     this.enabledChannels = [...new Set((Array.isArray(enabledChannels) ? enabledChannels : []).filter((channel) => ['you', 'them'].includes(channel)))];
     if (!this.enabledChannels.length) this.enabledChannels.push('you');
     this.azureCommitMs = Math.max(500, Math.min(10000, Number(azureCommitMs) || 3000));
+    this.flushGraceMs = Math.max(0, Number(flushGraceMs) || 0);
     this.azureStreams = {
       you: { durationMs: 0, maxLevel: 0 },
       them: { durationMs: 0, maxLevel: 0 },
@@ -380,6 +382,7 @@ class RealtimeTranscriptionManager {
         sampleRate,
         WebSocketImpl,
         DeepgramClientImpl,
+        flushGraceMs: this.flushGraceMs,
         onPartial,
         onFinal,
         onError: (error) => this._fail(error),
@@ -529,11 +532,13 @@ class RealtimeTranscriptionManager {
       this.preRoll[channel] = Buffer.alloc(0);
       this._resetFallback(channel);
     }
-    const close = () => {
+    const close = async () => {
       if (this.closed) return;
       this.closed = true;
       this.closeTimer = null;
-      for (const channel of Object.values(this.channels)) channel.close();
+      // Await channel teardown (which includes any end-of-audio flush window)
+      // so the manager keeps accepting finals until they can no longer arrive.
+      await Promise.all(Object.values(this.channels).map((channel) => channel.close()));
       this.onState({ mode: 'realtime', status: 'stopped' });
       if (this.resolveStop) { this.resolveStop(); this.resolveStop = null; }
     };
