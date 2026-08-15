@@ -92,6 +92,7 @@ function createMeetingDetector({
     const newTs = Number.isFinite(ts) ? ts : now();
     if (newTs === entry.ts) return snapshot();
     entry.ts = newTs;
+    turns.sort((left, right) => left.ts - right.ts);
     const cutoff = newTs - windowMs;
     while (turns.length && turns[0].ts < cutoff) turns.shift();
     return recomputeMeeting();

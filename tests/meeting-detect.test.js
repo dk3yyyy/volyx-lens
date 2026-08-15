@@ -203,6 +203,28 @@ test('update of an unknown or untyped id is a no-op', () => {
   assert.equal(detector.update('1', now + min).windowTurns, before);
 });
 
+test('update keeps detector entries in chronological order for span and flips', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  const t0 = now;
+  const turns = [
+    { id: 1, channel: 'them', text: 'One.', ts: t0 },
+    { id: 2, channel: 'you', text: 'Reply.', ts: t0 + 1 * min },
+    { id: 3, channel: 'them', text: 'Two.', ts: t0 + 2 * min },
+    { id: 4, channel: 'you', text: 'Reply again.', ts: t0 + 3 * min },
+    { id: 5, channel: 'them', text: 'Three.', ts: t0 + 4 * min },
+    { id: 6, channel: 'you', text: 'Four.', ts: t0 + 5 * min },
+  ];
+  for (const turn of turns) detector.add(turn);
+  assert.equal(detector.snapshot().meeting, true);
+  // Advance the earliest entry to the latest time. Without re-sorting, the span
+  // would go negative and drop the classification; with chronological order the
+  // conversation still spans the window and the meeting is preserved.
+  const state = detector.update(1, t0 + 6 * min);
+  assert.equal(state.meeting, true);
+  assert.equal(state.windowTurns, 6);
+  assert.equal(state.flips, 5);
+});
+
 test('meeting detection is opt-in, runs only in-session on finalized turns, and never calls a model', () => {
   assert.equal(providerConfig.includes('meetingDetection: false,'), true);
   assert.match(store, /meetingDetection'\) && typeof value\.meetingDetection === 'boolean'/);
