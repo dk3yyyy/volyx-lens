@@ -273,17 +273,18 @@ function removeRecentTranscriptSegment(segmentId) {
 
 function removeTranscriptSegment(segment) {
   const turnIndex = transcript.findIndex((turn) => turn.id === segment.turnId);
-  if (turnIndex < 0) return;
+  if (turnIndex < 0) return false;
   const turn = transcript[turnIndex];
   turn.segments = turn.segments.filter((entry) => entry.id !== segment.id);
   if (!turn.segments.length) {
     transcript.splice(turnIndex, 1);
     send('transcript:remove', { id: turn.id, channel: turn.channel, reason: 'cross_talk' });
-    return;
+    return true;
   }
   turn.text = joinTranscriptSegments(turn.segments);
   turn.ts = turn.segments[0].ts;
   send('transcript:update', publicTranscriptTurn(turn));
+  return false;
 }
 
 function rememberTranscriptSegment(segment, receivedAt) {
@@ -329,9 +330,9 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     }
     for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
       removeRecentTranscriptSegment(leakedSegment.id);
-      removeTranscriptSegment(leakedSegment);
-      if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true) {
-        const state = meetingDetector.remove(leakedSegment.id);
+      const turnRemoved = removeTranscriptSegment(leakedSegment);
+      if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true && turnRemoved) {
+        const state = meetingDetector.remove(leakedSegment.turnId);
         if (!state.meeting && meetingDetectedNotified) {
           meetingDetectedNotified = false;
           send('meeting:cleared', {});
@@ -365,7 +366,7 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     }
   }
   if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true && !updated) {
-    const state = meetingDetector.add({ id: segment.id, channel: normalizedChannel, text: turn.text, ts: timestamp });
+    const state = meetingDetector.add({ id: turn.id, channel: normalizedChannel, text: turn.text, ts: timestamp });
     if (state.meeting && !meetingDetectedNotified) {
       meetingDetectedNotified = true;
       send('meeting:detected', { since: state.detectedSince });

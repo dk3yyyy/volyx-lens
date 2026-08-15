@@ -175,7 +175,7 @@ test('meeting detection is opt-in, runs only in-session on finalized turns, and 
   assert.equal(providerConfig.includes('meetingDetection: false,'), true);
   assert.match(store, /meetingDetection'\) && typeof value\.meetingDetection === 'boolean'/);
   assert.match(main, /meetingDetection === true/);
-  assert.match(main, /meetingDetector\.add\(\{ id: segment\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
+  assert.match(main, /meetingDetector\.add\(\{ id: turn\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
   assert.match(main, /meetingDetection === true && !updated/);
   assert.match(main, /meetingDetector\.reset\(\)/);
   assert.match(main, /meeting:detected/);
@@ -183,20 +183,30 @@ test('meeting detection is opt-in, runs only in-session on finalized turns, and 
 });
 
 test('grouped-turn segment updates do not inflate the detector turn count', () => {
-  assert.match(main, /meetingDetector\.add\(\{ id: segment\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
+  assert.match(main, /meetingDetector\.add\(\{ id: turn\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
   const addBlock = main.match(/meetingDetection === true && !updated[\s\S]{0,120}/);
   assert.ok(addBlock, 'detector add is gated on a newly created turn');
   assert.match(addBlock[0], /meetingDetector\.add/);
 });
 
-test('suppressed cross-talk retracts the leaked contribution and clears the indicator', () => {
-  assert.match(main, /meetingDetector\.remove\(leakedSegment\.id\)/);
+test('suppressed cross-talk retracts a fully removed leaked turn and clears the indicator', () => {
+  assert.match(main, /const turnRemoved = removeTranscriptSegment\(leakedSegment\)/);
+  assert.match(main, /meetingDetection === true && turnRemoved/);
+  assert.match(main, /meetingDetector\.remove\(leakedSegment\.turnId\)/);
   assert.match(main, /if \(!state\.meeting && meetingDetectedNotified\)/);
   assert.match(main, /meetingDetectedNotified = false;/);
   assert.match(main, /send\('meeting:cleared', \{\}\)/);
   assert.match(preload, /'meeting:cleared'/);
   assert.match(renderer, /volyxLens\.on\('meeting:cleared'/);
   assert.match(renderer, /meeting-indicator'\)\.classList\.add\('hidden'\)/);
+});
+
+test('cross-talk that only trims one segment of a surviving turn keeps its detector entry', () => {
+  const retractBlock = main.match(/meetingDetection === true && turnRemoved[\s\S]{0,160}/);
+  assert.ok(retractBlock, 'retraction is gated on the turn being fully removed');
+  assert.match(retractBlock[0], /meetingDetector\.remove\(leakedSegment\.turnId\)/);
+  assert.match(main, /return true;\n\s*\}/);
+  assert.match(main, /return false;\n\s*\}/);
 });
 
 test('capture stop resets the detector so each listening period is classified independently', () => {
