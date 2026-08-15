@@ -1,6 +1,7 @@
 const { VoiceActivityDetector } = require('./voice-activity');
 const { STT_MODELS, normalizeAzureEndpoint, normalizeTranscriptionLanguage } = require('./provider-config');
 const { DeepgramRealtimeChannel } = require('./deepgram-realtime');
+const { AzureSpeechRealtimeChannel } = require('./azure-speech-realtime');
 const { classifyRealtimeError } = require('./realtime-errors');
 
 const OPENAI_REALTIME_URL = 'wss://api.openai.com/v1/realtime';
@@ -313,6 +314,8 @@ class RealtimeTranscriptionManager {
     apiKey,
     provider = 'openai',
     endpoint = null,
+    region = null,
+    phrases = [],
     model = STT_MODELS.realtime,
     language = '',
     delay = 'low',
@@ -361,12 +364,16 @@ class RealtimeTranscriptionManager {
     this.channelStates = Object.fromEntries(this.enabledChannels.map((channel) => [channel, 'idle']));
     for (const channel of this.enabledChannels) {
       this.vads[channel] = new VoiceActivityDetector({ sampleRate, ...vad });
-      const ChannelImpl = provider === 'deepgram' ? DeepgramRealtimeChannel : OpenAIRealtimeChannel;
+      const ChannelImpl = provider === 'deepgram'
+        ? DeepgramRealtimeChannel
+        : (provider === 'azureSpeech' ? AzureSpeechRealtimeChannel : OpenAIRealtimeChannel);
       this.channels[channel] = new ChannelImpl({
         apiKey,
         channel,
         provider,
         endpoint,
+        region,
+        phrases,
         model,
         language,
         delay,
@@ -395,6 +402,7 @@ class RealtimeTranscriptionManager {
     if (!buffer.length) return true;
     if (this.provider === 'azure') return this._appendAzure(channelName, buffer);
     if (this.provider === 'deepgram') return this._appendDeepgram(channelName, buffer);
+    if (this.provider === 'azureSpeech') return this._appendAzureSpeech(channelName, buffer);
     const wasActive = this.vads[channelName].active;
     const durationMs = (buffer.length / 2 / this.vads[channelName].sampleRate) * 1000;
     const fallback = this.fallbackCandidates[channelName];
@@ -453,6 +461,18 @@ class RealtimeTranscriptionManager {
   }
 
   _appendDeepgram(channelName, buffer) {
+    const result = this.vads[channelName].push(buffer);
+    const accepted = this.channels[channelName].append(buffer);
+    if (result.speechStarted) {
+      this.onState({ mode: 'realtime', status: 'activity', channel: channelName, activity: 'speech' });
+    }
+    if (result.speechStopped) {
+      this.onState({ mode: 'realtime', status: 'activity', channel: channelName, activity: 'processing' });
+    }
+    return accepted;
+  }
+
+  _appendAzureSpeech(channelName, buffer) {
     const result = this.vads[channelName].push(buffer);
     const accepted = this.channels[channelName].append(buffer);
     if (result.speechStarted) {

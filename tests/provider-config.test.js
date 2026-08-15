@@ -188,6 +188,8 @@ test('Azure realtime transcription resolves its own deployment and reuses Azure 
     apiKey: sharedCredential,
     endpoint: 'https://demo.services.ai.azure.com/api/projects/volyx-lens/openai/v1',
     model: 'volyx-lens-whisper',
+    region: null,
+    phrases: [],
     ready: true,
     configurationError: null,
   });
@@ -206,4 +208,53 @@ test('Azure realtime can use a separate resource key and endpoint', () => {
   assert.equal(resolved.apiKey, 'realtime-key');
   assert.equal(resolved.endpoint, 'https://realtime.openai.azure.com/openai/v1');
   assert.equal(resolved.model, 'dedicated-whisper');
+  assert.equal(resolved.region, null);
+  assert.deepEqual(resolved.phrases, []);
+});
+
+test('Azure AI Speech resolves its own key and region with a normalized phrase list', () => {
+  const settings = getDefaultSettings();
+  settings.transcription.realtimeProvider = 'azureSpeech';
+  settings.transcription.azureSpeechRegion = 'EastUS';
+  settings.transcription.azureSpeechPhrases = 'Volyx Lens, contact-tracing';
+  settings.apiKeys.azureSpeech = 'speech-secret';
+
+  assert.deepEqual(resolveRealtimeTranscription(settings), {
+    provider: 'azureSpeech',
+    label: 'Azure AI Speech',
+    apiKey: 'speech-secret',
+    endpoint: null,
+    region: 'eastus',
+    phrases: ['Volyx Lens', 'contact-tracing'],
+    model: '',
+    ready: true,
+    configurationError: null,
+  });
+});
+
+test('Azure AI Speech requires its own key and a region before it is ready', () => {
+  const settings = getDefaultSettings();
+  settings.transcription.realtimeProvider = 'azureSpeech';
+  settings.apiKeys.azureSpeech = 'speech-secret';
+
+  let resolved = resolveRealtimeTranscription(settings);
+  assert.equal(resolved.ready, false);
+  assert.match(resolved.configurationError, /region is required/);
+
+  settings.transcription.azureSpeechRegion = 'eastus';
+  settings.apiKeys.azureSpeech = '';
+  resolved = resolveRealtimeTranscription(settings);
+  assert.equal(resolved.ready, false);
+  assert.match(resolved.configurationError, /Azure AI Speech API key is required/);
+});
+
+test('Azure AI Speech region must be a bare region name, never a URL', () => {
+  const settings = getDefaultSettings();
+  settings.transcription.realtimeProvider = 'azureSpeech';
+  settings.transcription.azureSpeechRegion = 'https://eastus.api.cognitive.microsoft.com';
+  settings.apiKeys.azureSpeech = 'speech-secret';
+
+  const resolved = resolveRealtimeTranscription(settings);
+  assert.equal(resolved.ready, false);
+  assert.match(resolved.configurationError, /region/);
 });
