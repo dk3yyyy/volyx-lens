@@ -47,10 +47,13 @@ const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, rail
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { createMeetingStore } = require('./src/meeting-store');
+const { createMeetingDetector } = require('./src/meeting-detect');
 const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = require('./src/response-context');
 
 const chatHistory = createChatHistory();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
+const meetingDetector = createMeetingDetector();
+let meetingDetectedNotified = false;
 const personalContextStore = createPersonalContextStore({ userDataPath: currentUserDataPath, safeStorage });
 const AUTO_ANSWER_CONFIDENCE_MIN = 0.5;
 const AUTO_ANSWER_COOLDOWN_MS = 60000;
@@ -298,6 +301,8 @@ function resetTranscriptData() {
   transcriptSegmentArrivalTimes.clear();
   detectedQuestionsByTurn.clear();
   autoAnswerPolicy.reset();
+  meetingDetector.reset();
+  meetingDetectedNotified = false;
   transcriptSequence = 0;
   transcriptSegmentSequence = 0;
   finalizedSegmentWatermark = 0;
@@ -325,6 +330,13 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
       removeRecentTranscriptSegment(leakedSegment.id);
       removeTranscriptSegment(leakedSegment);
+      if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true) {
+        const state = meetingDetector.remove(leakedSegment.id);
+        if (!state.meeting && meetingDetectedNotified) {
+          meetingDetectedNotified = false;
+          send('meeting:cleared', {});
+        }
+      }
     }
   }
 
@@ -350,6 +362,13 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
       detectedQuestionsByTurn.set(turn.id, question);
       send('question:detected', { turnId: turn.id, text: question, ts: timestamp });
       maybeAutoAnswer(question, timestamp);
+    }
+  }
+  if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true) {
+    const state = meetingDetector.add({ id: segment.id, channel: normalizedChannel, text: turn.text, ts: timestamp });
+    if (state.meeting && !meetingDetectedNotified) {
+      meetingDetectedNotified = true;
+      send('meeting:detected', { since: state.detectedSince });
     }
   }
 }
@@ -912,6 +931,7 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
     turns: pendingFinalizeTurns(),
     enabled: true,
     reason,
+    meeting: meetingDetector.snapshot().meeting,
     startedAt,
     endedAt,
   });
@@ -970,6 +990,8 @@ async function applyCaptureState(active) {
   await stopTranscriptionPipeline({ immediate });
   if (reason !== 'suspend' && reason !== 'lock') {
     finalizeMeeting(reason || 'capture-stop', { startedAt: captureStartedAtEnd, endedAt: lastCaptureEndedAt });
+    meetingDetector.reset();
+    meetingDetectedNotified = false;
   }
   return false;
 }

@@ -90,7 +90,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
   }
 
-  function finalize({ turns = [], enabled = false, reason = 'capture-stop', startedAt = null, endedAt = null } = {}) {
+  function finalize({ turns = [], enabled = false, reason = 'capture-stop', meeting = false, startedAt = null, endedAt = null } = {}) {
     if (!enabled) return { saved: false, reason: 'disabled' };
     const normalized = snapshotTurns(turns);
     if (!normalized.length) return { saved: false, reason: 'empty' };
@@ -104,6 +104,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       id,
       version: 1,
       reason,
+      meeting: meeting === true,
       startedAt: Number.isFinite(startedAt) ? startedAt : null,
       endedAt: Number.isFinite(endedAt) ? endedAt : now(),
       turnCount: normalized.length,
@@ -136,6 +137,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         records.push({
           id,
           reason: record.reason || null,
+          meeting: record.meeting === true,
           startedAt: Number.isFinite(record.startedAt) ? record.startedAt : null,
           endedAt: Number.isFinite(record.endedAt) ? record.endedAt : null,
           turnCount: Array.isArray(record.turns) ? record.turns.length : 0,

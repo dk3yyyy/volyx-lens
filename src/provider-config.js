@@ -101,6 +101,7 @@ function getDefaultSettings() {
       delay: 'low',
       whisperModel: 'base.en',
       historyEnabled: false,
+      meetingDetection: false,
     },
   };
 }
