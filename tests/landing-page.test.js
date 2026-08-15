@@ -23,7 +23,7 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, /<main\b[^>]*id="main"/i);
   assert.equal((html.match(/<h1\b/gi) || []).length, 1);
   assert.match(html, /A private assistant for your Mac/i);
-  assert.match(html, /ad-hoc signed test build/i);
+  assert.match(html, /Production release[\s\S]*?v0\.4\.0/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /there is no Volyx Lens-operated intermediary server/i);
   assert.match(html, /Apache License 2\.0/i);
@@ -32,12 +32,12 @@ test('landing page ships a semantic, truthful static entry point', () => {
 
 test('landing page presents the response providers the app actually supports', () => {
   const html = read('index.html');
-  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'Ollama'];
+  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'Ollama', 'Deepgram', 'Azure AI Speech'];
 
   for (const provider of expectedProviders) {
     assert.match(html, new RegExp(`>${provider.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}<`, 'i'));
   }
-  assert.match(html, /Eight routes/i);
+  assert.match(html, /Ten routes/i);
   assert.doesNotMatch(html, /Azure OpenAI/i);
 });
 
