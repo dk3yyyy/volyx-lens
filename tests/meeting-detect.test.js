@@ -171,6 +171,38 @@ test('detector entries are keyed by segment id so removed turns do not linger', 
   assert.equal(state.windowTurns, 5);
 });
 
+test('update retimestamps a surviving grouped turn instead of dropping it', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  const t0 = now;
+  const turns = [
+    { id: 1, channel: 'them', text: 'One.', ts: t0 },
+    { id: 2, channel: 'you', text: 'Reply.', ts: t0 + 1 * min },
+    { id: 3, channel: 'them', text: 'Two.', ts: t0 + 2 * min },
+    { id: 4, channel: 'you', text: 'Reply again.', ts: t0 + 3 * min },
+    { id: 5, channel: 'them', text: 'Three.', ts: t0 + 4 * min },
+    { id: 6, channel: 'you', text: 'Leaked mic echo trimmed from the first you-turn.', ts: t0 + 5 * min },
+  ];
+  for (const turn of turns) detector.add(turn);
+  assert.equal(detector.snapshot().meeting, true);
+  // The first you-turn's initial segment was trimmed as cross-talk, but the
+  // turn survives with a later timestamp; its detector entry must be refreshed,
+  // not removed, so the two-sided classification is preserved.
+  const state = detector.update(2, t0 + 4.5 * min);
+  assert.equal(state.meeting, true);
+  assert.equal(state.youTurns, 3);
+  assert.equal(state.windowTurns, 6);
+});
+
+test('update of an unknown or untyped id is a no-op', () => {
+  const detector = createMeetingDetector({ now: () => now });
+  detector.add({ id: 1, channel: 'you', text: 'Hi', ts: now });
+  const before = detector.snapshot().windowTurns;
+  assert.equal(detector.update(999, now + min).windowTurns, before);
+  assert.equal(detector.update(null, now + min).windowTurns, before);
+  assert.equal(detector.update(undefined, now + min).windowTurns, before);
+  assert.equal(detector.update('1', now + min).windowTurns, before);
+});
+
 test('meeting detection is opt-in, runs only in-session on finalized turns, and never calls a model', () => {
   assert.equal(providerConfig.includes('meetingDetection: false,'), true);
   assert.match(store, /meetingDetection'\) && typeof value\.meetingDetection === 'boolean'/);
@@ -190,9 +222,10 @@ test('grouped-turn segment updates do not inflate the detector turn count', () =
 });
 
 test('suppressed cross-talk retracts a fully removed leaked turn and clears the indicator', () => {
-  assert.match(main, /const turnRemoved = removeTranscriptSegment\(leakedSegment\)/);
-  assert.match(main, /meetingDetection === true && turnRemoved/);
+  assert.match(main, /const survivingTs = removeTranscriptSegment\(leakedSegment\)/);
+  assert.match(main, /if \(survivingTs === null\)/);
   assert.match(main, /meetingDetector\.remove\(leakedSegment\.turnId\)/);
+  assert.match(main, /meetingDetector\.update\(leakedSegment\.turnId, survivingTs\)/);
   assert.match(main, /if \(!state\.meeting && meetingDetectedNotified\)/);
   assert.match(main, /meetingDetectedNotified = false;/);
   assert.match(main, /send\('meeting:cleared', \{\}\)/);
@@ -201,12 +234,12 @@ test('suppressed cross-talk retracts a fully removed leaked turn and clears the 
   assert.match(renderer, /meeting-indicator'\)\.classList\.add\('hidden'\)/);
 });
 
-test('cross-talk that only trims one segment of a surviving turn keeps its detector entry', () => {
-  const retractBlock = main.match(/meetingDetection === true && turnRemoved[\s\S]{0,160}/);
-  assert.ok(retractBlock, 'retraction is gated on the turn being fully removed');
-  assert.match(retractBlock[0], /meetingDetector\.remove\(leakedSegment\.turnId\)/);
-  assert.match(main, /return true;\n\s*\}/);
-  assert.match(main, /return false;\n\s*\}/);
+test('cross-talk that only trims one segment of a surviving turn keeps its detector entry and refreshes its timestamp', () => {
+  assert.match(main, /if \(survivingTs === null\)/);
+  assert.match(main, /meetingDetector\.update\(leakedSegment\.turnId, survivingTs\)/);
+  assert.match(main, /function removeTranscriptSegment\(segment\)[\s\S]{0,600}return turn\.ts;/);
+  assert.match(main, /turn\.ts = turn\.segments\[0\]\.ts;/);
+  assert.match(main, /if \(!turn\.segments\.length\)[\s\S]{0,180}return null;/);
 });
 
 test('capture stop resets the detector so each listening period is classified independently', () => {

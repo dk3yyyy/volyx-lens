@@ -85,6 +85,18 @@ function createMeetingDetector({
     return recomputeMeeting();
   }
 
+  function update(id, ts) {
+    if (!Number.isFinite(id)) return snapshot();
+    const entry = turns.find((turn) => turn.id === id);
+    if (!entry) return snapshot();
+    const newTs = Number.isFinite(ts) ? ts : now();
+    if (newTs === entry.ts) return snapshot();
+    entry.ts = newTs;
+    const cutoff = newTs - windowMs;
+    while (turns.length && turns[0].ts < cutoff) turns.shift();
+    return recomputeMeeting();
+  }
+
   function reset() {
     turns.length = 0;
     meeting = false;
@@ -92,7 +104,7 @@ function createMeetingDetector({
     return snapshot();
   }
 
-  return { add, remove, snapshot, reset };
+  return { add, remove, update, snapshot, reset };
 }
 
 module.exports = { createMeetingDetector, DEFAULT_WINDOW_MS, DEFAULT_MIN_TURNS_PER_SIDE, DEFAULT_MIN_FLIPS, DEFAULT_MIN_SPAN_MS };

@@ -273,18 +273,18 @@ function removeRecentTranscriptSegment(segmentId) {
 
 function removeTranscriptSegment(segment) {
   const turnIndex = transcript.findIndex((turn) => turn.id === segment.turnId);
-  if (turnIndex < 0) return false;
+  if (turnIndex < 0) return null;
   const turn = transcript[turnIndex];
   turn.segments = turn.segments.filter((entry) => entry.id !== segment.id);
   if (!turn.segments.length) {
     transcript.splice(turnIndex, 1);
     send('transcript:remove', { id: turn.id, channel: turn.channel, reason: 'cross_talk' });
-    return true;
+    return null;
   }
   turn.text = joinTranscriptSegments(turn.segments);
   turn.ts = turn.segments[0].ts;
   send('transcript:update', publicTranscriptTurn(turn));
-  return false;
+  return turn.ts;
 }
 
 function rememberTranscriptSegment(segment, receivedAt) {
@@ -330,9 +330,14 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     }
     for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
       removeRecentTranscriptSegment(leakedSegment.id);
-      const turnRemoved = removeTranscriptSegment(leakedSegment);
-      if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true && turnRemoved) {
-        const state = meetingDetector.remove(leakedSegment.turnId);
+      const survivingTs = removeTranscriptSegment(leakedSegment);
+      if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true) {
+        let state;
+        if (survivingTs === null) {
+          state = meetingDetector.remove(leakedSegment.turnId);
+        } else {
+          state = meetingDetector.update(leakedSegment.turnId, survivingTs);
+        }
         if (!state.meeting && meetingDetectedNotified) {
           meetingDetectedNotified = false;
           send('meeting:cleared', {});
