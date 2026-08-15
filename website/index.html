@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d0b1e">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="Volyx Lens is a privacy-oriented macOS assistant that lets you choose the screen, microphone, and system-audio context sent to your own AI provider.">
+  <meta name="description" content="Volyx Lens is a privacy-oriented macOS assistant that lets you choose the screen, microphone, and system-audio context sent to the AI response and transcription providers you configure.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vdu1mkBtPj4jSI7Qn/t3Za7dntLpf7U6DAMMy5QREGw='; style-src 'self'; img-src 'self'; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://volyxlens.pages.dev/">
   <meta property="og:title" content="Volyx Lens — Choose what your AI sees">
-  <meta property="og:description" content="A private assistant for your Mac. You choose the context and the provider.">
+  <meta property="og:description" content="A private assistant for your Mac. You choose the context, the response provider, and the transcription provider.">
   <meta property="og:image" content="https://volyxlens.pages.dev/assets/volyx-lens-onboarding.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Volyx Lens — Choose what your AI sees">
-  <meta name="twitter:description" content="A private assistant for your Mac. You choose the context and the provider.">
+  <meta name="twitter:description" content="A private assistant for your Mac. You choose the context, the response provider, and the transcription provider.">
   <meta name="twitter:image" content="https://volyxlens.pages.dev/assets/volyx-lens-onboarding.png">
   <title>Volyx Lens — Choose what your AI sees</title>
   <link rel="canonical" href="https://volyxlens.pages.dev/">
@@ -28,11 +28,11 @@
     "name": "Volyx Lens",
     "applicationCategory": "UtilitiesApplication",
     "operatingSystem": "macOS 13 or later on Apple Silicon and Intel",
-    "softwareVersion": "0.3.1",
+    "softwareVersion": "0.4.0",
     "license": "https://www.apache.org/licenses/LICENSE-2.0",
     "url": "https://github.com/dk3yyyy/volyx-lens",
-    "downloadUrl": "https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1",
-    "description": "A privacy-oriented macOS context assistant that sends user-selected screen, microphone, and system-audio context directly to a configured AI provider."
+    "downloadUrl": "https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.4.0",
+    "description": "A privacy-oriented macOS context assistant that sends user-selected screen, microphone, and system-audio context directly to the AI response and transcription providers you configure."
   }
   </script>
 </head>
@@ -41,7 +41,7 @@
 
   <div class="release-ribbon" role="status">
     <span class="release-dot" aria-hidden="true"></span>
-    <span>Public test build <strong>v0.3.1</strong></span>
+    <span>Production release <strong>v0.4.0</strong></span>
     <span class="release-divider" aria-hidden="true"></span>
     <span>Apple Silicon and Intel</span>
   </div>
@@ -74,15 +74,15 @@
       <div class="hero-copy">
         <p class="eyebrow"><span>Private context assistant</span><span>for macOS</span></p>
         <h1 id="hero-title">Your Mac has the context.<br><em>You choose what AI sees.</em></h1>
-        <p class="hero-lede">Volyx Lens brings your screen, voice, and meeting audio into one compact assistant. Select the inputs you need, choose your AI provider, and keep control of the route.</p>
+        <p class="hero-lede">Volyx Lens brings your screen, voice, and meeting audio into one compact assistant. Select the inputs you need, choose your response and transcription providers, and keep control of the route.</p>
         <div class="hero-actions">
-          <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1">
-            <span>Download test build</span>
+          <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.4.0">
+            <span>Download v0.4.0</span>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0 4-4m-4 4L6 9M4 17h12"/></svg>
           </a>
           <a class="button button-quiet" href="#how-it-works">See how context moves</a>
         </div>
-        <p class="hero-note">Free public test release. macOS 13+, Apple Silicon and Intel. Bring your own provider key.</p>
+        <p class="hero-note">Signed and notarized production release. macOS 13+, Apple Silicon and Intel. Bring your own provider key.</p>
       </div>
 
       <div class="aperture-wrap" aria-label="Interactive context selector">
@@ -134,7 +134,7 @@
 
       <div class="hero-facts" aria-label="Product facts">
         <div><strong>3</strong><span>context inputs</span></div>
-        <div><strong>8</strong><span>provider routes</span></div>
+        <div><strong>10</strong><span>provider routes</span></div>
         <div><strong>0</strong><span>Volyx Lens relay servers</span></div>
         <div><strong>1</strong><span>compact desktop rail</span></div>
       </div>
@@ -277,8 +277,9 @@
     <section class="provider-section" aria-labelledby="provider-heading">
       <div class="provider-copy">
         <p class="eyebrow">Bring your own model access</p>
-        <h2 id="provider-heading">Eight routes.<br><em>No forced provider.</em></h2>
-        <p>Configure the provider that fits your work. Model availability and charges come from that provider, not Volyx Lens.</p>
+        <h2 id="provider-heading">Ten routes.<br><em>No forced provider.</em></h2>
+        <p>Configure the response and transcription providers that fit your work. Model availability and charges come from those providers, not Volyx Lens.</p>
+        <p>Realtime and batch transcription routes: OpenAI · Azure Foundry · Deepgram · Azure AI Speech · optional local Whisper.</p>
       </div>
       <ul class="provider-list" aria-label="Supported AI providers">
         <li><span class="provider-glyph glyph-openai">O</span><strong>OpenAI</strong></li>
@@ -289,24 +290,26 @@
         <li><span class="provider-glyph glyph-groq">G</span><strong>Groq</strong></li>
         <li><span class="provider-glyph glyph-openrouter">O</span><strong>OpenRouter</strong></li>
         <li><span class="provider-glyph glyph-ollama">O</span><strong>Ollama</strong></li>
+        <li><span class="provider-glyph glyph-deepgram">D</span><strong>Deepgram</strong></li>
+        <li><span class="provider-glyph glyph-azure-speech">A</span><strong>Azure AI Speech</strong></li>
       </ul>
     </section>
 
     <section class="release-section" id="release" aria-labelledby="release-heading">
       <div class="release-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="release-content">
-        <p class="eyebrow">Try the public test build</p>
+        <p class="eyebrow">Try the production release</p>
         <h2 id="release-heading">Put the lens on your Mac.</h2>
-        <p>Version 0.3.1 is an ad-hoc signed test build for Apple Silicon and Intel Macs. It is not notarized, and first launch requires the documented macOS approval steps.</p>
+        <p>Version 0.4.0 is an Apple Developer ID–signed and notarized production release for Apple Silicon and Intel Macs. It opens normally without Gatekeeper workarounds and supports one-click in-app updates.</p>
         <div class="release-actions">
-          <a class="button button-primary button-light" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1">
-            Download v0.3.1
+          <a class="button button-primary button-light" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.4.0">
+            Download v0.4.0
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0 4-4m-4 4L6 9M4 17h12"/></svg>
           </a>
-          <a class="text-link" href="https://github.com/dk3yyyy/volyx-lens#public-test-release-v031" target="_blank" rel="noreferrer">Read installation steps <span aria-hidden="true">↗</span></a>
+          <a class="text-link" href="https://github.com/dk3yyyy/volyx-lens#install-the-dmg" target="_blank" rel="noreferrer">Read installation steps <span aria-hidden="true">↗</span></a>
         </div>
         <div class="release-meta">
-          <span>macOS 13+</span><span>Apple Silicon and Intel</span><span>Bring your own key</span><span>Free test release</span>
+          <span>macOS 13+</span><span>Apple Silicon and Intel</span><span>Bring your own key</span><span>Notarized release</span>
         </div>
       </div>
     </section>
@@ -341,12 +344,12 @@
           <p>The app uses Electron secure storage backed by macOS Keychain when available. If secure storage is unavailable, it falls back to a local plaintext credential record. The settings screen reports the storage status and lets you update or remove credentials.</p>
         </details>
         <details>
-          <summary>Is the test build notarized?<span aria-hidden="true"></span></summary>
-          <p>No. Version 0.3.1 is ad-hoc signed. Follow the repository's first-launch instructions and verify the published checksum before opening it.</p>
+          <summary>Is the release notarized?<span aria-hidden="true"></span></summary>
+          <p>Yes. Version 0.4.0 is Apple Developer ID–signed and notarized, so it opens without right-click workarounds. SHA-256 checksums, ZIP packages, and SBOMs are published with the release.</p>
         </details>
         <details>
           <summary>What works offline?<span aria-hidden="true"></span></summary>
-          <p>AI responses require a configured provider; with a local Ollama server they run fully offline. Transcription can use optional Local Whisper when you install and configure it; automatic cloud fallback remains off by default.</p>
+          <p>AI responses require a configured provider; with a local Ollama server they run fully offline. Realtime transcription uses your configured provider (OpenAI, Azure Foundry, Deepgram, or Azure AI Speech), and optional Local Whisper covers offline batch transcription; automatic cloud fallback remains off by default.</p>
         </details>
         <details>
           <summary>Can I use it commercially?<span aria-hidden="true"></span></summary>
