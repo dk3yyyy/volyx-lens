@@ -176,9 +176,17 @@ test('meeting detection is opt-in, runs only in-session on finalized turns, and 
   assert.match(store, /meetingDetection'\) && typeof value\.meetingDetection === 'boolean'/);
   assert.match(main, /meetingDetection === true/);
   assert.match(main, /meetingDetector\.add\(\{ id: segment\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
+  assert.match(main, /meetingDetection === true && !updated/);
   assert.match(main, /meetingDetector\.reset\(\)/);
   assert.match(main, /meeting:detected/);
   assert.doesNotMatch(main, /meetingDetector[\s\S]{0,200}(runFeature|\.stream\()/);
+});
+
+test('grouped-turn segment updates do not inflate the detector turn count', () => {
+  assert.match(main, /meetingDetector\.add\(\{ id: segment\.id, channel: normalizedChannel, text: turn\.text, ts: timestamp \}\)/);
+  const addBlock = main.match(/meetingDetection === true && !updated[\s\S]{0,120}/);
+  assert.ok(addBlock, 'detector add is gated on a newly created turn');
+  assert.match(addBlock[0], /meetingDetector\.add/);
 });
 
 test('suppressed cross-talk retracts the leaked contribution and clears the indicator', () => {

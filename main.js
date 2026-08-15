@@ -364,7 +364,7 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
       maybeAutoAnswer(question, timestamp);
     }
   }
-  if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true) {
+  if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true && !updated) {
     const state = meetingDetector.add({ id: segment.id, channel: normalizedChannel, text: turn.text, ts: timestamp });
     if (state.meeting && !meetingDetectedNotified) {
       meetingDetectedNotified = true;
