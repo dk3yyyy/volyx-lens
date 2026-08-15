@@ -266,6 +266,60 @@ test('error messages are sanitized and never include the API key', async () => {
   assert.doesNotMatch(JSON.stringify(failures[0]), /speech-secret-value/);
 });
 
+test('close signals end-of-audio and delivers a pending final during the flush window before tearing down', async () => {
+  const { channel, events } = buildChannel({ flushGraceMs: 25 });
+  const connecting = channel.connect();
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  await connecting;
+  socket.sent.length = 0;
+
+  channel.append(Buffer.alloc(480 * 2));
+  channel.close();
+
+  assert.equal(socket.readyState, FakeWebSocket.OPEN);
+  const endOfAudio = socket.sent.filter(Buffer.isBuffer).at(-1);
+  assert.ok(Buffer.isBuffer(endOfAudio));
+  const headerLength = endOfAudio.readUInt16BE(0);
+  assert.match(endOfAudio.slice(2, 2 + headerLength).toString('ascii'), /^path:audio/);
+  assert.equal(endOfAudio.length, 2 + headerLength);
+
+  const phrase = [
+    'path:speech.phrase',
+    'x-requestid:flush',
+    'x-timestamp:2026-01-01T00:00:02.000Z',
+    '',
+    '',
+    '{"RecognitionStatus":"Success","DisplayText":"last words."}',
+  ].join('\r\n');
+  socket.emit('message', phrase);
+  assert.equal(events.final.length, 1);
+  assert.equal(events.final[0].text, 'last words.');
+
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(socket.readyState, 3);
+  assert.equal(channel.socket, null);
+});
+
+test('commit signals end-of-audio and a later close does not send a second signal', async () => {
+  const { channel } = buildChannel({ flushGraceMs: 25 });
+  const connecting = channel.connect();
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  await connecting;
+  socket.sent.length = 0;
+
+  channel.commit();
+  channel.close();
+
+  const frames = socket.sent.filter(Buffer.isBuffer);
+  assert.equal(frames.length, 1);
+  assert.equal(frames[0].length, 2 + frames[0].readUInt16BE(0));
+
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(socket.readyState, 3);
+});
+
 test('manager streams continuous Azure Speech audio without a local commit', async () => {
   const manager = new RealtimeTranscriptionManager({
     apiKey: 'speech-secret',

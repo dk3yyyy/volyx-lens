@@ -8,8 +8,11 @@ const { classifyRealtimeError } = require('./realtime-errors');
 // the OpenAI Realtime protocol used by the other channels. It speaks in
 // header-prefixed text messages (speech.config / speech.hypothesis /
 // speech.phrase / speech.endpointDetected / turn.end) and binary audio frames.
-// The Speech service performs its own endpoint detection, so the channel does
-// not need commit() to force recognition; it only streams audio continuously.
+// The Speech service performs its own endpoint detection, but it only flushes
+// a trailing recognition result once the client signals end-of-stream. Both
+// commit() and close() send the end-of-audio frame (an empty binary audio
+// message) so a pending final phrase is delivered before the socket is torn
+// down instead of being silently dropped.
 
 const STT_BASE_HOST = '.stt.speech.microsoft.com';
 const STT_CONVERSATION_PATH = '/speech/recognition/conversation/cognitiveservices/v1';
@@ -115,6 +118,7 @@ class AzureSpeechRealtimeChannel {
     connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
     maxQueuedBytes = sampleRate * 2 * 3,
     maxBufferedBytes = MAX_CONNECTED_BUFFER_BYTES,
+    flushGraceMs = 500,
     WebSocketImpl,
     onPartial = () => {},
     onFinal = () => {},
@@ -131,6 +135,7 @@ class AzureSpeechRealtimeChannel {
     this.connectTimeoutMs = connectTimeoutMs;
     this.maxQueuedBytes = maxQueuedBytes;
     this.maxBufferedBytes = maxBufferedBytes;
+    this.flushGraceMs = flushGraceMs;
     this.WebSocketImpl = WebSocketImpl || require('ws');
     this.onPartial = onPartial;
     this.onFinal = onFinal;
@@ -151,6 +156,8 @@ class AzureSpeechRealtimeChannel {
     this.audioSentMs = 0;
     this.intentionalClose = false;
     this.failureReported = false;
+    this.endOfAudioSent = false;
+    this.flushCloseTimer = null;
   }
 
   connect() {
@@ -212,6 +219,7 @@ class AzureSpeechRealtimeChannel {
       });
       socket.on('close', (code, reason) => {
         this._clearConnectTimer();
+        this._clearFlushTimer();
         this.onState({ channel: this.channel, state: this.intentionalClose ? 'stopped' : 'disconnected' });
         if (!settled) {
           settled = true;
@@ -248,24 +256,63 @@ class AzureSpeechRealtimeChannel {
     return true;
   }
 
-  // Azure Speech performs its own endpoint detection server-side; there is no
-  // commit signal. Kept as a no-op to satisfy the shared channel contract.
-  commit() {}
+  // Azure Speech flushes a trailing recognition result only after the client
+  // signals end-of-stream. commit() sends the end-of-audio frame so the server
+  // finalizes the current phrase; the manager calls this during graceful stops.
+  commit() {
+    this._sendEndOfAudio();
+  }
 
   close() {
     this.intentionalClose = true;
     this._clearConnectTimer();
+    this._clearFlushTimer();
     this.queuedAudio = Buffer.alloc(0);
     this.pendingAudioBytes = 0;
     this.completed.clear();
-    if (this.socket && this.socket.readyState === this.WebSocketImpl.OPEN) {
-      this.socket.close(1000, 'capture stopped');
-    } else if (this.socket && typeof this.socket.terminate === 'function') {
-      this.socket.terminate();
-    } else if (this.socket && typeof this.socket.close === 'function') {
-      try { this.socket.close(); } catch { /* connecting sockets may reject close */ }
+    if (this._isOpen()) {
+      this._sendEndOfAudio();
+      if (this.flushGraceMs > 0) {
+        // Keep the message handler live for a bounded window so a final phrase
+        // the service emits in response to the end-of-audio frame is delivered
+        // before the socket is torn down.
+        this.flushCloseTimer = setTimeout(() => this._teardownSocket(), this.flushGraceMs);
+        if (typeof this.flushCloseTimer.unref === 'function') this.flushCloseTimer.unref();
+        return;
+      }
     }
+    this._teardownSocket();
+  }
+
+  _sendEndOfAudio() {
+    if (!this._isOpen() || this.endOfAudioSent) return;
+    this.endOfAudioSent = true;
+    this.socket.send(buildAudioMessage(Buffer.alloc(0), {
+      requestId: newRequestId(),
+      timestamp: new Date().toISOString(),
+      sampleRate: this.sampleRate,
+    }));
+  }
+
+  _teardownSocket() {
+    this._clearFlushTimer();
+    const socket = this.socket;
     this.socket = null;
+    if (!socket) return;
+    if (socket.readyState === this.WebSocketImpl.OPEN) {
+      socket.close(1000, 'capture stopped');
+    } else if (typeof socket.terminate === 'function') {
+      socket.terminate();
+    } else if (typeof socket.close === 'function') {
+      try { socket.close(); } catch { /* connecting sockets may reject close */ }
+    }
+  }
+
+  _clearFlushTimer() {
+    if (this.flushCloseTimer) {
+      clearTimeout(this.flushCloseTimer);
+      this.flushCloseTimer = null;
+    }
   }
 
   _isOpen() {
