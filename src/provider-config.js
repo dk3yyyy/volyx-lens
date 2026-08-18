@@ -32,6 +32,16 @@ const PROVIDERS = Object.freeze({
     supportsVision: false,
     baseURL: 'https://api.groq.com/openai/v1',
   },
+  nvidia: {
+    label: 'NVIDIA',
+    models: { fast: 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1', smart: 'meta/llama-3.2-11b-vision-instruct' },
+    supportsVision: true,
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+    // The NVIDIA hosted API accepts at most one image per prompt. Task Context
+    // image selection must be capped to one screen so multi-screen requests
+    // are not rejected after capture.
+    maxImagesPerRequest: 1,
+  },
   openrouter: {
     label: 'OpenRouter',
     models: { fast: 'meta-llama/llama-3.1-8b-instruct', smart: 'openai/gpt-4o' },
@@ -61,12 +71,21 @@ const STT_MODELS = Object.freeze({
 // Foundry / Azure Realtime credentials used by the OpenAI-compatible paths.
 const REALTIME_PROVIDERS = Object.freeze(['openai', 'azure', 'deepgram', 'azureSpeech']);
 
+// OpenAI-compatible providers where the fast and smart tiers may use different
+// APIs. These get optional per-tier API key slots (provider.fast / provider.smart)
+// and per-tier endpoint overrides in Settings.
+const TIER_KEY_PROVIDERS = Object.freeze(['azure', 'deepseek', 'groq', 'nvidia', 'openrouter']);
+
 function getDefaultSettings() {
   const apiKeys = {};
   const models = {};
   for (const [id, provider] of Object.entries(PROVIDERS)) {
     apiKeys[id] = '';
     models[id] = { ...provider.models };
+    if (TIER_KEY_PROVIDERS.includes(id)) {
+      apiKeys[`${id}.fast`] = '';
+      apiKeys[`${id}.smart`] = '';
+    }
   }
 
   return {
@@ -81,6 +100,7 @@ function getDefaultSettings() {
     apiKeys: { ...apiKeys, deepgram: '', azureRealtime: '', azureSpeech: '' },
     models,
     endpoints: { azure: '', azureRealtime: '' },
+    endpointByTier: {},
     audio: {
       inputDeviceId: '',
       micEnabled: true,
@@ -168,6 +188,10 @@ function normalizePhraseList(value) {
     .slice(0, 50);
 }
 
+// A provider may expose different base URLs per tier (e.g. a fast model on one
+// API and a smart model on another). Settings can override either tier with a
+// custom endpoint; otherwise the tier-specific default or the shared baseURL
+// is used. Azure endpoints always pass through official-endpoint validation.
 function resolveProvider(settings) {
   const provider = settings.provider;
   const definition = PROVIDERS[provider];
@@ -180,19 +204,31 @@ function resolveProvider(settings) {
     };
   }
 
-  const apiKey = (settings.apiKeys || {})[provider] || '';
   const tier = settings.smart ? 'smart' : 'fast';
+  const apiKey = ((settings.apiKeys || {})[`${provider}.${tier}`] || (settings.apiKeys || {})[provider] || '').trim();
   const model = ((settings.models || {})[provider] || {})[tier] || '';
   const requiresKey = definition.requiresKey !== false;
-  let baseURL = definition.baseURL || null;
+  const tierOverrides = (settings.endpointByTier || {})[provider] || {};
+  const tierEndpoint = String(tierOverrides[tier] || '').trim();
+  let baseURL = null;
   let configurationError = null;
 
   if (provider === 'azure') {
     try {
-      baseURL = normalizeAzureEndpoint(((settings.endpoints || {}).azure || ''));
+      baseURL = normalizeAzureEndpoint(tierEndpoint || ((settings.endpoints || {}).azure || ''));
     } catch (error) {
       configurationError = error.message;
     }
+  } else if (tierEndpoint) {
+    try {
+      const url = new URL(tierEndpoint);
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('protocol');
+      baseURL = tierEndpoint.replace(/\/+$/, '');
+    } catch {
+      configurationError = `${definition.label} ${tier} endpoint must be a valid http(s) URL.`;
+    }
+  } else {
+    baseURL = (definition.baseURLByTier && definition.baseURLByTier[tier]) || definition.baseURL || null;
   }
 
   if (requiresKey && !apiKey) configurationError = `${definition.label} API key is required.`;
@@ -206,6 +242,7 @@ function resolveProvider(settings) {
     tier,
     baseURL,
     supportsVision: definition.supportsVision,
+    maxImagesPerRequest: definition.maxImagesPerRequest || null,
     tokenLimitParameter: definition.tokenLimitParameter || 'max_tokens',
     configurationError,
     ready: !configurationError,

@@ -22,3 +22,12 @@ test('combined Assist retains screen and recent conversation behavior', () => {
   assert.equal(mode.needsScreen, true);
   assert.match(mode.build({ transcript: [{ channel: 'you', text: 'Combined context' }] }), /Combined context/);
 });
+
+test('combined Assist with no captured conversation directs the model to solve the visible task instead of echoing', () => {
+  const mode = MODES.assist;
+  const prompt = mode.build({ transcript: [] });
+  assert.equal(prompt.includes('(none)'), false);
+  assert.match(prompt, /use only the attached screenshot/i);
+  assert.match(prompt, /solve the visible task/i);
+  assert.match(mode.system, /never repeat, restate, or transcribe the visible problem text/i);
+});

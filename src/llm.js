@@ -38,13 +38,14 @@ async function streamOpenAICompatible({
   imageDataUrls,
   maxTokens,
   tokenLimitParameter,
+  extraBody,
   onToken,
   signal,
 }) {
   const client = new OpenAI(clientOptions);
   const images = collectImageDataUrls(imageDataUrls, imageDataUrl);
   const messages = buildOpenAIMessages(system, turns, images);
-  const baseRequest = { model, messages, stream: true };
+  const baseRequest = { model, messages, stream: true, ...(extraBody || {}) };
   let activeTokenParameter = tokenLimitParameter || 'max_tokens';
   let stream;
   try {
@@ -163,11 +164,15 @@ function createLLM(settings, dependencies = {}) {
       // Azure is handled separately because it authenticates with an api-key header.
       if (resolved.baseURL) {
         const OpenAI = dependencies.OpenAI || require('openai');
+        const extraBody = resolved.provider === 'nvidia'
+          ? { chat_template_kwargs: { enable_thinking: false, force_nonempty_content: true } }
+          : null;
         return streamOpenAICompatible({
           ...args,
           OpenAI,
           // Keyless local endpoints (Ollama) still require a placeholder so the SDK builds a client.
           clientOptions: { apiKey: resolved.apiKey || 'ollama', baseURL: resolved.baseURL },
+          extraBody,
         });
       }
       if (resolved.provider === 'anthropic') {

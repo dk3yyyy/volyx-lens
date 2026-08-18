@@ -174,6 +174,116 @@ test('Groq and OpenRouter require an API key and model before they are ready', (
   assert.match(resolved.configurationError, /OpenRouter API key is required/);
 });
 
+test('per-tier endpoint overrides route fast and smart tiers to different APIs', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'nvidia';
+  settings.apiKeys.nvidia = 'nvapi-test-key';
+  settings.endpointByTier.nvidia = {
+    fast: 'https://fast.api.example.com/v1/',
+    smart: 'https://smart.api.example.com/v1',
+  };
+
+  const fast = resolveProvider(settings);
+  assert.equal(fast.ready, true);
+  assert.equal(fast.tier, 'fast');
+  assert.equal(fast.baseURL, 'https://fast.api.example.com/v1');
+
+  settings.smart = true;
+  const smart = resolveProvider(settings);
+  assert.equal(smart.ready, true);
+  assert.equal(smart.tier, 'smart');
+  assert.equal(smart.baseURL, 'https://smart.api.example.com/v1');
+});
+
+test('per-tier API keys override the shared provider key for each tier', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'nvidia';
+  settings.apiKeys.nvidia = 'nvapi-shared-key';
+  settings.apiKeys['nvidia.fast'] = 'nvapi-fast-key';
+  settings.apiKeys['nvidia.smart'] = 'nvapi-smart-key';
+
+  const fast = resolveProvider(settings);
+  assert.equal(fast.apiKey, 'nvapi-fast-key');
+
+  settings.smart = true;
+  const smart = resolveProvider(settings);
+  assert.equal(smart.apiKey, 'nvapi-smart-key');
+});
+
+test('per-tier API key falls back to the shared provider key when unset', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'nvidia';
+  settings.apiKeys.nvidia = 'nvapi-shared-key';
+
+  const fast = resolveProvider(settings);
+  assert.equal(fast.apiKey, 'nvapi-shared-key');
+
+  settings.smart = true;
+  const smart = resolveProvider(settings);
+  assert.equal(smart.apiKey, 'nvapi-shared-key');
+});
+
+test('NVIDIA caps images per prompt to 1 while other vision providers do not', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'nvidia';
+  settings.apiKeys.nvidia = 'nvapi-test-key';
+  assert.equal(resolveProvider(settings).maxImagesPerRequest, 1);
+
+  settings.provider = 'openai';
+  settings.apiKeys.nvidia = '';
+  settings.apiKeys.openai = 'openai-test-key';
+  assert.equal(resolveProvider(settings).maxImagesPerRequest, null);
+
+  settings.provider = 'anthropic';
+  settings.apiKeys.openai = '';
+  settings.apiKeys.anthropic = 'ant-test-key';
+  assert.equal(resolveProvider(settings).maxImagesPerRequest, null);
+});
+
+test('an invalid per-tier endpoint reports an actionable configuration error', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'groq';
+  settings.apiKeys.groq = 'gsk-test';
+  settings.endpointByTier.groq = { fast: 'not a url', smart: '' };
+
+  const resolved = resolveProvider(settings);
+  assert.equal(resolved.ready, false);
+  assert.match(resolved.configurationError, /Groq fast endpoint must be a valid http\(s\) URL/);
+});
+
+test('Azure per-tier endpoints still pass official endpoint normalization', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'azure';
+  settings.apiKeys.azure = 'test-key';
+  settings.models.azure.fast = 'gpt-4o-deployment';
+  settings.endpointByTier.azure = {
+    fast: 'https://fast.openai.azure.com/openai/v1/',
+    smart: 'https://smart.services.ai.azure.com/openai/v1/',
+  };
+  settings.models.azure.smart = 'gpt-4o-smart-deployment';
+
+  const fast = resolveProvider(settings);
+  assert.equal(fast.ready, true);
+  assert.equal(fast.baseURL, 'https://fast.openai.azure.com/openai/v1');
+
+  settings.smart = true;
+  const smart = resolveProvider(settings);
+  assert.equal(smart.ready, true);
+  assert.equal(smart.baseURL, 'https://smart.services.ai.azure.com/openai/v1');
+});
+
+test('fallback to provider default baseURL when no per-tier endpoint is set', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'nvidia';
+  settings.apiKeys.nvidia = 'nvapi-test-key';
+
+  const fast = resolveProvider(settings);
+  assert.equal(fast.baseURL, 'https://integrate.api.nvidia.com/v1');
+
+  settings.smart = true;
+  assert.equal(resolveProvider(settings).baseURL, 'https://integrate.api.nvidia.com/v1');
+});
+
 test('Azure realtime transcription resolves its own deployment and reuses Azure credentials', () => {
   const settings = getDefaultSettings();
   settings.transcription.realtimeProvider = 'azure';

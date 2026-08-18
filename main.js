@@ -10,7 +10,7 @@ const identityMigration = migrateLegacyUserData({ legacyUserData: legacyUserData
 if (identityMigration.migrated.length) console.log(`[identity] migrated ${identityMigration.migrated.length} legacy data file${identityMigration.migrated.length === 1 ? '' : 's'}`);
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
-const { createSTT } = require('./src/stt');
+const { createSTT, resetSidecar } = require('./src/stt');
 const { cancelOfflineTranscriptions } = require('./src/offline-stt');
 const { MODES } = require('./src/prompts');
 const { createResponseRoute, chooseInitialProvider, streamWithFallback } = require('./src/response-router');
@@ -91,6 +91,7 @@ const systemAudioCapture = createSystemAudioCapture({
 const MAX_SAVED_TASK_IMAGES_PER_REQUEST = 39;
 const LARGE_TASK_CONTEXT_CONFIRM_THRESHOLD = 8;
 const FEATURE_REQUEST_TIMEOUT_MS = 120000;
+const { capTaskImages } = require('./src/task-image-cap');
 let taskContextCapturePromise = null;
 let taskContextGeneration = 0;
 let taskContextOcrGeneration = 0;
@@ -1204,8 +1205,11 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
       String(userText || ''),
       orderedTranscript.slice(-24).map((turn) => String(turn.text || '')).join('\n'),
     ].join('\n').slice(-8000);
+    const taskImageLimit = llm.maxImagesPerRequest
+      ? Math.min(llm.maxImagesPerRequest, MAX_SAVED_TASK_IMAGES_PER_REQUEST)
+      : MAX_SAVED_TASK_IMAGES_PER_REQUEST;
     const taskContextPreview = needsScreen && llm.supportsVision
-      ? taskContext.selectImages(MAX_SAVED_TASK_IMAGES_PER_REQUEST, { query: relevanceQuery })
+      ? taskContext.selectImages(taskImageLimit, { query: relevanceQuery })
       : { images: [], total: 0, omitted: 0 };
     const taskContextTotalCount = taskContextPreview.total;
     const availableTaskContextCount = taskContextPreview.images.length;
@@ -1255,11 +1259,19 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
       catch (e) {
         if (isCurrent()) send('status', { message: 'Screen capture needs permission — grant Screen Recording to Volyx Lens in System Settings.' });
       }
-      const savedTaskSelection = taskContext.selectImages(MAX_SAVED_TASK_IMAGES_PER_REQUEST, { query: relevanceQuery });
+      const savedTaskSelection = taskContext.selectImages(taskImageLimit, { query: relevanceQuery });
       const savedTaskImages = savedTaskSelection.images;
       savedTaskImageCount = savedTaskImages.length;
       omittedTaskImageCount = savedTaskSelection.omitted;
-      imageDataUrls = [...savedTaskImages, ...(currentScreen ? [currentScreen] : [])];
+      let combinedImages = [...savedTaskImages, ...(currentScreen ? [currentScreen] : [])];
+      // Some providers cap images per prompt (e.g. NVIDIA at 1). Keep the newest
+      // screens (the current capture and the most recent saved ones) within the
+      // provider's limit so the request is not rejected after capture.
+      const capped = capTaskImages(combinedImages, taskImageLimit);
+      combinedImages = capped.images;
+      savedTaskImageCount = Math.max(0, savedTaskImageCount - capped.dropped);
+      omittedTaskImageCount += capped.dropped;
+      imageDataUrls = combinedImages;
       if (omittedTaskImageCount && isCurrent()) {
         const selectionDescription = savedTaskSelection.strategy === 'relevance'
           ? `${savedTaskImageCount} locally ranked relevant, pinned, and context screen${savedTaskImageCount === 1 ? '' : 's'}`
