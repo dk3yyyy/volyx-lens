@@ -4,16 +4,16 @@
 
 # Volyx Lens
 
-**Private, context-aware assistance for your Mac.**
+**Private, context-aware AI assistant for macOS and Windows — hidden from most screen shares.**
 
-Use your screen, voice, meeting audio, and saved Task Context without routing requests through a Volyx Lens-operated server. Bring your own AI provider and choose what leaves your Mac.
+Use your screen, voice, meeting audio, and saved Task Context without routing requests through a Volyx Lens-operated server. Bring your own AI provider and choose what leaves your computer. The overlay marks itself as a protected window via `setContentProtection(true)` — `NSWindowSharingNone` on macOS and the OS capture-exclusion flag on Windows — so Volyx Lens stays out of most screen-recording and screen-share tools (Google Meet, Microsoft Teams, and QuickTime by default; Zoom with advanced window filtering).
 
-[**Explore the live site**](https://volyxlens.pages.dev/) · [Download for macOS](#download) · [Product tour](#product-tour) · [Architecture](#how-it-works) · [Privacy](#privacy-and-security)
+[**Explore the live site**](https://volyxlens.pages.dev/) · [Download](#download) · [Product tour](#product-tour) · [Architecture](#how-it-works) · [Privacy](#privacy-and-security)
 
 <br />
 
 <a href="https://volyxlens.pages.dev/">
-  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing the privacy-first macOS assistant, its separate screen, voice, and meeting-audio inputs, and direct provider routing" />
+  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing the privacy-first macOS and Windows AI assistant that hides from screen shares, its separate screen, voice, and meeting-audio inputs, and direct provider routing" />
 </a>
 
 <sub>Live product site: <a href="https://volyxlens.pages.dev/">volyxlens.pages.dev</a></sub>
@@ -23,11 +23,11 @@ Use your screen, voice, meeting audio, and saved Task Context without routing re
 ---
 
 > [!IMPORTANT]
-> **Capture exclusion is best-effort, never guaranteed.** Modern macOS capture tools may still show Volyx Lens, and a physical camera always can. Do not use hidden assistance where it violates exam, interview, workplace, platform, recording-consent, or local-law requirements. Volyx Lens is intended for legitimate personal notes, accessibility, study, practice, and permitted work.
+> **Capture exclusion is best-effort, never guaranteed.** Modern macOS or Windows capture tools may still show Volyx Lens, and a physical camera always can. Do not use hidden assistance where it violates exam, interview, workplace, platform, recording-consent, or local-law requirements. Volyx Lens is intended for legitimate personal notes, accessibility, study, practice, and permitted work.
 
 ## Why Volyx Lens
 
-Volyx Lens is a compact glass overlay that can use three intentionally separate inputs:
+Volyx Lens is a compact glass overlay — a private AI assistant for macOS and Windows — that can use three intentionally separate inputs:
 
 - **Screen** — screenshots are captured only for an explicit screen-based action.
 - **Microphone / “You”** — your voice is transcribed on its own channel.
@@ -47,7 +47,8 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Transcription language** — pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context** — import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls** — clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
-- **Native macOS behavior** — compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
+- **Native macOS and Windows behavior** — compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
+- **Capture exclusion** — the overlay is marked private via `setContentProtection(true)` (`NSWindowSharingNone` on macOS), so it stays out of most screen recordings and screen shares on both platforms without hidden-window tricks or a special capture mode.
 
 ## Product tour
 
