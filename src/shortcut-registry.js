@@ -21,7 +21,7 @@ function createShortcutRegistry({ globalShortcut, platform, definitions }) {
         feature: entry.feature,
         fallback: entry.fallback,
         registered,
-        message: registered ? 'Registered' : 'Unavailable — macOS, the operating system, or another application may own this shortcut.',
+        message: registered ? 'Registered' : 'Unavailable — the operating system or another application may own this shortcut.',
       };
     });
   }

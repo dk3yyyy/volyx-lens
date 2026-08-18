@@ -656,8 +656,9 @@
   }
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey) { e.preventDefault(); send(); }
-    if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); runMode('assist', ''); }
+    const primary = volyxLens.platform === 'darwin' ? e.metaKey : e.ctrlKey;
+    if (e.key === 'Enter' && !e.shiftKey && !primary) { e.preventDefault(); send(); }
+    if (e.key === 'Enter' && primary) { e.preventDefault(); runMode('assist', ''); }
   });
 
   // Smart toggle
@@ -1311,6 +1312,42 @@
     $('#context-storage-status').textContent = `PDF, DOCX, TXT, or Markdown · 5 MB maximum. ${storage} Relevant excerpts are sent only when you request an answer.`;
   }
 
+  // Glyph shortcuts that render differently on Windows. main.js registers the
+  // same accelerators via CommandOrControl+, so Ctrl is the correct equivalent.
+  const SHORTCUT_LABELS = Object.freeze({
+    '⌘↵': 'Ctrl+Enter',
+    '⌘H': 'Ctrl+H',
+    '⌘⇧C': 'Ctrl+Shift+C',
+    '⌘⇧X': 'Ctrl+Shift+X',
+  });
+
+  function localizeShortcutText(text) {
+    if (!text || volyxLens.platform === 'darwin') return text;
+    let out = String(text);
+    for (const [glyph, label] of Object.entries(SHORTCUT_LABELS)) {
+      out = out.split(glyph).join(label);
+    }
+    return out;
+  }
+
+  function localizeKeyLabels() {
+    if (volyxLens.platform === 'darwin') return;
+    const modKey = $('#composer-mod-key');
+    const enterKey = $('#composer-enter-key');
+    if (modKey) modKey.textContent = 'Ctrl';
+    if (enterKey) enterKey.textContent = 'Enter';
+    const captureKbd = $('#task-context-capture-kbd');
+    if (captureKbd) captureKbd.textContent = SHORTCUT_LABELS['⌘⇧C'];
+    const captureBtn = $('#task-context-capture');
+    if (captureBtn) captureBtn.title = 'Add current screen to task context (Ctrl+Shift+C)';
+    for (const icon of document.querySelectorAll('.help-topic-icon')) {
+      icon.textContent = localizeShortcutText(icon.textContent);
+    }
+    for (const kbd of document.querySelectorAll('.shortcut-status-row kbd')) {
+      kbd.textContent = localizeShortcutText(kbd.textContent);
+    }
+  }
+
   function renderShortcutStatus(value) {
     shortcutStatus = Array.isArray(value) ? value : [];
     for (const status of shortcutStatus) {
@@ -1910,7 +1947,7 @@
       return;
     }
     if (!scrim.classList.contains('hidden')) { handleSettingsKeydown(e); return; }
-    if (e.metaKey && e.key === ',') { e.preventDefault(); openSettings(); }
+    if ((volyxLens.platform === 'darwin' ? e.metaKey : e.ctrlKey) && e.key === ',') { e.preventDefault(); openSettings(); }
   });
 
   // ---- click-through: only the UI blocks the mouse; empty gaps pass to your screen ----
@@ -2015,7 +2052,7 @@
       kicker: 'Context, your way',
       note: 'A quiet assistant that stays available without taking over your workspace.',
       title: 'Meet Volyx Lens.',
-      body: '<p>A private, context-aware assistant for the work already happening on your Mac.</p><div class="ob-feature-grid"><div class="ob-feature"><strong>See</strong><span>Use the screen only when you ask.</span></div><div class="ob-feature"><strong>Hear</strong><span>Keep both sides of a conversation clear.</span></div><div class="ob-feature"><strong>Assist</strong><span>Get focused help without changing apps.</span></div></div><div class="ob-note">Capture exclusion is best-effort and never guaranteed.</div>'
+      body: '<p>A private, context-aware assistant for the work already happening on your computer.</p><div class="ob-feature-grid"><div class="ob-feature"><strong>See</strong><span>Use the screen only when you ask.</span></div><div class="ob-feature"><strong>Hear</strong><span>Keep both sides of a conversation clear.</span></div><div class="ob-feature"><strong>Assist</strong><span>Get focused help without changing apps.</span></div></div><div class="ob-note">Capture exclusion is best-effort and never guaranteed.</div>'
     },
     {
       stepLabel: 'Permissions',
@@ -2046,7 +2083,7 @@
       kicker: 'Best-effort privacy',
       note: 'Content protection reduces accidental exposure; it is not invisibility.',
       title: 'Know what others can see.',
-      body: '<p>Volyx Lens asks macOS to exclude its window from many captures. Modern capture tools may still ignore that request.</p><div class="permission-card"><span class="permission-mark">Z</span><div><strong>Zoom</strong><span>Choose “Advanced capture with window filtering” in Share Screen settings.</span></div></div><div class="ob-note">Never rely on capture exclusion for proctored, restricted, or consent-sensitive sessions.</div>'
+      body: '<p>Volyx Lens asks the operating system to exclude its window from many captures. Modern capture tools may still ignore that request.</p><div class="permission-card"><span class="permission-mark">Z</span><div><strong>Zoom</strong><span>Choose “Advanced capture with window filtering” in Share Screen settings.</span></div></div><div class="ob-note">Never rely on capture exclusion for proctored, restricted, or consent-sensitive sessions.</div>'
     },
     {
       stepLabel: 'Channels',
@@ -2055,7 +2092,7 @@
       note: 'The audio-health panel shows each channel while listening.',
       firstRun: false,
       title: 'You and Them.',
-      body: '<p><span class="hl">You · Mic</span> captures your voice. <span class="hl">Them · System</span> captures the other participant through system audio loopback on macOS. Each channel is processed independently, so one side can stay clear even when the other is noisy.</p><div class="ob-note">System audio uses an internal loopback.</div>'
+      body: '<p><span class="hl">You · Mic</span> captures your voice. <span class="hl">Them · System</span> captures the other participant through system audio loopback. Each channel is processed independently, so one side can stay clear even when the other is noisy.</p><div class="ob-note">System audio uses an internal loopback.</div>'
     },
     {
       stepLabel: 'Task context',
@@ -2120,7 +2157,7 @@
     $('#ob-stage-kicker').textContent = step.kicker;
     $('#ob-stage-note').textContent = step.note;
     $('#ob-title').textContent = step.title;
-    $('#ob-body').innerHTML = step.body;
+    $('#ob-body').innerHTML = localizeShortcutText(step.body);
     const btns = $('#ob-buttons'); btns.replaceChildren();
     obPermissionStatus.textContent = '';
     obPermissionStatus.className = 'ob-permission-status hidden';
@@ -2263,6 +2300,7 @@
     updateListeningButton(st.active);
     if (!settings.onboarded) showOnboard();
     else volyxLens.setModalState(false);
+    localizeKeyLabels();
     volyxLens.rendererReady();
   })();
 })();
