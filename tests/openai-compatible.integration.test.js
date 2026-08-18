@@ -75,3 +75,21 @@ test('real OpenAI SDK constructs the official DeepSeek request without network a
   assert.equal(result.requests[0].body.model, 'deepseek-v4-flash');
   assert.equal(result.requests[0].body.max_tokens, 700);
 });
+
+test('real OpenAI SDK constructs the official NVIDIA request without network access', { concurrency: false }, async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'nvidia';
+  settings.apiKeys.nvidia = 'nvapi-test-key';
+
+  const result = await captureSdkRequest(settings);
+  assert.equal(result.output, 'OK');
+  assert.equal(result.requests[0].url, 'https://integrate.api.nvidia.com/v1/chat/completions');
+  assert.equal(result.requests[0].headers.authorization, 'Bearer nvapi-test-key');
+  assert.equal(result.requests[0].body.model, 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1');
+  assert.equal(result.requests[0].body.max_tokens, 700);
+  assert.deepEqual(result.requests[0].body.chat_template_kwargs, { enable_thinking: false, force_nonempty_content: true });
+
+  settings.smart = true;
+  const smart = await captureSdkRequest(settings);
+  assert.equal(smart.requests[0].body.model, 'meta/llama-3.2-11b-vision-instruct');
+});

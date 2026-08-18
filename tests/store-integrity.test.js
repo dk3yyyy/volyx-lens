@@ -71,6 +71,47 @@ test('Deepgram realtime provider, model, and credential survive the atomic Setti
   assert.equal(reloaded.apiKeys.deepgram, 'saved-deepgram-key');
 });
 
+test('per-tier API keys survive the atomic Settings save and reload', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  const updated = store.updateSettingsAndApiKeys({}, {
+    nvidia: 'nvapi-shared-key',
+    'nvidia.fast': 'nvapi-fast-key',
+    'nvidia.smart': 'nvapi-smart-key',
+  });
+  assert.equal(updated.credentialStatus.present.nvidia, true);
+  assert.equal(updated.credentialStatus.present['nvidia.fast'], true);
+  assert.equal(updated.credentialStatus.present['nvidia.smart'], true);
+  assert.doesNotMatch(JSON.stringify(updated), /nvapi-fast-key/);
+  assert.doesNotMatch(JSON.stringify(updated), /nvapi-smart-key/);
+
+  const reloaded = loadStore(userData).getSettings();
+  assert.equal(reloaded.apiKeys['nvidia.fast'], 'nvapi-fast-key');
+  assert.equal(reloaded.apiKeys['nvidia.smart'], 'nvapi-smart-key');
+
+  const cleared = loadStore(userData).clearApiKey('nvidia.smart');
+  assert.equal(cleared.credentialStatus.present['nvidia.smart'], false);
+  assert.equal(loadStore(userData).getSettings().apiKeys['nvidia.smart'], '');
+});
+
+test('per-tier endpoint overrides survive the atomic Settings save and reload', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  const updated = store.updateSettingsAndApiKeys({
+    endpointByTier: {
+      nvidia: { fast: 'https://fast.api.example.com/v1', smart: 'https://smart.api.example.com/v1' },
+      groq: { fast: 'https://fast.groq.example/v1' },
+    },
+  }, {});
+  assert.deepEqual(updated.endpointByTier.nvidia, { fast: 'https://fast.api.example.com/v1', smart: 'https://smart.api.example.com/v1' });
+  assert.equal(updated.endpointByTier.groq.fast, 'https://fast.groq.example/v1');
+  assert.equal(updated.endpointByTier.openai, undefined);
+
+  const reloaded = loadStore(userData).getSettings();
+  assert.deepEqual(reloaded.endpointByTier.nvidia, { fast: 'https://fast.api.example.com/v1', smart: 'https://smart.api.example.com/v1' });
+  assert.equal(reloaded.endpointByTier.groq.smart, undefined);
+});
+
 test('auto-assist preferences survive the atomic Settings save and reload', () => {
   const userData = temporaryUserData();
   const store = loadStore(userData);

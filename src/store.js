@@ -150,6 +150,18 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(patch.endpoints, 'azureRealtime') && typeof patch.endpoints.azureRealtime === 'string') endpoints.azureRealtime = patch.endpoints.azureRealtime.slice(0, 2048);
     if (Object.keys(endpoints).length) safe.endpoints = endpoints;
   }
+  if (patch.endpointByTier && typeof patch.endpointByTier === 'object') {
+    const endpointByTier = {};
+    for (const provider of Object.keys(DEFAULTS.models)) {
+      const supplied = patch.endpointByTier[provider];
+      if (!supplied || typeof supplied !== 'object') continue;
+      const tierPatch = {};
+      if (Object.hasOwn(supplied, 'fast')) tierPatch.fast = String(supplied.fast || '').slice(0, 2048);
+      if (Object.hasOwn(supplied, 'smart')) tierPatch.smart = String(supplied.smart || '').slice(0, 2048);
+      if (Object.keys(tierPatch).length) endpointByTier[provider] = tierPatch;
+    }
+    if (Object.keys(endpointByTier).length) safe.endpointByTier = endpointByTier;
+  }
   if (patch.models && typeof patch.models === 'object') {
     const models = {};
     for (const provider of Object.keys(DEFAULTS.models)) {

@@ -61,7 +61,15 @@ test('settings UI exposes clean provider tabs with one provider configuration at
   }
   assert.match(html, /data-provider-config="ollama"[\s\S]*localhost:11434/);
   assert.match(html, /id="endpoint-azure"/);
+  assert.match(html, /id="endpoint-fast"/);
+  assert.match(html, /id="endpoint-smart"/);
+  assert.match(html, /id="key-fast"/);
+  assert.match(html, /id="key-smart"/);
+  assert.match(html, /data-tier-key-config="azure deepseek groq nvidia openrouter"/);
   assert.match(renderer, /row\.dataset\.providerConfig !== providerView/);
+  assert.match(renderer, /data-endpoint-config/);
+  assert.match(renderer, /data-tier-key-config/);
+  assert.match(renderer, /settings\.endpointByTier\[providerView\]/);
   assert.match(renderer, /providerView = button\.dataset\.provider/);
   assert.doesNotMatch(renderer, /settings\.provider = button\.dataset\.provider/);
   assert.equal(pkg.name, 'volyx-lens');
@@ -80,7 +88,9 @@ test('default and optional fallback response providers are explicit and persiste
 test('renderer loads credential presence and sends only explicit key updates', () => {
   assert.match(renderer, /settings\.credentialStatus/);
   assert.match(renderer, /apiKeyUpdates\[provider\] = value/);
+  assert.match(renderer, /apiKeyUpdates\[`\$\{providerView\}\.\$\{tier\}`\] = value/);
   assert.match(renderer, /volyxLens\.clearCredential\(provider\)/);
+  assert.match(renderer, /button\.dataset\.keyTier/);
   assert.doesNotMatch(renderer, /settings\.apiKeys\.[a-z]+\s*=/);
   assert.match(renderer, /settings\.endpoints\.azure/);
   assert.match(renderer, /function stashCurrentModels/);

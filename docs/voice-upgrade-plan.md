@@ -63,7 +63,7 @@ Status: core implemented on `main` (opt-in Auto-assist).
 
 ## Response provider coverage
 
-OpenAI-compatible response routes: DeepSeek, Groq, OpenRouter, and local Ollama (keyless, `http://localhost:11434/v1`). All are handled by the single `baseURL` branch in `src/llm.js`; Azure remains separate because it authenticates with an `api-key` header. `src/provider-config.js` is the single source of truth — `tests/provider-consistency.test.js` keeps the renderer, README, and landing page in sync with it.
+OpenAI-compatible response routes: DeepSeek, Groq, OpenRouter, NVIDIA (`https://integrate.api.nvidia.com/v1`), and local Ollama (keyless, `http://localhost:11434/v1`). All are handled by the single `baseURL` branch in `src/llm.js`; Azure remains separate because it authenticates with an `api-key` header. `src/provider-config.js` is the single source of truth — `tests/provider-consistency.test.js` keeps the renderer, README, and landing page in sync with it.
 
 ## Milestone 4 — Additional STT providers
 
