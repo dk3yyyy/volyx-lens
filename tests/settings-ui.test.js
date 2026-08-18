@@ -113,7 +113,7 @@ test('Help page reopens the interactive guide from Settings', () => {
 });
 
 test('local transcription disclosure states audio is never written to disk', () => {
-  assert.match(html, /never written to disk and never leaves your Mac/);
+  assert.match(html, /never written to disk and never leaves your computer/);
 });
 
 test('language field offers curated options and per-provider support disclosure', () => {

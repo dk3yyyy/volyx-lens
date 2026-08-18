@@ -29,7 +29,7 @@ test('shortcut registry reports successful and unavailable registrations without
     ['solve', false, '⌘H'],
     ['capture', false, '⌘⇧C'],
   ]);
-  assert.match(result[1].message, /macOS, the operating system, or another application may own/);
+  assert.match(result[1].message, /the operating system or another application may own/);
   assert.doesNotMatch(JSON.stringify(result), /raw operating-system detail/);
   assert.equal(result[1].fallback, 'Use Solve button');
 });

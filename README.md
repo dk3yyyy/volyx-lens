@@ -119,6 +119,8 @@ Ad-hoc test builds remain available under their own pre-release tags for early v
 
 The **Smart** toggle selects the configured higher-capability model. Settings reports whether each global shortcut registered successfully and keeps equivalent visible buttons available.
 
+On Windows, press **Ctrl** wherever **⌘** appears in this table. Volyx Lens relabels its keyboard-shortcut hints automatically on Windows.
+
 ## Setup
 
 ### 1. Grant macOS permissions
@@ -146,7 +148,9 @@ Open Settings with `⌘` `,` or the `…` button. Choose a response provider, en
 | **Ollama** | local responses | no key; local server with the OpenAI-compatible API (`http://localhost:11434/v1`); pull a model first |
 | **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
 | **Azure AI Speech** | realtime transcription | Speech resource key and region (bare region name, e.g. `eastus`); no model name required |
-| **Local Whisper** | optional offline batch transcription | externally installed `whisper-cli` and model; disabled by default |
+| **Local Whisper** | optional offline batch transcription | in-app whisper.cpp model download; audio transcribed in memory; disabled by default |
+
+Choose a key that covers the features you use. A restricted OpenAI project key that only allows chat returns `403` on transcription. Anthropic has no speech-to-text, so pair it with an OpenAI, Gemini, Deepgram, Azure, or local Whisper key for listening. Gemini covers chat and transcription with one key.
 
 Keys stay in the Electron main process and are protected with `safeStorage` / macOS Keychain where available. The renderer receives credential status, not stored secret values. Settings warns if secure storage is unavailable.
 
@@ -201,7 +205,7 @@ Volyx Lens is an Electron application with a sandboxed renderer and a privileged
 4. **The main process routes directly.** Requests go to the configured response or transcription provider, never through a Volyx Lens-operated intermediary.
 5. **Results stream into the overlay.** Provider failures are reduced to sanitized, actionable states rather than exposing credentials or raw SDK errors.
 
-Realtime microphone audio is deterministically resampled to 24 kHz mono PCM. System audio comes from a bundled ScreenCaptureKit helper and remains a separate **Them** channel. Optional local Whisper is operator-configured, disabled by default, and does not silently fall back to cloud transcription unless cloud fallback is separately enabled.
+Realtime microphone audio is deterministically resampled to 24 kHz mono PCM. System audio comes from a bundled ScreenCaptureKit helper and remains a separate **Them** channel. Optional local Whisper uses an in-app whisper.cpp model download, is disabled by default, and does not silently fall back to cloud transcription unless cloud fallback is separately enabled.
 
 ## Privacy and security
 
@@ -248,6 +252,36 @@ Verify the selected realtime provider and exact deployment/model configuration. 
 <summary><strong>Volyx Lens appears in a Zoom share</strong></summary>
 
 Select **Advanced capture with window filtering** in Zoom as shown above. Capture exclusion remains best-effort, especially on newer macOS capture paths.
+</details>
+
+<details>
+<summary><strong>Windows: the installer shows an “Unknown publisher” (SmartScreen) warning</strong></summary>
+
+Windows may warn that a build is unsigned. Choose **More info → Run anyway** and verify the SHA-256 checksum published with the release before installing.
+</details>
+
+<details>
+<summary><strong>Windows: listening connects but your mic stays silent</strong></summary>
+
+Turn on **Settings → Privacy & security → Microphone → Let desktop apps access your microphone**. The top-level Microphone toggle alone is not enough for desktop apps. Screenshots and meeting audio need no extra permission on Windows.
+</details>
+
+<details>
+<summary><strong>Volyx Lens fails to start with “Cannot read properties of undefined (reading 'getPath')”</strong></summary>
+
+Something in your environment set `ELECTRON_RUN_AS_NODE=1`, which makes Electron boot as plain Node. Some editors and terminals set it, notably VS Code's integrated terminal. Clear it and relaunch: `unset ELECTRON_RUN_AS_NODE` (PowerShell: `Remove-Item Env:\ELECTRON_RUN_AS_NODE`).
+</details>
+
+<details>
+<summary><strong>An answer or transcription returns “403” / “no access to model”</strong></summary>
+
+Your API key is restricted. An OpenAI project key that only allows chat returns `403` on transcription (Whisper). Use an unrestricted key, enable audio on the key, or add a separate transcription key as described under Configure providers.
+</details>
+
+<details>
+<summary><strong>Local Whisper is slow or runs out of memory</strong></summary>
+
+Prefer `base.en` or an int8-quantized model in Settings → Listening. The model label (e.g. 139M params) is a parameter count, not a runtime memory requirement; larger models need substantially more memory and CPU/GPU time.
 </details>
 
 ## Build from source
