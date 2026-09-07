@@ -4,7 +4,7 @@
 
 # Volyx Lens
 
-**Private, context-aware AI assistant for macOS and Windows, hidden from most screen shares.**
+**Private, context-aware AI assistant for macOS, Windows, and Linux, hidden from most screen shares.**
 
 Use your screen, voice, meeting audio, and saved Task Context without routing requests through a Volyx Lens-operated server. Bring your own AI provider and choose what leaves your computer. The overlay marks itself as a protected window via `setContentProtection(true)`, `NSWindowSharingNone` on macOS and the OS capture-exclusion flag on Windows, so Volyx Lens stays out of most screen-recording and screen-share tools (Google Meet, Microsoft Teams, and QuickTime by default; Zoom with advanced window filtering).
 
@@ -27,11 +27,11 @@ Use your screen, voice, meeting audio, and saved Task Context without routing re
 
 ## Why Volyx Lens
 
-Volyx Lens is a compact glass overlay, a private AI assistant for macOS and Windows, that can use three intentionally separate inputs:
+Volyx Lens is a compact glass overlay, a private AI assistant for macOS, Windows, and Linux (Linux support is experimental), that can use three intentionally separate inputs:
 
 - **Screen:** screenshots are captured only for an explicit screen-based action.
 - **Microphone / “You”:** your voice is transcribed on its own channel.
-- **System audio / “Them”:** a native ScreenCaptureKit helper captures meeting audio on a separate channel.
+- **System audio / “Them”:** meeting audio is captured per platform — ScreenCaptureKit helper on macOS, system-audio loopback on Windows, and a PulseAudio/PipeWire monitor on Linux (best-effort).
 
 Nothing is routed through a Volyx Lens-operated server. Provider requests go directly from the app to the AI or transcription provider you configure.
 
@@ -77,7 +77,7 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ### Current release: v0.5.0
 
-v0.5.0 is an **Apple Developer ID-signed and notarized production release**. It launches without Gatekeeper workarounds and supports one-click in-app updates.
+v0.5.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and, once release signing credentials are configured, Apple Developer ID-signed and notarized macOS DMGs. Windows and Linux builds are unsigned; macOS builds are signed and notarized and launch without Gatekeeper workarounds. Auto-update metadata is published for Windows and Linux; the macOS updater is published together with the DMGs.
 
 | Mac | Installer |
 |---|---|
@@ -96,6 +96,11 @@ The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" wa
 
 SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 
+### Install on Windows and Linux
+
+1. **Windows:** run `volyx-lens-0.5.0-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.5.0-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+
 ### Install the DMG
 
 1. Download the DMG matching your Mac architecture.
@@ -109,7 +114,7 @@ Ad-hoc test builds remain available under their own pre-release tags for early v
 
 | Capability | macOS | Windows | Linux |
 |---|---|---|---|
-| Release artifact | Signed/notarized DMG (v0.5.0) | NSIS installer via release CI | AppImage (x64/arm64) via release CI |
+| Release artifact | Signed/notarized DMG (published once signing credentials are configured) | NSIS installer via release CI | AppImage (x64/arm64) via release CI |
 | Microphone (You channel) | ✅ | ✅ | ✅ |
 | Screen + coding help | ✅ | ✅ | ✅ |
 | Meeting audio (Them channel) | ✅ ScreenCaptureKit helper | ✅ system-audio loopback | ⚠️ best-effort via PulseAudio/PipeWire monitor |
@@ -203,7 +208,7 @@ Task Context is for work revealed across multiple screens, for example a problem
 - Optional Apple Vision OCR runs locally and is used for overlap detection and relevance ranking; recognized text is not sent as a separate provider payload.
 - Pinning protects important screens from ordinary eviction and prioritizes them for later requests.
 - Remove, Undo last, Clear, and New Session provide explicit lifecycle control.
-- A screen request attaches at most **39 saved screens plus the current screen**. Before eight or more saved screens are uploaded, Volyx Lens shows the selected provider and image count and requires confirmation.
+- A screen request attaches at most **39 saved screens plus the current screen**, or the selected provider's per-request image cap when that is lower (NVIDIA caps at one image). Before eight or more saved screens are uploaded, Volyx Lens shows the selected provider and image count and requires confirmation.
 - Screens that are not selected remain local and are not presented as processed.
 
 Task Context cannot read files or code that never appeared on screen. Use it only when external assistance is permitted.
@@ -233,7 +238,7 @@ Volyx Lens is an Electron application with a sandboxed renderer and a privileged
 4. **The main process routes directly.** Requests go to the configured response or transcription provider, never through a Volyx Lens-operated intermediary.
 5. **Results stream into the overlay.** Provider failures are reduced to sanitized, actionable states rather than exposing credentials or raw SDK errors.
 
-Realtime microphone audio is deterministically resampled to 24 kHz mono PCM. System audio comes from a bundled ScreenCaptureKit helper and remains a separate **Them** channel. Optional local Whisper uses an in-app whisper.cpp model download, is disabled by default, and does not silently fall back to cloud transcription unless cloud fallback is separately enabled.
+Realtime microphone audio is deterministically resampled to 24 kHz mono PCM. System audio stays a separate **Them** channel and comes from a bundled ScreenCaptureKit helper on macOS, Chromium system-audio loopback on Windows, or a PulseAudio/PipeWire monitor helper on Linux. Optional local Whisper uses an in-app whisper.cpp model download, is disabled by default, and does not silently fall back to cloud transcription unless cloud fallback is separately enabled.
 
 ## Privacy and security
 
@@ -316,10 +321,11 @@ Prefer `base.en` or an int8-quantized model in Settings → Listening. The model
 
 Requirements:
 
-- macOS
+- macOS 12+, Windows 10/11, or a recent Linux distribution
 - [Node.js](https://nodejs.org) 20+ installed
-- npm
-- Xcode Command Line Tools (`xcode-select --install`) for native OCR and system-audio helpers
+- npm (bundled with Node.js)
+- macOS only: Xcode Command Line Tools (`xcode-select --install`) for native OCR and system-audio helpers
+- Linux only (for the Them channel at runtime): `pactl` and `parec` from `pulseaudio-utils` (or PipeWire's PulseAudio compatibility) and an active default audio sink
 
 ```bash
 git clone https://github.com/dk3yyyy/volyx-lens.git
@@ -350,7 +356,7 @@ Local builds are unsigned unless a valid signing identity is installed. Rebuildi
 
 The ad-hoc test workflow builds Apple Silicon and Intel artifacts on native GitHub-hosted macOS runners. Before uploading artifacts, it runs tests, syntax and secret checks, release-readiness checks, native-helper self-tests, ad-hoc signature verification, executable architecture checks, renderer smoke tests, DMG verification/mounting, and SHA-256 generation.
 
-A trusted production release is a separate path. It fails closed unless Developer ID signing and Apple notarization credentials are available, and verifies signatures, notarization staples, Gatekeeper assessment, architecture-specific updater metadata, checksums, SBOMs, and build attestations before publication.
+The trusted production path (tag-triggered) builds all three platforms. Windows and Linux jobs run tests and release-readiness checks, then publish the installer/AppImages with SHA-256 checksums, SBOMs, and architecture-specific update metadata; Linux additionally verifies AppImage architecture before upload. The macOS job fails closed unless Developer ID signing and Apple notarization credentials are available, and verifies signatures, notarization staples, Gatekeeper assessment, and updater metadata before publication.
 
 ## License
 
