@@ -112,6 +112,29 @@ test('per-tier endpoint overrides survive the atomic Settings save and reload', 
   assert.equal(reloaded.endpointByTier.groq.smart, undefined);
 });
 
+test('cleared per-tier endpoint overrides stay cleared after reload while other providers keep theirs', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  store.updateSettingsAndApiKeys({
+    endpointByTier: {
+      nvidia: { fast: 'https://fast.api.example.com/v1', smart: 'https://smart.api.example.com/v1' },
+      groq: { fast: 'https://fast.groq.example/v1' },
+    },
+  }, {});
+
+  // Renderer stashes cleared fields as empty-string tier values (never by
+  // deleting the provider entry) because patches deep-merge and a missing key
+  // would keep the old value. Empty strings must persist and read back as unset.
+  const snapshot = JSON.parse(JSON.stringify(loadStore(userData).getSettings()));
+  snapshot.endpointByTier.nvidia = { fast: '', smart: '' };
+  loadStore(userData).updateSettingsAndApiKeys(snapshot, {});
+
+  const reloaded = loadStore(userData).getSettings();
+  assert.equal(reloaded.endpointByTier.nvidia.fast, '');
+  assert.equal(reloaded.endpointByTier.nvidia.smart, '');
+  assert.equal(reloaded.endpointByTier.groq.fast, 'https://fast.groq.example/v1');
+});
+
 test('auto-assist preferences survive the atomic Settings save and reload', () => {
   const userData = temporaryUserData();
   const store = loadStore(userData);

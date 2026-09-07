@@ -96,6 +96,16 @@ test('renderer loads credential presence and sends only explicit key updates', (
   assert.match(renderer, /function stashCurrentModels/);
 });
 
+test('cleared tier endpoints are stashed as empty strings, never by deleting the provider entry', () => {
+  // The store deep-merges settings patches and cannot express deletion, so a
+  // cleared endpoint override must be saved as an empty-string tier value
+  // (which resolveProvider treats as unset). Deleting the provider entry lets
+  // the previous override survive reload.
+  assert.doesNotMatch(renderer, /delete settings\.endpointByTier\[providerView\]/);
+  assert.match(renderer, /settings\.endpointByTier\[providerView\] = \{\s*fast: \$\('#endpoint-fast'\)\.value\.trim\(\),\s*smart: \$\('#endpoint-smart'\)\.value\.trim\(\),\s*\}/s);
+  assert.doesNotMatch(renderer, /if \(fastEndpoint\) overrides\.fast/);
+});
+
 test('plaintext credential fallback surfaces a visible Settings warning', () => {
   assert.match(html, /id="s-storage-warning"[^>]*role="alert"/);
   assert.match(renderer, /s-storage-warning'\)\.classList\.toggle\('hidden', !\(storageState\.secure === false && storageState\.backend === 'plaintext-fallback'\)\)/);
