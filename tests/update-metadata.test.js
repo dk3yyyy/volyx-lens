@@ -108,3 +108,24 @@ test('Windows and Linux release metadata validate their native installer format'
     platform: 'linux',
   }), /architecture/);
 });
+
+test('Linux x64 release metadata accepts the x86_64 artifact token electron-builder emits', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-update-metadata-x86-'));
+  const appImagePath = path.join(dir, 'volyx-lens-0.3.0-linux-x86_64.AppImage');
+  const metadataPath = path.join(dir, 'latest-x64-linux-x86_64.yml');
+  fs.writeFileSync(appImagePath, 'appimage fixture');
+  const sha512 = crypto.createHash('sha512').update(fs.readFileSync(appImagePath)).digest('base64');
+  fs.writeFileSync(metadataPath, yaml.dump({
+    version: '0.3.0',
+    files: [{ url: path.basename(appImagePath), sha512, size: fs.statSync(appImagePath).size }],
+    path: path.basename(appImagePath),
+    sha512,
+  }));
+  assert.doesNotThrow(() => validateUpdateMetadata({
+    metadataPath,
+    archivePath: appImagePath,
+    expectedVersion: '0.3.0',
+    expectedArch: 'x64',
+    platform: 'linux',
+  }));
+});
