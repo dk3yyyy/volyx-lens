@@ -248,7 +248,30 @@ test('an invalid per-tier endpoint reports an actionable configuration error', (
 
   const resolved = resolveProvider(settings);
   assert.equal(resolved.ready, false);
-  assert.match(resolved.configurationError, /Groq fast endpoint must be a valid http\(s\) URL/);
+  assert.match(resolved.configurationError, /Groq fast endpoint must be a valid HTTPS URL/);
+});
+
+test('http per-tier endpoints are rejected for keyed providers and allowed only for keyless loopback', () => {
+  const keyed = getDefaultSettings();
+  keyed.provider = 'groq';
+  keyed.apiKeys.groq = 'gsk-test';
+  keyed.endpointByTier.groq = { fast: 'http://fast.groq.example/v1' };
+  const resolvedKeyed = resolveProvider(keyed);
+  assert.equal(resolvedKeyed.ready, false);
+  assert.match(resolvedKeyed.configurationError, /Groq fast endpoint must be a valid HTTPS URL/);
+
+  const loopback = getDefaultSettings();
+  loopback.provider = 'ollama';
+  loopback.endpointByTier.ollama = { fast: 'http://localhost:11434/v1' };
+  const resolvedLoopback = resolveProvider(loopback);
+  assert.equal(resolvedLoopback.ready, true);
+  assert.equal(resolvedLoopback.baseURL, 'http://localhost:11434/v1');
+
+  const remote = getDefaultSettings();
+  remote.provider = 'ollama';
+  remote.endpointByTier.ollama = { fast: 'http://192.168.1.50:11434/v1' };
+  const resolvedRemote = resolveProvider(remote);
+  assert.equal(resolvedRemote.ready, false);
 });
 
 test('Azure per-tier endpoints still pass official endpoint normalization', () => {

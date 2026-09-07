@@ -222,10 +222,18 @@ function resolveProvider(settings) {
   } else if (tierEndpoint) {
     try {
       const url = new URL(tierEndpoint);
-      if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('protocol');
+      const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+      const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      const secure = url.protocol === 'https:';
+      // Keyed providers must never send their API key over plaintext HTTP.
+      // Keyless local endpoints (Ollama) may use HTTP only on loopback.
+      const insecureLoopback = !requiresKey && url.protocol === 'http:' && loopback;
+      if (!secure && !insecureLoopback) throw new Error('protocol');
       baseURL = tierEndpoint.replace(/\/+$/, '');
     } catch {
-      configurationError = `${definition.label} ${tier} endpoint must be a valid http(s) URL.`;
+      configurationError = requiresKey
+        ? `${definition.label} ${tier} endpoint must be a valid HTTPS URL.`
+        : `${definition.label} ${tier} endpoint must be a valid HTTPS URL or an HTTP URL on localhost.`;
     }
   } else {
     baseURL = (definition.baseURLByTier && definition.baseURLByTier[tier]) || definition.baseURL || null;
