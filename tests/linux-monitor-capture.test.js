@@ -196,6 +196,28 @@ test('stop during discovery invalidates a late parec spawn', async () => {
   assert.equal(fake.spawned.parec.length, 0, 'no parec spawns after stop');
 });
 
+test('error then close from the parec child reports one terminal failure', async () => {
+  const sink = 'alsa_output.pci-0000_00_1f.3.analog-stereo';
+  const fake = discoverySpawn(sink);
+  const states = [];
+  const exits = [];
+  const controller = createLinuxMonitorCapture({
+    platform: 'linux',
+    spawnImpl: fake.spawn,
+    onState: (state) => states.push(state),
+    onUnexpectedExit: (event) => exits.push(event),
+  });
+  const started = await controller.start();
+  assert.deepEqual(started, { ok: true });
+  const child = fake.spawned.parec[0];
+  // Node emits both events for one spawn/runtime failure; the controller must
+  // report the failure exactly once.
+  child.emit('error', new Error('stream failed'));
+  child.emit('close', 1, null);
+  assert.equal(exits.length, 1);
+  assert.equal(states.filter((state) => state.state === 'failed').length, 1);
+});
+
 test('linux controller stops the parec child and ignores its later exit', async () => {
   const sink = 'alsa_output.pci-0000_00_1f.3.analog-stereo';
   const fake = discoverySpawn(sink);
