@@ -75,16 +75,16 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.4.0
+### Current release: v0.5.0
 
-v0.4.0 is an **Apple Developer ID-signed and notarized production release**. It launches without Gatekeeper workarounds and supports one-click in-app updates.
+v0.5.0 is an **Apple Developer ID-signed and notarized production release**. It launches without Gatekeeper workarounds and supports one-click in-app updates.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | `volyx-lens-0.4.0-mac-arm64.dmg` |
-| **Intel** | `volyx-lens-0.4.0-mac-x64.dmg` |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | `volyx-lens-0.5.0-mac-arm64.dmg` |
+| **Intel** | `volyx-lens-0.5.0-mac-x64.dmg` |
 
-**[Open the v0.4.0 release and download the matching DMG →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.4.0)**
+**[Open the v0.5.0 release and download the matching DMG →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.0)**
 
 SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 
@@ -101,7 +101,7 @@ Ad-hoc test builds remain available under their own pre-release tags for early v
 
 | Capability | macOS | Windows | Linux |
 |---|---|---|---|
-| Release artifact | Signed/notarized DMG (v0.4.0) | NSIS installer via release CI | AppImage (x64/arm64) via release CI |
+| Release artifact | Signed/notarized DMG (v0.5.0) | NSIS installer via release CI | AppImage (x64/arm64) via release CI |
 | Microphone (You channel) | ✅ | ✅ | ✅ |
 | Screen + coding help | ✅ | ✅ | ✅ |
 | Meeting audio (Them channel) | ✅ ScreenCaptureKit helper | ✅ system-audio loopback | ⚠️ best-effort via PulseAudio/PipeWire monitor |
