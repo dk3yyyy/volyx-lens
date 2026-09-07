@@ -31,3 +31,22 @@ test('combined Assist with no captured conversation directs the model to solve t
   assert.match(prompt, /solve the visible task/i);
   assert.match(mode.system, /never repeat, restate, or transcribe the visible problem text/i);
 });
+
+test('ready-to-speak modes attach a generic style guide with example replies', () => {
+  const sayPrompt = MODES.say.build({ transcript: [{ channel: 'them', text: 'How do you handle scope creep?' }] });
+  assert.match(sayPrompt, /Match this style exactly/);
+  assert.match(sayPrompt, /Them: /);
+  assert.match(sayPrompt, /How do you handle scope creep/);
+
+  const draftPrompt = MODES['auto-assist'].build({
+    transcript: [{ channel: 'you', text: 'I have used that stack for years.' }],
+    userText: 'Why do you want to work here?',
+  });
+  assert.match(draftPrompt, /Match this style exactly/);
+  assert.match(draftPrompt, /examples, not facts about you/i);
+
+  // Style examples must stay generic: no invented personal facts in the mode
+  // objects themselves.
+  const serialized = JSON.stringify({ say: MODES.say.examples, auto: MODES['auto-assist'].examples });
+  assert.doesNotMatch(serialized, /I worked at|my company|years of experience at/i);
+});
