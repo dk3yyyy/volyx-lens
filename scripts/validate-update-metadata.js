@@ -19,7 +19,13 @@ function validateUpdateMetadata({ metadataPath, archivePath, expectedVersion, ex
 
   const archiveName = path.basename(archivePath);
   const expectedExtension = PLATFORM_EXTENSIONS[platform];
-  if (!archiveName.endsWith(`-${expectedArch}${expectedExtension}`)) fail(`archive architecture or format does not match ${expectedArch}${expectedExtension}`);
+  // electron-builder names Linux x64 AppImages with an x86_64 token (for
+  // example volyx-lens-0.5.0-linux-x86_64.AppImage) while the channel is
+  // latest-x64; accept both tokens for that platform/arch pair.
+  const archTokens = platform === 'linux' && expectedArch === 'x64' ? ['x64', 'x86_64'] : [expectedArch];
+  if (!archTokens.some((token) => archiveName.endsWith(`-${token}${expectedExtension}`))) {
+    fail(`archive architecture or format does not match ${expectedArch}${expectedExtension}`);
+  }
 
   const document = yaml.load(fs.readFileSync(metadataPath, 'utf8'), { json: true });
   if (!document || typeof document !== 'object' || Array.isArray(document)) fail('document must be an object');
