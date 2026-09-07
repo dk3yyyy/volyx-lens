@@ -55,8 +55,9 @@ jobs:
           npx electron-builder --linux AppImage --${{ matrix.arch }} --publish never
       - name: Smoke launch packaged application
         run: |
-          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*linux-${{ matrix.arch }}.AppImage" -print -quit)"
+          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*.AppImage" -print -quit)"
           test -n "$APPIMAGE_PATH"
+          echo "Smoke launching: $(basename "$APPIMAGE_PATH")"
           chmod +x "$APPIMAGE_PATH"
           "$APPIMAGE_PATH" --appimage-extract-and-run --no-sandbox --smoke-test 2>&1 || true
       - name: Generate checksum and SBOM
@@ -64,14 +65,18 @@ jobs:
           ARCH="${{ matrix.arch }}"
           echo "dist contents:"
           ls -la dist
-          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*linux-${ARCH}.AppImage" -print -quit)"
+          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*.AppImage" -print -quit)"
           test -n "$APPIMAGE_PATH"
           APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
+          # electron-builder uses x86_64 as the artifact token on Linux x64
+          # builds (for example volyx-lens-0.5.0-linux-x86_64.AppImage).
+          FILE_ARCH="$(printf '%s' "$APPIMAGE_NAME" | sed -n 's/.*-linux-\([a-z0-9_]*\)\.AppImage$/\1/p')"
+          echo "Using AppImage: $APPIMAGE_NAME (file arch token: ${FILE_ARCH:-unknown})"
           # electron-builder names the update metadata file per channel/arch;
           # discover whichever one references this archive instead of assuming
           # a single naming scheme.
           META=""
-          for candidate in "latest-${ARCH}-linux.yml" "latest-${ARCH}-linux-${ARCH}.yml" "latest-linux-${ARCH}.yml" "latest-${ARCH}.yml" "latest-linux.yml" "latest.yml"; do
+          for candidate in "latest-${ARCH}-linux-${FILE_ARCH}.yml" "latest-${ARCH}-linux.yml" "latest-linux-${FILE_ARCH}.yml" "latest-linux.yml" "latest-${ARCH}.yml" "latest.yml"; do
             if [ -f "dist/$candidate" ]; then META="dist/$candidate"; echo "Using update metadata: $candidate"; break; fi
           done
           test -n "$META"
