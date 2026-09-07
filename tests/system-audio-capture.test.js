@@ -57,15 +57,18 @@ test('system-audio frame parser fails closed on malformed, out-of-order, or pre-
   assert.throws(() => parseFrames({ buffer: Buffer.alloc(0), lastSequence: null, ready: false }, Buffer.alloc(140000), handlers), /protocol_overflow/);
 });
 
-test('system-audio helper validation rejects missing and world-writable executables', () => {
+test('system-audio helper validation rejects missing executables', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-audio-'));
   const helper = path.join(dir, 'helper');
   assert.equal(validateSystemAudioHelper(helper, 'darwin').reason, 'helper_missing');
   fs.writeFileSync(helper, '#!/bin/sh\n');
-  fs.chmodSync(helper, 0o777);
-  assert.equal(validateSystemAudioHelper(helper, 'darwin').reason, 'unsafe_helper');
   fs.chmodSync(helper, 0o755);
   assert.equal(validateSystemAudioHelper(helper, 'darwin').ready, true);
+  // World-writable rejection is a POSIX concept: Windows has no mode bits.
+  if (process.platform !== 'win32') {
+    fs.chmodSync(helper, 0o777);
+    assert.equal(validateSystemAudioHelper(helper, 'darwin').reason, 'unsafe_helper');
+  }
 });
 
 test('controller accepts canonical PCM only after ready and reports unexpected exit once', async () => {
@@ -102,9 +105,12 @@ test('renderer keeps macOS system PCM out of the preload boundary', () => {
   assert.match(renderer, /volyxLens\.on\('audio:level'/);
   assert.doesNotMatch(preload, /systemAudioPcm|systemAudioSamples|systemAudioWaveform/);
   assert.match(main, /await systemAudioCapture\.stop\(\{ immediate: true \}\)/);
-  assert.match(main, /async function shutdownAll\(\)[\s\S]*?await systemAudioCapture\.stop\(\{ immediate: true \}\)[\s\S]*?await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
-  assert.match(renderer, /volyxLens\.platform !== 'darwin'/);
+  assert.match(main, /async function shutdownAll\(\)[\s\S]*?await systemAudioCapture\.stop\(\{ immediate: true \}\)/);
+  assert.match(renderer, /volyxLens\.platform === 'win32'/);
   assert.match(preload, /platform: process\.platform/);
+  assert.match(main, /createLinuxMonitorCapture/);
+  assert.match(main, /process\.platform === 'linux' \? await linuxMonitorCapture\.start\(\) : null/);
+  assert.match(main, /await linuxMonitorCapture\.stop\(\{ immediate: true \}\)/);
   const swift = fs.readFileSync(path.join(root, 'native', 'macos-system-audio.swift'), 'utf8');
   assert.match(swift, /bundleIdentifier == "ai\.volyx\.lens"/);
   assert.match(swift, /private final class StopLatch: @unchecked Sendable/);
