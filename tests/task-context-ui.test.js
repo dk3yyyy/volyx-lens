@@ -102,7 +102,12 @@ test('saved screens are disclosed and used only by screen-capable explicit reque
   assert.match(main, /let combinedImages = \[\.\.\.savedTaskImages/);
   assert.match(main, /const taskImageLimit = llm\.maxImagesPerRequest/);
   assert.match(main, /taskContext\.selectImages\(taskImageLimit, \{ query: relevanceQuery \}\)/);
-  assert.match(main, /capTaskImages\(combinedImages, taskImageLimit\)/);
+  assert.match(main, /capTaskImages\(combinedImages, taskImageLimit, \{ pinned: combinedPinned \}\)/);
+  assert.match(main, /savedTaskSelection\.pinned \|\| savedTaskImages\.map\(\(\) => false\)/);
+  assert.match(main, /combinedPinned = \[\.\.\.savedPinned/);
+  assert.match(main, /uses only the current screen/);
+  assert.match(main, /instead of the current screen/);
+  assert.match(main, /the current screen is attached as the only image/);
   assert.match(main, /Visual task context:/);
   assert.match(main, /imageDataUrls,/);
   assert.match(renderer, /Task context:/);

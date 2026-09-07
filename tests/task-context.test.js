@@ -83,6 +83,7 @@ test('default storage has no fixed screen count and paginated metadata is bounde
   assert.equal(page.captures[0].sequence, 101);
   assert.deepEqual(context.selectImages(4), {
     images: [image('screen-0'), image('screen-117'), image('screen-118'), image('screen-119')],
+    pinned: [false, false, false, false],
     total: 120,
     omitted: 116,
   });
@@ -103,6 +104,7 @@ test('pinned captures survive ordinary eviction and are prioritized for bounded 
   assert.deepEqual(context.images(), [image('problem'), image('file-b'), image('test-output')]);
   assert.deepEqual(context.selectImages(2), {
     images: [image('problem'), image('test-output')],
+    pinned: [true, false],
     total: 3,
     omitted: 1,
   });
@@ -241,6 +243,7 @@ test('overlapping code pages remain saved, link lines 40–60, and rank only uni
   assert.equal(metadata[1].overlapConfidence, 100);
   assert.deepEqual(context.selectImages(39, { query: 'Why does value80 fail on line 80?' }), {
     images: [image('code-lines-40-100')],
+    pinned: [false],
     total: 2,
     omitted: 1,
     strategy: 'relevance',
@@ -285,6 +288,7 @@ test('relevance safely falls back to all in-budget screens while any OCR result 
   context.setOcrResult(first.id, { status: 'ready', text: codePage(1, 60) });
   assert.deepEqual(context.selectImages(39, { query: 'value20 line 20' }), {
     images: [image('indexed'), image('pending')],
+    pinned: [false, false],
     total: 2,
     omitted: 0,
     strategy: 'fallback',
