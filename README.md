@@ -84,7 +84,15 @@ v0.5.0 is an **Apple Developer ID-signed and notarized production release**. It 
 | **Apple Silicon:** M1, M2, M3, M4, or newer | `volyx-lens-0.5.0-mac-arm64.dmg` |
 | **Intel** | `volyx-lens-0.5.0-mac-x64.dmg` |
 
-**[Open the v0.5.0 release and download the matching DMG →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.0)**
+| Windows / Linux | Installer |
+|---|---|
+| **Windows (x64)** | `volyx-lens-0.5.0-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.5.0-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.5.0-linux-arm64.AppImage` |
+
+**[Open the v0.5.0 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.0)**
+
+The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.5.0 macOS DMGs will be provided after release signing credentials are configured; ad-hoc Mac test builds remain available under their pre-release tags.
 
 SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 
