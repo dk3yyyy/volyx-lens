@@ -46,6 +46,18 @@ test('pinned screens fill the image budget before newer unpinned captures', () =
   assert.equal(result.dropped, 1);
 });
 
+test('pinned images alone never exceed the provider limit', () => {
+  const result = capTaskImages(
+    ['pinned-1', 'pinned-2', 'pinned-3', 'pinned-4', 'pinned-5'],
+    3,
+    { pinned: [true, true, true, true, true] },
+  );
+  assert.equal(result.images.length, 3);
+  assert.deepEqual(result.images, ['pinned-1', 'pinned-2', 'pinned-3']);
+  assert.equal(result.dropped, 2);
+  assert.equal(result.total, 5);
+});
+
 test('an unset or zero limit falls back to the app-wide maximum', () => {
   const many = Array.from({ length: MAX_SAVED_TASK_IMAGES_PER_REQUEST + 5 }, (_, i) => `s${i}`);
   const result = capTaskImages(many, 0);
