@@ -172,3 +172,25 @@ test('reduced motion avoids an unfocusable scroll region and callouts meet contr
   assert.match(css, /\.footer-links a\s*\{[^}]*min-width:\s*44px[^}]*min-height:\s*44px/i);
   assert.match(css, /\.responsibility-copy a\s*\{[^}]*min-height:\s*44px/i);
 });
+
+test('download OS detection maps desktop platforms and ignores Android', () => {
+  const script = read('script.js');
+  const match = script.match(/function detectOS\(\) \{[\s\S]*?\n\}/);
+  assert.ok(match, 'detectOS function present in script.js');
+  const makeDetect = new Function('navigator', `${match[0]}; return detectOS;`);
+
+  const cases = [
+    ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36', 'win'],
+    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.5 Safari/605.1.15', 'mac'],
+    ['Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36', 'linux-x64'],
+    ['Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36', 'linux-arm64'],
+    ['Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36', null],
+    ['Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0', 'linux-x64'],
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1', null]
+  ];
+
+  for (const [ua, expected] of cases) {
+    const detect = makeDetect({ userAgent: ua });
+    assert.equal(detect(), expected, `UA: ${ua}`);
+  }
+});
