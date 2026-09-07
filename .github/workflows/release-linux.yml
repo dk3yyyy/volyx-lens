@@ -55,18 +55,31 @@ jobs:
           npx electron-builder --linux AppImage --${{ matrix.arch }} --publish never
       - name: Smoke launch packaged application
         run: |
-          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*.AppImage" -print -quit)"
+          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*linux-${{ matrix.arch }}.AppImage" -print -quit)"
           test -n "$APPIMAGE_PATH"
           chmod +x "$APPIMAGE_PATH"
           "$APPIMAGE_PATH" --appimage-extract-and-run --no-sandbox --smoke-test 2>&1 || true
       - name: Generate checksum and SBOM
         run: |
-          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*.AppImage" -print -quit)"
+          ARCH="${{ matrix.arch }}"
+          echo "dist contents:"
+          ls -la dist
+          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name "*linux-${ARCH}.AppImage" -print -quit)"
+          test -n "$APPIMAGE_PATH"
           APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
-          test -f "dist/latest-${{ matrix.arch }}-linux.yml"
+          # electron-builder names the update metadata file per channel/arch;
+          # discover whichever one references this archive instead of assuming
+          # a single naming scheme.
+          META=""
+          for candidate in "latest-${ARCH}-linux.yml" "latest-linux-${ARCH}.yml" "latest-${ARCH}.yml" "latest-linux.yml" "latest.yml"; do
+            if [ -f "dist/$candidate" ]; then META="dist/$candidate"; echo "Using update metadata: $candidate"; break; fi
+          done
+          test -n "$META"
           VERSION="$(node -p "require('./package.json').version")"
-          node scripts/validate-update-metadata.js "dist/latest-${{ matrix.arch }}-linux.yml" "$APPIMAGE_PATH" "$VERSION" "${{ matrix.arch }}" "linux"
-          (cd dist && shasum -a 256 "$APPIMAGE_NAME" > "$APPIMAGE_NAME.sha256")
+          node scripts/validate-update-metadata.js "$META" "$APPIMAGE_PATH" "$VERSION" "$ARCH" "linux" \
+            || { echo "Metadata validation failed; dist contents:"; ls -la dist; exit 1; }
+          # shasum (Perl) is not installed on all runners; hash with node.
+          APPIMAGE_NAME="$APPIMAGE_NAME" node -e "const fs=require('fs'),c=require('crypto');const n=process.env.APPIMAGE_NAME;const p='dist/'+n;fs.writeFileSync(p+'.sha256',c.createHash('sha256').update(fs.readFileSync(p)).digest('hex')+'  '+n+'\n');"
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json"
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
@@ -83,7 +96,7 @@ jobs:
           path: |
             dist/*.AppImage
             dist/*.AppImage.sha256
-            dist/latest-${{ matrix.arch }}-linux.yml
+            dist/latest*.yml
             dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json
           if-no-files-found: error
 
