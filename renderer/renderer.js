@@ -716,7 +716,10 @@
     const turningOn = !button.classList.contains('active');
     button.disabled = true;
     try {
-      if (turningOn && systemEnabled() && volyxLens.platform !== 'darwin') startSystemAudio();
+      // Windows captures meeting audio through the Chromium loopback track;
+      // macOS and Linux use a main-process source (ScreenCaptureKit helper or
+      // PulseAudio monitor), so only Windows needs the renderer-side start.
+      if (turningOn && systemEnabled() && volyxLens.platform === 'win32') startSystemAudio();
       await volyxLens.captureToggle();
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Listening state could not be changed.');

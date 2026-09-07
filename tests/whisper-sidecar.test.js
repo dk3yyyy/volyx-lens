@@ -259,7 +259,9 @@ test('resolveWhisperBinary ignores a non-executable env path and falls back to b
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-wsp-'));
   try {
     const fromEnv = path.join(dir, 'not-exec');
-    fs.writeFileSync(fromEnv, 'not executable', { mode: 0o600 });
+    // Windows has no exec bit, so a missing candidate is the portable way to
+    // prove the fallback; on POSIX also prove a non-executable file is skipped.
+    if (process.platform !== 'win32') fs.writeFileSync(fromEnv, 'not executable', { mode: 0o600 });
     const resourcesPath = path.join(dir, 'Resources');
     const nativeDir = path.join(resourcesPath, 'native');
     fs.mkdirSync(nativeDir, { recursive: true });

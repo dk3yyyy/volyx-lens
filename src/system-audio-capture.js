@@ -25,8 +25,12 @@ function validateSystemAudioHelper(helperPath, platform = process.platform) {
   try {
     const resolved = fs.realpathSync(helperPath);
     const stat = fs.statSync(resolved);
-    fs.accessSync(resolved, fs.constants.X_OK);
-    if (!stat.isFile() || (stat.mode & 0o002)) return { ready: false, reason: 'unsafe_helper' };
+    if (!stat.isFile()) return { ready: false, reason: 'unsafe_helper' };
+    // POSIX mode bits and the exec bit are meaningless on Windows hosts.
+    if (process.platform !== 'win32') {
+      fs.accessSync(resolved, fs.constants.X_OK);
+      if (stat.mode & 0o002) return { ready: false, reason: 'unsafe_helper' };
+    }
     return { ready: true, helper: resolved };
   } catch {
     return { ready: false, reason: 'helper_missing' };
