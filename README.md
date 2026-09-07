@@ -48,7 +48,7 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
 - **Native macOS and Windows behavior:** compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
-- **Capture exclusion:** the overlay is marked private via `setContentProtection(true)` (`NSWindowSharingNone` on macOS), so it stays out of most screen recordings and screen shares on both platforms without hidden-window tricks or a special capture mode.
+- **Capture exclusion:** the overlay is marked private via `setContentProtection(true)` (`NSWindowSharingNone` on macOS), so it stays out of most screen recordings and screen shares on macOS and Windows without hidden-window tricks or a special capture mode. Linux has no capture-exclusion API; see [Platform support](#platform-support).
 
 ## Product tour
 
@@ -96,6 +96,23 @@ SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 4. Grant Microphone and Screen & System Audio Recording access when prompted.
 
 Ad-hoc test builds remain available under their own pre-release tags for early validation.
+
+## Platform support
+
+| Capability | macOS | Windows | Linux |
+|---|---|---|---|
+| Release artifact | Signed/notarized DMG (v0.4.0) | NSIS installer via release CI | AppImage (x64/arm64) via release CI |
+| Microphone (You channel) | ✅ | ✅ | ✅ |
+| Screen + coding help | ✅ | ✅ | ✅ |
+| Meeting audio (Them channel) | ✅ ScreenCaptureKit helper | ✅ system-audio loopback | ⚠️ best-effort via PulseAudio/PipeWire monitor |
+| Local OCR for Task Context ranking | ✅ Apple Vision | ❌ falls back to recency/pinned | ❌ falls back to recency/pinned |
+| Capture exclusion from screen shares | ⚠️ best-effort | ⚠️ best-effort (`WDA_EXCLUDEFROMCAPTURE`) | ❌ no OS capture-exclusion API |
+
+Notes:
+
+- Meeting audio on Windows is captured through the OS system-audio loopback (no permission beyond the microphone grant). It is implemented and exercised in CI but has not yet been validated on a wide range of real Windows machines and audio setups.
+- Meeting audio on Linux requires `pactl` and `parec` (provided by `pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink. Linux is experimental; the Them channel fails gracefully with a status message when the tools or a monitor source are unavailable.
+- Capture exclusion only exists where the operating system provides it: macOS (`NSWindowSharingNone`) and Windows (`WDA_EXCLUDEFROMCAPTURE`). On Linux the overlay can appear in screen shares, so treat screen-share privacy there as unavailable.
 
 ## What it can do
 

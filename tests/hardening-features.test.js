@@ -66,7 +66,8 @@ test('session limits use a serialized idempotent main-process capture stop', () 
 });
 
 test('CI checkouts do not persist repository credentials', () => {
-  assert.equal((ci.match(/persist-credentials: false/g) || []).length, 2);
+  // verify, windows-test, and macos-package each checkout without credentials.
+  assert.equal((ci.match(/persist-credentials: false/g) || []).length, 3);
   assert.equal((release.match(/persist-credentials: false/g) || []).length, 1);
 });
 

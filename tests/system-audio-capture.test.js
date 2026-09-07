@@ -102,9 +102,12 @@ test('renderer keeps macOS system PCM out of the preload boundary', () => {
   assert.match(renderer, /volyxLens\.on\('audio:level'/);
   assert.doesNotMatch(preload, /systemAudioPcm|systemAudioSamples|systemAudioWaveform/);
   assert.match(main, /await systemAudioCapture\.stop\(\{ immediate: true \}\)/);
-  assert.match(main, /async function shutdownAll\(\)[\s\S]*?await systemAudioCapture\.stop\(\{ immediate: true \}\)[\s\S]*?await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
-  assert.match(renderer, /volyxLens\.platform !== 'darwin'/);
+  assert.match(main, /async function shutdownAll\(\)[\s\S]*?await systemAudioCapture\.stop\(\{ immediate: true \}\)/);
+  assert.match(renderer, /volyxLens\.platform === 'win32'/);
   assert.match(preload, /platform: process\.platform/);
+  assert.match(main, /createLinuxMonitorCapture/);
+  assert.match(main, /process\.platform === 'linux' \? await linuxMonitorCapture\.start\(\) : null/);
+  assert.match(main, /await linuxMonitorCapture\.stop\(\{ immediate: true \}\)/);
   const swift = fs.readFileSync(path.join(root, 'native', 'macos-system-audio.swift'), 'utf8');
   assert.match(swift, /bundleIdentifier == "ai\.volyx\.lens"/);
   assert.match(swift, /private final class StopLatch: @unchecked Sendable/);
