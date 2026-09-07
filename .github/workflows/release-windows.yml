@@ -72,7 +72,8 @@ jobs:
           test -f "dist/latest.yml"
           VERSION="$(node -p "require('./package.json').version")"
           node scripts/validate-update-metadata.js "dist/latest.yml" "$NSIS_PATH" "$VERSION" "x64" "win32"
-          (cd dist && shasum -a 256 "$NSIS_NAME" > "$NSIS_NAME.sha256")
+          # shasum (Perl) is not installed on Windows runners; hash with node.
+          NSIS_NAME="$NSIS_NAME" node -e "const fs=require('fs'),c=require('crypto');const n=process.env.NSIS_NAME;const p='dist/'+n;fs.writeFileSync(p+'.sha256',c.createHash('sha256').update(fs.readFileSync(p)).digest('hex')+'  '+n+'\n');"
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-windows.cdx.json"
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
