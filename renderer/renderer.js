@@ -1645,13 +1645,14 @@
   }
   function stashCurrentEndpoints() {
     if (!settings.endpointByTier) settings.endpointByTier = {};
-    const overrides = {};
-    const fastEndpoint = $('#endpoint-fast').value.trim();
-    const smartEndpoint = $('#endpoint-smart').value.trim();
-    if (fastEndpoint) overrides.fast = fastEndpoint;
-    if (smartEndpoint) overrides.smart = smartEndpoint;
-    if (Object.keys(overrides).length) settings.endpointByTier[providerView] = overrides;
-    else delete settings.endpointByTier[providerView];
+    // Always write both tier values, empty string when cleared. The store
+    // persists empty strings and resolveProvider treats them as unset, so a
+    // cleared override survives reload. (Deleting the provider entry cannot:
+    // settings patches deep-merge, so a missing key keeps the old value.)
+    settings.endpointByTier[providerView] = {
+      fast: $('#endpoint-fast').value.trim(),
+      smart: $('#endpoint-smart').value.trim(),
+    };
   }
   document.querySelectorAll('#provider-seg button').forEach((button) => button.addEventListener('click', () => {
     stashCurrentModels();
