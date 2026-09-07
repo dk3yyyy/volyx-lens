@@ -10,6 +10,16 @@ function formatTranscript(turns, limit, maxCharacters = DEFAULT_RECENT_CONTEXT_C
   return formatTranscriptContext(turns, { maxTurns: limit || 0, maxCharacters });
 }
 
+// 1-2 compact few-shot exchanges per mode. They teach output STYLE (short,
+// first-person, ready to speak) without inventing user facts; example content
+// is deliberately generic.
+function styleGuide(mode) {
+  const examples = (mode.examples || []).slice(0, 2);
+  if (!examples.length) return '';
+  return '\n\nMatch this style exactly (format, tone, length). The words are examples, not facts about you:\n' +
+    examples.map(({ them, you }) => `Them: ${them}\nYou: ${you}`).join('\n');
+}
+
 const MODES = {
   // One-shot "do the smart thing". Uses screen + recent transcript.
   assist: {
@@ -71,11 +81,17 @@ const MODES = {
     system:
       'You are Volyx Lens, whispering suggested replies to the user during a live conversation. ' +
       '"Them" is the other person; "You" is the user. Based on what Them just said and what You already said, ' +
-      'draft ONE short, natural, confident reply the user can say out loud, in the first person. No quotes, no preamble, 1–3 sentences.',
+      'draft ONE short, natural, confident reply the user can say out loud, in the first person. No quotes, no preamble, 1\u20133 sentences.',
+    examples: [
+      { them: 'Can you walk me through how you would handle a production incident?',
+        you: 'Sure. I would start by confirming impact and keeping the response calm, then check the last deploy and the error rate. Once we know the blast radius, roll back or hotfix, post a timeline, and schedule the postmortem.' },
+      { them: "What's your take on the roadmap draft?",
+        you: 'I like the direction. My main suggestion is to move the migration into its own milestone so we are not shipping features on top of a moving base.' },
+    ],
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 14);
       return 'Conversation so far:\n' + (t || '(nothing heard yet — the user opened Volyx Lens without audio)') +
-        '\n\nWhat should I say next?';
+        '\n\nWhat should I say next?' + styleGuide(this);
     }
   },
 
@@ -91,11 +107,17 @@ const MODES = {
       '"Them" is the other participant; "You" is the user. Them just asked a question. ' +
       'Draft ONE concise, natural reply the user can say out loud, in the first person, ' +
       'grounded only in the supplied conversation and personal context. No quotes, no preamble, 1\u20133 sentences.',
+    examples: [
+      { them: 'Why do you want to work here?',
+        you: 'Because the problem you are solving is one I care about and my background maps to it directly. I would bring the relevant skill from day one and the energy to stay.' },
+      { them: 'Where do you see this going in the next year?',
+        you: 'Short term: prove the model with the current pilot and harden onboarding. By next year I would want a repeatable playbook and a few reference customers.' },
+    ],
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 16);
       return 'Conversation so far:\n' + (t || '(nothing captured yet)') +
         '\n\nThem asked: "' + String(ctx.userText || '').trim() + '"\n\nWhat should You say? ' +
-        'Answer the question directly and concisely.';
+        'Answer the question directly and concisely.' + styleGuide(this);
     }
   },
 
