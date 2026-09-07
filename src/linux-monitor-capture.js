@@ -153,6 +153,17 @@ function createLinuxMonitorCapture({
       child = processHandle;
       const buffer = { value: Buffer.alloc(0) };
       let stderrBytes = 0;
+      // A child can emit both 'error' and 'close' for one failure; report a
+      // terminal state only once per child.
+      let terminalReported = false;
+      const reportTerminal = (state, reason, code) => {
+        if (terminalReported) return;
+        terminalReported = true;
+        ready = false;
+        if (child === processHandle) child = null;
+        onState({ state, reason });
+        onUnexpectedExit({ code });
+      };
       processHandle.stderr.on('data', (chunk) => {
         stderrBytes += chunk.length;
         if (stderrBytes > 65536) {
@@ -171,25 +182,22 @@ function createLinuxMonitorCapture({
       processHandle.on('error', () => {
         // Ignore errors from superseded children (a newer start owns the slot).
         if (myGeneration !== generation && child !== processHandle) return;
-        ready = false;
-        if (child === processHandle) child = null;
-        onState({ state: 'failed', reason: 'spawn_failed' });
-        onUnexpectedExit({ code: null });
+        reportTerminal('failed', 'spawn_failed', null);
       });
       processHandle.on('close', (code) => {
         // A child killed by stop() has a stale generation but is still the
         // active child; report its intentional exit. Only genuinely stale
         // children from a superseded start are ignored.
         if (myGeneration !== generation && child !== processHandle) return;
-        const wasIntentional = intentionalStop;
-        ready = false;
-        if (child === processHandle) child = null;
-        if (wasIntentional) {
+        if (intentionalStop) {
+          if (terminalReported) return;
+          terminalReported = true;
+          ready = false;
+          if (child === processHandle) child = null;
           onState({ state: 'stopped' });
           return;
         }
-        onState({ state: 'failed', reason: code === 0 ? 'stream_stopped' : 'stream_failed' });
-        onUnexpectedExit({ code });
+        reportTerminal('failed', code === 0 ? 'stream_stopped' : 'stream_failed', code);
       });
       ready = true;
       onState({ state: 'ready' });
