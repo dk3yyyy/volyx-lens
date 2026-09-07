@@ -160,6 +160,7 @@ const DL_ASSETS = {
 function detectOS() {
   const ua = (navigator.userAgent || '').toLowerCase();
   if (/windows|win32|win64/.test(ua)) return 'win';
+  if (/iphone|ipad|ipod|ios/.test(ua)) return null; // iOS UAs contain 'like Mac OS X'
   if (/mac os|macintosh/.test(ua)) return 'mac';
   if (/android/.test(ua)) return null; // Android Chromium UAs contain 'linux'
   if (/linux/.test(ua)) return /arm|aarch64/.test(ua) ? 'linux-arm64' : 'linux-x64';
