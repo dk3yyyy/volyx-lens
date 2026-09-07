@@ -80,6 +80,15 @@ jobs:
             if [ -f "dist/$candidate" ]; then META="dist/$candidate"; echo "Using update metadata: $candidate"; break; fi
           done
           test -n "$META"
+          # electron-updater always requests latest-<arch>-linux.yml for Linux;
+          # canonicalize whatever electron-builder actually wrote (arm64 can
+          # arrive as latest-arm64-linux-arm64.yml).
+          EXPECTED_META="latest-${ARCH}-linux.yml"
+          if [ "$(basename "$META")" != "$EXPECTED_META" ]; then
+            mv "$META" "dist/$EXPECTED_META"
+            echo "Canonicalized update metadata to: $EXPECTED_META"
+            META="dist/$EXPECTED_META"
+          fi
           VERSION="$(node -p "require('./package.json').version")"
           node scripts/validate-update-metadata.js "$META" "$APPIMAGE_PATH" "$VERSION" "$ARCH" "linux" \
             || { echo "Metadata validation failed; dist contents:"; ls -la dist; exit 1; }
