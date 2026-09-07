@@ -22,8 +22,12 @@ test('landing page ships a semantic, truthful static entry point', () => {
 
   assert.match(html, /<main\b[^>]*id="main"/i);
   assert.equal((html.match(/<h1\b/gi) || []).length, 1);
-  assert.match(html, /A private assistant for your Mac/i);
-  assert.match(html, /Production release[\s\S]*?v0\.4\.0/i);
+  assert.match(html, /A private assistant for your desktop/i);
+  assert.match(html, /Release[\s\S]*?v0\.5\.0/i);
+  assert.match(html, /current signed Mac release is v0\.4\.0/i);
+  assert.match(html, /Windows and Linux installers are live in v0\.5\.0/i);
+  assert.match(html, /v0\.5\.0 macOS build will be signed and notarized once release signing credentials are configured/i);
+  assert.match(html, /Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /there is no Volyx Lens-operated intermediary server/i);
   assert.match(html, /Apache License 2\.0/i);
