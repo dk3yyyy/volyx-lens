@@ -43,7 +43,7 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Meeting detection:** opt-in detection flags a sustained two-sided conversation while listening, tags the session, and shows a "Meeting in progress" indicator. Local and in-session only: no audio watcher, no disk writes, no model calls.
 - **Meeting history:** opt-in on-device history saves meetings with a meeting badge, search, notes, and Markdown/TXT/JSON export.
 - **Meeting notes:** generate structured meeting notes for saved records using your configured provider, with long-meeting confirmation before paid requests.
-- **Provider choice:** OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, or a local Ollama server for responses; OpenAI, Azure, Deepgram, Azure AI Speech, or optional local Whisper for transcription.
+- **Provider choice:** OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server for responses; OpenAI, Azure, Deepgram, Azure AI Speech, or optional local Whisper for transcription.
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
@@ -136,6 +136,8 @@ If access was previously denied, enable Volyx Lens in System Settings, then full
 
 Open Settings with `⌘` `,` or the `…` button. Choose a response provider, enter its key and model/deployment names, then select **Use as default**. An optional fallback provider is used only when it is capable of the request and the default fails before producing answer text.
 
+Each provider stores separate **Fast** and **Smart** model/deployment names, so the Smart toggle switches tiers without extra configuration. If your fast and smart models live on different APIs, the per-provider **Tier API keys** fields (Fast key / Smart key) let each tier use its own key, and the **Endpoint overrides** fields (Fast URL / Smart URL) route each tier to its own OpenAI-compatible base URL; leaving either blank uses the shared provider key / default endpoint. Tier keys apply to Azure, DeepSeek, Groq, NVIDIA, and OpenRouter. Azure endpoint overrides still pass through official-endpoint validation.
+
 | Provider | Role | Configuration notes |
 |---|---|---|
 | **OpenAI** | responses + transcription | API key; compatible response and audio models |
@@ -145,6 +147,7 @@ Open Settings with `⌘` `,` or the `…` button. Choose a response provider, en
 | **DeepSeek** | text responses | screen analysis requires a vision-capable default/fallback |
 | **Groq** | text responses | API key; fast Llama models served on Groq's LPU |
 | **OpenRouter** | responses | API key; routes to many hosted models with one key |
+| **NVIDIA** | responses | API key from build.nvidia.com; OpenAI-compatible Nemotron and hosted open models (`https://integrate.api.nvidia.com/v1`); vision requires a VLM model (e.g. `meta/llama-3.2-11b-vision-instruct`) |
 | **Ollama** | local responses | no key; local server with the OpenAI-compatible API (`http://localhost:11434/v1`); pull a model first |
 | **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
 | **Azure AI Speech** | realtime transcription | Speech resource key and region (bare region name, e.g. `eastus`); no model name required |

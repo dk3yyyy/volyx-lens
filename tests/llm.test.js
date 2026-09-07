@@ -81,6 +81,44 @@ test('Groq routes through its official OpenAI-compatible endpoint', async () => 
   assert.equal(fake.instances[0].requests[0].model, 'llama-3.1-8b-instant');
 });
 
+test('per-tier endpoint overrides route fast and smart tiers to different base URLs', async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'groq';
+  settings.apiKeys.groq = 'groq-test-key';
+  settings.endpointByTier.groq = {
+    fast: 'https://fast.groq.example/v1',
+    smart: 'https://smart.groq.example/v1',
+  };
+
+  const fast = fakeOpenAI();
+  await createLLM(settings, { OpenAI: fast.FakeOpenAI }).stream(baseParams);
+  assert.equal(fast.instances[0].options.baseURL, 'https://fast.groq.example/v1');
+  assert.equal(fast.instances[0].requests[0].model, 'llama-3.1-8b-instant');
+
+  const smartSettings = { ...settings, smart: true };
+  const smart = fakeOpenAI();
+  await createLLM(smartSettings, { OpenAI: smart.FakeOpenAI }).stream(baseParams);
+  assert.equal(smart.instances[0].options.baseURL, 'https://smart.groq.example/v1');
+  assert.equal(smart.instances[0].requests[0].model, 'llama-3.3-70b-versatile');
+});
+
+test('per-tier API keys route to the OpenAI-compatible client for each tier', async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'nvidia';
+  settings.apiKeys.nvidia = 'nvapi-shared-key';
+  settings.apiKeys['nvidia.fast'] = 'nvapi-fast-key';
+  settings.apiKeys['nvidia.smart'] = 'nvapi-smart-key';
+
+  const fast = fakeOpenAI();
+  await createLLM(settings, { OpenAI: fast.FakeOpenAI }).stream(baseParams);
+  assert.equal(fast.instances[0].options.apiKey, 'nvapi-fast-key');
+
+  const smartSettings = { ...settings, smart: true };
+  const smart = fakeOpenAI();
+  await createLLM(smartSettings, { OpenAI: smart.FakeOpenAI }).stream(baseParams);
+  assert.equal(smart.instances[0].options.apiKey, 'nvapi-smart-key');
+});
+
 test('OpenRouter routes through its official OpenAI-compatible endpoint', async () => {
   const settings = getDefaultSettings();
   settings.provider = 'openrouter';

@@ -1533,7 +1533,7 @@
   $('#audio-mic-enabled').addEventListener('change', enforceAudioChannelSelection);
   $('#audio-system-enabled').addEventListener('change', enforceAudioChannelSelection);
 
-  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', openrouter: 'OpenRouter', ollama: 'Ollama' });
+  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama' });
   function clearProviderTestResult() {
     const result = $('#provider-test-result');
     result.className = 'provider-test-result hidden';
@@ -1557,6 +1557,23 @@
     });
     $('#provider-config-panel').setAttribute('aria-labelledby', `provider-tab-${providerView}`);
     document.querySelectorAll('[data-provider-config]').forEach((row) => row.classList.toggle('hidden', row.dataset.providerConfig !== providerView));
+    document.querySelectorAll('[data-endpoint-config]').forEach((row) => {
+      const providers = String(row.dataset.endpointConfig || '').split(/\s+/).filter(Boolean);
+      row.classList.toggle('hidden', !providers.includes(providerView));
+    });
+    document.querySelectorAll('[data-tier-key-config]').forEach((row) => {
+      const providers = String(row.dataset.tierKeyConfig || '').split(/\s+/).filter(Boolean);
+      row.classList.toggle('hidden', !providers.includes(providerView));
+      if (!providers.includes(providerView)) return;
+      for (const tier of ['fast', 'smart']) {
+        const slot = `${providerView}.${tier}`;
+        const input = $(`#key-${tier}`);
+        input.value = '';
+        input.placeholder = present[slot] ? 'Saved securely — enter to replace' : 'Optional — uses the shared key';
+        const clear = document.querySelector(`.key-clear[data-key-tier="${tier}"]`);
+        if (clear) clear.disabled = !present[slot];
+      }
+    });
     $('#provider-view-title').textContent = label;
     const isDefault = providerView === settings.provider;
     const keyless = providerView === 'ollama';
@@ -1575,6 +1592,9 @@
     const models = settings.models[providerView] || { fast: '', smart: '' };
     $('#model-fast').value = models.fast || '';
     $('#model-smart').value = models.smart || '';
+    const tierEndpoints = (settings.endpointByTier && settings.endpointByTier[providerView]) || {};
+    $('#endpoint-fast').value = tierEndpoints.fast || '';
+    $('#endpoint-smart').value = tierEndpoints.smart || '';
     const fallback = $('#provider-fallback');
     [...fallback.options].forEach((option) => { option.disabled = option.value === settings.provider; });
     if (settings.fallbackProvider === settings.provider) settings.fallbackProvider = '';
@@ -1591,7 +1611,7 @@
 
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
-    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key', azureSpeech: 'Azure AI Speech resource key' };
+    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', nvidia: 'nvapi-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key', azureSpeech: 'Azure AI Speech resource key' };
     for (const provider of Object.keys(keyPlaceholders)) {
       const input = $(`#key-${provider}`);
       input.value = '';
@@ -1660,8 +1680,20 @@
     settings.models[providerView].fast = $('#model-fast').value.trim();
     settings.models[providerView].smart = $('#model-smart').value.trim();
   }
+  function stashCurrentEndpoints() {
+    if (!settings.endpointByTier) settings.endpointByTier = {};
+    // Always write both tier values, empty string when cleared. The store
+    // persists empty strings and resolveProvider treats them as unset, so a
+    // cleared override survives reload. (Deleting the provider entry cannot:
+    // settings patches deep-merge, so a missing key keeps the old value.)
+    settings.endpointByTier[providerView] = {
+      fast: $('#endpoint-fast').value.trim(),
+      smart: $('#endpoint-smart').value.trim(),
+    };
+  }
   document.querySelectorAll('#provider-seg button').forEach((button) => button.addEventListener('click', () => {
     stashCurrentModels();
+    stashCurrentEndpoints();
     providerView = button.dataset.provider;
     clearProviderTestResult();
     renderProviderConfig();
@@ -1681,6 +1713,7 @@
   });
   $('#provider-default-btn').addEventListener('click', () => {
     stashCurrentModels();
+    stashCurrentEndpoints();
     settings.provider = providerView;
     if (settings.fallbackProvider === providerView) settings.fallbackProvider = '';
     renderProviderConfig();
@@ -1693,7 +1726,8 @@
   });
   $('#stt-realtime-provider').addEventListener('change', renderTranscriptionProviderConfig);
   document.querySelectorAll('.key-clear').forEach((button) => button.addEventListener('click', async () => {
-    const provider = button.dataset.key;
+    const tier = button.dataset.keyTier;
+    const provider = tier ? `${providerView}.${tier}` : button.dataset.key;
     try {
       await saveSettings();
       settings = await volyxLens.clearCredential(provider);
@@ -1745,9 +1779,13 @@
 
   async function saveSettings() {
     const apiKeyUpdates = {};
-    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'deepgram', 'azureRealtime', 'azureSpeech']) {
+    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'nvidia', 'deepgram', 'azureRealtime', 'azureSpeech']) {
       const value = $(`#key-${provider}`).value.trim();
       if (value) apiKeyUpdates[provider] = value;
+    }
+    for (const tier of ['fast', 'smart']) {
+      const value = $(`#key-${tier}`).value.trim();
+      if (value) apiKeyUpdates[`${providerView}.${tier}`] = value;
     }
     if (!settings.endpoints) settings.endpoints = {};
     settings.endpoints.azure = $('#endpoint-azure').value.trim();
@@ -1792,6 +1830,7 @@
       maxSessionMinutes: Math.max(10, Math.min(480, Number($('#audio-session-limit').value) || 60)),
     };
     stashCurrentModels();
+    stashCurrentEndpoints();
     settings = await volyxLens.settingsSet({ ...settings, apiKeyUpdates });
     fillSettings();
     updateSmartToggleModelIds();
@@ -2072,7 +2111,7 @@
       kicker: 'Bring your own model',
       note: 'Keys stay in the main process and use macOS Keychain-backed safeStorage when available.',
       title: 'Connect your AI provider.',
-      body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, DeepSeek, Groq, OpenRouter, or a local <span class="hl">Ollama</span> server. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
+      body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, DeepSeek, Groq, OpenRouter, <span class="hl">NVIDIA</span>, or a local <span class="hl">Ollama</span> server. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
       buttons: [{ icon: 'settings', label: 'Open provider settings', detail: 'Add a key, endpoint, and model names', action: async () => {
         if (await finishOnboard({ restoreFocus: false, keepModalState: true })) await openSettings();
       } }]
