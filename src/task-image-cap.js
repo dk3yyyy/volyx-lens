@@ -21,7 +21,9 @@ function capTaskImages(images, limit, { pinned = [] } = {}) {
   images.forEach((image, index) => (flags[index] ? pinnedImages : others).push(image));
   const pinnedBudget = Math.min(max, pinnedImages.length);
   const keptOthers = others.slice(Math.max(0, others.length - (max - pinnedBudget)));
-  return { images: [...pinnedImages, ...keptOthers], dropped: total - max, total };
+  // pinnedBudget caps the pinned slice so the result never exceeds max even
+  // when pinned images alone over the limit.
+  return { images: [...pinnedImages.slice(0, pinnedBudget), ...keptOthers], dropped: total - max, total };
 }
 
 module.exports = { capTaskImages, MAX_SAVED_TASK_IMAGES_PER_REQUEST };
