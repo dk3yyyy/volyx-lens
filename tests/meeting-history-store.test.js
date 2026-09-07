@@ -55,7 +55,10 @@ test('finalize writes an atomic 0600 record and list/get round-trip it', () => {
   const file = path.join(directory, `${result.id}.json`);
   assert.equal(fs.existsSync(file), true);
   assert.equal(fs.existsSync(`${file}.tmp`), false);
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  const recordMode = fs.statSync(file).mode & 0o777;
+  // Windows has no POSIX mode bits; chmod 0600 only clears the read-only flag.
+  if (process.platform === 'win32') assert.equal(recordMode & 0o200, 0o200);
+  else assert.equal(recordMode, 0o600);
 
   const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(persisted.version, 1);
