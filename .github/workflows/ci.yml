@@ -43,6 +43,25 @@ jobs:
               raise SystemExit('Packaged application did not report renderer readiness.')
           PY
 
+  windows-test:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:syntax
+      - name: Package Windows app directory
+        run: npm run pack
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
   macos-package:
     runs-on: macos-14
     timeout-minutes: 20

@@ -38,6 +38,7 @@ const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
 const { createLocalOcr } = require('./src/local-ocr');
 const { createSystemAudioCapture } = require('./src/system-audio-capture');
+const { createLinuxMonitorCapture } = require('./src/linux-monitor-capture');
 const { createAcousticEchoFilter } = require('./src/acoustic-echo-filter');
 const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
@@ -79,6 +80,18 @@ function publishSystemAudioLevel(pcm, now = Date.now()) {
 }
 const systemAudioCapture = createSystemAudioCapture({
   app,
+  onPcm: (pcm) => { publishSystemAudioLevel(pcm); acceptPcm('them', pcm); },
+  onState: ({ state: sourceState, reason }) => {
+    if (sourceState !== 'ready') send('audio:level', { channel: 'them', level: 0 });
+    send('transcription:state', { status: 'source', channel: 'them', sourceState, ...(reason ? { reason } : {}) });
+  },
+  onUnexpectedExit: () => {
+    if (state.capturing || desiredCapturing) setCapturing(false, { immediate: true, reason: 'system-audio-disconnected' });
+  },
+});
+// Linux has no Chromium loopback audio, so the Them channel comes from the
+// PulseAudio/PipeWire default sink monitor when the app runs on Linux.
+const linuxMonitorCapture = createLinuxMonitorCapture({
   onPcm: (pcm) => { publishSystemAudioLevel(pcm); acceptPcm('them', pcm); },
   onState: ({ state: sourceState, reason }) => {
     if (sourceState !== 'ready') send('audio:level', { channel: 'them', level: 0 });
@@ -959,11 +972,13 @@ async function applyCaptureState(active) {
     transcriptionDiagnostics.lastEchoCorrelation = 0;
     transcriptionDiagnostics.maxEchoCorrelation = 0;
     transcriptionDiagnostics.micDelayDropped = 0;
-    if (process.platform === 'darwin' && audio.systemEnabled !== false) {
-      const source = await systemAudioCapture.start();
-      if (!source.ok) {
+    if (audio.systemEnabled !== false) {
+      const systemSource = process.platform === 'darwin'
+        ? await systemAudioCapture.start()
+        : (process.platform === 'linux' ? await linuxMonitorCapture.start() : null);
+      if (systemSource && !systemSource.ok) {
         desiredCapturing = false;
-        send('status', { message: `Listening did not start because macOS system audio is unavailable (${source.reason}).` });
+        send('status', { message: `Listening did not start because system audio capture is unavailable on this platform (${systemSource.reason}).` });
         return false;
       }
     }
@@ -983,6 +998,7 @@ async function applyCaptureState(active) {
     return true;
   }
   await systemAudioCapture.stop({ immediate: pendingStopImmediate });
+  await linuxMonitorCapture.stop({ immediate: pendingStopImmediate });
   if (pendingStopImmediate) micEchoCoordinator.clear();
   else micEchoCoordinator.drain();
   acousticEchoFilter.reset();
@@ -1062,6 +1078,7 @@ async function shutdownAll() {
     cancelLiveRealtimeDiagnostic();
     pendingDisplayCapture = false;
     await systemAudioCapture.stop({ immediate: true });
+    await linuxMonitorCapture.stop({ immediate: true });
     await stopTranscriptionPipeline({ immediate: true });
     if (historyRecapController) historyRecapController.abort();
     finalizeMeeting('app-quit');
