@@ -333,10 +333,10 @@ function createTaskContext({
     const maximum = Number.isSafeInteger(limit) && limit > 0 ? limit : captures.length;
     const boundedQuery = String(query || '').slice(-8000);
     const fallbackResult = (includeStrategy = false) => {
-      if (captures.length <= maximum) return { images: images(), total: captures.length, omitted: 0, ...(includeStrategy ? { strategy: 'fallback', relevantSelected: 0 } : {}) };
+      if (captures.length <= maximum) return { images: images(), pinned: captures.map((capture) => capture.pinned), total: captures.length, omitted: 0, ...(includeStrategy ? { strategy: 'fallback', relevantSelected: 0 } : {}) };
       const selectedIds = fallbackSelection(maximum);
       const selected = captures.filter((capture) => selectedIds.has(capture.id));
-      return { images: selected.map((capture) => capture.dataUrl), total: captures.length, omitted: captures.length - selected.length, ...(includeStrategy ? { strategy: 'fallback', relevantSelected: 0 } : {}) };
+      return { images: selected.map((capture) => capture.dataUrl), pinned: selected.map((capture) => capture.pinned), total: captures.length, omitted: captures.length - selected.length, ...(includeStrategy ? { strategy: 'fallback', relevantSelected: 0 } : {}) };
     };
     if (!boundedQuery.trim() || typeof scoreRelevance !== 'function') return fallbackResult(false);
     if (captures.some((capture) => capture.ocrStatus !== 'ready' || !capture.ocrText)) return fallbackResult(true);
@@ -364,6 +364,7 @@ function createTaskContext({
     const selected = captures.filter((capture) => selectedIds.has(capture.id));
     return {
       images: selected.map((capture) => capture.dataUrl),
+      pinned: selected.map((capture) => capture.pinned),
       total: captures.length,
       omitted: captures.length - selected.length,
       strategy: 'relevance',

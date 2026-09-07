@@ -26,6 +26,26 @@ test('capping keeps the current capture (last image) over older saved screens', 
   assert.equal(result.dropped, 3);
 });
 
+test('pinned saved screens win over the newer current capture when the cap forces a choice', () => {
+  const result = capTaskImages(
+    ['data:image/jpeg;base64,pinned-screen', 'data:image/jpeg;base64,other-saved', 'data:image/jpeg;base64,current-screen'],
+    1,
+    { pinned: [true, false, false] },
+  );
+  assert.deepEqual(result.images, ['data:image/jpeg;base64,pinned-screen']);
+  assert.equal(result.dropped, 2);
+});
+
+test('pinned screens fill the image budget before newer unpinned captures', () => {
+  const result = capTaskImages(
+    ['data:image/jpeg;base64,pinned-screen', 'data:image/jpeg;base64,other-saved', 'data:image/jpeg;base64,current-screen'],
+    2,
+    { pinned: [true, false, false] },
+  );
+  assert.deepEqual(result.images, ['data:image/jpeg;base64,pinned-screen', 'data:image/jpeg;base64,current-screen']);
+  assert.equal(result.dropped, 1);
+});
+
 test('an unset or zero limit falls back to the app-wide maximum', () => {
   const many = Array.from({ length: MAX_SAVED_TASK_IMAGES_PER_REQUEST + 5 }, (_, i) => `s${i}`);
   const result = capTaskImages(many, 0);
