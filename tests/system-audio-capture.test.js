@@ -57,15 +57,18 @@ test('system-audio frame parser fails closed on malformed, out-of-order, or pre-
   assert.throws(() => parseFrames({ buffer: Buffer.alloc(0), lastSequence: null, ready: false }, Buffer.alloc(140000), handlers), /protocol_overflow/);
 });
 
-test('system-audio helper validation rejects missing and world-writable executables', () => {
+test('system-audio helper validation rejects missing executables', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-audio-'));
   const helper = path.join(dir, 'helper');
   assert.equal(validateSystemAudioHelper(helper, 'darwin').reason, 'helper_missing');
   fs.writeFileSync(helper, '#!/bin/sh\n');
-  fs.chmodSync(helper, 0o777);
-  assert.equal(validateSystemAudioHelper(helper, 'darwin').reason, 'unsafe_helper');
   fs.chmodSync(helper, 0o755);
   assert.equal(validateSystemAudioHelper(helper, 'darwin').ready, true);
+  // World-writable rejection is a POSIX concept: Windows has no mode bits.
+  if (process.platform !== 'win32') {
+    fs.chmodSync(helper, 0o777);
+    assert.equal(validateSystemAudioHelper(helper, 'darwin').reason, 'unsafe_helper');
+  }
 });
 
 test('controller accepts canonical PCM only after ready and reports unexpected exit once', async () => {

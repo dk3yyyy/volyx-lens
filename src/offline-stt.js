@@ -32,12 +32,17 @@ function validateOfflineConfig(env = process.env) {
   try {
     const resolvedExecutable = fs.realpathSync(executable);
     const resolvedModel = fs.realpathSync(model);
-    fs.accessSync(resolvedExecutable, fs.constants.X_OK);
     const executableStat = fs.statSync(resolvedExecutable);
     const modelStat = fs.statSync(resolvedModel);
     if (!executableStat.isFile()) throw new Error('adapter is not a regular file');
     if (!modelStat.isFile()) throw new Error('model is not a regular file');
-    if ((executableStat.mode & 0o002) || (modelStat.mode & 0o002)) throw new Error('adapter and model must not be world-writable');
+    // POSIX mode bits and the exec bit are meaningless on Windows: files there
+    // are protected by ACLs, and chmod only toggles the read-only attribute.
+    // Skip the world-writable and X_OK checks on a Windows host.
+    if (process.platform !== 'win32') {
+      fs.accessSync(resolvedExecutable, fs.constants.X_OK);
+      if ((executableStat.mode & 0o002) || (modelStat.mode & 0o002)) throw new Error('adapter and model must not be world-writable');
+    }
     return { ready: true, executable: resolvedExecutable, model: resolvedModel, server: !!serverExecutable };
   } catch (error) {
     return { ready: false, error: `Offline transcription is unavailable: ${error.message}` };

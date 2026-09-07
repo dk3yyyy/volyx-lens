@@ -1,0 +1,4 @@
+# Normalize line endings so source-grep tests and byte-length fixtures are
+# stable across platforms. Windows checkouts of this repo must use LF, not
+# CRLF; mode-bit and X_OK semantics already differ per platform in code.
+* text=auto eol=lf

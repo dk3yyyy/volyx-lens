@@ -51,6 +51,10 @@ function previewText(turns) {
 function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   if (!dir || typeof dir !== 'string') throw new Error('Meeting store requires a directory.');
   let lastSavedFingerprint = null;
+  // Filesystems with coarse or same-millisecond timestamps (NTFS during rapid
+  // writes) can make prune() unable to order records by mtime alone. Stamping
+  // each record with a strictly increasing mtime keeps prune deterministic.
+  let lastWriteMs = 0;
 
   function ensureDir() {
     fsImpl.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -114,6 +118,9 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     const tmp = `${target}.tmp`;
     fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
     fsImpl.renameSync(tmp, target);
+    const writeStamp = Math.max(now(), lastWriteMs + 1);
+    lastWriteMs = writeStamp;
+    try { fsImpl.utimesSync(target, writeStamp / 1000, writeStamp / 1000); } catch {}
     lastSavedFingerprint = fp;
     prune();
     return { saved: true, id, turnCount: normalized.length };

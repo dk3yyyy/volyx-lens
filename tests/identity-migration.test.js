@@ -60,7 +60,10 @@ test('legacy Volyx Lens data is copied once without overwriting current Volyx Le
   const first = migrateLegacyUserData({ legacyUserData, currentUserData });
   assert.deepEqual(first.migrated.sort(), ['personal-context.json', 'volyx-lens-data.json']);
   assert.equal(fs.readFileSync(path.join(currentUserData, 'volyx-lens-data.json'), 'utf8'), '{"provider":"azure"}');
-  assert.equal(fs.statSync(path.join(currentUserData, 'volyx-lens-data.json')).mode & 0o777, 0o600);
+  const migratedMode = fs.statSync(path.join(currentUserData, 'volyx-lens-data.json')).mode & 0o777;
+  // Windows has no POSIX mode bits; chmod 0600 only clears the read-only flag.
+  if (process.platform === 'win32') assert.equal(migratedMode & 0o200, 0o200);
+  else assert.equal(migratedMode, 0o600);
 
   fs.writeFileSync(path.join(currentUserData, 'volyx-lens-data.json'), '{"provider":"openai"}', { mode: 0o600 });
   const second = migrateLegacyUserData({ legacyUserData, currentUserData });
