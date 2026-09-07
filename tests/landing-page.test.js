@@ -32,12 +32,12 @@ test('landing page ships a semantic, truthful static entry point', () => {
 
 test('landing page presents the response providers the app actually supports', () => {
   const html = read('index.html');
-  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'Ollama', 'Deepgram', 'Azure AI Speech'];
+  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'NVIDIA', 'Ollama', 'Deepgram', 'Azure AI Speech'];
 
   for (const provider of expectedProviders) {
     assert.match(html, new RegExp(`>${provider.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}<`, 'i'));
   }
-  assert.match(html, /Ten routes/i);
+  assert.match(html, /Eleven routes/i);
   assert.doesNotMatch(html, /Azure OpenAI/i);
 });
 

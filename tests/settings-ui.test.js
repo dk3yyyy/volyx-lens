@@ -61,7 +61,15 @@ test('settings UI exposes clean provider tabs with one provider configuration at
   }
   assert.match(html, /data-provider-config="ollama"[\s\S]*localhost:11434/);
   assert.match(html, /id="endpoint-azure"/);
+  assert.match(html, /id="endpoint-fast"/);
+  assert.match(html, /id="endpoint-smart"/);
+  assert.match(html, /id="key-fast"/);
+  assert.match(html, /id="key-smart"/);
+  assert.match(html, /data-tier-key-config="azure deepseek groq nvidia openrouter"/);
   assert.match(renderer, /row\.dataset\.providerConfig !== providerView/);
+  assert.match(renderer, /data-endpoint-config/);
+  assert.match(renderer, /data-tier-key-config/);
+  assert.match(renderer, /settings\.endpointByTier\[providerView\]/);
   assert.match(renderer, /providerView = button\.dataset\.provider/);
   assert.doesNotMatch(renderer, /settings\.provider = button\.dataset\.provider/);
   assert.equal(pkg.name, 'volyx-lens');
@@ -80,10 +88,22 @@ test('default and optional fallback response providers are explicit and persiste
 test('renderer loads credential presence and sends only explicit key updates', () => {
   assert.match(renderer, /settings\.credentialStatus/);
   assert.match(renderer, /apiKeyUpdates\[provider\] = value/);
+  assert.match(renderer, /apiKeyUpdates\[`\$\{providerView\}\.\$\{tier\}`\] = value/);
   assert.match(renderer, /volyxLens\.clearCredential\(provider\)/);
+  assert.match(renderer, /button\.dataset\.keyTier/);
   assert.doesNotMatch(renderer, /settings\.apiKeys\.[a-z]+\s*=/);
   assert.match(renderer, /settings\.endpoints\.azure/);
   assert.match(renderer, /function stashCurrentModels/);
+});
+
+test('cleared tier endpoints are stashed as empty strings, never by deleting the provider entry', () => {
+  // The store deep-merges settings patches and cannot express deletion, so a
+  // cleared endpoint override must be saved as an empty-string tier value
+  // (which resolveProvider treats as unset). Deleting the provider entry lets
+  // the previous override survive reload.
+  assert.doesNotMatch(renderer, /delete settings\.endpointByTier\[providerView\]/);
+  assert.match(renderer, /settings\.endpointByTier\[providerView\] = \{\s*fast: \$\('#endpoint-fast'\)\.value\.trim\(\),\s*smart: \$\('#endpoint-smart'\)\.value\.trim\(\),\s*\}/s);
+  assert.doesNotMatch(renderer, /if \(fastEndpoint\) overrides\.fast/);
 });
 
 test('plaintext credential fallback surfaces a visible Settings warning', () => {

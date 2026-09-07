@@ -14,6 +14,9 @@ function sanitizeProviderError(error, { timedOut = false } = {}) {
   if (status === 413 || /too large|request.?size|context.?length|too many.*image|max.*token/.test(`${code} ${message}`)) {
     return 'The AI request was too large. Clear some Task Context screens or use less conversation context.';
   }
+  if (/at most \d+ image/.test(`${code} ${message}`)) {
+    return 'This provider accepts fewer screens per request than Task Context captured. Use fewer saved screens or choose a provider that accepts multiple images.';
+  }
   if (status === 404 || /model.*not found|unknown model|deployment.*not found/.test(`${code} ${message}`)) {
     return 'The selected model or deployment is unavailable. Check the model name in Settings.';
   }

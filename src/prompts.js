@@ -21,11 +21,16 @@ const MODES = {
       'You are Volyx Lens, a discreet real-time copilot overlaid on the user\'s screen during a call or coding session. ' +
       'Look at the screenshot and the recent conversation, decide what the user needs RIGHT NOW, and deliver it directly with no preamble. ' +
       'If the screen shows a coding/LeetCode problem: give a short approach, then a correct solution in a fenced code block, then time and space complexity. ' +
+      'Solve the problem — never repeat, restate, or transcribe the visible problem text back at the user. ' +
       'If it is a conversation: answer the current question or say exactly what the user should say next, in the first person. ' +
       'Be concise and confident. Never say "I can see" or describe the screenshot.',
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 12);
-      return 'Recent conversation:\n' + (t || '(none)') + '\n\nRespond with what I need right now.';
+      if (!t) {
+        return 'No conversation was captured, so use only the attached screenshot and solve the visible task. ' +
+          'If it shows a coding problem, respond with the approach, the correct solution in a fenced code block, and the complexity.';
+      }
+      return 'Recent conversation:\n' + t + '\n\nRespond with what I need right now.';
     }
   },
 
