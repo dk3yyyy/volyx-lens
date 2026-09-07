@@ -133,3 +133,66 @@ if (themeToggle) {
 window.addEventListener('storage', (event) => {
   if (event.key === THEME_KEY && event.newValue) applyTheme(event.newValue);
 });
+
+const DL_ASSETS = {
+  win: {
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-win-x64.exe',
+    label: 'Windows',
+    detail: 'x64 NSIS installer · v0.5.0'
+  },
+  mac: {
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1',
+    label: 'macOS',
+    detail: 'v0.3.1 test build · signed v0.5.0 pending'
+  },
+  'linux-x64': {
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-linux-x86_64.AppImage',
+    label: 'Linux x64',
+    detail: 'AppImage · v0.5.0'
+  },
+  'linux-arm64': {
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-linux-arm64.AppImage',
+    label: 'Linux arm64',
+    detail: 'AppImage · v0.5.0'
+  }
+};
+
+function detectOS() {
+  const ua = (navigator.userAgent || '').toLowerCase();
+  if (/windows|win32|win64/.test(ua)) return 'win';
+  if (/mac os|macintosh/.test(ua)) return 'mac';
+  if (/linux/.test(ua)) return /arm|aarch64/.test(ua) ? 'linux-arm64' : 'linux-x64';
+  return null;
+}
+
+function initDownloads() {
+  const detected = detectOS();
+  const assets = DL_ASSETS[detected];
+  const primary = document.querySelector('#dl-primary');
+  const hero = document.querySelector('#dl-hero');
+  const note = document.querySelector('#dl-note');
+
+  if (detected && assets && (primary || hero)) {
+    const label = `Download for ${assets.label}`;
+    if (primary) {
+      primary.href = assets.href;
+      const span = primary.querySelector('span');
+      if (span) span.textContent = label;
+    }
+    if (hero) {
+      hero.href = assets.href;
+      const span = hero.querySelector('span');
+      if (span) span.textContent = label;
+    }
+    if (note) note.textContent = `Detected ${assets.label}: ${assets.detail}. Downloading starts from GitHub Releases; pick another platform below if needed.`;
+    const card = document.querySelector(`.dl-card[data-os="${detected}"]`);
+    if (card) {
+      card.classList.add('is-recommended');
+      card.setAttribute('aria-current', 'true');
+    }
+  } else if (note) {
+    note.textContent = 'Choose your operating system below; every installer is served from GitHub Releases with a published SHA-256 checksum.';
+  }
+}
+
+initDownloads();
