@@ -71,7 +71,7 @@ jobs:
           # discover whichever one references this archive instead of assuming
           # a single naming scheme.
           META=""
-          for candidate in "latest-${ARCH}-linux.yml" "latest-linux-${ARCH}.yml" "latest-${ARCH}.yml" "latest-linux.yml" "latest.yml"; do
+          for candidate in "latest-${ARCH}-linux.yml" "latest-${ARCH}-linux-${ARCH}.yml" "latest-linux-${ARCH}.yml" "latest-${ARCH}.yml" "latest-linux.yml" "latest.yml"; do
             if [ -f "dist/$candidate" ]; then META="dist/$candidate"; echo "Using update metadata: $candidate"; break; fi
           done
           test -n "$META"
