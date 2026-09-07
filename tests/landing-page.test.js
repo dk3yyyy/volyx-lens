@@ -24,14 +24,27 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.equal((html.match(/<h1\b/gi) || []).length, 1);
   assert.match(html, /A private assistant for your desktop/i);
   assert.match(html, /Release[\s\S]*?v0\.5\.0/i);
-  assert.match(html, /current signed Mac release is v0\.4\.0/i);
   assert.match(html, /Windows and Linux installers are live in v0\.5\.0/i);
   assert.match(html, /v0\.5\.0 macOS build will be signed and notarized once release signing credentials are configured/i);
+  assert.match(html, /Mac users can run the <a[^>]*>v0\.3\.1 test build<\/a>/i);
   assert.match(html, /Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs/i);
+  assert.doesNotMatch(html, /current signed Mac release is v0\.4\.0|Get the signed v0\.4\.0|Download v0\.4\.0/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /there is no Volyx Lens-operated intermediary server/i);
   assert.match(html, /Apache License 2\.0/i);
   assert.doesNotMatch(html, /customer(s)?|trusted by|SOC\s?2|guaranteed invisible/i);
+});
+
+test('landing page offers per-platform downloads with direct release assets', () => {
+  const html = read('index.html');
+
+  assert.equal((html.match(/class="dl-card"/g) || []).length, 6);
+  assert.match(html, /data-os="win"[^>]*volyx-lens-0\.5\.0-win-x64\.exe/i);
+  assert.match(html, /data-os="linux-x64"[^>]*volyx-lens-0\.5\.0-linux-x86_64\.AppImage/i);
+  assert.match(html, /data-os="linux-arm64"[^>]*volyx-lens-0\.5\.0-linux-arm64\.AppImage/i);
+  assert.match(html, /data-os="mac"[^>]*releases\/tag\/adhoc-v0\.3\.1/i);
+  assert.match(html, /data-os="mac-arm64"[^>]*Volyx-Lens-0\.3\.1-macOS-arm64-adhoc\.dmg/i);
+  assert.match(html, /data-os="mac-x64"[^>]*Volyx-Lens-0\.3\.1-macOS-x64-adhoc\.dmg/i);
 });
 
 test('landing page presents the response providers the app actually supports', () => {
@@ -158,4 +171,26 @@ test('reduced motion avoids an unfocusable scroll region and callouts meet contr
   assert.match(css, /\.brand[^\{]*\{[^}]*min-height:\s*44px/i);
   assert.match(css, /\.footer-links a\s*\{[^}]*min-width:\s*44px[^}]*min-height:\s*44px/i);
   assert.match(css, /\.responsibility-copy a\s*\{[^}]*min-height:\s*44px/i);
+});
+
+test('download OS detection maps desktop platforms and ignores Android', () => {
+  const script = read('script.js');
+  const match = script.match(/function detectOS\(\) \{[\s\S]*?\n\}/);
+  assert.ok(match, 'detectOS function present in script.js');
+  const makeDetect = new Function('navigator', `${match[0]}; return detectOS;`);
+
+  const cases = [
+    ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36', 'win'],
+    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.5 Safari/605.1.15', 'mac'],
+    ['Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36', 'linux-x64'],
+    ['Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36', 'linux-arm64'],
+    ['Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36', null],
+    ['Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0', 'linux-x64'],
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1', null]
+  ];
+
+  for (const [ua, expected] of cases) {
+    const detect = makeDetect({ userAgent: ua });
+    assert.equal(detect(), expected, `UA: ${ua}`);
+  }
 });

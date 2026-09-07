@@ -81,13 +81,13 @@
         <h1 id="hero-title">Your desktop has the context.<br><em>You choose what AI sees.</em></h1>
         <p class="hero-lede">Volyx Lens brings your screen, voice, and meeting audio into one compact assistant. Select the inputs you need, choose your response and transcription providers, and keep control of the route.</p>
         <div class="hero-actions">
-          <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.0">
+          <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.0" id="dl-hero">
             <span>Download v0.5.0</span>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0 4-4m-4 4L6 9M4 17h12"/></svg>
           </a>
           <a class="button button-quiet" href="#how-it-works">See how context moves</a>
         </div>
-        <p class="hero-note">Windows and Linux installers are live in v0.5.0. The v0.5.0 macOS build will be signed and notarized once release signing credentials are configured; the current signed Mac release is <a href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.4.0" target="_blank" rel="noreferrer">v0.4.0</a>. Bring your own provider key.</p>
+        <p class="hero-note">Windows and Linux installers are live in v0.5.0. The v0.5.0 macOS build will be signed and notarized once release signing credentials are configured; until then, Mac users can run the <a href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1" target="_blank" rel="noreferrer">v0.3.1 test build</a>. Bring your own provider key.</p>
       </div>
 
       <div class="aperture-wrap" aria-label="Interactive context selector">
@@ -314,14 +314,22 @@
       <div class="release-content">
         <p class="eyebrow">Try the production release</p>
         <h2 id="release-heading">Put the lens on your desktop.</h2>
-        <p>Version 0.5.0 publishes the Windows installer and Linux AppImages now. The v0.5.0 macOS build will be Apple Developer ID–signed and notarized once release signing credentials are configured; the current signed Mac release is v0.4.0.</p>
+        <p>Version 0.5.0 publishes the Windows installer and Linux AppImages now. The v0.5.0 macOS build will be Apple Developer ID–signed and notarized once release signing credentials are configured; Mac test builds remain on the <a href="https://github.com/dk3yyyy/volyx-lens/releases" target="_blank" rel="noreferrer">pre-release tags</a>.</p>
         <div class="release-actions">
-          <a class="button button-primary button-light" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.0">
-            Download v0.5.0
+          <a class="button button-primary button-light" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.0" id="dl-primary">
+            <span>Download v0.5.0</span>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0 4-4m-4 4L6 9M4 17h12"/></svg>
           </a>
-          <a class="text-link" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.4.0" target="_blank" rel="noreferrer">Mac? Get the signed v0.4.0 <span aria-hidden="true">↗</span></a>
           <a class="text-link" href="https://github.com/dk3yyyy/volyx-lens#download" target="_blank" rel="noreferrer">Read installation steps <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="dl-note" id="dl-note">Detecting your operating system…</p>
+        <div class="dl-grid" role="group" aria-label="Download for a different operating system">
+          <a class="dl-card" data-os="win" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-win-x64.exe"><strong>Windows</strong><span>x64 NSIS installer · v0.5.0</span><i class="dl-tag">Recommended for this device</i></a>
+          <a class="dl-card" data-os="mac" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1"><strong>macOS</strong><span>v0.3.1 test build · signed v0.5.0 pending</span><i class="dl-tag">Recommended for this device</i></a>
+          <a class="dl-card" data-os="mac-arm64" href="https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-arm64-adhoc.dmg"><strong>macOS · Apple Silicon</strong><span>v0.3.1 test DMG</span></a>
+          <a class="dl-card" data-os="mac-x64" href="https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-x64-adhoc.dmg"><strong>macOS · Intel</strong><span>v0.3.1 test DMG</span></a>
+          <a class="dl-card" data-os="linux-x64" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-linux-x86_64.AppImage"><strong>Linux · x64</strong><span>AppImage · v0.5.0</span></a>
+          <a class="dl-card" data-os="linux-arm64" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-linux-arm64.AppImage"><strong>Linux · arm64</strong><span>AppImage · v0.5.0</span></a>
         </div>
         <div class="release-meta">
           <span>Windows + Linux live</span><span>macOS signed build pending</span><span>Bring your own key</span><span>Checksums + SBOMs</span>
@@ -360,7 +368,7 @@
         </details>
         <details>
           <summary>Is the release notarized?<span aria-hidden="true"></span></summary>
-          <p>v0.4.0, the current Mac release, is Apple Developer ID–signed and notarized, so it opens without right-click workarounds. The v0.5.0 macOS build will be signed and notarized the same way once release signing credentials are configured. The v0.5.0 Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs; Windows shows a SmartScreen "Unknown publisher" warning.</p>
+          <p>Mac test builds (v0.3.x on the pre-release tags) are ad-hoc signed and open via right-click → Open. The v0.5.0 macOS production build will be Apple Developer ID–signed and notarized once release signing credentials are configured. The v0.5.0 Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs; Windows shows a SmartScreen "Unknown publisher" warning.</p>
         </details>
         <details>
           <summary>What works offline?<span aria-hidden="true"></span></summary>
