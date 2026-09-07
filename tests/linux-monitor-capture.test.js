@@ -29,8 +29,9 @@ function pcm16Pair(left, right) {
 }
 
 // Spawns pactl children that answer canned discovery output and captures any
-// parec child so the test can feed audio into it.
-function discoverySpawn(sink) {
+// parec child so the test can feed audio into it. pactl replies can be
+// deferred to exercise timeout/stop races.
+function discoverySpawn(sink, { pactlDelayMs = 0, hang = false, parecSpawnError = null } = {}) {
   const calls = [];
   const spawned = { pactl: [], parec: [] };
   return {
@@ -42,9 +43,22 @@ function discoverySpawn(sink) {
         const output = args.includes('get-default-sink')
           ? `${sink || ''}\n`
           : (sink ? `0\t${sink}.monitor\tmodule-alsa-card.c\ts16le 2ch 44100Hz\tIDLE\n` : '');
-        setImmediate(() => { child.stdout.end(output); child.emit('close', 0, null); });
+        const reply = () => {
+          if (hang) return;
+          child.stdout.end(output);
+          child.emit('close', 0, null);
+        };
+        if (pactlDelayMs > 0) setTimeout(reply, pactlDelayMs);
+        else setImmediate(reply);
       } else if (command === 'parec') {
         spawned.parec.push(child);
+        if (parecSpawnError) {
+          const error = new Error(parecSpawnError.message);
+          error.code = parecSpawnError.code;
+          setImmediate(() => child.emit('error', error));
+        } else {
+          setImmediate(() => child.emit('spawn'));
+        }
       }
       return child;
     },
@@ -53,7 +67,7 @@ function discoverySpawn(sink) {
   };
 }
 
-test('linux monitor discovery parses the default sink and its monitor source', () => {
+test('linux monitor discovery parses the default sink and requires its exact monitor', () => {
   const sink = 'alsa_output.pci-0000_00_1f.3.analog-stereo';
   assert.equal(parseDefaultSink(`${sink}\n`), sink);
   const sources = [
@@ -61,7 +75,9 @@ test('linux monitor discovery parses the default sink and its monitor source', (
     '1\talsa_input.pci-0000_00_1f.3.analog-stereo\tmodule-alsa-card.c\ts16le 2ch 44100Hz\tRUNNING',
   ].join('\n');
   assert.equal(findMonitorSource(sources, sink), `${sink}.monitor`);
-  assert.equal(findMonitorSource(sources, 'missing-sink'), `${sink}.monitor`);
+  // Never fall back to another sink's monitor: that would record the wrong
+  // output (e.g. HDMI while the default is headphones).
+  assert.equal(findMonitorSource(sources, 'missing-sink'), null);
   assert.equal(findMonitorSource('', sink), null);
 });
 
@@ -130,6 +146,54 @@ test('linux controller reports missing tools and absent monitors as clear failur
   const noSinkResult = await noSink.start();
   assert.equal(noSinkResult.ok, false);
   assert.equal(noSinkResult.reason, 'no_default_sink');
+});
+
+test('a parec spawn error surfaces as tool_missing instead of a false ready', async () => {
+  const sink = 'alsa_output.pci-0000_00_1f.3.analog-stereo';
+  const fake = discoverySpawn(sink, { parecSpawnError: { message: 'spawn ENOENT', code: 'ENOENT' } });
+  const states = [];
+  const controller = createLinuxMonitorCapture({
+    platform: 'linux',
+    spawnImpl: fake.spawn,
+    onState: (state) => states.push(state),
+  });
+  const result = await controller.start();
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'tool_missing');
+  assert.equal(states.at(-1).state, 'failed');
+});
+
+test('a hung pactl discovery times out instead of leaving start pending', async () => {
+  const fake = discoverySpawn('sink', { hang: true });
+  const controller = createLinuxMonitorCapture({
+    platform: 'linux',
+    spawnImpl: fake.spawn,
+    readyTimeoutMs: 60,
+  });
+  const startedAt = Date.now();
+  const result = await controller.start();
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'ready_timeout');
+  assert.ok(Date.now() - startedAt < 2000, 'timeout resolved promptly');
+  assert.equal(fake.spawned.parec.length, 0);
+});
+
+test('stop during discovery invalidates a late parec spawn', async () => {
+  const sink = 'alsa_output.pci-0000_00_1f.3.analog-stereo';
+  const fake = discoverySpawn(sink, { pactlDelayMs: 40 });
+  const states = [];
+  const controller = createLinuxMonitorCapture({
+    platform: 'linux',
+    spawnImpl: fake.spawn,
+    onState: (state) => states.push(state),
+    readyTimeoutMs: 5000,
+  });
+  const started = controller.start();
+  await controller.stop({ immediate: true });
+  const result = await started;
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'superseded');
+  assert.equal(fake.spawned.parec.length, 0, 'no parec spawns after stop');
 });
 
 test('linux controller stops the parec child and ignores its later exit', async () => {
