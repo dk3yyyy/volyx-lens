@@ -4,11 +4,13 @@
 
 # Volyx Lens
 
-**Private, context-aware AI assistant for macOS, Windows, and Linux. Hidden from most screen shares on macOS and Windows.**
+[![Coverage](./coverage-badge.svg)](./coverage/)
 
-Use your screen, voice, meeting audio, and saved Task Context without routing requests through a Volyx Lens-operated server. Bring your own AI provider and choose what leaves your computer. The overlay marks itself as a protected window via `setContentProtection(true)`, `NSWindowSharingNone` on macOS and the OS capture-exclusion flag on Windows, so Volyx Lens stays out of most screen-recording and screen-share tools (Google Meet, Microsoft Teams, and QuickTime by default; Zoom with advanced window filtering).
+**Private, context-aware AI assistant for macOS, Windows, and Linux. Hidden from most screen shares on macOS.**
 
-[**Explore the live site**](https://volyxlens.pages.dev/) · [Download](#download) · [Product tour](#product-tour) · [Architecture](#how-it-works) · [Privacy](#privacy-and-security)
+Use your screen, voice, meeting audio, and saved Task Context without routing requests through a Volyx Lens-operated server. Bring your own AI provider and choose what leaves your computer. The overlay marks itself as a protected window via `setContentProtection(true)` (`NSWindowSharingNone` on macOS). Windows has no OS-level capture-exclusion API, so the overlay can appear in screen shares there. Volyx Lens stays out of most macOS screen-recording and screen-share tools (Google Meet, Microsoft Teams, and QuickTime by default; Zoom with advanced window filtering).
+
+[**Explore the live site**](https://volyxlens.pages.dev/) · [Download](#download) · [Product tour](#product-tour) · [Architecture](docs/architecture.md) · [Privacy](#privacy-and-security)
 
 <br />
 
@@ -43,12 +45,12 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Meeting detection:** opt-in detection flags a sustained two-sided conversation while listening, tags the session, and shows a "Meeting in progress" indicator. Local and in-session only: no audio watcher, no disk writes, no model calls.
 - **Meeting history:** opt-in on-device history saves meetings with a meeting badge, search, notes, and Markdown/TXT/JSON export.
 - **Meeting notes:** generate structured meeting notes for saved records using your configured provider, with long-meeting confirmation before paid requests.
-- **Provider choice:** OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server for responses; OpenAI, Azure, Deepgram, Azure AI Speech, or optional local Whisper for transcription.
+- **Provider choice:** 9 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server) and 5 transcription providers (OpenAI, Azure, Deepgram, Azure AI Speech, or optional local Whisper). OpenAI and Azure support both roles.
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
 - **Native macOS and Windows behavior:** compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
-- **Capture exclusion:** the overlay is marked private via `setContentProtection(true)` (`NSWindowSharingNone` on macOS), so it stays out of most screen recordings and screen shares on macOS and Windows without hidden-window tricks or a special capture mode. Linux has no capture-exclusion API; see [Platform support](#platform-support).
+- **Capture exclusion:** the overlay is marked private via `setContentProtection(true)` (`NSWindowSharingNone` on macOS), so it stays out of most macOS screen recordings and screen shares without hidden-window tricks or a special capture mode. Windows has no OS capture-exclusion API; the overlay can appear in screen shares there. Linux has no capture-exclusion API; see [Platform support](#platform-support).
 
 ## Product tour
 
@@ -81,8 +83,8 @@ v0.5.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and,
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | `volyx-lens-0.5.0-mac-arm64.dmg` |
-| **Intel** | `volyx-lens-0.5.0-mac-x64.dmg` |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | v0.5.0 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-arm64-adhoc.dmg) |
+| **Intel** | v0.5.0 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-x64-adhoc.dmg) |
 
 | Windows / Linux | Installer |
 |---|---|
@@ -119,13 +121,13 @@ Ad-hoc test builds remain available under their own pre-release tags for early v
 | Screen + coding help | ✅ | ✅ | ✅ |
 | Meeting audio (Them channel) | ✅ ScreenCaptureKit helper | ✅ system-audio loopback | ⚠️ best-effort via PulseAudio/PipeWire monitor |
 | Local OCR for Task Context ranking | ✅ Apple Vision | ❌ falls back to recency/pinned | ❌ falls back to recency/pinned |
-| Capture exclusion from screen shares | ⚠️ best-effort | ⚠️ best-effort (`WDA_EXCLUDEFROMCAPTURE`) | ❌ no OS capture-exclusion API |
+| Capture exclusion from screen shares | ⚠️ best-effort | ❌ no OS capture-exclusion API | ❌ no OS capture-exclusion API |
 
 Notes:
 
 - Meeting audio on Windows is captured through the OS system-audio loopback (no permission beyond the microphone grant). It is implemented and exercised in CI but has not yet been validated on a wide range of real Windows machines and audio setups.
 - Meeting audio on Linux requires `pactl` and `parec` (provided by `pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink. Linux is experimental; the Them channel fails gracefully with a status message when the tools or a monitor source are unavailable.
-- Capture exclusion only exists where the operating system provides it: macOS (`NSWindowSharingNone`) and Windows (`WDA_EXCLUDEFROMCAPTURE`). On Linux the overlay can appear in screen shares, so treat screen-share privacy there as unavailable.
+- Capture exclusion only exists where the operating system provides it: macOS (`NSWindowSharingNone`). Windows and Linux provide no capture-exclusion API, so the overlay can appear in screen shares there.
 
 ## What it can do
 
@@ -239,6 +241,8 @@ Volyx Lens is an Electron application with a sandboxed renderer and a privileged
 5. **Results stream into the overlay.** Provider failures are reduced to sanitized, actionable states rather than exposing credentials or raw SDK errors.
 
 Realtime microphone audio is deterministically resampled to 24 kHz mono PCM. System audio stays a separate **Them** channel and comes from a bundled ScreenCaptureKit helper on macOS, Chromium system-audio loopback on Windows, or a PulseAudio/PipeWire monitor helper on Linux. Optional local Whisper uses an in-app whisper.cpp model download, is disabled by default, and does not silently fall back to cloud transcription unless cloud fallback is separately enabled.
+
+For a deeper dive into the process split, preload bridge surface, provider routing, and capture pipelines, see [docs/architecture.md](docs/architecture.md).
 
 ## Privacy and security
 
