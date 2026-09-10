@@ -21,7 +21,10 @@ function chooseInitialProvider(route, { requiresVision = false } = {}) {
       reason: route.primary.ready ? 'The default provider cannot satisfy this request.' : route.primary.configurationError,
     };
   }
-  return { llm: route.primary, fallback: null, usedFallback: false, reason: '' };
+  const reason = requiresVision
+    ? 'No vision-capable provider is configured.'
+    : 'No compatible provider is configured.';
+  return { llm: null, fallback: null, usedFallback: false, reason };
 }
 
 async function streamWithFallback({ llm, fallback, params, onFallback = () => {} }) {
@@ -42,7 +45,8 @@ async function streamWithFallback({ llm, fallback, params, onFallback = () => {}
     const compatible = fallback && fallback.ready && (!hasImages || fallback.supportsVision);
     if (emitted || !compatible) throw error;
     onFallback({ error, from: llm, to: fallback });
-    return fallback.stream({ ...params, onToken });
+    // Preserve abort signal on the fallback stream so cancellation still works mid-fallback.
+    return fallback.stream({ ...primaryParams });
   }
 }
 

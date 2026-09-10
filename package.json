@@ -10,9 +10,12 @@
   "main": "main.js",
   "scripts": {
     "test": "node --test",
+    "coverage": "c8 node --test",
+    "coverage:report": "c8 report --reporter=html",
     "check:syntax": "node scripts/check-syntax.js",
     "check:onboarding-ui": "electron scripts/check-onboarding-ui.js",
     "check:settings-ui": "electron scripts/check-settings-ui.js",
+    "check:e2e-smoke": "electron scripts/e2e-smoke.js --no-sandbox",
     "security:secrets": "node scripts/check-secrets.js",
     "test:azure-realtime": "node scripts/azure-realtime-probe.js",
     "eval:vad": "node scripts/vad-accuracy-eval.js",
@@ -21,6 +24,9 @@
     "pack": "electron-builder --dir --config.mac.notarize=false",
     "release:check": "node scripts/check-macos-release.js",
     "verify:vision-ocr-package": "node scripts/verify-vision-ocr-package.js",
+    "test:native": "bash scripts/test-native-swift.sh",
+    "test:native:verbose": "bash scripts/test-native-swift.sh --verbose",
+    "test:native:coverage": "bash scripts/test-native-swift.sh --coverage",
     "release:mac": "node scripts/check-macos-release.js --require-credentials && electron-builder --mac dmg zip --publish never && node scripts/verify-vision-ocr-package.js",
     "release:verify": "node scripts/verify-macos-release.js",
     "release:linux": "electron-builder --linux AppImage --publish never",
@@ -112,6 +118,7 @@
     "macos"
   ],
   "devDependencies": {
+    "c8": "^10.1.3",
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
     "js-yaml": "5.2.2"
