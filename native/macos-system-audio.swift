@@ -148,7 +148,10 @@ private final class CaptureOutput: NSObject, SCStreamOutput, SCStreamDelegate {
             blockBufferOut: &blockBuffer
         )
         guard status == noErr else { return }
-        defer { if let blockBuffer = blockBuffer { CFRelease(blockBuffer) } }
+        // `blockBufferOut` is declared CM_RETURNS_RETAINED_PARAMETER, so the Swift
+        // importer hands us an owned CMBlockBuffer that ARC releases when this scope
+        // ends. Releasing it by hand (CFRelease) is unavailable in Swift and would
+        // over-release the buffer, so no explicit release belongs here.
         let buffers = UnsafeMutableAudioBufferListPointer(list)
         guard let first = buffers.first, let dataPointer = first.mData else { return }
         let byteCount = Int(first.mDataByteSize)
@@ -210,8 +213,11 @@ private final class CaptureController {
             stream = captureStream
             try await captureStream.startCapture()
             writer.event(["event": "ready", "format": ["encoding": "s16le", "sampleRate": sampleRate, "channels": 1, "frameSamples": frameSamples]])
-            DispatchQueue.global().async { [weak self] in
-                guard self != nil else { return }
+            // This reader deliberately does not capture `self`: CaptureController is
+            // not Sendable, so any `self` capture inside this @Sendable queue block is
+            // a Swift 6 sendability violation (escalated to an error by -warnings-as-errors).
+            // Only the Sendable StopLatch is shared with the closure.
+            DispatchQueue.global().async {
                 let fileHandle = FileHandle.standardInput
                 var pending = Data()
                 let delimiter = Data("\n".utf8)
