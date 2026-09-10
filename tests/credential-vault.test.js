@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { createCredentialVault } = require('../src/credential-vault');
 
 function fakeSafeStorage(available = true) {
@@ -40,4 +42,18 @@ test('credential vault tolerates corrupt encrypted entries without exposing them
   storage.decryptString = () => { throw new Error('corrupt'); };
   const vault = createCredentialVault(storage);
   assert.deepEqual(vault.open({ mode: 'safeStorage', values: { azure: 'not-valid' } }), {});
+});
+
+test('every vault method called by the settings store exists on the vault', () => {
+  // The store derives credentialStatus in publicSettings(); calling a vault
+  // method that was never implemented throws there and breaks every settings
+  // read and atomic save. Guard the call surface against the real vault.
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'store.js'), 'utf8');
+  const called = new Set();
+  for (const match of source.matchAll(/\bvault\.([A-Za-z_$][\w$]*)\s*\(/g)) called.add(match[1]);
+  assert.ok(called.size > 0, 'expected the store to call vault methods');
+  const vault = createCredentialVault(fakeSafeStorage(true));
+  for (const name of called) {
+    assert.equal(typeof vault[name], 'function', `vault.${name} is called by src/store.js but is not implemented`);
+  }
 });

@@ -4,6 +4,8 @@ const path = require('path');
 const { app, safeStorage } = require('electron');
 const { getDefaultSettings, PROVIDERS } = require('./provider-config');
 const { createCredentialVault } = require('./credential-vault');
+const { sanitizeShortcutsPatch } = require('./shortcut-validator');
+const { DEFAULT_SHORTCUT_DEFS } = require('./shortcut-defaults');
 
 const FILE = path.join(app.getPath('userData'), 'volyx-lens-data.json');
 const DEFAULTS = getDefaultSettings();
@@ -208,6 +210,12 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'costWarningMinutes')) audio.costWarningMinutes = Math.max(5, Math.min(240, Number(value.costWarningMinutes) || 30));
     if (Object.hasOwn(value, 'maxSessionMinutes')) audio.maxSessionMinutes = Math.max(10, Math.min(480, Number(value.maxSessionMinutes) || 60));
     if (Object.keys(audio).length) safe.audio = audio;
+  }
+  if (patch.shortcuts && typeof patch.shortcuts === 'object') {
+    // Validate against default shortcut definitions so only known,
+    // non-conflicting accelerators are persisted. Invalid entries are dropped.
+    const sanitized = sanitizeShortcutsPatch({ patch: patch.shortcuts, defaultDefinitions: DEFAULT_SHORTCUT_DEFS, platform: process.platform });
+    safe.shortcuts = sanitized.valid || {};
   }
   return safe;
 }
