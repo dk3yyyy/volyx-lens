@@ -1362,80 +1362,11 @@
       row.querySelector('kbd').textContent = status.displayAccelerator || status.accelerator;
       row.querySelector('strong').textContent = status.feature;
       row.querySelector('span').textContent = status.registered ? 'Registered globally' : `${status.message} ${status.fallback}`;
-      const existingError = row.querySelector('.shortcut-row-error');
-      if (existingError) existingError.remove();
     }
     const unavailable = shortcutStatus.filter((status) => !status.registered).length;
     const retry = $('#shortcuts-retry');
     retry.disabled = unavailable === 0;
     retry.textContent = unavailable === 0 ? 'All registered' : `Retry unavailable (${unavailable})`;
-  }
-
-  let rebindingId = null;
-  let rebindKeyDown = null;
-
-  function startRebind(id) {
-    if (rebindingId) cancelRebind();
-    rebindingId = id;
-    rebindKeyDown = (event) => handleRebindKeydown(event);
-    const row = document.querySelector(`.shortcut-status-row[data-shortcut="${id}"]`);
-    if (row) row.classList.add('shortcut-rebind-active');
-    const hint = $('#shortcut-rebind-hint');
-    hint.classList.remove('hidden');
-    hint.querySelector('span').textContent = `Press a new key combination for ${row ? row.querySelector('strong').textContent : id}…`;
-    document.addEventListener('keydown', rebindKeyDown, true);
-  }
-
-  function cancelRebind() {
-    if (!rebindingId) return;
-    const prevId = rebindingId;
-    rebindingId = null;
-    if (rebindKeyDown) document.removeEventListener('keydown', rebindKeyDown, true);
-    rebindKeyDown = null;
-    const row = document.querySelector(`.shortcut-status-row[data-shortcut="${prevId}"]`);
-    if (row) row.classList.remove('shortcut-rebind-active');
-    $('#shortcut-rebind-hint').classList.add('hidden');
-  }
-
-  async function handleRebindKeydown(event) {
-    if (!rebindingId) return;
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (event.key === 'Escape') { cancelRebind(); return; }
-
-    const modifiers = [];
-    if (event.ctrlKey) modifiers.push('Control');
-    if (event.altKey) modifiers.push('Alt');
-    if (event.shiftKey) modifiers.push('Shift');
-    if (event.metaKey) modifiers.push('Meta');
-    if (modifiers.length === 0) return;
-
-    let key = event.key;
-    if (key === ' ') key = 'Space';
-    else if (key.length === 1) key = key.toUpperCase();
-    const raw = [...modifiers, key].join('+');
-
-    const result = await volyxLens.shortcutsValidate(rebindingId, raw);
-    if (!result.ok) {
-      const row = document.querySelector(`.shortcut-status-row[data-shortcut="${rebindingId}"]`);
-      if (row) {
-        let errorEl = row.querySelector('.shortcut-row-error');
-        if (!errorEl) {
-          errorEl = document.createElement('span');
-          errorEl.className = 'shortcut-row-error';
-          row.appendChild(errorEl);
-        }
-        errorEl.textContent = result.error;
-      }
-      return;
-    }
-
-    const setResult = await volyxLens.shortcutsSet(rebindingId, raw);
-    if (setResult && setResult.ok) {
-      renderShortcutStatus(setResult.status);
-      cancelRebind();
-    }
   }
 
   async function refreshShortcutStatus({ retry = false } = {}) {
@@ -1562,19 +1493,6 @@
   $('#s-close').addEventListener('click', closeSettings);
   scrim.addEventListener('click', (e) => { if (e.target === scrim) closeSettings(); });
   $('#shortcuts-retry').addEventListener('click', () => refreshShortcutStatus({ retry: true }));
-  $('#shortcuts-reset').addEventListener('click', async () => {
-    try {
-      const result = await volyxLens.shortcutsReset();
-      if (result && result.ok) renderShortcutStatus(result.status);
-      showStatus('Shortcuts reset to defaults.');
-    } catch (error) {
-      showStatus(error && error.message ? error.message : 'Could not reset shortcuts.');
-    }
-  });
-  document.querySelectorAll('.shortcut-rebind').forEach((button) => {
-    button.addEventListener('click', () => startRebind(button.dataset.shortcutRebind));
-  });
-  $('#shortcut-rebind-cancel').addEventListener('click', () => cancelRebind());
   $('#update-check').addEventListener('click', async () => {
     try { renderUpdateState(await volyxLens.updateCheck()); }
     catch (error) { showStatus(error && error.message ? error.message : 'The update check failed.'); await refreshUpdateState(); }
