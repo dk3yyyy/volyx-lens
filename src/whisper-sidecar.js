@@ -245,6 +245,19 @@ class WhisperSidecar {
     this.onstate(next);
   }
 
+  // Reject and clear all pending promises in the request queue to prevent
+  // memory leaks when the sidecar is stopped or unloaded.
+  _rejectAndClearQueue() {
+    for (const item of this.requestQueue.you) {
+      item.reject(new Error('sidecar_stopped'));
+    }
+    for (const item of this.requestQueue.them) {
+      item.reject(new Error('sidecar_stopped'));
+    }
+    this.requestQueue.you = [];
+    this.requestQueue.them = [];
+  }
+
   // Invalidate this instance when the whisper.cpp child dies or fails to
   // spawn, so callers see it is no longer running and spawn a replacement
   // instead of continuing to send inference requests to a dead process.
@@ -335,6 +348,7 @@ class WhisperSidecar {
   }
 
   async stop() {
+    this._rejectAndClearQueue();
     if (this.child) {
       this.child.kill();
       this.child = null;
@@ -424,13 +438,13 @@ class WhisperSidecar {
 
   // Force unload model and stop sidecar
   unload() {
+    this._rejectAndClearQueue();
     if (this.child) {
       this.child.kill();
       this.child = null;
     }
     this._setState('idle');
     this.modelPath = null;
-    this.requestQueue = { you: [], them: [] };
     this.processingYou = false;
     this.processingThem = false;
   }
