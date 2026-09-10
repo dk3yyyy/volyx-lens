@@ -23,7 +23,6 @@ const { resolveRealtimeTranscription } = require('./src/provider-config');
 const { runRealtimeDiagnostic, LiveRealtimeDiagnostic } = require('./src/realtime-diagnostic');
 const { runResponseDiagnostic } = require('./src/response-diagnostic');
 const { createShortcutRegistry } = require('./src/shortcut-registry');
-const { createShortcutValidator, sanitizeShortcutsPatch, applyShortcuts, normalizeAccelerator } = require('./src/shortcut-validator');
 const { createPersonalContextStore, KINDS: PERSONAL_CONTEXT_KINDS } = require('./src/personal-context-store');
 const { parseContextDocument, MAX_FILE_BYTES } = require('./src/document-context');
 const { buildPersonalContext } = require('./src/personal-context');
@@ -479,17 +478,12 @@ function getSessionDiagnostics() {
 }
 
 async function exportTranscript(format) {
-  const normalizedFormat = ['txt', 'md', 'json', 'srt', 'vtt'].includes(format) ? format : 'txt';
+  const normalizedFormat = ['txt', 'md', 'json'].includes(format) ? format : 'txt';
   if (!transcript.length) throw new Error('There is no transcript to export.');
   const result = await dialog.showSaveDialog(win, {
     title: 'Export Volyx Lens transcript',
     defaultPath: transcriptFilename(normalizedFormat),
-    filters: [
-      { name: 'Subtitle', extensions: ['srt', 'vtt'] },
-      { name: 'Text', extensions: ['txt'] },
-      { name: 'Markdown', extensions: ['md'] },
-      { name: 'JSON', extensions: ['json'] },
-    ],
+    filters: [{ name: normalizedFormat.toUpperCase(), extensions: [normalizedFormat] }],
   });
   if (result.canceled || !result.filePath) return { canceled: true };
   await writePrivateExport(result.filePath, formatTranscript(transcript, normalizedFormat));
@@ -497,18 +491,13 @@ async function exportTranscript(format) {
 }
 
 async function exportMeetingRecord(id, format) {
-  const normalizedFormat = ['txt', 'md', 'json', 'srt', 'vtt'].includes(format) ? format : 'md';
+  const normalizedFormat = ['txt', 'md', 'json'].includes(format) ? format : 'md';
   const record = meetingStore.get(String(id || ''));
   if (!record) throw new Error('That meeting record is no longer available.');
   const result = await dialog.showSaveDialog(win, {
     title: 'Export meeting notes',
     defaultPath: meetingFilename(normalizedFormat, record.endedAt || Date.now()),
-    filters: [
-      { name: 'Subtitle', extensions: ['srt', 'vtt'] },
-      { name: 'Text', extensions: ['txt'] },
-      { name: 'Markdown', extensions: ['md'] },
-      { name: 'JSON', extensions: ['json'] },
-    ],
+    filters: [{ name: normalizedFormat.toUpperCase(), extensions: [normalizedFormat] }],
   });
   if (result.canceled || !result.filePath) return { canceled: true };
   await writePrivateExport(result.filePath, formatMeetingRecord(record, normalizedFormat));
@@ -1057,8 +1046,12 @@ async function reconcileCaptureState() {
   // cause the loop to exit on a stale value.
   while (true) {
     const target = desiredCapturing;
+    if (state.capturing === target) break;
     await applyCaptureState(target);
-    if (state.capturing === desiredCapturing) break;
+    // If the applied state did not move capture toward the target and no
+    // new toggle arrived while applying, iterating again would spin
+    // without new input (for example when capture start fails).
+    if (state.capturing !== target && desiredCapturing === target) break;
   }
   return state.capturing;
 }
@@ -1685,30 +1678,6 @@ handleTrusted('history:recap', (_event, payload) => recapMeetingRecord(payload &
 handleTrusted('diagnostics:get', () => getSessionDiagnostics());
 handleTrusted('shortcuts:get', () => getShortcutStatus());
 handleTrusted('shortcuts:retry', () => registerShortcuts());
-handleTrusted('shortcuts:set', (_event, payload = {}) => {
-  const { id, accelerator } = payload;
-  const result = shortcutRegistry.remap(id, accelerator);
-  if (result.ok) {
-    const current = store.getSettings().shortcuts || {};
-    if (accelerator === null || DEFAULT_SHORTCUT_DEFS.some((d) => d.id === id && d.accelerator === normalizeAccelerator(accelerator))) {
-      delete current[id];
-    } else {
-      current[id] = normalizeAccelerator(accelerator);
-    }
-    store.setSettings({ shortcuts: current });
-  }
-  return { ...result, status: getShortcutStatus() };
-});
-handleTrusted('shortcuts:reset', () => {
-  resetShortcuts();
-  store.setSettings({ shortcuts: {} });
-  return { ok: true, status: getShortcutStatus() };
-});
-handleTrusted('shortcuts:validate', (_event, payload = {}) => {
-  const { accelerator } = payload;
-  const { validateRemap } = require('./src/shortcut-validator');
-  return validateRemap({ id: payload.id, accelerator, definitions: DEFAULT_SHORTCUT_DEFS, platform: process.platform });
-});
 handleTrusted('update:get-state', () => updateManager.getState());
 handleTrusted('update:check', () => updateManager.check());
 handleTrusted('update:download', () => updateManager.download());
@@ -1801,13 +1770,6 @@ onTrusted('app:renderer-ready', () => {
 onTrusted('app:quit', stopAllAndQuit);
 onTrusted('app:relaunch', relaunchApp);
 
-const DEFAULT_SHORTCUT_DEFS = [
-  { id: 'assist', accelerator: 'CommandOrControl+Return', mac: '⌘↵', other: 'Ctrl+Enter', feature: 'Assist', fallback: 'Use Assist button' },
-  { id: 'solve', accelerator: 'CommandOrControl+H', mac: '⌘H', other: 'Ctrl+H', feature: 'Solve screen', fallback: 'Use Solve button' },
-  { id: 'task-context', accelerator: 'CommandOrControl+Shift+C', mac: '⌘⇧C', other: 'Ctrl+Shift+C', feature: 'Add screen', fallback: 'Use Add screen button' },
-  { id: 'quit', accelerator: 'CommandOrControl+Shift+X', mac: '⌘⇧X', other: 'Ctrl+Shift+X', feature: 'Stop all and quit', fallback: 'Use power button' },
-];
-
 // -------- shortcuts --------
 function configuredAssistMode() {
   const context = store.getSettings().assistContext || 'both';
@@ -1822,15 +1784,13 @@ function shortcutDefinitions() {
     }
     return handler();
   };
-  const assist = DEFAULT_SHORTCUT_DEFS.find((d) => d.id === 'assist');
-  const solve = DEFAULT_SHORTCUT_DEFS.find((d) => d.id === 'solve');
-  const taskContext = DEFAULT_SHORTCUT_DEFS.find((d) => d.id === 'task-context');
-  const quit = DEFAULT_SHORTCUT_DEFS.find((d) => d.id === 'quit');
   return [
-    { ...assist, handler: whileUnblocked(() => runFeature(configuredAssistMode(), '')) },
-    { ...solve, handler: whileUnblocked(() => runFeature('leetcode', '')) },
-    { ...taskContext, handler: whileUnblocked(() => captureTaskContextScreen().catch((error) => send('status', { message: error && error.message ? error.message : 'Task context could not capture the screen.' }))) },
-    { ...quit, handler: stopAllAndQuit },
+    { id: 'assist', accelerator: 'CommandOrControl+Return', mac: '⌘↵', other: 'Ctrl+Enter', feature: 'Assist', fallback: 'Use Assist button', handler: whileUnblocked(() => runFeature(configuredAssistMode(), '')) },
+    { id: 'solve', accelerator: 'CommandOrControl+H', mac: '⌘H', other: 'Ctrl+H', feature: 'Solve screen', fallback: 'Use Solve button', handler: whileUnblocked(() => runFeature('leetcode', '')) },
+    { id: 'task-context', accelerator: 'CommandOrControl+Shift+C', mac: '⌘⇧C', other: 'Ctrl+Shift+C', feature: 'Add screen', fallback: 'Use Add screen button', handler: whileUnblocked(() => {
+      captureTaskContextScreen().catch((error) => send('status', { message: error && error.message ? error.message : 'Task context could not capture the screen.' }));
+    }) },
+    { id: 'quit', accelerator: 'CommandOrControl+Shift+X', mac: '⌘⇧X', other: 'Ctrl+Shift+X', feature: 'Stop all and quit', fallback: 'Use power button', handler: stopAllAndQuit },
   ];
 }
 
@@ -1838,24 +1798,10 @@ const shortcutRegistry = createShortcutRegistry({
   globalShortcut,
   platform: process.platform,
   definitions: shortcutDefinitions(),
-  onRegister: (entry) => console.log(`[shortcuts] registered: ${entry.id} -> ${entry.accelerator}`),
-  onUnregister: (entry) => console.log(`[shortcuts] unregistered: ${entry.id}`),
 });
 
 function getShortcutStatus() { return shortcutRegistry.status(); }
 function registerShortcuts() { return shortcutRegistry.register(); }
-
-function applyShortcutOverrides(overrides = {}) {
-  const valid = sanitizeShortcutsPatch({ patch: overrides, defaultDefinitions: DEFAULT_SHORTCUT_DEFS, platform: process.platform });
-  for (const [id, accelerator] of Object.entries(valid.valid)) {
-    shortcutRegistry.remap(id, accelerator);
-  }
-  return valid;
-}
-
-function resetShortcuts() {
-  shortcutRegistry.reset();
-}
 
 // -------- lifecycle --------
 app.whenReady().then(() => {
@@ -1907,8 +1853,6 @@ app.whenReady().then(() => {
   }, { useSystemPicker: false });
 
   createWindow();
-  const overrides = store.getSettings().shortcuts || {};
-  if (Object.keys(overrides).length > 0) applyShortcutOverrides(overrides);
   registerShortcuts();
   powerMonitor.on('suspend', () => stopCaptureForSystem('suspend'));
   powerMonitor.on('lock-screen', () => stopCaptureForSystem('lock'));

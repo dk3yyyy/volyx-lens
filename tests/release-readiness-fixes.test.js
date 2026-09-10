@@ -188,3 +188,35 @@ test('release tags must point to a commit reachable from main', () => {
   assert.match(releaseWorkflow, /git fetch origin main/);
   assert.match(releaseWorkflow, /git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main/);
 });
+
+test('every relative require in main.js resolves to a real module', () => {
+  const specs = [...main.matchAll(/require\('(\.[^']+)'\)/g)].map((match) => match[1]);
+  assert.ok(specs.length > 20, 'main.js requires the local modules the app depends on');
+  for (const spec of specs) {
+    const base = path.resolve(root, spec);
+    const candidates = [base, `${base}.js`, path.join(base, 'index.js')];
+    assert.ok(
+      candidates.some((candidate) => fs.existsSync(candidate)),
+      `main.js requires ${spec}, which does not exist in the repository`
+    );
+  }
+});
+
+test('transcript and meeting export formats stay limited to writers that exist', () => {
+  assert.match(main, /async function exportTranscript\(format\) \{\n  const normalizedFormat = \['txt', 'md', 'json'\]\.includes\(format\)/);
+  assert.match(main, /async function exportMeetingRecord\(id, format\) \{\n  const normalizedFormat = \['txt', 'md', 'json'\]\.includes\(format\)/);
+  assert.doesNotMatch(main, /'srt', 'vtt'/);
+  assert.doesNotMatch(main, /name: 'Subtitle'/);
+});
+
+test('offline whisper bounds child lifetime without a global process sweeper', () => {
+  const offlineStt = fs.readFileSync(path.join(root, 'src', 'offline-stt.js'), 'utf8');
+  assert.match(offlineStt, /const MAX_CHILD_LIFETIME_MS = \(timeoutMs\) => Math\.max\(timeoutMs \* 2, 60000\);/);
+  assert.match(offlineStt, /maxLifetimeTimer = setTimeout\(\(\) => \{/);
+  assert.doesNotMatch(offlineStt, /setInterval\(/);
+});
+
+test('capture reconciliation cannot spin when applying makes no progress', () => {
+  assert.match(main, /while \(true\) \{\n    const target = desiredCapturing;\n    if \(state\.capturing === target\) break;\n    await applyCaptureState\(target\);/);
+  assert.match(main, /if \(state\.capturing !== target && desiredCapturing === target\) break;/);
+});
