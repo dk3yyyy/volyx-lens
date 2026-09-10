@@ -8,11 +8,23 @@ const { normalizeWhisperLanguage } = require('./whisper-language');
 const MAX_TRANSCRIPT_BYTES = 64 * 1024;
 const MAX_TRANSCRIPT_CHARACTERS = 20000;
 const DEFAULT_TIMEOUT_MS = 120000;
+const MAX_CHILD_LIFETIME_MS = (timeoutMs) => Math.max(timeoutMs * 2, 60000);
 const activeChildren = new Map();
 const pendingJobs = new Set();
 let cancellationGeneration = 0;
 let offlineQueue = Promise.resolve();
 let whisperSession = null;
+
+const cleanupInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [child, state] of activeChildren) {
+    if (state.addedAt && now - state.addedAt > (state.maxLifetime || 60000)) {
+      child.kill('SIGKILL');
+      activeChildren.delete(child);
+    }
+  }
+}, 5000);
+if (cleanupInterval.unref) cleanupInterval.unref();
 
 function offlineError(message, code) {
   const error = new Error(message);
@@ -74,14 +86,18 @@ async function runWhisperCli({ executable, model, wav, language = '', prompt = '
       });
       const childState = jobState;
       childState.timedOut = false;
+      childState.addedAt = Date.now();
+      childState.maxLifetime = MAX_CHILD_LIFETIME_MS(timeoutMs);
       activeChildren.set(child, childState);
       let stderrBytes = 0;
       let settled = false;
       let timer = null;
+      let maxLifetimeTimer = null;
       const finish = (callback, value) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        clearTimeout(maxLifetimeTimer);
         activeChildren.delete(child);
         callback(value);
       };
@@ -95,6 +111,13 @@ async function runWhisperCli({ executable, model, wav, language = '', prompt = '
         childState.timedOut = true;
         child.kill('SIGKILL');
       }, Math.max(1000, Math.min(300000, timeoutMs)));
+      maxLifetimeTimer = setTimeout(() => {
+        if (!settled) {
+          child.kill('SIGKILL');
+          finish(reject, offlineError('Offline transcription exceeded maximum lifetime.', 'offline_timeout'));
+        }
+      }, childState.maxLifetime);
+      if (maxLifetimeTimer.unref) maxLifetimeTimer.unref();
       child.once('error', (error) => finish(reject, offlineError(error.message, 'offline_spawn_failed')));
       child.once('close', async (code) => {
         if (settled) return;
