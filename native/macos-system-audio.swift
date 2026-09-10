@@ -35,6 +35,32 @@ private final class StopLatch: @unchecked Sendable {
     }
 }
 
+// Assembles stdin lines for the stop command. FileHandle's readability handler
+// runs on a queue of its own, so the partial-line buffer lives behind a lock in
+// this Sendable box rather than in a captured mutable local (which the
+// concurrency checker rejects inside concurrently-executing code).
+private final class StopCommandReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private let delimiter = Data("\n".utf8)
+    private var pending = Data()
+
+    // Returns true once the accumulated input contains the stop command.
+    func ingest(_ data: Data) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        pending.append(data)
+        while let range = pending.range(of: delimiter) {
+            let lineData = Data(pending.prefix(range.lowerBound))
+            pending.removeSubrange(0...range.lowerBound)
+            if let line = String(data: lineData, encoding: .utf8),
+               line.contains("\"command\":\"stop\"") {
+                return true
+            }
+        }
+        return false
+    }
+}
+
 private enum EventCode: String {
     case unsupportedOS = "unsupported_os"
     case permissionDenied = "permission_denied"
@@ -214,13 +240,13 @@ private final class CaptureController {
             try await captureStream.startCapture()
             writer.event(["event": "ready", "format": ["encoding": "s16le", "sampleRate": sampleRate, "channels": 1, "frameSamples": frameSamples]])
             // This reader deliberately does not capture `self`: CaptureController is
-            // not Sendable, so any `self` capture inside this @Sendable queue block is
-            // a Swift 6 sendability violation (escalated to an error by -warnings-as-errors).
-            // Only the Sendable StopLatch is shared with the closure.
+            // not Sendable, so any `self` capture inside this concurrently-executing
+            // block is a Swift 6 sendability violation (escalated to an error by
+            // -warnings-as-errors). Only Sendable state is shared with the handler: the
+            // StopLatch and the lock-guarded StopCommandReader.
             DispatchQueue.global().async {
                 let fileHandle = FileHandle.standardInput
-                var pending = Data()
-                let delimiter = Data("\n".utf8)
+                let stopCommand = StopCommandReader()
                 fileHandle.readabilityHandler = { handle in
                     let data = handle.availableData
                     if data.isEmpty {
@@ -229,15 +255,8 @@ private final class CaptureController {
                         }
                         return
                     }
-                    pending.append(data)
-                    while let range = pending.range(of: delimiter) {
-                        let lineData = Data(pending.prefix(range.lowerBound))
-                        pending.removeSubrange(0...range.lowerBound)
-                        if let line = String(data: lineData, encoding: .utf8),
-                           line.contains("\"command\":\"stop\"") {
-                            stopLatch.signal()
-                            return
-                        }
+                    if stopCommand.ingest(data) {
+                        stopLatch.signal()
                     }
                 }
             }
