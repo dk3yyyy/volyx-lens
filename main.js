@@ -640,22 +640,36 @@ function createWindow() {
 }
 
 // -------- STT flushing --------
+// Retry queue: preserves audio chunks across flush attempts so that
+// transient STT errors do not permanently lose buffered speech. On
+// error the chunks are placed in retryQueues[channel] for the next
+// flush to re-attempt before new data.
+const retryQueues = { you: [], them: [] };
+const MAX_RETRY_CHUNKS = MAX_BATCH_CHUNKS;
+
 async function flushChannel(channel, { drain = false } = {}) {
   if (flushPromises[channel]) return flushPromises[channel];
   const task = (async () => {
     const generation = sessionGeneration;
     const epoch = transcriptEpoch;
-    if (sttDisabled) { buffers[channel] = []; return; }
+    if (sttDisabled) { buffers[channel] = []; retryQueues[channel] = []; return; }
     // Transient backoff: postpone transcription and keep the buffered speech instead
     // of discarding it. A final drain on stop still flushes best-effort so nothing
     // captured up to that point is lost. Buffering stays bounded by MAX_BATCH_CHUNKS.
     if (!drain && sttBackoffUntil && Date.now() < sttBackoffUntil) return;
     const chunks = buffers[channel];
-    if (!chunks.length) return;
-    const pcm = Buffer.concat(chunks);
-    buffers[channel] = [];
-    if (pcm.length < MIN_BYTES) return;
-    if (rms16(pcm) < RMS_GATE) return; // silence gate
+    if (!chunks.length && !retryQueues[channel].length) return;
+    // Prepend any preserved retry chunks so older audio is not lost on error.
+    const pendingRetry = retryQueues[channel];
+    let allChunks = pendingRetry.length ? [...pendingRetry, ...chunks] : chunks;
+    // Trim allChunks itself to stay bounded BEFORE using it for both retryQueues and Buffer.concat.
+    if (allChunks.length > MAX_RETRY_CHUNKS) allChunks = allChunks.slice(-MAX_RETRY_CHUNKS);
+    // Do NOT clear buffers[channel] yet — only clear after successful transcription.
+    // retryQueues holds preserved audio if the current attempt fails.
+    retryQueues[channel] = allChunks;
+    const pcm = Buffer.concat(allChunks);
+    if (pcm.length < MIN_BYTES) { retryQueues[channel] = allChunks; return; }
+    if (rms16(pcm) < RMS_GATE) { retryQueues[channel] = allChunks; return; } // silence gate
 
     state.transcribing[channel] = true;
     try {
@@ -679,12 +693,17 @@ async function flushChannel(channel, { drain = false } = {}) {
       if (res.error) {
         if (res.error.code === 'offline_cancelled') return;
         handleSttError(res.error);
+        // Keep retryQueues populated — chunks are preserved for the next flush.
         return;
       }
+      // Success: now it is safe to clear the buffer and retry queue.
+      buffers[channel] = [];
+      retryQueues[channel] = [];
       if (sttFailures || sttBackoffUntil) { sttFailures = 0; sttBackoffUntil = 0; } // recovered
       if (res.text && res.text.trim()) recordTranscript({ channel, text: res.text }, generation, epoch);
     } catch (e) {
       console.log('[stt] unexpected error', String(e && e.code || 'unknown').slice(0, 80));
+      // Keep retryQueues populated for retry.
     } finally {
       state.transcribing[channel] = false;
     }
@@ -696,7 +715,7 @@ async function flushChannel(channel, { drain = false } = {}) {
 
 async function drainBatchBuffers() {
   await Promise.all(['you', 'them'].map(async (channel) => {
-    do { await flushChannel(channel, { drain: true }); } while (buffers[channel].length);
+    do { await flushChannel(channel, { drain: true }); } while (buffers[channel].length || retryQueues[channel].length);
   }));
 }
 
@@ -1022,9 +1041,17 @@ async function applyCaptureState(active) {
 }
 
 async function reconcileCaptureState() {
-  while (state.capturing !== desiredCapturing) {
+  // Re-read desiredCapturing at the start of each iteration so rapid
+  // toggle calls (true then false before reconciliation starts) cannot
+  // cause the loop to exit on a stale value.
+  while (true) {
     const target = desiredCapturing;
+    if (state.capturing === target) break;
     await applyCaptureState(target);
+    // If the applied state did not move capture toward the target and no
+    // new toggle arrived while applying, iterating again would spin
+    // without new input (for example when capture start fails).
+    if (state.capturing !== target && desiredCapturing === target) break;
   }
   return state.capturing;
 }
@@ -1211,6 +1238,7 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
     const route = createResponseRoute(settings);
     const selection = chooseInitialProvider(route, { requiresVision: mode === 'leetcode' || (mode === 'ask' && needsScreen) });
     const llm = selection.llm;
+    if (!llm) { send('llm:error', { message: selection.reason || 'No compatible provider is configured.' }); return; }
     const personalContext = def.usesPersonalContext
       ? buildPersonalContext(personalContextStore.getEnabledDocuments(), { transcript: orderedTranscript, userText: userText || '' })
       : { text: '', sources: [], systemRules: '' };
@@ -1244,8 +1272,12 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
     }
     featureRequest = { controller: new AbortController(), reason: null };
     activeFeatureRequest = featureRequest;
+    let featureCompleted = false;
     requestTimeout = setTimeout(() => {
+      if (featureCompleted) return;
       if (activeFeatureRequest !== featureRequest || featureRequest.controller.signal.aborted) return;
+      clearTimeout(requestTimeout);
+      requestTimeout = null;
       featureRequest.reason = 'timeout';
       featureRequest.controller.abort();
     }, FEATURE_REQUEST_TIMEOUT_MS);
@@ -1372,6 +1404,7 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
       if (mode === 'ask') chatHistory.addExchange(String(userText || '').trim(), fullAnswer);
       send('llm:done', {});
     }
+    featureCompleted = true;
   } catch (e) {
     if (isCurrent()) send('llm:error', { message: sanitizeProviderError(e, { timedOut: featureRequest && featureRequest.reason === 'timeout' }) });
   } finally {
@@ -1392,6 +1425,7 @@ async function recapMeetingRecord(id, options = {}) {
   const route = createResponseRoute(settings);
   const selection = chooseInitialProvider(route, { requiresVision: false });
   const llm = selection.llm;
+  if (!llm) { return { ok: false, code: 'not_configured', message: selection.reason || 'No compatible provider is configured.' }; }
   if (!llm.ready) {
     return { ok: false, code: 'not_configured', message: llm.configurationError || ('Configure ' + settings.provider + ' in Settings to generate meeting notes.') };
   }
@@ -1530,7 +1564,16 @@ function transcriptionSettingsChanged(previous, updated) {
 
 // -------- IPC --------
 function assertTrustedIpc(event) {
-  if (!event || !isTrustedRenderer(event.sender, event.senderFrame)) throw new Error('Untrusted IPC sender.');
+  if (!event) throw new Error('Untrusted IPC sender.');
+  if (!isTrustedRenderer(event.sender, event.senderFrame)) throw new Error('Untrusted IPC sender.');
+  // Explicitly reject IPC from child frames — only the main frame of a
+  // trusted renderer is allowed. This closes a bypass where a child frame
+  // (e.g. iframe with the same URL) could otherwise pass the renderer check
+  // and inject messages. Checking against mainFrame (rather than a specific
+  // window) allows future secondary BrowserWindows to send trusted IPC.
+  if (!win || win.isDestroyed()) throw new Error('Untrusted IPC: no application window.');
+  if (!event.sender || event.sender.isDestroyed()) throw new Error('Untrusted IPC: sender destroyed.');
+  if (event.senderFrame !== event.sender.mainFrame) throw new Error('Untrusted IPC: sender is not the main frame.');
 }
 function handleTrusted(channel, handler) {
   ipcMain.handle(channel, (event, ...args) => {
