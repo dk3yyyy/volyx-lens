@@ -3,7 +3,9 @@ dist/
 out/
 native/systemaudio
 native-bin/
+native/tests/.build/
 *.log
 .DS_Store
 cue-data.json
 .freebuff/
+coverage/
