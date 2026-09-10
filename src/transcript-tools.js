@@ -46,6 +46,54 @@ function timeLabel(ts) {
   return new Date(ts).toISOString().slice(11, 19);
 }
 
+function srtTimecode(ms) {
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const millis = Math.floor(ms % 1000);
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)},${pad(millis, 3)}`;
+}
+
+function vttTimecode(ms) {
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const millis = Math.floor(ms % 1000);
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(millis, 3)}`;
+}
+
+function escapeSubtitle(text) {
+  return String(text || '').replace(/-->/g, '--\\>').replace(/\r?\n/g, ' ');
+}
+
+function formatTranscriptSrt(turns) {
+  const normalized = normalizeTurns(turns);
+  const blocks = [];
+  normalized.forEach((turn, index) => {
+    const speaker = turn.channel === 'you' ? 'You' : 'Them';
+    const start = Number.isFinite(turn.ts) ? turn.ts : 0;
+    const end = start + 4000;
+    blocks.push(`${index + 1}\n${srtTimecode(start)} --> ${srtTimecode(end)}\n${speaker}: ${escapeSubtitle(turn.text)}`);
+  });
+  return blocks.join('\n\n') + (blocks.length ? '\n' : '');
+}
+
+function formatTranscriptVtt(turns) {
+  const normalized = normalizeTurns(turns);
+  const blocks = ['WEBVTT\n'];
+  normalized.forEach((turn) => {
+    const speaker = turn.channel === 'you' ? 'You' : 'Them';
+    const start = Number.isFinite(turn.ts) ? turn.ts : 0;
+    const end = start + 4000;
+    blocks.push(`${vttTimecode(start)} --> ${vttTimecode(end)}\n${speaker}: ${escapeSubtitle(turn.text)}`);
+  });
+  return blocks.join('\n\n') + (normalized.length ? '\n' : '');
+}
+
 function formatTranscript(turns, format = 'txt', exportedAt = Date.now()) {
   const normalized = normalizeTurns(turns);
   if (format === 'json') {
@@ -55,6 +103,8 @@ function formatTranscript(turns, format = 'txt', exportedAt = Date.now()) {
       turns: normalized,
     }, null, 2) + '\n';
   }
+  if (format === 'srt') return formatTranscriptSrt(turns);
+  if (format === 'vtt') return formatTranscriptVtt(turns);
   if (format === 'md') {
     const body = normalized.map((turn) => {
       const speaker = turn.channel === 'you' ? 'You' : 'Them';
@@ -70,9 +120,9 @@ function formatTranscript(turns, format = 'txt', exportedAt = Date.now()) {
 }
 
 function transcriptFilename(format = 'txt', now = Date.now()) {
-  const extension = ['txt', 'md', 'json'].includes(format) ? format : 'txt';
+  const extension = ['txt', 'md', 'json', 'srt', 'vtt'].includes(format) ? format : 'txt';
   const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
   return `volyx-lens-transcript-${stamp}.${extension}`;
 }
 
-module.exports = { normalizeTurns, normalizeSpokenDigits, formatTranscript, transcriptFilename };
+module.exports = { normalizeTurns, normalizeSpokenDigits, formatTranscript, formatTranscriptSrt, formatTranscriptVtt, transcriptFilename, srtTimecode, vttTimecode, escapeSubtitle };
