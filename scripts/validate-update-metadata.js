@@ -20,7 +20,7 @@ function validateUpdateMetadata({ metadataPath, archivePath, expectedVersion, ex
   const archiveName = path.basename(archivePath);
   const expectedExtension = PLATFORM_EXTENSIONS[platform];
   // electron-builder names Linux x64 AppImages with an x86_64 token (for
-  // example volyx-lens-0.5.0-linux-x86_64.AppImage) while the channel is
+  // example volyx-lens-0.5.1-linux-x86_64.AppImage) while the channel is
   // latest-x64; accept both tokens for that platform/arch pair.
   const archTokens = platform === 'linux' && expectedArch === 'x64' ? ['x64', 'x86_64'] : [expectedArch];
   if (!archTokens.some((token) => archiveName.endsWith(`-${token}${expectedExtension}`))) {
