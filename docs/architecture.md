@@ -160,4 +160,4 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 
 ## Update path
 
-`src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows, `latest-linux.yml` for Linux, DMG/ZIP for macOS). The macOS updater is published together with signed DMGs; Windows and Linux publish auto-update metadata with the installer/AppImages.
+`src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows, `latest-<arch>-linux.yml` for Linux, DMG/ZIP for macOS; the release workflow canonicalizes the Linux metadata name so the updater finds it). The macOS updater is published together with signed DMGs; Windows and Linux publish auto-update metadata with the installer/AppImages.
