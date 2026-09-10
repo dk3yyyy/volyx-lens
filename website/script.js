@@ -136,24 +136,24 @@ window.addEventListener('storage', (event) => {
 
 const DL_ASSETS = {
   win: {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-win-x64.exe',
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.1/volyx-lens-0.5.1-win-x64.exe',
     label: 'Windows',
-    detail: 'x64 NSIS installer · v0.5.0'
+    detail: 'x64 NSIS installer · v0.5.1'
   },
   mac: {
     href: 'https://github.com/dk3yyyy/volyx-lens/releases/tag/adhoc-v0.3.1',
     label: 'macOS',
-    detail: 'v0.3.1 test build · signed v0.5.0 pending'
+    detail: 'v0.3.1 test build · signed v0.5.1 pending'
   },
   'linux-x64': {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-linux-x86_64.AppImage',
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.1/volyx-lens-0.5.1-linux-x86_64.AppImage',
     label: 'Linux x64',
-    detail: 'AppImage · v0.5.0'
+    detail: 'AppImage · v0.5.1'
   },
   'linux-arm64': {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.0/volyx-lens-0.5.0-linux-arm64.AppImage',
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.5.1/volyx-lens-0.5.1-linux-arm64.AppImage',
     label: 'Linux arm64',
-    detail: 'AppImage · v0.5.0'
+    detail: 'AppImage · v0.5.1'
   }
 };
 
