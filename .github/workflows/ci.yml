@@ -21,10 +21,15 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run coverage
+      - name: Generate coverage report
+        run: npm run coverage:report
+      - name: Check coverage thresholds
+        run: npx c8 check-coverage --lines=70 --branches=70 --functions=60 --statements=70
       - run: npm run check:syntax
       - run: xvfb-run -a npm run check:onboarding-ui -- --no-sandbox
       - run: xvfb-run -a npm run check:settings-ui -- --no-sandbox
+      - run: xvfb-run -a npm run check:e2e-smoke
       - run: npm run security:secrets
       - name: Reject dependency vulnerabilities
         run: npm audit --audit-level=low
@@ -79,3 +84,23 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - run: npm run verify:vision-ocr-package
+
+  swift-test:
+    name: Swift native tests
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Verify Swift toolchain
+        run: swift --version
+
+      - name: Resolve Swift package dependencies
+        working-directory: native/tests
+        run: swift package resolve
+
+      - name: Run Swift unit tests
+        working-directory: native/tests
+        run: swift test
