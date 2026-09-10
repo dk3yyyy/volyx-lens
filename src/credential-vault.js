@@ -37,12 +37,21 @@ function createCredentialVault(safeStorage) {
 
   function open(record = {}) { return openWithStatus(record).values; }
 
+  function getSecurityStatus() {
+    const secure = secureAvailable();
+    return {
+      secure,
+      warning: secure ? '' : 'Credentials stored in plaintext. Enable a keyring for encryption.',
+    };
+  }
+
   return {
     seal,
     open,
     openWithStatus,
     isSecure: secureAvailable,
     backend: () => secureAvailable() ? 'safeStorage' : 'plaintext-fallback',
+    getSecurityStatus,
   };
 }
 
