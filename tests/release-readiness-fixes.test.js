@@ -202,11 +202,29 @@ test('every relative require in main.js resolves to a real module', () => {
   }
 });
 
-test('transcript and meeting export formats stay limited to writers that exist', () => {
-  assert.match(main, /async function exportTranscript\(format\) \{\n  const normalizedFormat = \['txt', 'md', 'json'\]\.includes\(format\)/);
-  assert.match(main, /async function exportMeetingRecord\(id, format\) \{\n  const normalizedFormat = \['txt', 'md', 'json'\]\.includes\(format\)/);
-  assert.doesNotMatch(main, /'srt', 'vtt'/);
-  assert.doesNotMatch(main, /name: 'Subtitle'/);
+test('every export format offered in the save dialog has a working writer', () => {
+  const transcriptTools = fs.readFileSync(path.join(root, 'src', 'transcript-tools.js'), 'utf8');
+  const meetingNotes = fs.readFileSync(path.join(root, 'src', 'meeting-notes.js'), 'utf8');
+  const offered = (fn) => {
+    const block = main.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{\n  const normalizedFormat = \\[([^\\]]+)\\]`));
+    return block ? [...block[1].matchAll(/'([a-z0-9]+)'/g)].map((match) => match[1]) : [];
+  };
+  const transcriptFormats = offered('exportTranscript');
+  const meetingFormats = offered('exportMeetingRecord');
+  assert.ok(transcriptFormats.length >= 3, 'exportTranscript declares its supported formats');
+  assert.ok(meetingFormats.length >= 3, 'exportMeetingRecord declares its supported formats');
+  // Both formatters implement their plain-text format as the default branch
+  // rather than an explicit `format === '...'` case.
+  const FALLBACK_FORMAT = { exportTranscript: 'txt', exportMeetingRecord: 'txt' };
+  for (const [fn, formats, source, label] of [
+    ['exportTranscript', transcriptFormats, transcriptTools, 'transcript'],
+    ['exportMeetingRecord', meetingFormats, meetingNotes, 'meeting'],
+  ]) {
+    for (const format of formats) {
+      if (format === FALLBACK_FORMAT[fn]) continue;
+      assert.match(source, new RegExp(`format === '${format}'`), `${label} writer missing for offered format ${format}`);
+    }
+  }
 });
 
 test('offline whisper bounds child lifetime without a global process sweeper', () => {
