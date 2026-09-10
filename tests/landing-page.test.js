@@ -23,9 +23,11 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, /<main\b[^>]*id="main"/i);
   assert.equal((html.match(/<h1\b/gi) || []).length, 1);
   assert.match(html, /A private assistant for your desktop/i);
-  assert.match(html, /Release[\s\S]*?v0\.5\.0/i);
-  assert.match(html, /Windows and Linux installers are live in v0\.5\.0/i);
-  assert.match(html, /v0\.5\.0 macOS build will be signed and notarized once release signing credentials are configured/i);
+  const version = require('../package.json').version;
+  const v = version.replace(/\./g, '\\.');
+  assert.match(html, new RegExp(`Release[\\s\\S]*?v${v}`, 'i'));
+  assert.match(html, new RegExp(`Windows and Linux installers are live in v${v}`, 'i'));
+  assert.match(html, new RegExp(`v${v} macOS build will be signed and notarized once release signing credentials are configured`, 'i'));
   assert.match(html, /Mac users can run the <a[^>]*>v0\.3\.1 test build<\/a>/i);
   assert.match(html, /Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs/i);
   assert.doesNotMatch(html, /current signed Mac release is v0\.4\.0|Get the signed v0\.4\.0|Download v0\.4\.0/i);
@@ -39,9 +41,10 @@ test('landing page offers per-platform downloads with direct release assets', ()
   const html = read('index.html');
 
   assert.equal((html.match(/class="dl-card"/g) || []).length, 6);
-  assert.match(html, /data-os="win"[^>]*volyx-lens-0\.5\.0-win-x64\.exe/i);
-  assert.match(html, /data-os="linux-x64"[^>]*volyx-lens-0\.5\.0-linux-x86_64\.AppImage/i);
-  assert.match(html, /data-os="linux-arm64"[^>]*volyx-lens-0\.5\.0-linux-arm64\.AppImage/i);
+  const version = require('../package.json').version.replace(/\./g, '\\.');
+  assert.match(html, new RegExp(`data-os="win"[^>]*volyx-lens-${version}-win-x64\\.exe`, 'i'));
+  assert.match(html, new RegExp(`data-os="linux-x64"[^>]*volyx-lens-${version}-linux-x86_64\\.AppImage`, 'i'));
+  assert.match(html, new RegExp(`data-os="linux-arm64"[^>]*volyx-lens-${version}-linux-arm64\\.AppImage`, 'i'));
   assert.match(html, /data-os="mac"[^>]*releases\/tag\/adhoc-v0\.3\.1/i);
   assert.match(html, /data-os="mac-arm64"[^>]*Volyx-Lens-0\.3\.1-macOS-arm64-adhoc\.dmg/i);
   assert.match(html, /data-os="mac-x64"[^>]*Volyx-Lens-0\.3\.1-macOS-x64-adhoc\.dmg/i);

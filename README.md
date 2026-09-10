@@ -77,31 +77,31 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.5.0
+### Current release: v0.5.1
 
-v0.5.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and, once release signing credentials are configured, Apple Developer ID-signed and notarized macOS DMGs. Windows and Linux builds are unsigned; macOS builds are signed and notarized and launch without Gatekeeper workarounds. Auto-update metadata is published for Windows and Linux; the macOS updater is published together with the DMGs.
+v0.5.1 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and, once release signing credentials are configured, Apple Developer ID-signed and notarized macOS DMGs. Windows and Linux builds are unsigned; macOS builds are signed and notarized and launch without Gatekeeper workarounds. Auto-update metadata is published for Windows and Linux; the macOS updater is published together with the DMGs.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | v0.5.0 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-arm64-adhoc.dmg) |
-| **Intel** | v0.5.0 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-x64-adhoc.dmg) |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | v0.5.1 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-arm64-adhoc.dmg) |
+| **Intel** | v0.5.1 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-x64-adhoc.dmg) |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.5.0-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.5.0-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.5.0-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.5.1-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.5.1-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.5.1-linux-arm64.AppImage` |
 
-**[Open the v0.5.0 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.0)**
+**[Open the v0.5.1 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.1)**
 
-The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.5.0 macOS DMGs will be provided after release signing credentials are configured; ad-hoc Mac test builds remain available under their pre-release tags.
+The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.5.1 macOS DMGs will be provided after release signing credentials are configured; ad-hoc Mac test builds remain available under their pre-release tags.
 
 SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.5.0-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.5.0-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.5.1-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.5.1-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 
