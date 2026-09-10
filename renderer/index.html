@@ -46,7 +46,7 @@
             <div><strong>Transcript</strong><span id="transcript-count">0 turns</span><span id="meeting-indicator" class="hidden">Meeting in progress</span></div>
             <div class="transcript-actions">
               <button id="transcript-copy" type="button">Copy</button>
-              <select id="transcript-export-format" aria-label="Transcript export format"><option value="txt">TXT</option><option value="md">Markdown</option><option value="json">JSON</option></select>
+              <select id="transcript-export-format" aria-label="Transcript export format"><option value="txt">TXT</option><option value="md">Markdown</option><option value="json">JSON</option><option value="srt">SRT</option><option value="vtt">VTT</option></select>
               <button id="transcript-export" type="button">Export</button>
               <button id="transcript-clear" type="button">Clear</button>
               <button id="diagnostics-toggle" type="button" aria-expanded="false">Diagnostics</button>
@@ -103,7 +103,7 @@
               <button id="meeting-history-back" type="button">← All meetings</button>
               <span id="meeting-history-detail-meta"></span>
               <div class="history-detail-actions">
-                <select id="meeting-history-export-format" aria-label="Export format"><option value="md">Markdown</option><option value="txt">TXT</option><option value="json">JSON</option></select>
+                <select id="meeting-history-export-format" aria-label="Export format"><option value="md">Markdown</option><option value="txt">TXT</option><option value="json">JSON</option><option value="srt">SRT</option><option value="vtt">VTT</option></select>
                 <button id="meeting-history-export" type="button">Export</button>
                 <button id="meeting-notes-generate" type="button">Notes</button>
                 <button id="meeting-history-delete" type="button">Delete</button>
@@ -370,15 +370,16 @@
           </section>
 
           <section class="s-page" data-settings-page="shortcuts" aria-labelledby="settings-shortcuts-title" hidden>
-            <div class="s-page-head"><h2 tabindex="-1" id="settings-shortcuts-title">Keyboard Shortcuts</h2><p>Check global shortcut availability and use safe in-app alternatives.</p></div>
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-shortcuts-title">Keyboard Shortcuts</h2><p>Check global shortcut availability, rebind keys, or reset to defaults.</p></div>
         <div class="shortcut-status-card">
-          <div class="shortcut-status-head"><div><strong>Keyboard shortcuts</strong><span>Global registration is checked at launch. Unavailable features remain accessible through these buttons.</span></div><button id="shortcuts-retry" type="button">Retry unavailable</button></div>
+          <div class="shortcut-status-head"><div><strong>Keyboard shortcuts</strong><span>Global registration is checked at launch. Unavailable features remain accessible through these buttons.</span></div><div class="shortcut-status-actions"><button id="shortcuts-reset" type="button">Reset to defaults</button><button id="shortcuts-retry" type="button">Retry unavailable</button></div></div>
           <div id="shortcut-status-list">
-            <div class="shortcut-status-row" data-shortcut="assist"><kbd>⌘↵</kbd><div><strong>Assist</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="assist">Use Assist</button></div>
-            <div class="shortcut-status-row" data-shortcut="solve"><kbd>⌘H</kbd><div><strong>Solve screen</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="solve">Use Solve</button></div>
-            <div class="shortcut-status-row" data-shortcut="task-context"><kbd>⌘⇧C</kbd><div><strong>Add screen</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="task-context">Add screen</button></div>
-            <div class="shortcut-status-row" data-shortcut="quit"><kbd>⌘⇧X</kbd><div><strong>Stop all and quit</strong><span>Checking registration…</span></div><button type="button" data-shortcut-fallback="quit">Quit now</button></div>
+            <div class="shortcut-status-row" data-shortcut="assist"><kbd>⌘↵</kbd><div><strong>Assist</strong><span>Checking registration…</span></div><div class="shortcut-row-actions"><button type="button" class="shortcut-rebind" data-shortcut-rebind="assist">Rebind</button><button type="button" data-shortcut-fallback="assist">Use Assist</button></div></div>
+            <div class="shortcut-status-row" data-shortcut="solve"><kbd>⌘H</kbd><div><strong>Solve screen</strong><span>Checking registration…</span></div><div class="shortcut-row-actions"><button type="button" class="shortcut-rebind" data-shortcut-rebind="solve">Rebind</button><button type="button" data-shortcut-fallback="solve">Use Solve</button></div></div>
+            <div class="shortcut-status-row" data-shortcut="task-context"><kbd>⌘⇧C</kbd><div><strong>Add screen</strong><span>Checking registration…</span></div><div class="shortcut-row-actions"><button type="button" class="shortcut-rebind" data-shortcut-rebind="task-context">Rebind</button><button type="button" data-shortcut-fallback="task-context">Add screen</button></div></div>
+            <div class="shortcut-status-row" data-shortcut="quit"><kbd>⌘⇧X</kbd><div><strong>Stop all and quit</strong><span>Checking registration…</span></div><div class="shortcut-row-actions"><button type="button" class="shortcut-rebind" data-shortcut-rebind="quit">Rebind</button><button type="button" data-shortcut-fallback="quit">Quit now</button></div></div>
           </div>
+          <div id="shortcut-rebind-hint" class="shortcut-rebind-hint hidden"><span>Press a new key combination…</span><button type="button" id="shortcut-rebind-cancel">Cancel</button></div>
         </div>
           </section>
 

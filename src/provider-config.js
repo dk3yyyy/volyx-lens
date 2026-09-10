@@ -130,6 +130,7 @@ function getDefaultSettings() {
       historyEnabled: false,
       meetingDetection: false,
     },
+    shortcuts: {},
   };
 }
 

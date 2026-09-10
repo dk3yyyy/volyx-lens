@@ -1,0 +1,17 @@
+{
+  "findings": [],
+  "top5": [],
+  "verdict": "PASS",
+  "verified_checks": [
+    "main.js assertTrustedIpc correctly rejects non-main-frame IPC while allowing secondary windows (lines 1573-1583): verifies isTrustedRenderer AND senderFrame === sender.mainFrame; comment explicitly notes secondary BrowserWindows remain trusted",
+    "src/transcript-tools.js escapeSubtitle escapes --> and newlines in both SRT and VTT (line 69-71): replaces /-->/g with '--\\>' and /\\r?\\n/g with space; formatTranscriptSrt (line 80) and formatTranscriptVtt (line 92) both call escapeSubtitle",
+    "src/store.js sanitizeSettingsPatch validates shortcuts before persistence (lines 216-221): calls sanitizeShortcutsPatch with DEFAULT_SHORTCUT_DEFS and process.platform; only sanitized.valid entries are kept",
+    "src/shortcut-validator.js blocks reserved shortcuts, detects duplicates, and rejects unknown IDs (lines 150-198): validateRemap rejects unknown IDs (line 151), invalid accelerators (line 154), reserved system shortcuts (lines 155-157), and findConflicts catches duplicates (lines 138-145); sanitizeShortcutsPatch rejects IDs not in defaultDefinitions (lines 182-186)",
+    "src/credential-vault.js getSecurityStatus returns clear warning when plaintext fallback active (lines 40-46): warning text is 'Credentials stored in plaintext. Enable a keyring for encryption.' — actionable and user-facing",
+    "src/system-audio-capture.js verifies 0o022 mask (line 32): 'if (stat.mode & 0o022) return { ready: false, reason: 'unsafe_helper' }' rejects group+world writable helper binaries",
+    "main.js writePrivateExport uses atomic temp file with 0o600 permissions (lines 522-531): writes to random temp path with mode 0o600, renames into place; error handler unlinks temp file to avoid leaks",
+    "renderer.js renderPersonalContext displays plaintext warning to user (lines 1292-1317, 1746): line 1314 renders 'Warning: safeStorage is unavailable; extracted text uses a local 0600 plaintext fallback.'; line 1746 toggles #s-storage-warning alert when backend is plaintext-fallback; index.html line 168-170 contains the alert with role=\"alert\"",
+    "No API keys/credentials logged anywhere in changed files: grep for console.log/warn/error with key/password/secret/token/credential returned zero matches in main.js, src/, renderer/; azure-realtime-probe.js explicitly redacts resolved.apiKey via redact() helper (lines 34-38, 109, 119, 124, 126)",
+    "IPC handlers re-check trust boundaries for permission-sensitive operations: all privileged handlers use handleTrusted/onTrusted wrappers calling assertTrustedIpc; session.setPermissionRequestHandler and setDisplayMediaRequestHandler independently verify isTrustedRenderer + isTrustedFileOrigin; display-capture intent flag (pendingDisplayCapture) gates display media access"
+  ]
+}

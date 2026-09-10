@@ -1,0 +1,131 @@
+{
+  "summary": "Comprehensive audit of volyx-lens Electron app identified 18 issues across race conditions, memory leaks, error handling, IPC security, preload safety, and logic bugs. Critical issues include a race condition in the capture state machine that can lose toggle requests, plaintext credential fallback on Linux, and unhandled promise rejections in the feature runner. High-priority fixes include bounding the sidecar request queue, hardening the IPC trust check, and adding defensive checks around display capture.",
+  "issues": [
+    {
+      "severity": "critical",
+      "file": "main.js",
+      "line": "1032-1040",
+      "description": "Race condition in setCapture(): desiredCapturing is set synchronously but reconcileCaptureState() runs asynchronously on the promise chain. Rapid toggle calls (e.g., double-keypress) can set desiredCapturing=true then false before reconciliation starts, causing the loop to exit on the wrong value. The while loop only checks state.capturing !== desiredCapturing once per iteration, so intermediate toggles are lost.",
+      "fix": "Use a mutex or queue desired values instead of a single boolean. Replace the boolean with a queue of desired states, or use a compare-and-swap loop that re-reads desiredCapturing at the start of each iteration."
+    },
+    {
+      "severity": "critical",
+      "file": "src/credential-vault.js",
+      "line": "14",
+      "description": "When safeStorage is unavailable (Linux without keyring), credentials are stored in plaintext JSON on disk (mode: 'plaintext-fallback'). This exposes API keys to any process that can read the user data directory. The UI does not warn users about this degraded security mode.",
+      "fix": "Add a prominent security warning in Settings when backend is 'plaintext-fallback'. Consider using a derived-key encryption (PBKDF2 from a user passphrase) as a minimum fallback, or refuse to store credentials without user consent."
+    },
+    {
+      "severity": "critical",
+      "file": "main.js",
+      "line": "1188-1382",
+      "description": "Unhandled promise rejection in runFeature(): the function catches errors internally but the timeout-based abort at line 1247-1251 can fire after the function returns, leaving an orphaned setTimeout that calls abort() on a stale AbortController. Additionally, if streamWithFallback throws after the timeout, the error is caught but the requestTimeout clearTimeout at line 1378 may already have fired.",
+      "fix": "Clear requestTimeout before calling controller.abort() in the timeout callback. Use a flag to track whether the feature has completed and ignore late aborts. Wrap the entire feature in a try/finally that clears all timers."
+    },
+    {
+      "severity": "high",
+      "file": "src/whisper-sidecar.js",
+      "line": "353-367",
+      "description": "Memory leak in requestQueue: queueYou and queueThem push promises to the queue but never reject them on stop(). If the sidecar is stopped while requests are pending, those promises never settle, leaking the closure and any captured audio buffers. The queue arrays are reset in unload() but the pending promises are abandoned.",
+      "fix": "In stop() and unload(), iterate through requestQueue.you and requestQueue.them and reject each pending promise with a 'sidecar_stopped' error. Clear the arrays after rejecting."
+    },
+    {
+      "severity": "high",
+      "file": "main.js",
+      "line": "1532-1551",
+      "description": "IPC trust check bypass risk: assertTrustedIpc validates frame.url === APP_ENTRY_URL, but a compromised renderer could navigate a sub-frame or use window.open to a data: URL that passes isTrustedFileOrigin. The check also does not verify that the sender is the main frame of the window (only that frame.url matches).",
+      "fix": "Add explicit check that event.sender === win.webContents and event.senderFrame === win.webContents.mainFrame. Validate that the URL is exactly the file:// origin, not just string-equals APP_ENTRY_URL. Reject any IPC from child frames."
+    },
+    {
+      "severity": "high",
+      "file": "main.js",
+      "line": "643-695",
+      "description": "Audio data loss on STT error: flushChannel clears buffers[channel] at line 656 before calling stt.transcribe. If transcribe throws or returns an error, the buffered audio is permanently lost. The comment says 'keep the buffered speech instead of discarding it' but the code does the opposite.",
+      "fix": "Only clear the buffer after successful transcription. On error, keep the chunks in buffers[channel] for retry. Implement a separate retry queue that preserves audio across flush attempts."
+    },
+    {
+      "severity": "high",
+      "file": "src/response-router.js",
+      "line": "24",
+      "description": "Logic bug in chooseInitialProvider: when neither primary nor fallback is compatible, it returns route.primary with usedFallback=false. The caller (runFeature) then checks llm.ready and shows an error, but the error message is generic. More importantly, if primary is not ready but fallback IS ready but incompatible (e.g., no vision), the user gets a confusing error.",
+      "fix": "Return a distinct 'no compatible provider' result with a clear reason. The caller should show a specific message like 'No vision-capable provider is configured' instead of the generic configuration error."
+    },
+    {
+      "severity": "high",
+      "file": "src/offline-stt.js",
+      "line": "133-148",
+      "description": "Memory leak in cancelOfflineTranscriptions: activeChildren Map entries are deleted in the child's 'close' handler, but if a child never emits 'close' (e.g., PID reuse or zombie), the entry leaks. The SIGTERM/SIGKILL escalation timer at line 139-142 also has no cleanup if the process exits before the timer fires.",
+      "fix": "Add a final fallback timer that force-removes any child from activeChildren after a maximum timeout (e.g., 10 seconds). Use WeakRef or a periodic cleanup sweep to detect stale entries."
+    },
+    {
+      "severity": "medium",
+      "file": "main.js",
+      "line": "123-126",
+      "description": "Potential null pointer in activeDisplayId: screen.getDisplayMatching(win.getBounds()) can return undefined if the window bounds are off-screen or invalid. The .id access on undefined will throw.",
+      "fix": "Add a null check: const display = screen.getDisplayMatching(win.getBounds()); return display ? display.id : screen.getPrimaryDisplay().id;"
+    },
+    {
+      "severity": "medium",
+      "file": "main.js",
+      "line": "856-860",
+      "description": "Race condition in routePcm: the function reads transcriptionMode and realtimeManager without synchronization. If stopTranscriptionPipeline sets realtimeManager=null between the check at line 857 and the append at line 857, the append call will throw 'Cannot read property append of null'.",
+      "fix": "Capture realtimeManager in a local variable before the check: const mgr = realtimeManager; if (transcriptionMode === 'realtime' && mgr && mgr.append(channel, pcm)) return;"
+    },
+    {
+      "severity": "medium",
+      "file": "src/system-audio-capture.js",
+      "line": "162-171",
+      "description": "Double-close race: the 'close' handler at line 162 calls finishStart if not settled, but the 'error' handler at line 157 also calls finishStart. If both fire (common on spawn failure), finishStart runs twice but the settled guard prevents double-resolve. However, the stderr accumulation at line 156 continues to grow even after protocolFailure() is called because the 'data' event listener is not removed.",
+      "fix": "Remove all listeners on the child after settlement. Use child.removeAllListeners() in finishStart, or use the 'once' event for stderr data."
+    },
+    {
+      "severity": "medium",
+      "file": "src/local-ocr.js",
+      "line": "137-161",
+      "description": "Queue starvation in pump(): if a single job's recognize() call never resolves (e.g., the helper hangs without emitting close), the pump loop stalls and all subsequent jobs wait indefinitely. There is no per-job timeout or queue health monitor.",
+      "fix": "Add a per-job timeout that rejects the promise and advances the queue. Monitor queue depth and reject new jobs if the queue exceeds a threshold."
+    },
+    {
+      "severity": "medium",
+      "file": "src/store.js",
+      "line": "26-37",
+      "description": "Prototype pollution protection is incomplete: deepMerge checks for __proto__/prototype/constructor only on the top-level keys of the patch. Nested objects (e.g., patch.audio.constructor) are not sanitized, allowing pollution of Object.prototype through deeply nested patches.",
+      "fix": "Apply the key blacklist check recursively at every level of deepMerge, not just the top level. Alternatively, use Object.freeze on DEFAULTS and reject any patch that attempts to modify prototype properties."
+    },
+    {
+      "severity": "medium",
+      "file": "src/llm.js",
+      "line": "159",
+      "description": "Azure client sets Authorization: null in defaultHeaders, which can cause the OpenAI SDK to send 'Authorization: null' as a literal string header. Some API gateways reject requests with malformed Authorization headers.",
+      "fix": "Use defaultHeaders: { 'api-key': resolved.apiKey } without the Authorization key, or set Authorization to undefined instead of null to prevent the SDK from sending it."
+    },
+    {
+      "severity": "medium",
+      "file": "src/realtime-stt.js",
+      "line": "95",
+      "description": "API key not cleared from memory: this.apiKey = '' is set after building the connection headers, but the headers object (returned by buildRealtimeConnection) still contains the key in memory. The key persists until the headers object is garbage collected.",
+      "fix": "Use a local variable for the key instead of storing it on this. Clear the local variable after use. Consider using a WeakMap or scoped variable to limit key exposure."
+    },
+    {
+      "severity": "low",
+      "file": "preload.js",
+      "line": "66-70",
+      "description": "Preload on() handler allows unlimited callback registration per channel. A compromised renderer could register hundreds of callbacks for 'llm:token' causing memory exhaustion and CPU thrash when tokens stream. The allowed list is good but the callback count is unbounded.",
+      "fix": "Limit the number of callbacks per channel (e.g., max 10). Return a cleanup function that removes the listener. Validate that cb is a function before registering."
+    },
+    {
+      "severity": "low",
+      "file": "src/mic-echo-coordinator.js",
+      "line": "34-42",
+      "description": "enqueueMicrophone returns false when the queue is full, silently dropping audio. The caller (acceptPcm in main.js) increments micDelayDropped but the audio is lost. Over time, this can cause transcript gaps during loud system audio periods.",
+      "fix": "Log a warning when dropping audio due to full queue. Consider dynamically expanding the queue or implementing priority dropping (drop oldest instead of newest)."
+    },
+    {
+      "severity": "low",
+      "file": "src/deepgram-realtime.js",
+      "line": "107-109",
+      "description": "Late connection promise not cancelled: connectionPromise.then at line 107 fires even after intentionalClose is set, calling _disposeConnection. If the connection promise resolves after close(), it could race with a new connection attempt.",
+      "fix": "Cancel or ignore late connection promises by checking this.intentionalClose before processing. Use an AbortController or generation counter to invalidate stale promises."
+    }
+  ]
+}

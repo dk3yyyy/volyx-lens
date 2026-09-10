@@ -1,0 +1,24 @@
+{
+  "lines": 70,
+  "branches": 70,
+  "functions": 60,
+  "statements": 70,
+  "reporter": ["text", "html", "lcov"],
+  "exclude": [
+    "node_modules/**",
+    "dist/**",
+    "native-bin/**",
+    "scripts/**",
+    "test/**",
+    "tests/**",
+    "**/*.test.js",
+    "**/*.spec.js"
+  ],
+  "include": [
+    "src/**/*.js",
+    "renderer/**/*.js",
+    "main.js",
+    "preload.js"
+  ],
+  "all": false
+}
