@@ -1,7 +1,7 @@
 {
   "name": "volyx-lens",
   "version": "0.5.1",
-  "description": "Private macOS context assistant for screen, voice, meetings, and coding workflows.",
+  "description": "Private desktop context assistant for screen, voice, meetings, and coding workflows on macOS, Windows, and Linux.",
   "author": "VolyxAI",
   "license": "Apache-2.0",
   "engines": {
