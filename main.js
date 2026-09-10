@@ -1057,8 +1057,12 @@ async function reconcileCaptureState() {
   // cause the loop to exit on a stale value.
   while (true) {
     const target = desiredCapturing;
+    if (state.capturing === target) break;
     await applyCaptureState(target);
-    if (state.capturing === desiredCapturing) break;
+    // If the applied state did not move capture toward the target and no
+    // new toggle arrived while applying, iterating again would spin
+    // without new input (for example when capture start fails).
+    if (state.capturing !== target && desiredCapturing === target) break;
   }
   return state.capturing;
 }

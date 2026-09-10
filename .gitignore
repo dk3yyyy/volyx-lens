@@ -1,9 +1,13 @@
 node_modules/
 dist/
 out/
+coverage/
 native/systemaudio
+native/tests/.build/
 native-bin/
+native/tests/.build/
 *.log
 .DS_Store
 cue-data.json
 .freebuff/
+coverage/

@@ -188,3 +188,53 @@ test('release tags must point to a commit reachable from main', () => {
   assert.match(releaseWorkflow, /git fetch origin main/);
   assert.match(releaseWorkflow, /git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main/);
 });
+
+test('every relative require in main.js resolves to a real module', () => {
+  const specs = [...main.matchAll(/require\('(\.[^']+)'\)/g)].map((match) => match[1]);
+  assert.ok(specs.length > 20, 'main.js requires the local modules the app depends on');
+  for (const spec of specs) {
+    const base = path.resolve(root, spec);
+    const candidates = [base, `${base}.js`, path.join(base, 'index.js')];
+    assert.ok(
+      candidates.some((candidate) => fs.existsSync(candidate)),
+      `main.js requires ${spec}, which does not exist in the repository`
+    );
+  }
+});
+
+test('every export format offered in the save dialog has a working writer', () => {
+  const transcriptTools = fs.readFileSync(path.join(root, 'src', 'transcript-tools.js'), 'utf8');
+  const meetingNotes = fs.readFileSync(path.join(root, 'src', 'meeting-notes.js'), 'utf8');
+  const offered = (fn) => {
+    const block = main.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{\n  const normalizedFormat = \\[([^\\]]+)\\]`));
+    return block ? [...block[1].matchAll(/'([a-z0-9]+)'/g)].map((match) => match[1]) : [];
+  };
+  const transcriptFormats = offered('exportTranscript');
+  const meetingFormats = offered('exportMeetingRecord');
+  assert.ok(transcriptFormats.length >= 3, 'exportTranscript declares its supported formats');
+  assert.ok(meetingFormats.length >= 3, 'exportMeetingRecord declares its supported formats');
+  // Both formatters implement their plain-text format as the default branch
+  // rather than an explicit `format === '...'` case.
+  const FALLBACK_FORMAT = { exportTranscript: 'txt', exportMeetingRecord: 'txt' };
+  for (const [fn, formats, source, label] of [
+    ['exportTranscript', transcriptFormats, transcriptTools, 'transcript'],
+    ['exportMeetingRecord', meetingFormats, meetingNotes, 'meeting'],
+  ]) {
+    for (const format of formats) {
+      if (format === FALLBACK_FORMAT[fn]) continue;
+      assert.match(source, new RegExp(`format === '${format}'`), `${label} writer missing for offered format ${format}`);
+    }
+  }
+});
+
+test('offline whisper bounds child lifetime without a global process sweeper', () => {
+  const offlineStt = fs.readFileSync(path.join(root, 'src', 'offline-stt.js'), 'utf8');
+  assert.match(offlineStt, /const MAX_CHILD_LIFETIME_MS = \(timeoutMs\) => Math\.max\(timeoutMs \* 2, 60000\);/);
+  assert.match(offlineStt, /maxLifetimeTimer = setTimeout\(\(\) => \{/);
+  assert.doesNotMatch(offlineStt, /setInterval\(/);
+});
+
+test('capture reconciliation cannot spin when applying makes no progress', () => {
+  assert.match(main, /while \(true\) \{\n    const target = desiredCapturing;\n    if \(state\.capturing === target\) break;\n    await applyCaptureState\(target\);/);
+  assert.match(main, /if \(state\.capturing !== target && desiredCapturing === target\) break;/);
+});
