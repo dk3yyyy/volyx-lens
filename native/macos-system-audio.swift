@@ -35,6 +35,32 @@ private final class StopLatch: @unchecked Sendable {
     }
 }
 
+// Assembles stdin lines for the stop command. FileHandle's readability handler
+// runs on a queue of its own, so the partial-line buffer lives behind a lock in
+// this Sendable box rather than in a captured mutable local (which the
+// concurrency checker rejects inside concurrently-executing code).
+private final class StopCommandReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private let delimiter = Data("\n".utf8)
+    private var pending = Data()
+
+    // Returns true once the accumulated input contains the stop command.
+    func ingest(_ data: Data) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        pending.append(data)
+        while let range = pending.range(of: delimiter) {
+            let lineData = Data(pending.prefix(range.lowerBound))
+            pending.removeSubrange(0...range.lowerBound)
+            if let line = String(data: lineData, encoding: .utf8),
+               line.contains("\"command\":\"stop\"") {
+                return true
+            }
+        }
+        return false
+    }
+}
+
 private enum EventCode: String {
     case unsupportedOS = "unsupported_os"
     case permissionDenied = "permission_denied"
@@ -148,6 +174,10 @@ private final class CaptureOutput: NSObject, SCStreamOutput, SCStreamDelegate {
             blockBufferOut: &blockBuffer
         )
         guard status == noErr else { return }
+        // `blockBufferOut` is declared CM_RETURNS_RETAINED_PARAMETER, so the Swift
+        // importer hands us an owned CMBlockBuffer that ARC releases when this scope
+        // ends. Releasing it by hand (CFRelease) is unavailable in Swift and would
+        // over-release the buffer, so no explicit release belongs here.
         let buffers = UnsafeMutableAudioBufferListPointer(list)
         guard let first = buffers.first, let dataPointer = first.mData else { return }
         let byteCount = Int(first.mDataByteSize)
@@ -209,11 +239,26 @@ private final class CaptureController {
             stream = captureStream
             try await captureStream.startCapture()
             writer.event(["event": "ready", "format": ["encoding": "s16le", "sampleRate": sampleRate, "channels": 1, "frameSamples": frameSamples]])
+            // This reader deliberately does not capture `self`: CaptureController is
+            // not Sendable, so any `self` capture inside this concurrently-executing
+            // block is a Swift 6 sendability violation (escalated to an error by
+            // -warnings-as-errors). Only Sendable state is shared with the handler: the
+            // StopLatch and the lock-guarded StopCommandReader.
             DispatchQueue.global().async {
-                while let line = readLine() {
-                    if line.contains("\"command\":\"stop\"") { stopLatch.signal(); break }
+                let fileHandle = FileHandle.standardInput
+                let stopCommand = StopCommandReader()
+                fileHandle.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if data.isEmpty {
+                        DispatchQueue.global().async {
+                            stopLatch.signal()
+                        }
+                        return
+                    }
+                    if stopCommand.ingest(data) {
+                        stopLatch.signal()
+                    }
                 }
-                stopLatch.signal()
             }
             await stopped.wait()
             stopping = true

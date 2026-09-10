@@ -1,5 +1,7 @@
 'use strict';
 
+const { escapeSubtitle } = require('./transcript-tools');
+
 function timeLabel(ts) {
   if (!Number.isFinite(ts)) return '';
   return new Date(ts).toISOString().slice(11, 19);
@@ -20,9 +22,29 @@ function reasonLabel(reason) {
 }
 
 function meetingFilename(format = 'md', now = Date.now()) {
-  const extension = ['txt', 'md', 'json'].includes(format) ? format : 'md';
+  const extension = ['txt', 'md', 'json', 'srt', 'vtt'].includes(format) ? format : 'md';
   const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
   return `volyx-lens-meeting-${stamp}.${extension}`;
+}
+
+function srtTimecode(ms) {
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const millis = Math.floor(ms % 1000);
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)},${pad(millis, 3)}`;
+}
+
+function vttTimecode(ms) {
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const millis = Math.floor(ms % 1000);
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(millis, 3)}`;
 }
 
 function meetingHeader(record = {}) {
@@ -46,6 +68,30 @@ function normalizeTurns(record = {}) {
     .filter((turn) => turn.text);
 }
 
+function formatMeetingRecordSrt(record = {}) {
+  const turns = normalizeTurns(record);
+  const blocks = [];
+  turns.forEach((turn, index) => {
+    const speaker = turn.channel === 'you' ? 'You' : 'Them';
+    const start = Number.isFinite(turn.ts) ? turn.ts : 0;
+    const end = start + 4000;
+    blocks.push(`${index + 1}\n${srtTimecode(start)} --> ${srtTimecode(end)}\n${speaker}: ${escapeSubtitle(turn.text)}`);
+  });
+  return blocks.join('\n\n') + (blocks.length ? '\n' : '');
+}
+
+function formatMeetingRecordVtt(record = {}) {
+  const turns = normalizeTurns(record);
+  const blocks = ['WEBVTT\n'];
+  turns.forEach((turn) => {
+    const speaker = turn.channel === 'you' ? 'You' : 'Them';
+    const start = Number.isFinite(turn.ts) ? turn.ts : 0;
+    const end = start + 4000;
+    blocks.push(`${vttTimecode(start)} --> ${vttTimecode(end)}\n${speaker}: ${escapeSubtitle(turn.text)}`);
+  });
+  return blocks.join('\n\n') + (turns.length ? '\n' : '');
+}
+
 function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()) {
   const turns = normalizeTurns(record);
   if (format === 'json') {
@@ -60,6 +106,8 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
       turns,
     }, null, 2) + '\n';
   }
+  if (format === 'srt') return formatMeetingRecordSrt(record);
+  if (format === 'vtt') return formatMeetingRecordVtt(record);
   const isMarkdown = format === 'md';
   const body = turns.map((turn) => {
     const speaker = turn.channel === 'you' ? 'You' : 'Them';
@@ -69,4 +117,4 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
   return `${meetingHeader(record)}\n\n${body}${body ? '\n' : ''}`;
 }
 
-module.exports = { meetingFilename, meetingHeader, formatMeetingRecord, reasonLabel, localStamp, normalizeTurns };
+module.exports = { meetingFilename, meetingHeader, formatMeetingRecord, formatMeetingRecordSrt, formatMeetingRecordVtt, reasonLabel, localStamp, normalizeTurns, srtTimecode, vttTimecode };

@@ -579,6 +579,13 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .shortcut-status-row.unavailable { border: 1px solid rgba(255,151,151,0.2); background: rgba(255,102,120,0.055); }
 .shortcut-status-row.unavailable span { color: #FFB5B5; }
 .shortcut-status-row[data-shortcut="quit"] button { color: #FFB5B5; border-color: rgba(255,102,120,0.25); }
+.shortcut-status-actions { display: flex; gap: 6px; align-items: center; }
+.shortcut-row-actions { display: flex; gap: 5px; align-items: center; }
+.shortcut-rebind-hint { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 6px; background: rgba(102,119,255,0.12); border: 1px solid rgba(102,119,255,0.35); color: #C7CEFF; font-size: 11px; }
+.shortcut-rebind-hint button { border: 1px solid rgba(102,119,255,0.5); background: rgba(102,119,255,0.15); color: #fff; border-radius: 5px; padding: 3px 7px; font: 600 10px var(--font); cursor: pointer; }
+.shortcut-rebind-hint button:hover { background: rgba(102,119,255,0.25); }
+.shortcut-rebind-active { border-color: rgba(102,119,255,0.6) !important; background: rgba(102,119,255,0.1) !important; }
+.shortcut-row-error { color: #FFB5B5; font-size: 10.5px; grid-column: 1 / -1; }
 .update-card { display: grid; gap: 12px; margin-top: 4px; padding: 14px; border: 1px solid rgba(255,255,255,0.11); border-radius: var(--r-8); background: rgba(255,255,255,0.025); }
 .update-version { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .update-version span { color: var(--tx-mut); font-size: 11px; }
