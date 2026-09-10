@@ -1,7 +1,9 @@
 node_modules/
 dist/
 out/
+coverage/
 native/systemaudio
+native/tests/.build/
 native-bin/
 *.log
 .DS_Store

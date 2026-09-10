@@ -175,13 +175,16 @@ final class SystemAudioTests: XCTestCase {
         XCTAssertEqual(value, Int16.max)
     }
 
-    func testFloatToPCM16_NegativeMax_ProducesMinValue() {
+    func testFloatToPCM16_NegativeFullScale_ProducesNegativeMax() {
         let samples: [Float] = [-1.0]
         let data = floatToPCM16(samples)
         XCTAssertEqual(data.count, 2)
 
         let value = data.withUnsafeBytes { $0.load(as: Int16.self) }
-        XCTAssertEqual(value, Int16.min)
+        // Samples are clamped to [-1.0, 1.0] and scaled by Int16.max (32767), matching
+        // native/macos-system-audio.swift and scripts/vad-accuracy-eval.js. The most
+        // negative value this conversion can produce is therefore -Int16.max.
+        XCTAssertEqual(value, -Int16.max)
     }
 
     func testFloatToPCM16_ClipsAboveOne() {
@@ -197,7 +200,7 @@ final class SystemAudioTests: XCTestCase {
         let data = floatToPCM16(samples)
 
         let value = data.withUnsafeBytes { $0.load(as: Int16.self) }
-        XCTAssertEqual(value, Int16.min) // clipped to min
+        XCTAssertEqual(value, -Int16.max) // clipped to the negative full-scale value
     }
 
     func testFloatToPCM16_HalfScaleInput() {
