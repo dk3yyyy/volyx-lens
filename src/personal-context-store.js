@@ -64,6 +64,7 @@ function createPersonalContextStore({ userDataPath, safeStorage }) {
 
   function summary() {
     load();
+    const securityStatus = vault.getSecurityStatus();
     const persistedValues = persistedRecord && persistedRecord.values && typeof persistedRecord.values === 'object' ? persistedRecord.values : {};
     return {
       documents: Object.fromEntries(KINDS.map((kind) => {
@@ -81,6 +82,7 @@ function createPersonalContextStore({ userDataPath, safeStorage }) {
       })),
       secure: vault.isSecure() && !locked,
       backend: locked ? 'locked-safeStorage' : vault.backend(),
+      warning: securityStatus.warning,
       locked,
     };
   }

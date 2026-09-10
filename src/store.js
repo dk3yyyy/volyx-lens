@@ -118,10 +118,12 @@ function publicSettings() {
   const result = clone(full);
   result.apiKeys = Object.fromEntries(KEY_NAMES.map((name) => [name, '']));
   const persistedNames = (persistedCredentialRecord && persistedCredentialRecord.values) || {};
+  const securityStatus = vault.getSecurityStatus();
   result.credentialStatus = {
     present: Object.fromEntries(KEY_NAMES.map((name) => [name, !!full.apiKeys[name] || !!persistedNames[name]])),
     secure: vault.isSecure() && !credentialRecordLocked,
     backend: credentialRecordLocked ? 'locked-safeStorage' : vault.backend(),
+    warning: securityStatus.warning,
   };
   // Read-only capability metadata so the renderer can derive UI (e.g. which
   // providers are text-only) instead of hardcoding provider lists.
