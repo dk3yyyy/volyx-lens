@@ -148,6 +148,7 @@ private final class CaptureOutput: NSObject, SCStreamOutput, SCStreamDelegate {
             blockBufferOut: &blockBuffer
         )
         guard status == noErr else { return }
+        defer { if let blockBuffer = blockBuffer { CFRelease(blockBuffer) } }
         let buffers = UnsafeMutableAudioBufferListPointer(list)
         guard let first = buffers.first, let dataPointer = first.mData else { return }
         let byteCount = Int(first.mDataByteSize)
@@ -209,11 +210,30 @@ private final class CaptureController {
             stream = captureStream
             try await captureStream.startCapture()
             writer.event(["event": "ready", "format": ["encoding": "s16le", "sampleRate": sampleRate, "channels": 1, "frameSamples": frameSamples]])
-            DispatchQueue.global().async {
-                while let line = readLine() {
-                    if line.contains("\"command\":\"stop\"") { stopLatch.signal(); break }
+            DispatchQueue.global().async { [weak self] in
+                guard self != nil else { return }
+                let fileHandle = FileHandle.standardInput
+                var pending = Data()
+                let delimiter = Data("\n".utf8)
+                fileHandle.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if data.isEmpty {
+                        DispatchQueue.global().async {
+                            stopLatch.signal()
+                        }
+                        return
+                    }
+                    pending.append(data)
+                    while let range = pending.range(of: delimiter) {
+                        let lineData = Data(pending.prefix(range.lowerBound))
+                        pending.removeSubrange(0...range.lowerBound)
+                        if let line = String(data: lineData, encoding: .utf8),
+                           line.contains("\"command\":\"stop\"") {
+                            stopLatch.signal()
+                            return
+                        }
+                    }
                 }
-                stopLatch.signal()
             }
             await stopped.wait()
             stopping = true
