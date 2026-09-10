@@ -15,17 +15,6 @@ let cancellationGeneration = 0;
 let offlineQueue = Promise.resolve();
 let whisperSession = null;
 
-const cleanupInterval = setInterval(() => {
-  const now = Date.now();
-  for (const [child, state] of activeChildren) {
-    if (state.addedAt && now - state.addedAt > (state.maxLifetime || 60000)) {
-      child.kill('SIGKILL');
-      activeChildren.delete(child);
-    }
-  }
-}, 5000);
-if (cleanupInterval.unref) cleanupInterval.unref();
-
 function offlineError(message, code) {
   const error = new Error(message);
   error.code = code;
@@ -86,7 +75,6 @@ async function runWhisperCli({ executable, model, wav, language = '', prompt = '
       });
       const childState = jobState;
       childState.timedOut = false;
-      childState.addedAt = Date.now();
       childState.maxLifetime = MAX_CHILD_LIFETIME_MS(timeoutMs);
       activeChildren.set(child, childState);
       let stderrBytes = 0;
