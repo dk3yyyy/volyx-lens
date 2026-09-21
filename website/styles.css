@@ -116,6 +116,9 @@ h1 em, h2 em { color: var(--violet); font-family: var(--serif); font-weight: 400
 .button-primary { background: var(--ink); color: #11101d; border-color: var(--ink); }
 .button-primary:hover { background: var(--cyan); border-color: var(--cyan); }
 .button-quiet:hover { background: rgba(255,255,255,.06); }
+.button-star { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1a1305; border-color: #f59e0b; }
+.button-star:hover { background: linear-gradient(135deg, #fcd34d, #fbbf24); border-color: #fcd34d; }
+.button-star svg { fill: currentColor; }
 .hero-note { color: var(--dim); font-family: var(--mono); font-size: .68rem; }
 
 .aperture-wrap { padding-top: 10px; }
@@ -260,6 +263,8 @@ html[data-theme='light'] .button-primary:hover {
   border-color: var(--violet-2);
   color: #fff;
 }
+html[data-theme='light'] .button-star { color: #1a1305; }
+html[data-theme='light'] .button-star:hover { color: #1a1305; }
 html[data-theme='light'] .button-quiet:hover {
   background: rgba(23, 20, 42, .06);
 }
