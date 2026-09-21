@@ -321,6 +321,126 @@ html[data-theme='light'] .story-state,
 html[data-theme='light'] .use-marker {
   color: var(--dim);
 }
+/* --- aperture card: dark gradient bg, light text --- */
+html[data-theme='light'] .aperture-card {
+  background: linear-gradient(150deg, rgba(255,255,255,.94), rgba(240,237,251,.96));
+  box-shadow: 0 40px 100px rgba(30,25,60,.12);
+}
+html[data-theme='light'] .aperture-card:before {
+  border-color: rgba(23,20,42,.06);
+}
+html[data-theme='light'] .aperture-topline {
+  color: var(--muted);
+}
+html[data-theme='light'] .lens-core {
+  background: #ffffff;
+  box-shadow: 0 0 80px rgba(112,87,232,.18);
+}
+html[data-theme='light'] .lens-core span {
+  color: var(--muted);
+}
+html[data-theme='light'] .orbit-label {
+  background: #ffffff;
+  border-color: var(--line);
+  color: var(--muted);
+}
+html[data-theme='light'] .orbit-label.is-active {
+  color: var(--cyan);
+  border-color: rgba(14,155,196,.36);
+  box-shadow: 0 0 25px rgba(14,155,196,.1);
+}
+html[data-theme='light'] .context-control {
+  background: rgba(23,20,42,.03);
+  border-color: var(--line);
+}
+html[data-theme='light'] .context-control:hover {
+  background: rgba(23,20,42,.06);
+}
+html[data-theme='light'] .context-control.is-active {
+  border-color: rgba(14,155,196,.35);
+  background: rgba(14,155,196,.07);
+}
+html[data-theme='light'] .context-control small {
+  color: var(--muted);
+}
+html[data-theme='light'] .aperture-route {
+  background: rgba(23,20,42,.04);
+  color: var(--muted);
+}
+html[data-theme='light'] .aperture-route strong {
+  color: var(--ink);
+}
+html[data-theme='light'] .orbit {
+  border-color: rgba(92,63,227,.12);
+}
+html[data-theme='light'] .orbit-middle {
+  border-color: rgba(92,63,227,.12);
+}
+html[data-theme='light'] .orbit-inner {
+  border-color: rgba(14,155,196,.18);
+}
+/* --- product window: dark bg, light text --- */
+html[data-theme='light'] .product-window {
+  border-color: var(--line);
+  background: #ffffff;
+  box-shadow: 0 38px 90px rgba(30,25,60,.1);
+}
+html[data-theme='light'] .window-chrome {
+  border-bottom-color: var(--line);
+  color: var(--muted);
+}
+html[data-theme='light'] .window-chrome span {
+  background: var(--line-strong);
+}
+html[data-theme='light'] .window-callout {
+  background: #ffffff;
+  color: var(--ink);
+  box-shadow: 0 12px 40px rgba(30,25,60,.1);
+}
+/* --- route map: dark text --- */
+html[data-theme='light'] .route-node small,
+html[data-theme='light'] .node-kicker {
+  color: var(--muted);
+}
+html[data-theme='light'] .source-chips span {
+  background: #eeebf7;
+  color: var(--ink);
+}
+html[data-theme='light'] .no-relay {
+  color: var(--muted);
+}
+/* --- provider list: dark glyph bg --- */
+html[data-theme='light'] .provider-glyph {
+  background: #eeebf7;
+  color: var(--violet-2);
+}
+/* --- download grid cards --- */
+html[data-theme='light'] .dl-card {
+  background: rgba(255,255,255,.6);
+  border-color: var(--line);
+}
+html[data-theme='light'] .dl-card:hover {
+  border-color: var(--ink);
+}
+html[data-theme='light'] .dl-card span {
+  color: var(--muted);
+}
+html[data-theme='light'] .dl-card .dl-tag {
+  background: rgba(255,255,255,.9);
+  color: var(--ink);
+}
+html[data-theme='light'] .dl-card.is-recommended {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink) inset;
+}
+/* --- release section text on purple bg --- */
+html[data-theme='light'] .release-section {
+  background: #7c63ef;
+  color: #0e0c18;
+}
+html[data-theme='light'] .text-link {
+  border-bottom-color: rgba(14,12,24,.4);
+}
 @media (max-width: 760px) {
   html[data-theme='light'] .site-nav {
     background: var(--panel);
