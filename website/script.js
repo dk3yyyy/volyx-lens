@@ -121,9 +121,17 @@ function currentTheme() {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
-applyTheme(currentTheme());
-
+// The theme is already set by the inline script in <head> to avoid a flash.
+// Sync the toggle button state with it here, since the headless script can't
+// see the button.
+const initialTheme = currentTheme();
+document.documentElement.setAttribute('data-theme', initialTheme === 'light' ? 'light' : 'dark');
+if (themeColorMeta) {
+  themeColorMeta.setAttribute('content', initialTheme === 'light' ? '#f5f2ff' : '#0d0b1e');
+}
 if (themeToggle) {
+  themeToggle.setAttribute('aria-label', initialTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
+  themeToggle.setAttribute('aria-pressed', String(initialTheme === 'light'));
   themeToggle.addEventListener('click', () => {
     const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
     applyTheme(next, { persist: true });
