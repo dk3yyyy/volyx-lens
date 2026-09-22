@@ -221,6 +221,13 @@ h2 { margin-bottom: 1.5rem; font-size: clamp(2.6rem, 5.4vw, 5.5rem); line-height
 @media (max-width: 390px) { .orbit-outer{width:250px;height:250px}.orbit-middle{width:190px;height:190px}.beam{display:none}.orbit-label{font-size:.5rem}.label-screen{left:0}.label-you{right:0}.label-them{left:0}.hero-facts div{align-items:flex-start;flex-direction:column;gap:.1rem}.footer-links{grid-template-columns:1fr} }
 @media (prefers-reduced-motion: reduce) { html{scroll-behavior:auto}*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}.marquee{overflow:hidden}.marquee-track{width:auto;flex-wrap:wrap;justify-content:center;padding:.75rem var(--pad);animation:none}.marquee-track [aria-hidden=true]{display:none} }
 
+/* =========================================================================
+   LIGHT MODE — designed, not inverted.
+   The dark mode is the reference. The light mode here has its own depth:
+   warm off-white surfaces, a tinted card with real inner shadow, and accent
+   colors that read on a light background instead of washing out.
+   ========================================================================= */
+
 html[data-theme='light'] {
   background: var(--night);
 }
@@ -244,13 +251,13 @@ html[data-theme='light'] .site-nav a:hover {
 }
 html[data-theme='light'] .hero {
   background:
-    linear-gradient(90deg, rgba(23, 20, 42, .04) 1px, transparent 1px) 0 0/76px 76px,
-    linear-gradient(rgba(23, 20, 42, .04) 1px, transparent 1px) 0 0/76px 76px,
-    radial-gradient(circle at 70% 34%, rgba(92, 63, 227, .1), transparent 32%);
+    linear-gradient(90deg, rgba(23, 20, 42, .06) 1px, transparent 1px) 0 0/76px 76px,
+    linear-gradient(rgba(23, 20, 42, .06) 1px, transparent 1px) 0 0/76px 76px,
+    radial-gradient(circle at 70% 34%, rgba(92, 63, 227, .14), transparent 32%);
 }
 html[data-theme='light'] .hero-glow {
-  border-color: rgba(92, 63, 227, .14);
-  box-shadow: 0 0 140px rgba(92, 63, 227, .12), inset 0 0 120px rgba(92, 63, 227, .06);
+  border-color: rgba(92, 63, 227, .18);
+  box-shadow: 0 0 140px rgba(92, 63, 227, .16), inset 0 0 120px rgba(92, 63, 227, .08);
 }
 html[data-theme='light'] .hero-lede {
   color: var(--muted);
@@ -268,7 +275,7 @@ html[data-theme='light'] .button-primary:hover {
 html[data-theme='light'] .button-star { color: #1a1305; }
 html[data-theme='light'] .button-star:hover { color: #1a1305; }
 html[data-theme='light'] .button-quiet:hover {
-  background: rgba(23, 20, 42, .06);
+  background: rgba(23, 20, 42, .08);
 }
 html[data-theme='light'] .marquee {
   background: var(--night-2);
@@ -277,7 +284,7 @@ html[data-theme='light'] .marquee-track {
   color: var(--muted);
 }
 html[data-theme='light'] .story-row:hover {
-  background: rgba(23, 20, 42, .03);
+  background: rgba(23, 20, 42, .04);
 }
 html[data-theme='light'] .story-copy p,
 html[data-theme='light'] .use-item p {
@@ -287,7 +294,7 @@ html[data-theme='light'] .use-input {
   color: var(--muted);
 }
 html[data-theme='light'] .product-window-section {
-  background: radial-gradient(circle at 80% 50%, rgba(92, 63, 227, .1), transparent 34%);
+  background: radial-gradient(circle at 80% 50%, rgba(92, 63, 227, .14), transparent 34%);
 }
 html[data-theme='light'] .release-ribbon {
   background: var(--lime);
@@ -323,109 +330,130 @@ html[data-theme='light'] .story-state,
 html[data-theme='light'] .use-marker {
   color: var(--dim);
 }
-/* --- aperture card: dark gradient bg, light text --- */
+
+/* --- Aperture card: a real surface, not flat white.
+   Off-white with an inner shadow so it reads as a device, and a violet
+   glow around the lens so the eye icon anchors the composition. --- */
 html[data-theme='light'] .aperture-card {
-  background: linear-gradient(150deg, rgba(255,255,255,.94), rgba(240,237,251,.96));
-  box-shadow: 0 40px 100px rgba(30,25,60,.12);
+  background: linear-gradient(150deg, #fbfaff 0%, #ece8fa 60%, #e4dffa 100%);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,.6) inset,
+    0 -1px 0 rgba(23,20,42,.04) inset,
+    0 40px 100px rgba(30,25,60,.18),
+    0 1px 0 rgba(23,20,42,.06);
 }
 html[data-theme='light'] .aperture-card:before {
-  border-color: rgba(23,20,42,.06);
+  border-color: rgba(23,20,42,.08);
 }
 html[data-theme='light'] .aperture-topline {
-  color: var(--muted);
+  color: #5d5870;
 }
 html[data-theme='light'] .lens-core {
-  background: #ffffff;
-  box-shadow: 0 0 80px rgba(112,87,232,.18);
+  background: linear-gradient(150deg, #ffffff, #f0edfb);
+  box-shadow:
+    0 0 0 1px rgba(92,63,227,.08),
+    0 0 80px rgba(112,87,232,.22),
+    0 8px 30px rgba(30,25,60,.08);
 }
 html[data-theme='light'] .lens-core span {
-  color: var(--muted);
+  color: #5d5870;
 }
 html[data-theme='light'] .orbit-label {
-  background: #ffffff;
-  border-color: var(--line);
-  color: var(--muted);
+  background: rgba(255,255,255,.85);
+  border-color: rgba(23,20,42,.18);
+  color: #5d5870;
+  box-shadow: 0 2px 8px rgba(30,25,60,.06);
 }
 html[data-theme='light'] .orbit-label.is-active {
-  color: var(--cyan);
-  border-color: rgba(14,155,196,.36);
-  box-shadow: 0 0 25px rgba(14,155,196,.1);
+  background: #eef6ff;
+  color: #0e9bc4;
+  border-color: rgba(14,155,196,.5);
+  box-shadow: 0 0 25px rgba(14,155,196,.15);
 }
 html[data-theme='light'] .context-control {
-  background: rgba(23,20,42,.03);
-  border-color: var(--line);
+  background: rgba(255,255,255,.7);
+  border-color: rgba(23,20,42,.12);
 }
 html[data-theme='light'] .context-control:hover {
-  background: rgba(23,20,42,.06);
+  background: rgba(255,255,255,.95);
+  border-color: rgba(23,20,42,.18);
 }
 html[data-theme='light'] .context-control.is-active {
-  border-color: rgba(14,155,196,.35);
-  background: rgba(14,155,196,.07);
+  border-color: rgba(14,155,196,.45);
+  background: rgba(14,155,196,.08);
 }
 html[data-theme='light'] .context-control small {
-  color: var(--muted);
+  color: #6b6580;
 }
 html[data-theme='light'] .aperture-route {
   background: rgba(23,20,42,.04);
-  color: var(--muted);
+  color: #5d5870;
+  border: 1px solid rgba(23,20,42,.06);
 }
 html[data-theme='light'] .aperture-route strong {
   color: var(--ink);
 }
 html[data-theme='light'] .orbit {
-  border-color: rgba(92,63,227,.12);
+  border-color: rgba(92,63,227,.14);
 }
 html[data-theme='light'] .orbit-middle {
-  border-color: rgba(92,63,227,.12);
+  border-color: rgba(92,63,227,.14);
 }
 html[data-theme='light'] .orbit-inner {
-  border-color: rgba(14,155,196,.18);
+  border-color: rgba(14,155,196,.22);
 }
-/* --- product window: dark bg, light text --- */
+
+/* --- Product window: device surface. --- */
 html[data-theme='light'] .product-window {
-  border-color: var(--line);
-  background: #ffffff;
-  box-shadow: 0 38px 90px rgba(30,25,60,.1);
+  border-color: rgba(23,20,42,.18);
+  background: #fbfaff;
+  box-shadow:
+    0 2px 0 rgba(255,255,255,.8) inset,
+    0 38px 90px rgba(30,25,60,.14);
 }
 html[data-theme='light'] .window-chrome {
-  border-bottom-color: var(--line);
-  color: var(--muted);
+  border-bottom-color: rgba(23,20,42,.12);
+  color: #5d5870;
 }
 html[data-theme='light'] .window-chrome span {
-  background: var(--line-strong);
+  background: rgba(23,20,42,.2);
 }
 html[data-theme='light'] .window-callout {
   background: #ffffff;
   color: var(--ink);
-  box-shadow: 0 12px 40px rgba(30,25,60,.1);
+  box-shadow: 0 12px 40px rgba(30,25,60,.12);
 }
-/* --- route map: dark text --- */
+
+/* --- Route map: surface-level cards on light bg. --- */
 html[data-theme='light'] .route-node small,
 html[data-theme='light'] .node-kicker {
-  color: var(--muted);
+  color: #6b6580;
 }
 html[data-theme='light'] .source-chips span {
-  background: #eeebf7;
+  background: #f0edfb;
   color: var(--ink);
 }
 html[data-theme='light'] .no-relay {
-  color: var(--muted);
+  color: #7a7590;
 }
-/* --- provider list: dark glyph bg --- */
+
+/* --- Provider list: tint the glyph backgrounds. --- */
 html[data-theme='light'] .provider-glyph {
-  background: #eeebf7;
+  background: #eee8fa;
   color: var(--violet-2);
 }
-/* --- download grid cards --- */
+
+/* --- Download cards: frosted surface. --- */
 html[data-theme='light'] .dl-card {
-  background: rgba(255,255,255,.6);
-  border-color: var(--line);
+  background: rgba(255,255,255,.7);
+  border-color: rgba(23,20,42,.12);
+  box-shadow: 0 1px 0 rgba(255,255,255,.7) inset;
 }
 html[data-theme='light'] .dl-card:hover {
-  border-color: var(--ink);
+  border-color: rgba(23,20,42,.3);
 }
 html[data-theme='light'] .dl-card span {
-  color: var(--muted);
+  color: #6b6580;
 }
 html[data-theme='light'] .dl-card .dl-tag {
   background: rgba(255,255,255,.9);
@@ -435,7 +463,9 @@ html[data-theme='light'] .dl-card.is-recommended {
   border-color: var(--ink);
   box-shadow: 0 0 0 1px var(--ink) inset;
 }
-/* --- release section text on purple bg --- */
+
+/* --- Release section: purple is theme-agnostic, but the link underline
+   needs to read on purple. --- */
 html[data-theme='light'] .release-section {
   background: #7c63ef;
   color: #0e0c18;
