@@ -97,7 +97,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .nav-toggle { display: none; width: 46px; min-height: 44px; border: 1px solid var(--line); border-radius: 50%; background: transparent; align-items: center; justify-content: center; flex-direction: column; gap: 6px; }
 .nav-toggle span { width: 18px; height: 1px; background: currentColor; transition: transform .2s ease; }
 
-.hero { position: relative; min-height: 980px; padding: 205px var(--pad) 0; display: grid; grid-template-columns: minmax(0, .88fr) minmax(420px, 1.12fr); column-gap: clamp(3rem, 7vw, 8rem); align-items: start; overflow: hidden; background:
+.hero { position: relative; min-height: 980px; padding: clamp(136px, 10vw, 152px) var(--pad) 0; display: grid; grid-template-columns: minmax(0, .88fr) minmax(420px, 1.12fr); column-gap: clamp(3rem, 7vw, 8rem); align-items: start; overflow: hidden; background:
   linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px) 0 0/76px 76px,
   linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px) 0 0/76px 76px,
   radial-gradient(circle at 70% 34%, rgba(90,70,220,.18), transparent 32%);
@@ -208,7 +208,7 @@ h2 { margin-bottom: 1.5rem; font-size: clamp(2.6rem, 5.4vw, 5.5rem); line-height
 @keyframes route { 0% { transform:translateX(-100%) } 100% { transform:translateX(350%) } }
 
 @media (max-width: 1050px) {
-  .hero { grid-template-columns: 1fr; padding-top: 180px; }
+  .hero { grid-template-columns: 1fr; padding-top: 125px; }
   .hero-copy { max-width: 780px; }.aperture-wrap{margin-top:4rem}.hero-facts{margin-top:5rem}
   .privacy-section,.product-window-section,.provider-section{grid-template-columns:1fr}.route-map{margin:2rem auto 0;width:100%;max-width:760px}.product-window{max-width:780px}.provider-list{max-width:800px;width:100%}
   .section-intro{grid-template-columns:1fr}.section-intro .eyebrow{margin-bottom:1rem}.faq-section{grid-template-columns:1fr}
