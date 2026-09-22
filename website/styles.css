@@ -365,10 +365,10 @@ html[data-theme='light'] .orbit-label {
   box-shadow: 0 2px 8px rgba(30,25,60,.06);
 }
 html[data-theme='light'] .orbit-label.is-active {
-  background: #eef6ff;
-  color: #0e9bc4;
-  border-color: rgba(14,155,196,.5);
-  box-shadow: 0 0 25px rgba(14,155,196,.15);
+  background: #dbeafe;
+  color: #0a7a9c;
+  border-color: rgba(14,155,196,.6);
+  box-shadow: 0 0 25px rgba(14,155,196,.2);
 }
 html[data-theme='light'] .context-control {
   background: rgba(255,255,255,.7);
@@ -386,9 +386,9 @@ html[data-theme='light'] .context-control small {
   color: #6b6580;
 }
 html[data-theme='light'] .aperture-route {
-  background: rgba(23,20,42,.04);
-  color: #5d5870;
-  border: 1px solid rgba(23,20,42,.06);
+  background: rgba(23,20,42,.06);
+  color: #3d3850;
+  border: 1px solid rgba(23,20,42,.08);
 }
 html[data-theme='light'] .aperture-route strong {
   color: var(--ink);
@@ -441,6 +441,24 @@ html[data-theme='light'] .no-relay {
 html[data-theme='light'] .provider-glyph {
   background: #eee8fa;
   color: var(--violet-2);
+}
+
+/* --- Provider section: switch to light bg in light mode so the 11 provider
+   names and the section intro text remain readable. The dark-mode bg is
+   intentional and stays unchanged. --- */
+html[data-theme='light'] .provider-section {
+  background: #f0edfb;
+}
+html[data-theme='light'] .provider-section .eyebrow {
+  color: var(--violet-2);
+}
+html[data-theme='light'] .provider-list {
+  border-top-color: rgba(23, 20, 42, .12);
+  border-left-color: rgba(23, 20, 42, .12);
+}
+html[data-theme='light'] .provider-list li {
+  border-right-color: rgba(23, 20, 42, .12);
+  border-bottom-color: rgba(23, 20, 42, .12);
 }
 
 /* --- Download cards: frosted surface. --- */
