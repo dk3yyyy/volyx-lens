@@ -34,7 +34,6 @@ const { detectQuestion, estimateQuestionConfidence } = require('./src/question-d
 const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap, transcriptText } = require('./src/meeting-recap');
 const { meetingFilename, formatMeetingRecord } = require('./src/meeting-notes');
-const { buildNotesPrompt, parseNotes } = require('./src/notes');
 const { buildSttVocab } = require('./src/transcript-hygiene');
 const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
@@ -1459,7 +1458,7 @@ async function recapMeetingRecord(id, options = {}) {
     if (plan.requiresChunking) {
       built = await summarizeMeetingChunks({ plan, llm, fallback: selection.fallback, isCurrent, signal: controller.signal });
     } else {
-      built = buildNotesPrompt(record.turns);
+      built = `Full transcript:\n${transcriptText(record.turns)}\n\nRecap this.`;
     }
     if (!built || !isCurrent()) return { ok: false, code: 'canceled' };
     const fullAnswer = await streamWithFallback({
@@ -1482,7 +1481,7 @@ async function recapMeetingRecord(id, options = {}) {
       },
     });
     if (!isCurrent()) return { ok: false, code: 'canceled' };
-    return { ok: true, id: record.id, text: fullAnswer, notes: parseNotes(fullAnswer) };
+    return { ok: true, id: record.id, text: fullAnswer };
   } finally {
     if (historyRecapController === controller) historyRecapController = null;
   }
