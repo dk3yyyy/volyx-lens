@@ -99,10 +99,10 @@ function resetSidecar() {
   starting = null;
 }
 
-async function transcribeOpenAI(apiKey, wav, model, prompt = '') {
+async function transcribeOpenAI(apiKey, wav, model, prompt = '', baseURL) {
   const OpenAI = require('openai');
   const toFile = OpenAI.toFile || require('openai/uploads').toFile;
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
   const file = await toFile(wav, 'audio.wav', { type: 'audio/wav' });
   const body = { file, model: model || 'whisper-1' };
   if (prompt) body.prompt = prompt;
@@ -154,6 +154,7 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   const allowCloud = !transcription.offlineEnabled || transcription.offlineCloudFallback === true;
   if (allowCloud && keys.openai) chain.push({ p: 'openai', fn: (wav) => openAITranscribe(keys.openai, wav, fallbackModel, prompt) });
   if (allowCloud && keys.gemini) chain.push({ p: 'gemini', fn: (wav) => geminiTranscribe(keys.gemini, wav, geminiFallbackModel) });
+  if (allowCloud && keys.groq) chain.push({ p: 'groq', fn: (wav) => openAITranscribe(keys.groq, wav, STT_MODELS.groq, prompt, 'https://api.groq.com/openai/v1') });
 
   // Determine offline error: show if offlineEnabled is on but no path is available.
   // Paths available: sidecar (opt-in via env), local-whisper (in-app model picker),
