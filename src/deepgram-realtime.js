@@ -77,6 +77,7 @@ class DeepgramRealtimeChannel {
     this.streamStartedAt = 0;
     this.audioSentMs = 0;
     this.completed = new Set();
+    this.committed = '';
     this.intentionalClose = false;
     this.failureReported = false;
   }
@@ -244,6 +245,7 @@ class DeepgramRealtimeChannel {
     this.pendingAudio = [];
     this.pendingAudioBytes = 0;
     this.completed.clear();
+    this.committed = '';
   }
 
   _disposeConnection(connection, sendCloseStream) {
@@ -256,7 +258,12 @@ class DeepgramRealtimeChannel {
   }
 
   _handleMessage(event) {
-    if (!event || event.type !== 'Results') return;
+    if (!event) return;
+    if (event.type === 'UtteranceEnd') {
+      this._flushCommitted();
+      return;
+    }
+    if (event.type !== 'Results') return;
     const alternative = event.channel && Array.isArray(event.channel.alternatives)
       ? event.channel.alternatives[0]
       : null;
@@ -266,22 +273,28 @@ class DeepgramRealtimeChannel {
     const durationMs = Math.max(0, Math.round((Number(event.duration) || 0) * 1000));
     const itemId = `deepgram-${this.channel}-${startMs}`;
     const latencyMs = Math.max(0, Math.round(this.audioSentMs - startMs - durationMs));
+    if (event.speech_final === true) {
+      const full = ((this.committed || '') + ' ' + text).trim();
+      this.committed = '';
+      if (full) {
+        this.onLatency({ channel: this.channel, kind: 'final', latencyMs });
+        this.onFinal({ channel: this.channel, itemId, text: full, ts: Date.now() });
+      }
+      return;
+    }
     if (event.is_final === true) {
-      const completionId = `${itemId}-${durationMs}`;
-      if (this.completed.has(completionId)) return;
-      this.completed.add(completionId);
-      if (this.completed.size > 500) this.completed.delete(this.completed.values().next().value);
-      this.onLatency({ channel: this.channel, kind: 'final', latencyMs });
-      this.onFinal({
-        channel: this.channel,
-        itemId: completionId,
-        text,
-        ts: Date.now(),
-      });
+      this.committed = ((this.committed || '') + ' ' + text).trim();
+      this.onPartial({ channel: this.channel, itemId, text: this.committed });
       return;
     }
     this.onLatency({ channel: this.channel, kind: 'first_partial', latencyMs });
-    this.onPartial({ channel: this.channel, itemId, text });
+    this.onPartial({ channel: this.channel, itemId, text: ((this.committed || '') + ' ' + text).trim() });
+  }
+
+  _flushCommitted() {
+    const full = (this.committed || '').trim();
+    this.committed = '';
+    if (full && !this.intentionalClose) this.onFinal({ channel: this.channel, itemId: `deepgram-${this.channel}-flush`, text: full, ts: Date.now() });
   }
 
   _startKeepAlive() {
