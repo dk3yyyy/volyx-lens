@@ -64,6 +64,7 @@ const STT_MODELS = Object.freeze({
   deepgram: 'nova-3',
   openaiFallback: 'gpt-4o-mini-transcribe',
   geminiFallback: 'gemini-3.5-flash',
+  groq: 'whisper-large-v3-turbo',
 });
 
 // Azure AI Speech is configured with a region (its Speech resource has no
