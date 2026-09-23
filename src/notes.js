@@ -33,9 +33,6 @@ const HEADERS = [
   ['followUp', /^follow[- ]up\s*:?\s*$/i],
 ];
 
-// Parse the model's notes blob into a structured record. Forgiving: filters
-// bullets, collapses duplicates, and falls back to dumping unrecognized text
-// into the summary if the model ignored the requested layout.
 function parseNotes(text) {
   const out = { summary: '', keyPoints: [], decisions: [], actionItems: [], followUp: [] };
   if (!text || !text.trim()) return out;
@@ -49,7 +46,7 @@ function parseNotes(text) {
     const matched = HEADERS.find(([, re]) => re.test(line));
     if (matched) { cur = matched[0]; continue; }
     if (!cur) continue;
-    if (!line) { cur = null; continue; } // blank line ends a section
+    if (!line) { cur = null; continue; }
     buckets[cur].push(line);
   }
 
@@ -59,11 +56,14 @@ function parseNotes(text) {
       continue;
     }
     out[k] = arr
-      .map((l) => l.replace(/^[-*•]\s*/, '').replace(/^\[[\s x\]\]\s*/, '').replace(/^[0-9]+[.)]\s*/, '').trim())
+      .map((l) => l
+        .replace(/^[-*•]\s*/, '')
+        .replace(/^\[[^\]]*\]\s*/, '')
+        .replace(/^[0-9]+[.)]\s*/, '')
+        .trim())
       .filter(Boolean);
   }
 
-  // If the model didn't use any heading and nothing was captured, fall back.
   const anything = Object.values(buckets).some((a) => a.length);
   if (!anything && text.trim()) out.summary = text.trim();
 
