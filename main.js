@@ -35,6 +35,7 @@ const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap, transcriptText } = require('./src/meeting-recap');
 const { meetingFilename, formatMeetingRecord } = require('./src/meeting-notes');
 const { buildSttVocab } = require('./src/transcript-hygiene');
+const { buildNotesPrompt, parseNotes } = require('./src/notes');
 const { createTaskContext } = require('./src/task-context');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
 const { createLocalOcr } = require('./src/local-ocr');
@@ -1481,7 +1482,7 @@ async function recapMeetingRecord(id, options = {}) {
       },
     });
     if (!isCurrent()) return { ok: false, code: 'canceled' };
-    return { ok: true, id: record.id, text: fullAnswer };
+    return { ok: true, id: record.id, text: fullAnswer, notes: parseNotes(fullAnswer) };
   } finally {
     if (historyRecapController === controller) historyRecapController = null;
   }
