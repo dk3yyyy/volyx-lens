@@ -436,50 +436,7 @@
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting history could not be cleared.'); }
   });
 
-  
-function renderStructuredNotes(notes, rawText) {
-  if (!notes) {
-    // Fallback to raw text if notes weren't parsed
-    const pre = document.createElement('pre');
-    pre.className = 'notes-raw';
-    pre.textContent = rawText || '';
-    const wrap = document.createElement('div');
-    wrap.appendChild(pre);
-    return wrap.innerHTML;
-  }
-
-  const sections = [
-    { key: 'summary', title: 'Meeting Summary', icon: '📋' },
-    { key: 'keyPoints', title: 'Key Points', icon: '💡' },
-    { key: 'decisions', title: 'Decisions', icon: '✅' },
-    { key: 'actionItems', title: 'Action Items', icon: '🎯' },
-    { key: 'followUp', title: 'Follow-Up', icon: '🔄' }
-  ];
-
-  let html = '<div class="notes-structured">';
-  for (const section of sections) {
-    const value = notes[section.key];
-    const items = Array.isArray(value) ? value : (value ? [value] : []);
-    if (items.length === 0) continue;
-
-    html += '<section class="notes-section">';
-    html += '<h4>' + section.icon + ' ' + section.title + '</h4>';
-    if (section.key === 'summary') {
-      html += '<p>' + items[0] + '</p>';
-    } else {
-      html += '<ul>';
-      for (const item of items) {
-        html += '<li>' + item + '</li>';
-      }
-      html += '</ul>';
-    }
-    html += '</section>';
-  }
-  html += '</div>';
-  return html;
-}
-
-$('#meeting-notes-generate').addEventListener('click', async () => {
+  $('#meeting-notes-generate').addEventListener('click', async () => {
     if (!meetingDetail) return;
     const button = $('#meeting-notes-generate');
     const original = button.textContent;
@@ -494,7 +451,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         const result = await volyxLens.historyRecap(meetingDetail.id, confirmed);
         if (result && result.ok) {
           meetingNotesText = result.text || '';
-          out.innerHTML = renderStructuredNotes(result.notes || null, meetingNotesText);
+          out.textContent = meetingNotesText;
           out.classList.remove('hidden');
           showStatus('Meeting notes ready.');
           break;
