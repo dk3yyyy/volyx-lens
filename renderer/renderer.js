@@ -314,6 +314,12 @@
         badge.textContent = 'Meeting';
         when.append(' ', badge);
       }
+      if (record.hasNotes) {
+        const notesBadge = document.createElement('span');
+        notesBadge.className = 'history-notes-badge';
+        notesBadge.textContent = 'Notes';
+        when.append(' ', notesBadge);
+      }
       const meta = document.createElement('span');
       meta.textContent = `${record.turnCount} ${record.turnCount === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(record.reason)}${record.preview ? ' · ' + record.preview : ''}`;
       open.append(when, meta);
@@ -389,6 +395,11 @@
       out.classList.add('hidden');
       out.textContent = '';
       renderMeetingTurns();
+      if (record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length)) {
+        const out = $('#meeting-notes-output');
+        out.innerHTML = renderStructuredNotes(record.notes, '');
+        out.classList.remove('hidden');
+      }
       $('#meeting-history-list').classList.add('hidden');
       $('#meeting-history-detail').classList.remove('hidden');
     } catch (error) { showStatus(error && error.message ? error.message : 'That meeting could not be opened.'); }

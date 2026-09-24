@@ -1482,7 +1482,9 @@ async function recapMeetingRecord(id, options = {}) {
       },
     });
     if (!isCurrent()) return { ok: false, code: 'canceled' };
-    return { ok: true, id: record.id, text: fullAnswer, notes: parseNotes(fullAnswer) };
+    const notes = parseNotes(fullAnswer);
+    meetingStore.updateNotes(record.id, notes);
+    return { ok: true, id: record.id, text: fullAnswer, notes };
   } finally {
     if (historyRecapController === controller) historyRecapController = null;
   }
