@@ -844,3 +844,23 @@ body:has(#onboard-scrim:not(.hidden)) #app {
   #panel, #onboard, .ob-orbit::before, .user-bubble, .ai-text .w { animation: none !important; opacity: 1 !important; transform: none !important; }
   #live-dot { animation: none !important; }
 }
+
+
+/* Notes badge in meeting list */
+.history-notes-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0e9bc4;
+  background: rgba(14, 155, 196, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+html[data-theme='light'] .history-notes-badge {
+  color: #0a7a9c;
+  background: rgba(14, 155, 196, 0.1);
+}

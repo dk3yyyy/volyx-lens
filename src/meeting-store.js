@@ -113,6 +113,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       endedAt: Number.isFinite(endedAt) ? endedAt : now(),
       turnCount: normalized.length,
       turns: normalized,
+      notes: null,
     };
     const target = recordPath(id);
     const tmp = `${target}.tmp`;
@@ -149,6 +150,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
           endedAt: Number.isFinite(record.endedAt) ? record.endedAt : null,
           turnCount: Array.isArray(record.turns) ? record.turns.length : 0,
           preview: previewText(record.turns),
+          hasNotes: !!record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length),
         });
       } catch {
         // Skip corrupt records rather than breaking the whole list.
@@ -202,7 +204,22 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { cleared };
   }
 
-  return { finalize, list, get, remove, clear, recordPath, fingerprint };
+  function updateNotes(id, notes) {
+    if (!isSafeId(id)) throw new Error(`Invalid meeting id`);
+    const target = recordPath(id);
+    try {
+      const raw = fsImpl.readFileSync(target, 'utf8');
+      const record = JSON.parse(raw);
+      if (!record || typeof record !== 'object') return { updated: false };
+      record.notes = notes;
+      fsImpl.writeFileSync(target, JSON.stringify(record), { mode: 0o600 });
+      return { updated: true };
+    } catch {
+      return { updated: false };
+    }
+  }
+
+  return { finalize, list, get, remove, clear, updateNotes, recordPath, fingerprint };
 }
 
 module.exports = { createMeetingStore, snapshotTurns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };
