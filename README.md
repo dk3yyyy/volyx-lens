@@ -4,8 +4,6 @@
 
 # Volyx Lens
 
-[![Coverage](coverage-badge.svg)](coverage/index.html)
-
 **Private, context-aware AI assistant for macOS, Windows, and Linux. Hidden from most screen shares on macOS.**
 
 Use your screen, voice, meeting audio, and saved Task Context without routing requests through a Volyx Lens-operated server. Bring your own AI provider and choose what leaves your computer. The overlay marks itself as a protected window via `setContentProtection(true)` (`NSWindowSharingNone` on macOS). Windows has no OS-level capture-exclusion API, so the overlay can appear in screen shares there. Volyx Lens stays out of most macOS screen-recording and screen-share tools (Google Meet, Microsoft Teams, and QuickTime by default; Zoom with advanced window filtering).
