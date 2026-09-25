@@ -44,8 +44,8 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Task Context:** save multiple screens locally, pin important captures, deduplicate near-identical views, and attach a bounded relevant set only when you explicitly ask.
 - **Meeting detection:** opt-in detection flags a sustained two-sided conversation while listening, tags the session, and shows a "Meeting in progress" indicator. Local and in-session only: no audio watcher, no disk writes, no model calls.
 - **Meeting history:** opt-in on-device history saves meetings with a meeting badge, search, notes, and Markdown/TXT/JSON export.
-- **Meeting notes:** generate structured notes (Summary, Key Points, Decisions, Action Items, Follow-Up) for saved records using your configured provider, with long-meeting confirmation before paid requests. Notes persist in meeting history.
-- **Provider choice:** 9 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server) and 6 transcription providers (OpenAI, Azure, Deepgram, Azure AI Speech, Groq Whisper, or optional local Whisper). OpenAI and Azure support both roles.
+- **Meeting notes:** generate structured meeting notes for saved records using your configured provider, with long-meeting confirmation before paid requests.
+- **Provider choice:** 9 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server) and 5 transcription providers (OpenAI, Azure, Deepgram, Azure AI Speech, or optional local Whisper). OpenAI and Azure support both roles.
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
@@ -77,31 +77,31 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.6.0
+### Current release: v0.5.1
 
-v0.6.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and, once release signing credentials are configured, Apple Developer ID-signed and notarized macOS DMGs. Windows and Linux builds are unsigned; macOS builds are signed and notarized and launch without Gatekeeper workarounds. Auto-update metadata is published for Windows and Linux; the macOS updater is published together with the DMGs.
+v0.5.1 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and, once release signing credentials are configured, Apple Developer ID-signed and notarized macOS DMGs. Windows and Linux builds are unsigned; macOS builds are signed and notarized and launch without Gatekeeper workarounds. Auto-update metadata is published for Windows and Linux; the macOS updater is published together with the DMGs.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | v0.6.0 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-arm64-adhoc.dmg) |
-| **Intel** | v0.6.0 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-x64-adhoc.dmg) |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | v0.5.1 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-arm64-adhoc.dmg) |
+| **Intel** | v0.5.1 DMG pending signing credentials · [v0.3.1 test build](https://github.com/dk3yyyy/volyx-lens/releases/download/adhoc-v0.3.1/Volyx-Lens-0.3.1-macOS-x64-adhoc.dmg) |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.6.0-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.6.0-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.6.0-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.5.1-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.5.1-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.5.1-linux-arm64.AppImage` |
 
-**[Open the v0.6.0 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.6.0)**
+**[Open the v0.5.1 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.5.1)**
 
-The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.6.0 macOS DMGs will be provided after release signing credentials are configured; ad-hoc Mac test builds remain available under their pre-release tags.
+The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.5.1 macOS DMGs will be provided after release signing credentials are configured; ad-hoc Mac test builds remain available under their pre-release tags.
 
 SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.6.0-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.6.0-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.5.1-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.5.1-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 
@@ -183,7 +183,6 @@ Each provider stores separate **Fast** and **Smart** model/deployment names, so 
 | **Ollama** | local responses | no key; local server with the OpenAI-compatible API (`http://localhost:11434/v1`); pull a model first |
 | **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
 | **Azure AI Speech** | realtime transcription | Speech resource key and region (bare region name, e.g. `eastus`); no model name required |
-| **Groq** | batch transcription | API key; Whisper Large V3 Turbo for fast/cheap batch transcription |
 | **Local Whisper** | optional offline batch transcription | in-app whisper.cpp model download; audio transcribed in memory; disabled by default |
 
 Choose a key that covers the features you use. A restricted OpenAI project key that only allows chat returns `403` on transcription. Anthropic has no speech-to-text, so pair it with an OpenAI, Gemini, Deepgram, Azure, or local Whisper key for listening. Gemini covers chat and transcription with one key.
@@ -223,7 +222,7 @@ Meeting features are opt-in from Settings → Listening, and they are local and 
 - **Detect meetings** looks for a sustained two-sided conversation between the Mic and System channels while listening, then shows a subtle "Meeting in progress" indicator and tags the session as a meeting. Detection runs only on finalized in-memory transcript turns: no background audio watcher, no disk writes, and no AI requests.
 - **Save meeting history** keeps the session record on device when listening stops (capture stop, new session, or app quit). Saved records are searchable in the history browser and show a meeting badge when the session was detected as a meeting.
 - **Export** a saved record as Markdown, TXT, or structured JSON through a native save dialog.
-- **Generate meeting notes** turns a saved transcript into structured notes using your configured provider. Notes include Summary, Key Points, Decisions, Action Items, and Follow-Up sections. Notes persist in meeting history and load instantly when reopening a saved meeting. Long meetings need multiple model requests and require explicit confirmation before paid requests are made.
+- **Generate meeting notes** turns a saved transcript into structured notes using your configured provider. Long meetings need multiple model requests and require explicit confirmation before paid requests are made.
 
 History is stored on device and cleared with the Clear history action; it is never uploaded to a Volyx Lens-operated server.
 
