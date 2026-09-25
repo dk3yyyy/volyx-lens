@@ -4,7 +4,7 @@
 
 # Volyx Lens
 
-[![Coverage](./coverage-badge.svg)](./coverage/)
+Coverage is checked in CI (see `.github/workflows/ci.yml`) — the suite runs on every push and PR, with line/branch/function coverage thresholds enforced.
 
 **Private, context-aware AI assistant for macOS, Windows, and Linux. Hidden from most screen shares on macOS.**
 
