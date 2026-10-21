@@ -362,6 +362,47 @@
       delete button.dataset.reviewToken;
     }
   });
+  async function getRecoverySummary() {
+    try {
+      return await volyxLens.recoveryGet();
+    } catch (error) {
+      console.error('[meeting-recovery] lookup failed', String(error && error.message || 'unknown').slice(0, 160));
+      showStatus('Meeting recovery could not be checked. You can continue using Volyx Lens.');
+      return { unavailable: true };
+    }
+  }
+
+  const meetingRecoveryDialog = document.getElementById('meeting-recovery-dialog');
+  meetingRecoveryDialog.addEventListener('cancel', (event) => event.preventDefault());
+  $('#meeting-recovery-restore').addEventListener('click', async () => {
+    const button = $('#meeting-recovery-restore');
+    button.disabled = true;
+    try {
+      const result = await volyxLens.recoveryRestore();
+      transcriptTurns = result.turns.map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
+      renderTranscriptWorkspace();
+      meetingRecoveryDialog.close();
+      showStatus(`Restored ${transcriptTurns.length} transcript turns from the interrupted meeting.`);
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'The recovery draft could not be restored.');
+    } finally {
+      button.disabled = false;
+    }
+  });
+  $('#meeting-recovery-discard').addEventListener('click', async () => {
+    const button = $('#meeting-recovery-discard');
+    button.disabled = true;
+    try {
+      await volyxLens.recoveryDiscard();
+      meetingRecoveryDialog.close();
+      showStatus('The interrupted meeting draft was permanently discarded.');
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'The recovery draft could not be discarded.');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   // ---- meeting history ---------------------------------------------------
   let meetingHistoryRecords = [];
   let meetingHistorySearch = '';
@@ -546,7 +587,10 @@
       const result = await volyxLens.historyClear();
       closeMeetingDetail();
       await loadMeetingHistory();
-      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'}.`);
+      const recoveryNotice = result.recoverySuppressed
+        ? ' The current transcript stays in this session but will not be saved or recovered; start a new session to resume history.'
+        : '';
+      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'}.${recoveryNotice}`);
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting history could not be cleared.'); }
   });
 
@@ -2568,7 +2612,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   // ---- boot --------------------------------------------------------------
   (async function boot() {
     let existingTranscript;
-    [settings, personalContext, existingTranscript, taskContext] = await Promise.all([volyxLens.settingsGet(), volyxLens.personalContextGet(), volyxLens.transcriptGet(), volyxLens.taskContextGet()]);
+    let recovery;
+    [settings, personalContext, existingTranscript, taskContext, recovery] = await Promise.all([
+      volyxLens.settingsGet(),
+      volyxLens.personalContextGet(),
+      volyxLens.transcriptGet(),
+      volyxLens.taskContextGet(),
+      getRecoverySummary(),
+    ]);
     transcriptTurns = (Array.isArray(existingTranscript) ? existingTranscript : []).map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
     renderTaskContext(taskContext);
     loadMeetingHistory({ quiet: true });
@@ -2584,6 +2635,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     updateListeningButton(st.active);
     if (!settings.onboarded) showOnboard();
     else volyxLens.setModalState(false);
+    if (recovery && !recovery.unavailable) {
+      const started = Number.isFinite(recovery.startedAt) ? new Date(recovery.startedAt).toLocaleString() : 'an unknown time';
+      $('#meeting-recovery-summary').textContent = `${recovery.turnCount} transcript ${recovery.turnCount === 1 ? 'turn' : 'turns'} from ${started} can be recovered.`;
+      meetingRecoveryDialog.showModal();
+    }
     localizeKeyLabels();
     volyxLens.rendererReady();
   })();

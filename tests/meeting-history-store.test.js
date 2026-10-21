@@ -186,7 +186,7 @@ test('history is opt-in by default and sanitized only as a boolean', () => {
 
 test('settings UI exposes the history toggle and persists it', () => {
   assert.match(html, /id="stt-history-enabled"[^>]*type="checkbox"/);
-  assert.match(html, /Off by default\. When enabled, each finalized session/);
+  assert.match(html, /Off by default\. When enabled, finalized sessions are saved.*in-progress transcript is checkpointed locally for recovery/);
   assert.match(renderer, /\$\('#stt-history-enabled'\)\.checked = transcription\.historyEnabled === true/);
   assert.match(renderer, /historyEnabled: \$\('#stt-history-enabled'\)\.checked/);
 });

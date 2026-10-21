@@ -22,6 +22,7 @@ ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch)
 ipcMain.handle('personal-context:get', () => personalContext);
 ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyTaskContext);
+ipcMain.handle('recovery:get', () => null);
 ipcMain.handle('task-context:list', () => ({ ...emptyTaskContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false }));
 ipcMain.handle('permissions:request', (_event, kind) => ({

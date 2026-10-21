@@ -294,7 +294,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 #slide-tracking-panel button:disabled { opacity: 0.4; cursor: default; }
 #slide-tracking-note { margin: 3px 0 5px; color: var(--tx-mut); font-size: 8px; line-height: 1.35; }
 #slide-review-dialog { width: min(760px, calc(100vw - 32px)); max-height: min(80vh, 760px); padding: 0; border: 1px solid rgba(155,174,255,0.3); border-radius: 12px; color: var(--tx); background: #171e2d; box-shadow: 0 18px 70px rgba(0,0,0,0.55); }
+#meeting-recovery-dialog { width: min(480px, calc(100vw - 32px)); padding: 0; border: 1px solid rgba(155,174,255,0.3); border-radius: 12px; color: var(--tx); background: #171e2d; box-shadow: 0 18px 70px rgba(0,0,0,0.55); }
 #slide-review-dialog::backdrop { background: rgba(4,8,16,0.72); backdrop-filter: blur(3px); }
+#meeting-recovery-dialog::backdrop { background: rgba(4,8,16,0.72); backdrop-filter: blur(3px); }
 .slide-review-dialog-content { display: grid; gap: 10px; padding: 16px; }
 .slide-review-dialog-content h2 { margin: 0; color: var(--tx-1); font-size: 14px; }
 .slide-review-dialog-content p { margin: 0; color: var(--tx-2); font-size: 11px; line-height: 1.45; }
@@ -302,6 +304,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .slide-review-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .slide-review-actions button { border: 1px solid rgba(199,206,255,0.18); border-radius: 7px; padding: 7px 10px; color: var(--tx-2); background: rgba(199,206,255,0.06); font: 600 10px var(--font); cursor: pointer; }
 .slide-review-actions #slide-review-confirm { border-color: rgba(66,207,232,0.4); color: #bdeeff; background: rgba(66,207,232,0.12); }
+.recovery-dialog-actions #meeting-recovery-restore { border-color: rgba(66,207,232,0.4); color: #bdeeff; background: rgba(66,207,232,0.12); }
 .slide-review-actions button:disabled { opacity: 0.45; cursor: default; }
 #slide-tracking-list { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; }
 .slide-tracking-entry { display: grid; grid-template-columns: minmax(0,1fr); gap: 4px; padding: 6px; border: 1px solid rgba(66,207,232,0.14); border-radius: 7px; background: rgba(66,207,232,0.035); }

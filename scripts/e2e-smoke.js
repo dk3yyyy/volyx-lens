@@ -87,6 +87,7 @@ ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch)
 ipcMain.handle('personal-context:get', () => ({ documents: {}, secure: true, locked: false }));
 ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyContext);
+ipcMain.handle('recovery:get', () => null);
 ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false, transitioning: false }));
 ipcMain.handle('shortcuts:get', () => []);
@@ -152,6 +153,9 @@ app.whenReady().then(async () => {
         hasCaptureState: typeof v.captureState === 'function',
         hasNewSession: typeof v.newSession === 'function',
         hasTranscriptGet: typeof v.transcriptGet === 'function',
+        hasRecoveryGet: typeof v.recoveryGet === 'function',
+        hasRecoveryRestore: typeof v.recoveryRestore === 'function',
+        hasRecoveryDiscard: typeof v.recoveryDiscard === 'function',
         hasAsk: typeof v.ask === 'function',
         hasCancelResponse: typeof v.cancelResponse === 'function',
         hasOn: typeof v.on === 'function',
@@ -171,6 +175,9 @@ app.whenReady().then(async () => {
     assert.equal(apiSurface.hasCaptureState, true, 'captureState should be exposed');
     assert.equal(apiSurface.hasNewSession, true, 'newSession should be exposed');
     assert.equal(apiSurface.hasTranscriptGet, true, 'transcriptGet should be exposed');
+    assert.equal(apiSurface.hasRecoveryGet, true, 'recoveryGet should be exposed');
+    assert.equal(apiSurface.hasRecoveryRestore, true, 'recoveryRestore should be exposed');
+    assert.equal(apiSurface.hasRecoveryDiscard, true, 'recoveryDiscard should be exposed');
     assert.equal(apiSurface.hasAsk, true, 'ask should be exposed');
     assert.equal(apiSurface.hasCancelResponse, true, 'cancelResponse should be exposed');
     assert.equal(apiSurface.hasOn, true, 'on should be exposed');
