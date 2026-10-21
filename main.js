@@ -1329,6 +1329,7 @@ function startNewSession() {
     if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
     finalizeMeeting('new-session');
     resetTranscriptData();
+    clearSlideTrackingData();
     chatHistory.clear();
     clearTaskContext();
     buffers.you = []; buffers.them = [];
