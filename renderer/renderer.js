@@ -34,6 +34,7 @@
   const partialTranscript = { you: null, them: null };
   let listeningActive = false;
   let meetingDetectedSince = null;
+  let slideTracking = { enabled: false, active: false, slides: [], total: 0 };
   let diagnosticsTimer = null;
   let activeRequestMode = null;
   let aiEl = null;       // current streaming <div class="ai-text">
@@ -62,6 +63,70 @@
   function taskContextTime(value) {
     const time = new Date(Number(value));
     return Number.isNaN(time.getTime()) ? 'Unknown time' : time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function renderSlideTracking(value) {
+    if (value && typeof value === 'object') {
+      slideTracking = {
+        enabled: value.enabled === true,
+        active: value.active === true,
+        slides: Array.isArray(value.slides) ? value.slides : [],
+        total: Math.max(0, Number(value.total) || 0),
+      };
+    }
+    $('#slide-tracking-indicator').classList.toggle('hidden', !slideTracking.active);
+    $('#slide-tracking-toolbar-indicator').classList.toggle('hidden', !slideTracking.active);
+    $('#slide-tracking-panel').classList.toggle('hidden', !slideTracking.active && slideTracking.slides.length === 0);
+    $('#slide-tracking-count').textContent = `${slideTracking.total} ${slideTracking.total === 1 ? 'slide' : 'slides'}`;
+    $('#slide-tracking-clear').disabled = slideTracking.total === 0;
+    $('#slide-tracking-review').disabled = !slideTracking.slides.some((slide) => slide.ocrStatus === 'ready' && String(slide.text || '').trim());
+    $('#slide-tracking-note').textContent = slideTracking.active
+      ? 'Slide previews and nearby transcript stay in memory on this device and are never uploaded automatically.'
+      : 'Slide previews clear when Listening stops or the session is cleared.';
+
+    const list = $('#slide-tracking-list');
+    list.replaceChildren();
+    if (!slideTracking.slides.length) {
+      const empty = document.createElement('div');
+      empty.className = 'task-context-empty';
+      empty.textContent = slideTracking.active ? 'Waiting for a stable slide change…' : 'No slide changes detected.';
+      list.appendChild(empty);
+      return;
+    }
+    for (const slide of slideTracking.slides) {
+      const row = document.createElement('div');
+      row.className = 'slide-tracking-entry';
+      row.setAttribute('role', 'listitem');
+      if (typeof slide.preview === 'string' && slide.preview.startsWith('data:image/jpeg;base64,')) {
+        const preview = document.createElement('img');
+        preview.className = 'slide-tracking-preview';
+        preview.src = slide.preview;
+        preview.alt = `Preview of detected slide ${slide.sequence}`;
+        row.appendChild(preview);
+      }
+      const copy = document.createElement('div');
+      copy.className = 'slide-tracking-copy';
+      const title = document.createElement('strong');
+      title.textContent = `Slide ${slide.sequence} · ${taskContextTime(slide.detectedAt)}`;
+      const excerpt = document.createElement('span');
+      excerpt.textContent = String(slide.transcriptExcerpt || '').trim() || 'No nearby finalized transcript turns.';
+      copy.append(title, excerpt);
+      const ocr = document.createElement('span');
+      if (slide.ocrStatus === 'ready' && String(slide.text || '').trim()) {
+        ocr.textContent = `Local slide text (OCR; may contain errors):\n${slide.text}`;
+      } else if (slide.ocrStatus === 'pending') {
+        ocr.textContent = 'Local text recognition is processing…';
+      } else if (slide.ocrStatus === 'unavailable') {
+        ocr.textContent = 'Local text recognition is unavailable on this build.';
+      } else if (slide.ocrStatus === 'failed') {
+        ocr.textContent = 'Local text recognition failed for this slide.';
+      } else {
+        ocr.textContent = 'No text was recognized on this slide.';
+      }
+      copy.appendChild(ocr);
+      row.appendChild(copy);
+      list.appendChild(row);
+    }
   }
 
   function taskContextOcrLabel(capture) {
@@ -258,6 +323,65 @@
   });
   $('#task-context-prev').addEventListener('click', () => refreshTaskContextList({ offset: Math.max(0, taskContextPage.offset - taskContextPage.limit) }));
   $('#task-context-next').addEventListener('click', () => refreshTaskContextList({ offset: taskContextPage.offset + taskContextPage.limit }));
+  $('#slide-tracking-clear').addEventListener('click', async () => {
+    try {
+      renderSlideTracking(await volyxLens.slideTrackingClear());
+      showStatus('Tracked slide previews and transcript excerpts cleared from memory.');
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'Tracked slides could not be cleared.');
+    }
+  });
+  $('#slide-tracking-review').addEventListener('click', async () => {
+    const button = $('#slide-tracking-review');
+    button.disabled = true;
+    try {
+      const review = await volyxLens.slideTrackingReview();
+      $('#slide-review-destination').textContent =
+        `This will send locally recognized text from ${review.slideCount} slide${review.slideCount === 1 ? '' : 's'} and the current session transcript to ${review.provider}. Screenshots are not sent. Review the exact slide text below.`;
+      $('#slide-review-preview').textContent = `SLIDE TEXT (local OCR; may contain errors)\n${review.slideContext}\n\nMEETING TRANSCRIPT\n${review.transcriptContext || '(no transcript captured)'}`;
+      $('#slide-review-confirm').dataset.reviewToken = review.token;
+      document.getElementById('slide-review-dialog').showModal();
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'Slide review could not be prepared.');
+    } finally {
+      button.disabled = !slideTracking.slides.some((slide) => slide.ocrStatus === 'ready' && String(slide.text || '').trim());
+    }
+  });
+  $('#slide-review-confirm').addEventListener('click', async () => {
+    const button = $('#slide-review-confirm');
+    const token = button.dataset.reviewToken;
+    button.disabled = true;
+    try {
+      const result = await volyxLens.slideTrackingReview({ confirmed: true, token });
+      document.getElementById('slide-review-dialog').close();
+      showStatus(`Sent text from ${result.slideCount} tracked slides to ${result.provider}; screenshots were not sent.`);
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'Slide review could not be sent.');
+    } finally {
+      button.disabled = false;
+      delete button.dataset.reviewToken;
+    }
+  });
+    button.disabled = true;
+    try {
+      transcriptTurns = result.turns.map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
+      renderTranscriptWorkspace();
+      showStatus(`Restored ${transcriptTurns.length} transcript turns from the interrupted meeting.`);
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'The recovery draft could not be restored.');
+    } finally {
+      button.disabled = false;
+    }
+  });
+    button.disabled = true;
+    try {
+      showStatus('The interrupted meeting draft was permanently discarded.');
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'The recovery draft could not be discarded.');
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   // ---- meeting history ---------------------------------------------------
   let meetingHistoryRecords = [];
@@ -1282,6 +1406,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   volyxLens.on('status', ({ message }) => { volyxLens.log('[status] ' + message); showStatus(message); });
 
   volyxLens.on('task-context:state', renderTaskContext);
+  volyxLens.on('slide-tracking:state', renderSlideTracking);
   volyxLens.on('history:changed', (event = {}) => {
     if (event.deleted && meetingDetail && event.id === meetingDetail.id) closeMeetingDetail();
     else if (event.cleared) closeMeetingDetail();
@@ -1777,6 +1902,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
     $('#stt-history-enabled').checked = transcription.historyEnabled === true;
     $('#stt-meeting-detection').checked = transcription.meetingDetection === true;
+    $('#stt-slide-tracking').checked = transcription.slideTracking === true;
     const audio = settings.audio || {};
     $('#audio-input-device').value = audio.inputDeviceId || '';
     $('#audio-mic-enabled').checked = audio.micEnabled !== false;
@@ -1955,6 +2081,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       delay: $('#stt-delay').value,
       historyEnabled: $('#stt-history-enabled').checked,
       meetingDetection: $('#stt-meeting-detection').checked,
+      slideTracking: $('#stt-slide-tracking').checked,
     };
     settings.audio = {
       ...(settings.audio || {}),

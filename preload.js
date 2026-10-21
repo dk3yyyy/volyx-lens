@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('volyxLens', {
   taskContextRemove: (id) => ipcRenderer.invoke('task-context:remove', id),
   taskContextPin: (id, pinned) => ipcRenderer.invoke('task-context:pin', { id, pinned: pinned === true }),
   taskContextClear: () => ipcRenderer.invoke('task-context:clear'),
+  slideTrackingClear: () => ipcRenderer.invoke('slide-tracking:clear'),
+  slideTrackingReview: (payload = {}) => ipcRenderer.invoke('slide-tracking:review', payload),
   transcriptGet: () => ipcRenderer.invoke('transcript:get'),
   recapPlan: () => ipcRenderer.invoke('recap:plan'),
   transcriptCopy: () => ipcRenderer.invoke('transcript:copy'),

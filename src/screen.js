@@ -10,9 +10,17 @@ async function captureScreenshot({ maxWidth = null, format = 'png', quality = 80
   if (!selected) throw new Error('The intended display is unavailable; capture was canceled.');
   const { width, height } = selected.size;
   const scale = selected.scaleFactor || 1;
+  const nativeWidth = Math.max(1, Math.floor(width * scale));
+  const nativeHeight = Math.max(1, Math.floor(height * scale));
+  const requestedWidth = Number.isFinite(maxWidth) && maxWidth > 0
+    ? Math.min(nativeWidth, Math.max(1, Math.floor(maxWidth)))
+    : nativeWidth;
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
-    thumbnailSize: { width: Math.floor(width * scale), height: Math.floor(height * scale) }
+    thumbnailSize: {
+      width: requestedWidth,
+      height: Math.max(1, Math.floor(nativeHeight * requestedWidth / nativeWidth)),
+    }
   });
   if (!sources.length) return null;
   const source = sources.find((item) => String(item.display_id) === String(selected.id));
