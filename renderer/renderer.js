@@ -362,27 +362,6 @@
       delete button.dataset.reviewToken;
     }
   });
-    button.disabled = true;
-    try {
-      transcriptTurns = result.turns.map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
-      renderTranscriptWorkspace();
-      showStatus(`Restored ${transcriptTurns.length} transcript turns from the interrupted meeting.`);
-    } catch (error) {
-      showStatus(error && error.message ? error.message : 'The recovery draft could not be restored.');
-    } finally {
-      button.disabled = false;
-    }
-  });
-    button.disabled = true;
-    try {
-      showStatus('The interrupted meeting draft was permanently discarded.');
-    } catch (error) {
-      showStatus(error && error.message ? error.message : 'The recovery draft could not be discarded.');
-    } finally {
-      button.disabled = false;
-    }
-  });
-
   // ---- meeting history ---------------------------------------------------
   let meetingHistoryRecords = [];
   let meetingHistorySearch = '';
