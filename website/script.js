@@ -201,7 +201,7 @@ function initDownloads() {
       card.setAttribute('aria-current', 'true');
     }
   } else if (note) {
-    note.textContent = 'Choose your operating system below; every installer is served from GitHub Releases with a published SHA-256 checksum.';
+    note.textContent = 'Choose your operating system below; every installer is served from GitHub Releases with its SHA-256 checksum listed in the release notes.';
   }
 }
 

@@ -29,7 +29,7 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, new RegExp(`Windows and Linux installers are live in v${v}`, 'i'));
   assert.match(html, new RegExp(`v${v} macOS build will be signed and notarized once release signing credentials are configured`, 'i'));
   assert.match(html, /<a[^>]*>unsigned macOS DMGs<\/a> are attached to the release/i);
-  assert.match(html, /Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs/i);
+  assert.match(html, /Windows and Linux installers ship unsigned; their SHA-256 checksums are listed in the release notes/i);
   assert.doesNotMatch(html, /current signed Mac release is v0\.4\.0|Get the signed v0\.4\.0|Download v0\.4\.0/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /there is no Volyx Lens-operated intermediary server/i);
