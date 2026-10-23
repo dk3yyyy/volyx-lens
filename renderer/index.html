@@ -17,6 +17,7 @@
       <button class="tb-new" id="new-session-btn" title="Start a fresh conversation" aria-label="New Session" data-icon-only="true"><span class="new-icon" aria-hidden="true"></span></button>
       <div class="tb-divider"></div>
       <button class="tb-stop" id="stop-btn" title="Start Listening" aria-label="Start Listening" data-icon-only="true"><span class="listen-icon" aria-hidden="true"></span></button>
+      <span id="slide-tracking-toolbar-indicator" class="hidden" role="status" aria-label="Slide tracking active">Slides</span>
       <div class="tb-divider"></div>
       <button class="tb-kill" id="kill-btn" title="Stop all capture and quit Volyx Lens" aria-label="Stop all capture and quit Volyx Lens"></button>
     </div>
@@ -43,7 +44,7 @@
 
         <section id="transcript-workspace" class="hidden" aria-label="Session transcript">
           <div class="transcript-head">
-            <div><strong>Transcript</strong><span id="transcript-count">0 turns</span><span id="meeting-indicator" class="hidden">Meeting in progress</span></div>
+            <div><strong>Transcript</strong><span id="transcript-count">0 turns</span><span id="meeting-indicator" class="hidden">Meeting in progress</span><span id="slide-tracking-indicator" class="hidden">Slide tracking on</span></div>
             <div class="transcript-actions">
               <button id="transcript-copy" type="button">Copy</button>
               <select id="transcript-export-format" aria-label="Transcript export format"><option value="txt">TXT</option><option value="md">Markdown</option><option value="json">JSON</option><option value="srt">SRT</option><option value="vtt">VTT</option></select>
@@ -53,6 +54,12 @@
             </div>
           </div>
           <div id="transcript-list" role="log" aria-live="polite"></div>
+          <div id="slide-tracking-panel" class="hidden" aria-label="Tracked slides">
+            <div class="slide-tracking-head"><div><strong>Tracked slides</strong><span id="slide-tracking-count">0 slides</span></div><button id="slide-tracking-clear" type="button" disabled>Clear</button></div>
+            <p id="slide-tracking-note">Slide previews and nearby transcript stay in memory on this device and are never uploaded automatically.</p>
+            <div id="slide-tracking-list" role="list" aria-label="Detected presentation slides"><div class="task-context-empty">No slide changes detected yet.</div></div>
+            <div class="slide-tracking-review-row"><button id="slide-tracking-review" type="button" disabled>Review slides with AI…</button><span>Nothing is sent until you review and confirm.</span></div>
+          </div>
           <div id="transcript-empty">Listening transcript will appear here.</div>
           <div id="session-diagnostics" class="hidden">
             <div class="diagnostics-grid">
@@ -113,6 +120,15 @@
             <div id="meeting-notes-output" class="history-notes hidden"></div>
           </div>
         </div>
+
+        <dialog id="slide-review-dialog" aria-labelledby="slide-review-title">
+          <form method="dialog" class="slide-review-dialog-content">
+            <h2 id="slide-review-title">Review slide context before sending</h2>
+            <p id="slide-review-destination"></p>
+            <pre id="slide-review-preview"></pre>
+            <div class="slide-review-actions"><button id="slide-review-cancel" type="submit" value="cancel">Cancel</button><button id="slide-review-confirm" type="button">Send selected text to provider</button></div>
+          </form>
+        </dialog>
 
         <div id="action-row">
           <button class="act assist-act" data-mode="assist" type="button"><span class="ic"></span><span class="assist-label">Assist</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
@@ -344,6 +360,8 @@
         <div class="s-note">Off by default. When enabled, each finalized session (listening stopped, new session started, or app quit) is written to a private on-device history file under the app data directory with restricted permissions. Records contain only the final transcript text of each turn and local timestamps — raw audio is never stored and nothing ever leaves your Mac. You can delete individual records or clear all history at any time.</div>
         <div class="s-field"><label for="stt-meeting-detection">Detect meetings</label><input id="stt-meeting-detection" type="checkbox" /></div>
         <div class="s-note">Off by default. While listening, Volyx Lens looks for a sustained two-sided conversation between the Mic and System channels in the live transcript. When it finds one, a subtle "Meeting in progress" indicator appears and the current session is tagged as a meeting if history is enabled. Detection is local and in-session only — no background audio watcher, no disk writes, and no AI requests are made.</div>
+        <div class="s-field"><label for="stt-slide-tracking">Track presentation slides</label><input id="stt-slide-tracking" type="checkbox" /></div>
+        <div class="s-note">Off by default. When enabled, Volyx Lens samples the display containing its window about every three seconds while Listening is active, compares frames locally, and keeps a preview only when a slide change is stable (up to 20 previews and 8 MB total). Up to four nearby finalized transcript turns may be shown with each preview. Samples clear when Listening stops or the session is cleared; screenshots and transcript excerpts stay in memory and are never sent to an AI provider automatically. A visible indicator appears while tracking.</div>
         <div class="s-note">Optional offline transcription uses a locally embedded whisper.cpp model. Audio is transcribed in memory and streamed to the local engine — it is never written to disk and never leaves your computer. Requires first download on in-app selection. Does not require <code>VOLYX_LENS_WHISPER_CLI</code> or <code>VOLYX_LENS_WHISPER_MODEL</code> env vars. Cloud fallback is separately disabled by default so a local failure cannot silently upload audio. For speed and lower memory, prefer <code>base.en</code> or an int8-quantized model; the label (e.g. 139M params) is a parameter count, not a runtime memory requirement.</div>
         <div class="s-field"><label for="audio-input-device">Microphone</label><select id="audio-input-device"><option value="">System default</option></select></div>
         <div class="s-field"><label for="audio-mic-enabled">Capture mic</label><input id="audio-mic-enabled" type="checkbox" checked /></div>

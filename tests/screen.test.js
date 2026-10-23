@@ -122,6 +122,20 @@ test('downscales only when the capture exceeds maxWidth', async () => {
   assert.equal(untouched, 'data:image/png;base64,small:1024x768');
 });
 
+test('requests a bounded native thumbnail when maxWidth is supplied', async () => {
+  const a = display(1, { width: 1920, height: 1080, scaleFactor: 2 });
+  const { captureScreenshot, lastThumbnailSize } = loadScreen({
+    displays: [a],
+    sources: [source(1, makeThumbnail({ width: 1280, height: 720, label: 'bounded' }))],
+    cursorDisplay: a,
+  });
+
+  const result = await captureScreenshot({ maxWidth: 1280 });
+
+  assert.deepEqual(lastThumbnailSize(), { width: 1280, height: 720 });
+  assert.equal(result, 'data:image/png;base64,bounded:1280x720');
+});
+
 test('jpeg format clamps quality to 1..100 and returns a jpeg data URL', async () => {
   const a = display(1);
   const { captureScreenshot: captureHigh } = loadScreen({ displays: [a], sources: [source(1, makeThumbnail({ label: 'j' }))], cursorDisplay: a });

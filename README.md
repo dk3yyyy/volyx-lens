@@ -4,9 +4,9 @@
 
 # Volyx Lens
 
-**Private, context-aware AI assistant for macOS, Windows, and Linux. Hidden from most screen shares on macOS.**
+**A user-controlled, context-aware AI assistant for macOS, Windows, and Linux.**
 
-Use your screen, voice, meeting audio, and saved Task Context without routing requests through a Volyx Lens-operated server. Bring your own AI provider and choose what leaves your computer. The overlay marks itself as a protected window via `setContentProtection(true)` (`NSWindowSharingNone` on macOS). Windows has no OS-level capture-exclusion API, so the overlay can appear in screen shares there. Volyx Lens stays out of most macOS screen-recording and screen-share tools (Google Meet, Microsoft Teams, and QuickTime by default; Zoom with advanced window filtering).
+Use your screen, voice, meeting audio, and saved Task Context with the AI provider you choose. Requests go directly from the app to that provider rather than through a Volyx Lens-operated server. You choose when to capture and what context to send. On macOS, the overlay uses the operating system's protected-window mechanism to reduce accidental exposure of its contents in supported capture tools; this is a privacy safeguard, not a way to conceal use. Support varies by platform and capture tool, and exclusion is never guaranteed.
 
 [**Explore the live site**](https://volyxlens.pages.dev/) · [Download](#download) · [Product tour](#product-tour) · [Architecture](docs/architecture.md) · [Privacy](#privacy-and-security)
 
@@ -23,7 +23,7 @@ Use your screen, voice, meeting audio, and saved Task Context without routing re
 ---
 
 > [!IMPORTANT]
-> **Capture exclusion is best-effort, never guaranteed.** Modern macOS or Windows capture tools may still show Volyx Lens, and a physical camera always can. Do not use hidden assistance where it violates exam, interview, workplace, platform, recording-consent, or local-law requirements. Volyx Lens is intended for legitimate personal notes, accessibility, study, practice, and permitted work.
+> **Use Volyx Lens transparently and with consent.** Tell people when you are capturing or transcribing conversations, and get any consent required by law, policy, or the people involved. Disclose AI assistance when an exam, interview, workplace, platform, or other setting requires it. Do not use capture protection to hide recording or assistance, or to bypass those rules. Capture exclusion is best-effort, never guaranteed; modern capture tools or a physical camera may still show the app.
 
 ## Why Volyx Lens
 
@@ -43,12 +43,13 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Meeting detection:** opt-in detection flags a sustained two-sided conversation while listening, tags the session, and shows a "Meeting in progress" indicator. Local and in-session only: no audio watcher, no disk writes, no model calls.
 - **Meeting history:** opt-in on-device history saves meetings with a meeting badge, search, notes, and Markdown/TXT/JSON export.
 - **Meeting notes:** generate structured notes (Summary, Key Points, Decisions, Action Items, Follow-Up) for saved records using your configured provider, with long-meeting confirmation before paid requests. Notes persist in meeting history.
+- **Slide tracking:** optional local slide-change detection while listening, with bounded in-memory previews and nearby transcript context; no automatic provider requests.
 - **Provider choice:** 9 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server) and 6 transcription providers (OpenAI, Azure, Deepgram, Azure AI Speech, Groq Whisper, or optional local Whisper). OpenAI and Azure support both roles.
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
 - **Native macOS and Windows behavior:** compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
-- **Capture exclusion:** the overlay is marked private via `setContentProtection(true)` (`NSWindowSharingNone` on macOS), so it stays out of most macOS screen recordings and screen shares without hidden-window tricks or a special capture mode. Windows has no OS capture-exclusion API; the overlay can appear in screen shares there. Linux has no capture-exclusion API; see [Platform support](#platform-support).
+- **Overlay privacy:** on macOS, the overlay uses the protected-window mechanism to reduce accidental exposure in supported capture tools. This is not guaranteed and is not intended to conceal use. Windows and Linux provide no equivalent capture-exclusion API; see [Platform support](#platform-support).
 
 ## Product tour
 
@@ -187,17 +188,9 @@ Choose a key that covers the features you use. A restricted OpenAI project key t
 
 Keys stay in the Electron main process and are protected with `safeStorage` / macOS Keychain where available. The renderer receives credential status, not stored secret values. Settings warns if secure storage is unavailable.
 
-### 3. Configure Zoom capture filtering
+### 3. Understand screen-share behavior
 
-For Zoom, select:
-
-**Settings → Share Screen → Advanced → Screen capture mode → Advanced capture with window filtering**
-
-<div align="center">
-  <img src="docs/zoom-setting.png" width="700" alt="Zoom Advanced Share Screen settings with Advanced capture with window filtering selected" />
-</div>
-
-This asks Zoom to respect Volyx Lens’s protected-window flag. It is still best-effort and may not work with every macOS or capture-tool version.
+Capture behavior depends on your operating system and the app being used to share or record. On macOS, some tools can respect Volyx Lens's protected-window flag; others may not. Windows and Linux have no OS-level capture-exclusion API. Assume the overlay may be visible, and do not rely on capture protection to conceal recording or AI assistance.
 
 ## Task Context
 
@@ -215,7 +208,6 @@ Task Context cannot read files or code that never appeared on screen. Use it onl
 
 ## Meetings
 
-Meeting features are opt-in from Settings → Listening, and they are local and in-session only.
 
 - **Detect meetings** looks for a sustained two-sided conversation between the Mic and System channels while listening, then shows a subtle "Meeting in progress" indicator and tags the session as a meeting. Detection runs only on finalized in-memory transcript turns: no background audio watcher, no disk writes, and no AI requests.
 - **Save meeting history** keeps the session record on device when listening stops (capture stop, new session, or app quit). Saved records are searchable in the history browser and show a meeting badge when the session was detected as a meeting.
@@ -223,6 +215,12 @@ Meeting features are opt-in from Settings → Listening, and they are local and 
 - **Generate meeting notes** turns a saved transcript into structured notes using your configured provider. Notes include a Summary, Key Points, Decisions, Action Items, and Follow-Up. Notes are saved alongside the meeting and load instantly when reopened. Long meetings need multiple model requests and require explicit confirmation before paid requests are made.
 
 History is stored on device and cleared with the Clear history action; it is never uploaded to a Volyx Lens-operated server.
+
+## Slide tracking
+
+Slide tracking is off by default. When enabled in **Settings → Listening → Track presentation slides**, Volyx Lens samples the display containing its window about every three seconds while Listening is active. Frame comparison happens locally; a preview is retained only after a stable visual change, with up to four nearby finalized transcript turns when available. The in-memory history is limited to 20 previews and 8 MB total.
+
+Tracked previews and transcript excerpts are bounded, kept in memory only, and shown in the transcript workspace while tracking is active. Use **Clear** at any time. They are cleared when Listening stops, a new session starts, or the transcript is cleared. This feature does not send screenshots or transcript excerpts to a provider automatically.
 
 ## How it works
 
@@ -245,12 +243,14 @@ For a deeper dive into the process split, preload bridge surface, provider routi
 ## Privacy and security
 
 - **No Volyx Lens-operated account, intermediary server, or product telemetry.** Selected third-party providers still receive the data required for explicit requests and apply their own terms and pricing.
+- **Consent and disclosure matter.** Get any required consent before capturing or transcribing other people's speech, and disclose AI assistance wherever rules or expectations require it. Never use privacy controls to evade those obligations.
 - **No persistent screenshots or audio.** Volyx Lens keeps active session media in memory; New Session or emergency quit clears it.
 - **Bounded personal context.** Imported documents store extracted text and status, not the original file path or raw document, and send only relevant bounded excerpts for answer-oriented actions.
 - **Sandboxed UI.** Chromium sandboxing, context isolation, no renderer Node integration, restrictive CSP, denied popup/navigation requests, and bounded IPC payloads are enabled.
 - **Protected secrets.** Credentials are accessed in the main process and use `safeStorage` / Keychain when available.
 - **Explicit expensive requests.** Large multi-image requests and multi-part long-meeting recaps require confirmation.
-- **Best-effort capture exclusion.** `setContentProtection(true)` / `NSWindowSharingNone` reduces accidental capture but is not a security guarantee.
+- **Opt-in slide tracking.** Screen samples are compared locally while Listening is active; only stable-change previews are held in bounded memory and nothing is sent to a provider automatically.
+- **Best-effort overlay privacy.** `setContentProtection(true)` / `NSWindowSharingNone` may reduce accidental capture on macOS, but is not a security guarantee or a concealment feature.
 
 ## Transcript workspace
 

@@ -160,6 +160,17 @@ test('auto-assist thresholds are clamped to valid ranges', () => {
   assert.equal(updated.autoAnswerCooldownSec, 5);
 });
 
+test('slide tracking remains opt-in and survives settings save and reload', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  assert.equal(store.getSettings().transcription.slideTracking, false);
+
+  store.setSettings({ transcription: { slideTracking: true } });
+
+  assert.equal(loadStore(userData).getSettings().transcription.slideTracking, true);
+  assert.equal(store.setSettings({ transcription: { slideTracking: 'yes' } }).transcription.slideTracking, true);
+});
+
 test('legacy bundled model defaults migrate without replacing custom model names', () => {
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');

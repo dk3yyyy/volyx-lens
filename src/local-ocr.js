@@ -167,16 +167,21 @@ function createLocalOcr({
     });
   }
 
-  function cancel(jobId) {
+  function cancelQueued(jobId) {
     if (!jobId) return false;
-    let cancelled = false;
     for (let index = queuedJobs.length - 1; index >= 0; index -= 1) {
       if (queuedJobs[index].state.jobId !== jobId) continue;
       const [queued] = queuedJobs.splice(index, 1);
       queued.state.cancelled = true;
       queued.resolve({ status: 'cancelled' });
-      cancelled = true;
+      return true;
     }
+    return false;
+  }
+
+  function cancel(jobId) {
+    if (!jobId) return false;
+    let cancelled = cancelQueued(jobId);
     for (const [child, state] of activeChildren) {
       if (state.jobId !== jobId) continue;
       state.cancelled = true;
@@ -208,7 +213,7 @@ function createLocalOcr({
     }
   }
 
-  return { availability, recognize, cancel, cancelAll, helperPath: resolvedPath };
+  return { availability, recognize, cancel, cancelQueued, cancelAll, helperPath: resolvedPath };
 }
 
 module.exports = {

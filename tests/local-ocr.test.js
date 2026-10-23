@@ -95,6 +95,30 @@ test('local OCR serializes work and individual cancellation releases queued capt
   assert.deepEqual(children[1].killSignals, ['SIGTERM']);
 });
 
+test('local OCR can cancel queued work without interrupting the active job', async () => {
+  const children = [];
+  const runner = createLocalOcr({
+    platform: 'darwin',
+    helperPath: process.execPath,
+    spawnImpl: () => {
+      const child = fakeChild();
+      children.push(child);
+      return child;
+    },
+  });
+  const active = runner.recognize(image('active'), { jobId: 'active' });
+  const queued = runner.recognize(image('old-slide'), { jobId: 'old-slide' });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(runner.cancelQueued('old-slide'), true);
+  assert.deepEqual(await queued, { status: 'cancelled' });
+  assert.deepEqual(children[0].killSignals, []);
+  children[0].stdout.emit('data', Buffer.from(JSON.stringify({ ok: true, text: 'active result' })));
+  children[0].emit('close', 0);
+  assert.deepEqual(await active, { status: 'ready', text: 'active result', truncated: false });
+  assert.equal(children.length, 1);
+});
+
 test('cancelAll resolves queued OCR immediately and prevents it from spawning', async () => {
   const children = [];
   const runner = createLocalOcr({

@@ -12,7 +12,7 @@ const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT, resetSidecar } = require('./src/stt');
 const { cancelOfflineTranscriptions } = require('./src/offline-stt');
-const { MODES } = require('./src/prompts');
+const { MODES, formatTranscript: formatPromptTranscript } = require('./src/prompts');
 const { createResponseRoute, chooseInitialProvider, streamWithFallback } = require('./src/response-router');
 const { rms16 } = require('./src/wav');
 const { planScreenInput } = require('./src/capabilities');
@@ -37,6 +37,7 @@ const { meetingFilename, formatMeetingRecord } = require('./src/meeting-notes');
 const { buildSttVocab } = require('./src/transcript-hygiene');
 const { buildNotesPrompt, parseNotes } = require('./src/notes');
 const { createTaskContext } = require('./src/task-context');
+const { createSlideTracker, hashFrame } = require('./src/slide-tracking');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
 const { createLocalOcr } = require('./src/local-ocr');
 const { createSystemAudioCapture } = require('./src/system-audio-capture');
@@ -57,6 +58,7 @@ const chatHistory = createChatHistory();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
 const meetingDetector = createMeetingDetector();
 let meetingDetectedNotified = false;
+const slideTracker = createSlideTracker();
 const personalContextStore = createPersonalContextStore({ userDataPath: currentUserDataPath, safeStorage });
 const AUTO_ANSWER_CONFIDENCE_MIN = 0.5;
 const AUTO_ANSWER_COOLDOWN_MS = 60000;
@@ -104,6 +106,7 @@ const linuxMonitorCapture = createLinuxMonitorCapture({
   },
 });
 const MAX_SAVED_TASK_IMAGES_PER_REQUEST = 39;
+const MAX_PENDING_SLIDE_OCR_JOBS = 2;
 const LARGE_TASK_CONTEXT_CONFIRM_THRESHOLD = 8;
 const FEATURE_REQUEST_TIMEOUT_MS = 120000;
 const { capTaskImages } = require('./src/task-image-cap');
@@ -143,6 +146,12 @@ const detectedQuestionsByTurn = new Map();
 let transcriptSegmentSequence = 0;
 let captureWarningTimer = null;
 let captureLimitTimer = null;
+let slideTrackingTimer = null;
+let slideTrackingGeneration = 0;
+let slideTrackingInFlight = false;
+let slideOcrJobSequence = 0;
+const slideOcrJobs = new Map();
+let pendingSlideReview = null;
 let desiredCapturing = false;
 let pendingDisplayCapture = false; // true only while the app's own getDisplayMedia flow is in flight
 let captureTransition = Promise.resolve(false);
@@ -204,6 +213,198 @@ function publishTaskContextState(extra = {}) {
   const value = taskContextState(extra);
   send('task-context:state', value);
   return value;
+}
+
+function slideTrackingState() {
+  const settings = store.getSettings().transcription || {};
+  const tracking = slideTracker.list();
+  return {
+    enabled: settings.slideTracking === true,
+    active: settings.slideTracking === true && state.capturing && slideTrackingTimer !== null,
+    slides: tracking.slides,
+    total: tracking.total,
+  };
+}
+
+function publishSlideTrackingState() {
+  const value = slideTrackingState();
+  send('slide-tracking:state', value);
+  return value;
+}
+
+function clearSlideTrackingData() {
+  const restartTracking = slideTrackingTimer !== null && state.capturing
+    && store.getSettings().transcription.slideTracking === true;
+  if (slideTrackingTimer !== null) clearInterval(slideTrackingTimer);
+  slideTrackingTimer = null;
+  slideTrackingGeneration += 1;
+  for (const sequence of slideOcrJobs.keys()) cancelSlideOcr(sequence);
+  pendingSlideReview = null;
+  const result = slideTracker.clear();
+  if (restartTracking) startSlideTracking();
+  else publishSlideTrackingState();
+  return result;
+}
+
+function slideReviewContext() {
+  const slides = slideTracker.list().slides.filter((slide) => slide.ocrStatus === 'ready' && slide.text.trim());
+  if (!slides.length) throw new Error('No slide text is ready for review yet. Wait for local OCR or capture another slide.');
+  return slides.map((slide) => `Slide ${slide.sequence} (${new Date(slide.detectedAt).toISOString()}):\n${slide.text}`).join('\n\n').slice(0, 80000);
+}
+
+function prepareSlideReview() {
+  const slideContext = slideReviewContext();
+  const settings = store.getSettings();
+  const selection = chooseInitialProvider(createResponseRoute(settings), { requiresVision: false });
+  if (!selection.llm) throw new Error(selection.reason || 'No compatible response provider is configured.');
+  if (!selection.llm.ready) throw new Error(selection.llm.configurationError || `Configure ${settings.provider} in Settings to start.`);
+  pendingSlideReview = {
+    token: crypto.randomUUID(),
+    createdAt: Date.now(),
+    sessionGeneration,
+    slideContext,
+    transcriptSnapshot: [...transcript].sort((left, right) => left.ts - right.ts).map(publicTranscriptTurn),
+    transcriptContext: formatPromptTranscript([...transcript].sort((left, right) => left.ts - right.ts), 0, 48000),
+    provider: selection.llm.label || settings.provider,
+  };
+  return {
+    token: pendingSlideReview.token,
+    slideCount: slideTracker.list().slides.filter((slide) => slide.ocrStatus === 'ready' && slide.text.trim()).length,
+    characters: slideContext.length,
+    provider: pendingSlideReview.provider,
+    slideContext,
+    transcriptContext: pendingSlideReview.transcriptContext,
+  };
+}
+
+function confirmSlideReview(token) {
+  if (state.busy || responseDiagnosticPromise) {
+    throw new Error('Wait for the active response or provider test to finish before sending slide context.');
+  }
+  const review = pendingSlideReview;
+  pendingSlideReview = null;
+  if (!review || typeof token !== 'string' || token !== review.token || Date.now() - review.createdAt > 120000) {
+    throw new Error('Slide review expired. Prepare the review again before sending.');
+  }
+  if (review.sessionGeneration !== sessionGeneration) throw new Error('The session changed. Prepare the slide review again.');
+  const settings = store.getSettings();
+  const selection = chooseInitialProvider(createResponseRoute(settings), { requiresVision: false });
+  const provider = selection.llm && (selection.llm.label || settings.provider);
+  if (!selection.llm || !selection.llm.ready) throw new Error(selection.reason || (selection.llm && selection.llm.configurationError) || 'No compatible response provider is configured.');
+  if (provider !== review.provider) throw new Error('The selected provider changed. Prepare the slide review again to confirm the new destination.');
+  void runFeature('slide-review', '', {
+    slideContext: review.slideContext,
+    slideReviewTranscript: review.transcriptSnapshot,
+  });
+  return { started: true, slideCount: slideTracker.list().slides.filter((slide) => slide.ocrStatus === 'ready' && slide.text.trim()).length, provider };
+}
+
+function recentSlideTranscriptExcerpt(now = Date.now()) {
+  const cutoff = now - 60000;
+  return transcript
+    .filter((turn) => Number.isFinite(turn.ts) && turn.ts >= cutoff)
+    .slice(-4)
+    .map((turn) => `${turn.channel === 'you' ? 'You' : 'Them'}: ${turn.text}`)
+    .join('\n')
+    .slice(-1200);
+}
+
+async function sampleSlideFrame(generation) {
+  if (slideTrackingInFlight || generation !== slideTrackingGeneration
+    || !state.capturing || store.getSettings().transcription.slideTracking !== true) return;
+  slideTrackingInFlight = true;
+  try {
+    const displayId = activeDisplayId();
+    const dataUrl = await captureScreenshot({ maxWidth: 480, format: 'jpeg', quality: 55, displayId });
+    if (generation !== slideTrackingGeneration) return;
+    if (!dataUrl) throw new Error('No screen image was available.');
+    const image = nativeImage.createFromDataURL(dataUrl);
+    const size = image.getSize();
+    const hash = hashFrame(size.width, size.height, image.getBitmap());
+    if (!hash) throw new Error('The screen sample could not be analyzed.');
+    const result = slideTracker.observe(hash, { transcriptExcerpt: recentSlideTranscriptExcerpt() });
+    for (const removed of result.removed) cancelSlideOcr(removed.sequence);
+    if (!result.emitted) return;
+    let preview = await captureScreenshot({ maxWidth: 1280, format: 'jpeg', quality: 70, displayId });
+    if (generation !== slideTrackingGeneration) return;
+    if (!preview || !slideTracker.attachPreview(result.emitted.sequence, preview)) {
+      slideTracker.attachPreview(result.emitted.sequence, dataUrl);
+      preview = dataUrl;
+    }
+    publishSlideTrackingState();
+    send('status', { message: `Slide ${result.emitted.sequence} change detected. Its preview and nearby transcript stay in memory and are not sent to a provider automatically.` });
+    void processSlideOcr(result.emitted.sequence, preview, generation);
+  } catch (error) {
+    if (generation !== slideTrackingGeneration) return;
+    console.log('[slide-tracking] capture failed', String(error && error.message || 'unknown').slice(0, 120));
+    stopSlideTracking();
+    send('status', { message: 'Slide tracking stopped because screen capture was unavailable. Check screen-recording permission, then restart Listening.' });
+  } finally {
+    slideTrackingInFlight = false;
+  }
+}
+
+function cancelSlideOcr(sequence) {
+  const jobId = slideOcrJobs.get(sequence);
+  if (!jobId) return false;
+  slideOcrJobs.delete(sequence);
+  return localOcr.cancel(jobId);
+}
+
+function cancelOldestQueuedSlideOcr() {
+  for (const [sequence, jobId] of slideOcrJobs) {
+    if (!localOcr.cancelQueued(jobId)) continue;
+    slideOcrJobs.delete(sequence);
+    slideTracker.attachText(sequence, '', 'failed');
+    publishSlideTrackingState();
+    return true;
+  }
+  return false;
+}
+
+async function processSlideOcr(sequence, preview, generation) {
+  if (slideOcrJobs.size >= MAX_PENDING_SLIDE_OCR_JOBS) cancelOldestQueuedSlideOcr();
+  if (slideOcrJobs.size >= MAX_PENDING_SLIDE_OCR_JOBS) {
+    slideTracker.attachText(sequence, '', 'failed');
+    publishSlideTrackingState();
+    send('status', { message: 'Slide OCR queue is full; this slide was skipped to keep queued images bounded.' });
+    return;
+  }
+  const jobId = `slide-ocr-${++slideOcrJobSequence}`;
+  slideOcrJobs.set(sequence, jobId);
+  try {
+    const result = await localOcr.recognize(preview, { jobId });
+    if (generation !== slideTrackingGeneration || slideOcrJobs.get(sequence) !== jobId) return;
+    slideOcrJobs.delete(sequence);
+    const status = result && result.status === 'ready'
+      ? (String(result.text || '').trim() ? 'ready' : 'empty')
+      : (result && ['unavailable', 'failed'].includes(result.status) ? result.status : 'failed');
+    slideTracker.attachText(sequence, result && typeof result.text === 'string' ? result.text : '', status);
+    publishSlideTrackingState();
+  } catch (error) {
+    if (slideOcrJobs.get(sequence) !== jobId) return;
+    slideOcrJobs.delete(sequence);
+    console.log('[slide-tracking] local OCR failed', String(error && error.message || 'unknown').slice(0, 120));
+    slideTracker.attachText(sequence, '', 'failed');
+    publishSlideTrackingState();
+  }
+}
+
+function startSlideTracking() {
+  if (!state.capturing || store.getSettings().transcription.slideTracking !== true || slideTrackingTimer !== null) return false;
+  slideTracker.clear();
+  const generation = ++slideTrackingGeneration;
+  slideTrackingTimer = setInterval(() => { void sampleSlideFrame(generation); }, 3000);
+  publishSlideTrackingState();
+  void sampleSlideFrame(generation);
+  return true;
+}
+
+function stopSlideTracking() {
+  if (slideTrackingTimer !== null) clearInterval(slideTrackingTimer);
+  slideTrackingTimer = null;
+  slideTrackingGeneration += 1;
+  clearSlideTrackingData();
 }
 
 async function processTaskContextOcr(captureId, dataUrl, generation) {
@@ -272,7 +473,7 @@ function pinTaskContextCapture(id, pinned) {
 function clearTaskContext() {
   taskContextGeneration += 1;
   taskContextOcrGeneration += 1;
-  localOcr.cancelAll();
+  for (const captureId of pendingTaskContextOcr) localOcr.cancel(captureId);
   pendingTaskContextOcr.clear();
   return publishTaskContextState(taskContext.clear());
 }
@@ -1014,6 +1215,7 @@ async function applyCaptureState(active) {
       }
     }
     state.capturing = true;
+    startSlideTracking();
     captureStartedAt = Date.now();
     lastCaptureStartedAt = captureStartedAt;
     lastCaptureEndedAt = null;
@@ -1034,6 +1236,7 @@ async function applyCaptureState(active) {
   else micEchoCoordinator.drain();
   acousticEchoFilter.reset();
   state.capturing = false;
+  stopSlideTracking();
   lastCaptureEndedAt = Date.now();
   const captureStartedAtEnd = captureStartedAt;
   captureStartedAt = null;
@@ -1157,6 +1360,7 @@ function startNewSession() {
     if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
     finalizeMeeting('new-session');
     resetTranscriptData();
+    clearSlideTrackingData();
     chatHistory.clear();
     clearTaskContext();
     buffers.you = []; buffers.them = [];
@@ -1224,7 +1428,12 @@ async function summarizeMeetingChunks({ plan, llm, fallback, isCurrent, signal }
   return `Sequential meeting-part summaries:\n${summaries.map((summary, index) => `\n[Part ${index + 1}]\n${summary}`).join('\n')}${samplingNote}\n\nCreate the final meeting recap with key points, decisions, unresolved questions, and action items.`;
 }
 
-async function runFeature(mode, userText, { confirmedLongRecap = false, confirmedTaskContext = false } = {}) {
+async function runFeature(mode, userText, {
+  confirmedLongRecap = false,
+  confirmedTaskContext = false,
+  slideContext = '',
+  slideReviewTranscript = null,
+} = {}) {
   if (state.busy || responseDiagnosticPromise) return;
   const def = MODES[mode];
   if (!def) return;
@@ -1235,7 +1444,7 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
   let featureRequest = null;
   let requestTimeout = null;
   try {
-    const orderedTranscript = [...transcript].sort((a, b) => a.ts - b.ts);
+    const orderedTranscript = (Array.isArray(slideReviewTranscript) ? slideReviewTranscript : [...transcript]).sort((a, b) => a.ts - b.ts);
     const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' || mode === 'auto-assist' ? userText : null);
     const contextError = missingContextMessage({ mode, transcript: orderedTranscript });
     if (contextError) {
@@ -1375,7 +1584,7 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
       built = await summarizeMeetingChunks({ plan: recapPlan, llm, fallback: selection.fallback, isCurrent, signal: featureRequest.controller.signal });
       if (!built || !isCurrent()) return;
     } else {
-      built = def.build({ transcript: orderedTranscript, userText: userText || '' });
+      built = def.build({ transcript: orderedTranscript, userText: userText || '', slideContext });
     }
     if (savedTaskImageCount > 0) {
       const currentAttached = imageDataUrls.length > savedTaskImageCount;
@@ -1398,7 +1607,7 @@ async function runFeature(mode, userText, { confirmedLongRecap = false, confirme
     const turns = mode === 'ask' ? chatHistory.turnsFor(built) : [{ role: 'user', text: built }];
     const fullAnswer = await streamWithFallback({
       llm,
-      fallback: selection.fallback,
+      fallback: mode === 'slide-review' ? null : selection.fallback,
       params: {
         system,
         turns,
@@ -1561,6 +1770,11 @@ async function retryTranscription() {
 }
 
 function transcriptionSettingsChanged(previous, updated) {
+  const transcriptionSettings = (settings) => {
+    const transcription = { ...(settings.transcription || {}) };
+    delete transcription.slideTracking;
+    return transcription;
+  };
   const relevant = (settings) => ({
     openai: ((settings.apiKeys || {}).openai || ''),
     deepgram: ((settings.apiKeys || {}).deepgram || ''),
@@ -1618,6 +1832,13 @@ handleTrusted('settings:set', (_e, patch) => {
       send('status', { message: 'Transcription changes will apply the next time you stop and restart listening.' });
     }
   }
+  const wasSlideTrackingEnabled = previous.transcription && previous.transcription.slideTracking === true;
+  const isSlideTrackingEnabled = updated.transcription && updated.transcription.slideTracking === true;
+  if (wasSlideTrackingEnabled !== isSlideTrackingEnabled) {
+    if (isSlideTrackingEnabled && state.capturing) startSlideTracking();
+    else if (!isSlideTrackingEnabled) stopSlideTracking();
+    else publishSlideTrackingState();
+  }
   return store.getPublicSettings();
 });
 handleTrusted('credentials:clear', (_e, provider) => {
@@ -1645,6 +1866,14 @@ handleTrusted('task-context:undo', () => undoTaskContext());
 handleTrusted('task-context:remove', (_event, id) => removeTaskContextCapture(id));
 handleTrusted('task-context:pin', (_event, payload = {}) => pinTaskContextCapture(payload.id, payload.pinned));
 handleTrusted('task-context:clear', () => clearTaskContext());
+handleTrusted('slide-tracking:clear', () => {
+  const result = clearSlideTrackingData();
+  return { ...slideTrackingState(), cleared: result.cleared };
+});
+handleTrusted('slide-tracking:review', (_event, payload = {}) => {
+  if (payload.confirmed === true) return confirmSlideReview(payload.token);
+  return prepareSlideReview();
+});
 handleTrusted('transcript:get', () => transcript.map(publicTranscriptTurn));
 handleTrusted('recap:plan', () => {
   const plan = planMeetingRecap(transcript);
@@ -1802,6 +2031,7 @@ onTrusted('ui:modal-state', (_e, open) => {
 onTrusted('app:renderer-ready', () => {
   if (!rendererModalStateReported) uiModalOpen = true;
   publishDockState();
+  publishSlideTrackingState();
   console.log('VOLYX_LENS_RENDERER_READY');
   if (process.argv.includes('--smoke-test')) setTimeout(() => app.quit(), 50);
 });

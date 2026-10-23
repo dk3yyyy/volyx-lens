@@ -130,6 +130,7 @@ function getDefaultSettings() {
       whisperModel: 'base.en',
       historyEnabled: false,
       meetingDetection: false,
+      slideTracking: false,
     },
   };
 }
