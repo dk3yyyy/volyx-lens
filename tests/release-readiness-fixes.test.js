@@ -101,7 +101,7 @@ test('main-process shortcuts honor modal state while emergency quit remains avai
   assert.match(main, /onTrusted\('ui:modal-state'/);
   assert.match(main, /const whileUnblocked/);
   assert.match(main, /handler: whileUnblocked\(\(\) => runFeature/);
-  assert.match(main, /feature: 'Stop all and quit'[\s\S]*handler: stopAllAndQuit/);
+  assert.match(main, /feature: 'Stop and quit'[\s\S]*handler: stopAllAndQuit/);
   assert.match(renderer, /volyxLens\.setModalState\(true\)/);
   assert.match(renderer, /volyxLens\.setModalState\(false\)/);
 });

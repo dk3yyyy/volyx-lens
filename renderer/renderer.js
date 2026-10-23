@@ -2469,7 +2469,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       kicker: 'Ready when you are',
       note: 'Reopen this guide anytime by selecting the Volyx Lens logo in the toolbar.',
       title: 'Your workspace, now context-aware.',
-      body: '<p>Start with these four controls. Everything else can wait until you need it.</p><div class="ob-shortcuts"><div class="ob-shortcut"><span class="kbd">⌘↵</span><span>Run Assist</span></div><div class="ob-shortcut"><span class="kbd">⌘H</span><span>Solve screen</span></div><div class="ob-shortcut"><span class="kbd">⌘⇧C</span><span>Add context</span></div><div class="ob-shortcut"><span class="kbd">⌘⇧X</span><span>Stop and quit</span></div></div>'
+      body: '<p>Start with these four controls. Everything else can wait until you need it.</p><div class="ob-shortcuts"><div class="ob-shortcut"><span class="kbd">⌘↵</span><span>Run Assist</span></div><div class="ob-shortcut"><span class="kbd">⌘H</span><span>Explain screen</span></div><div class="ob-shortcut"><span class="kbd">⌘⇧C</span><span>Add context</span></div><div class="ob-shortcut"><span class="kbd">⌘⇧X</span><span>Stop and quit</span></div></div>'
     }
   ];
   let obIndex = 0;

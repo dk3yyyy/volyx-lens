@@ -186,7 +186,7 @@ const MODES = {
   // Explicit LeetCode/coding screenshot solver (Cmd+H). Screen only.
   leetcode: {
     needsScreen: true,
-    userBubble: 'Solve what\'s on screen',
+    userBubble: 'Explain what\'s on screen',
     small: false,
     system:
       'You are an expert competitive programmer. The screenshot contains a coding problem. ' +

@@ -5,7 +5,7 @@ const { createShortcutRegistry } = require('../src/shortcut-registry');
 function definitions() {
   return [
     { id: 'assist', accelerator: 'CommandOrControl+Return', mac: '⌘↵', other: 'Ctrl+Enter', feature: 'Assist', fallback: 'Use Assist button', handler() {} },
-    { id: 'solve', accelerator: 'CommandOrControl+H', mac: '⌘H', other: 'Ctrl+H', feature: 'Solve screen', fallback: 'Use Solve button', handler() {} },
+    { id: 'solve', accelerator: 'CommandOrControl+H', mac: '⌘H', other: 'Ctrl+H', feature: 'Explain screen', fallback: 'Use Explain button', handler() {} },
     { id: 'capture', accelerator: 'CommandOrControl+Shift+C', mac: '⌘⇧C', other: 'Ctrl+Shift+C', feature: 'Add screen', fallback: 'Use Add screen button', handler() {} },
   ];
 }
@@ -31,7 +31,7 @@ test('shortcut registry reports successful and unavailable registrations without
   ]);
   assert.match(result[1].message, /the operating system or another application may own/);
   assert.doesNotMatch(JSON.stringify(result), /raw operating-system detail/);
-  assert.equal(result[1].fallback, 'Use Solve button');
+  assert.equal(result[1].fallback, 'Use Explain button');
 });
 
 test('retry leaves healthy shortcuts registered and retries only unavailable or lost entries', () => {

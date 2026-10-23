@@ -37,9 +37,9 @@ ipcMain.handle('permissions:request', (_event, kind) => ({
 ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.2.0', status: 'unsupported', message: 'Updates are available in official signed macOS release builds.', availableVersion: null, progress: null }));
 ipcMain.handle('shortcuts:get', () => [
   { id: 'assist', feature: 'Assist', displayAccelerator: '⌘↵', registered: true },
-  { id: 'solve', feature: 'Solve screen', displayAccelerator: '⌘H', registered: true },
+  { id: 'solve', feature: 'Explain screen', displayAccelerator: '⌘H', registered: true },
   { id: 'task-context', feature: 'Add screen', displayAccelerator: '⌘⇧C', registered: true },
-  { id: 'quit', feature: 'Stop all and quit', displayAccelerator: '⌘⇧X', registered: true }
+  { id: 'quit', feature: 'Stop and quit', displayAccelerator: '⌘⇧X', registered: true }
 ]);
 ipcMain.on('mouse:ignore', () => {});
 const modalReports = [];
