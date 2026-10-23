@@ -51,11 +51,16 @@ const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, rail
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { createMeetingStore } = require('./src/meeting-store');
+const { createMeetingRecovery, countUnsavedTurns } = require('./src/meeting-recovery');
 const { createMeetingDetector } = require('./src/meeting-detect');
 const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = require('./src/response-context');
 
 const chatHistory = createChatHistory();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
+const meetingRecovery = createMeetingRecovery({ file: path.join(currentUserDataPath, 'meeting-recovery.json') });
+const MEETING_RECOVERY_SAVE_DELAY_MS = 500;
+let meetingRecoveryWriteErrorShown = false;
+let meetingRecoverySaveTimer = null;
 const meetingDetector = createMeetingDetector();
 let meetingDetectedNotified = false;
 const slideTracker = createSlideTracker();
@@ -175,9 +180,12 @@ let realtimeDiagnosticPromise = null;
 let liveRealtimeDiagnostic = null;
 let liveRealtimeDiagnosticTimer = null;
 let transcriptSequence = 0;
+let transcriptDroppedTurns = 0;
+let transcriptClippedTurns = 0;
 let finalizedSegmentWatermark = 0;
 let captureStartedAt = null;
 let lastCaptureStartedAt = null;
+let pendingRestoredStartedAt = null;
 let lastCaptureEndedAt = null;
 const transcriptionDiagnostics = {
   connectedChannels: 0,
@@ -522,6 +530,8 @@ function resetTranscriptData() {
   meetingDetector.reset();
   meetingDetectedNotified = false;
   transcriptSequence = 0;
+  transcriptDroppedTurns = 0;
+  transcriptClippedTurns = 0;
   transcriptSegmentSequence = 0;
   finalizedSegmentWatermark = 0;
   transcriptionDiagnostics.crossTalkSuppressed = 0;
@@ -569,6 +579,7 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
 
   if (transcript.length > MAX_TRANSCRIPT_TURNS) {
     const removed = transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
+    transcriptDroppedTurns += countUnsavedTurns(removed, finalizedSegmentWatermark);
     const removedTurnIds = new Set(removed.map((oldTurn) => oldTurn.id));
     for (let index = recentTranscriptSegments.length - 1; index >= 0; index -= 1) {
       if (!removedTurnIds.has(recentTranscriptSegments[index].turnId)) continue;
@@ -576,6 +587,7 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
       recentTranscriptSegments.splice(index, 1);
     }
   }
+  persistMeetingRecovery();
   send(updated ? 'transcript:update' : 'transcript', publicTranscriptTurn(turn));
   if (normalizedChannel === 'you') {
     send('question:clear', { reason: 'user_replied' });
@@ -1174,15 +1186,21 @@ function advanceFinalizeWatermark() {
 function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   const settings = store.getSettings();
   const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
-  if (!historyEnabled) return { saved: false, reason: 'disabled' };
+  if (!historyEnabled) {
+    cancelMeetingRecoverySave();
+    meetingRecovery.clearBestEffort();
+    return { saved: false, reason: 'disabled' };
+  }
+  if (meetingRecovery.isSuppressed()) return { saved: false, reason: 'cleared' };
   // Retain session timestamps when the caller does not pass them explicitly:
   // new-session and app-quit finalize without opts, and shutdown clears
   // captureStartedAt before the quit finalize runs, so fall back to the last
   // known capture start/end.
   const startedAt = opts.startedAt || captureStartedAt || lastCaptureStartedAt;
   const endedAt = opts.endedAt || lastCaptureEndedAt;
+  const pendingTurns = pendingFinalizeTurns();
   const result = meetingStore.finalize({
-    turns: pendingFinalizeTurns(),
+    turns: pendingTurns,
     enabled: true,
     reason,
     meeting: meetingDetector.snapshot().meeting,
@@ -1190,8 +1208,85 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
     endedAt,
   });
   advanceFinalizeWatermark();
+  // Anything dropped before this boundary can no longer be recovered, and the
+  // draft is rebuilt from the new boundary, so the loss counter starts over.
+  transcriptDroppedTurns = 0;
+  transcriptClippedTurns = 0;
+  // An unanswered recovery draft has no transcript in memory, so quitting or
+  // starting a session must not delete it. Only consumed turns clear it.
+  if (result.saved || pendingTurns.length) {
+    cancelMeetingRecoverySave();
+    meetingRecovery.clearBestEffort();
+  }
   if (result.saved) send('history:changed', { saved: true, id: result.id, turnCount: result.turnCount });
   return result;
+}
+
+function cancelMeetingRecoverySave() {
+  if (!meetingRecoverySaveTimer) return;
+  clearTimeout(meetingRecoverySaveTimer);
+  meetingRecoverySaveTimer = null;
+}
+
+function writeMeetingRecovery() {
+  const settings = store.getSettings();
+  const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
+  try {
+    // Checkpoint only turns that are not already saved, using the same boundary
+    // as finalize. Restoring a draft must never re-save finalized history.
+    meetingRecovery.save({
+      enabled: historyEnabled,
+      turns: pendingFinalizeTurns(),
+      droppedTurns: transcriptDroppedTurns,
+      clippedTurns: transcriptClippedTurns,
+      startedAt: captureStartedAt || lastCaptureStartedAt,
+    });
+    meetingRecoveryWriteErrorShown = false;
+  } catch (error) {
+    console.error('[meeting-recovery] checkpoint failed', String(error && error.message || 'unknown').slice(0, 160));
+    if (!meetingRecoveryWriteErrorShown) {
+      meetingRecoveryWriteErrorShown = true;
+      send('status', { message: 'Meeting History is enabled, but a local recovery checkpoint could not be written. Check available disk space and app-data permissions.' });
+    }
+  }
+}
+
+function persistMeetingRecovery({ immediate = false } = {}) {
+  cancelMeetingRecoverySave();
+  if (immediate) {
+    writeMeetingRecovery();
+    return;
+  }
+  // Coalesce bursts of finalized turns: each write rewrites the whole draft.
+  meetingRecoverySaveTimer = setTimeout(writeMeetingRecovery, MEETING_RECOVERY_SAVE_DELAY_MS);
+  if (typeof meetingRecoverySaveTimer.unref === 'function') meetingRecoverySaveTimer.unref();
+}
+
+function restoreMeetingRecovery() {
+  if (state.capturing || transcript.length) throw new Error('Stop Listening and clear the current transcript before restoring a recovered meeting.');
+  const settings = store.getSettings();
+  const recovery = meetingRecovery.load({ enabled: Boolean(settings.transcription && settings.transcription.historyEnabled) });
+  if (!recovery) throw new Error('The recovery draft is no longer available.');
+  resetTranscriptData();
+  for (const turn of recovery.turns) {
+    const id = Number.isFinite(turn.id) ? turn.id : transcriptSequence + 1;
+    transcriptSequence = Math.max(transcriptSequence, id);
+    const segment = {
+      id: ++transcriptSegmentSequence,
+      channel: turn.channel,
+      text: turn.text,
+      ts: Number.isFinite(turn.ts) ? turn.ts : recovery.updatedAt,
+      turnId: id,
+    };
+    transcript.push({ id, channel: turn.channel, text: turn.text, ts: segment.ts, segments: [segment] });
+  }
+  lastCaptureStartedAt = recovery.startedAt;
+  pendingRestoredStartedAt = Number.isFinite(recovery.startedAt) ? recovery.startedAt : null;
+  // Text the earlier draft already lost stays lost; carry the counts so a second
+  // crash reports the real total instead of restarting from zero.
+  transcriptDroppedTurns = Number.isFinite(recovery.truncated) ? recovery.truncated : 0;
+  transcriptClippedTurns = Number.isFinite(recovery.clippedTurns) ? recovery.clippedTurns : 0;
+  return { restored: true, turns: transcript.map(publicTranscriptTurn), startedAt: recovery.startedAt, updatedAt: recovery.updatedAt };
 }
 
 async function applyCaptureState(active) {
@@ -1216,7 +1311,8 @@ async function applyCaptureState(active) {
     }
     state.capturing = true;
     startSlideTracking();
-    captureStartedAt = Date.now();
+    captureStartedAt = pendingRestoredStartedAt || Date.now();
+    pendingRestoredStartedAt = null;
     lastCaptureStartedAt = captureStartedAt;
     lastCaptureEndedAt = null;
     transcriptionDiagnostics.connectedChannels = 0;
@@ -1359,6 +1455,8 @@ function startNewSession() {
     const restartTranscription = state.capturing && desiredCapturing;
     if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
     finalizeMeeting('new-session');
+    meetingRecovery.resume();
+    pendingRestoredStartedAt = null;
     resetTranscriptData();
     clearSlideTrackingData();
     chatHistory.clear();
@@ -1784,7 +1882,7 @@ function transcriptionSettingsChanged(previous, updated) {
     gemini: ((settings.apiKeys || {}).gemini || ''),
     azureEndpoint: ((settings.endpoints || {}).azure || ''),
     azureRealtimeEndpoint: ((settings.endpoints || {}).azureRealtime || ''),
-    transcription: settings.transcription || {},
+    transcription: transcriptionSettings(settings),
     audio: settings.audio || {},
   });
   return JSON.stringify(relevant(previous)) !== JSON.stringify(relevant(updated));
@@ -1826,6 +1924,12 @@ handleTrusted('settings:set', (_e, patch) => {
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
   const updates = patch && patch.apiKeyUpdates;
   const updated = store.updateSettingsAndApiKeys(patch, updates && typeof updates === 'object' ? updates : {});
+  const wasHistoryEnabled = previous.transcription && previous.transcription.historyEnabled === true;
+  const isHistoryEnabled = updated.transcription && updated.transcription.historyEnabled === true;
+  if (wasHistoryEnabled && !isHistoryEnabled) {
+    cancelMeetingRecoverySave();
+    meetingRecovery.clearBestEffort();
+  } else if (!wasHistoryEnabled && isHistoryEnabled && transcript.length) persistMeetingRecovery({ immediate: true });
   if (transcriptionSettingsChanged(previous, updated)) {
     resetSttErrorState();
     if (state.capturing) {
@@ -1859,6 +1963,15 @@ handleTrusted('capture:stop', () => setCapturing(false));
 handleTrusted('capture:state', () => ({ active: state.capturing, transitioning: state.capturing !== desiredCapturing }));
 onTrusted('capture:display-intent', (_e, active) => { pendingDisplayCapture = active === true; });
 handleTrusted('session:new', () => startNewSession());
+handleTrusted('recovery:get', () => {
+  const settings = store.getSettings();
+  const recovery = meetingRecovery.load({ enabled: Boolean(settings.transcription && settings.transcription.historyEnabled) });
+  return recovery
+    ? { turnCount: recovery.turns.length, totalTurns: recovery.totalTurns, truncated: recovery.truncated, clippedTurns: recovery.clippedTurns, startedAt: recovery.startedAt, updatedAt: recovery.updatedAt }
+    : null;
+});
+handleTrusted('recovery:restore', () => restoreMeetingRecovery());
+handleTrusted('recovery:discard', () => meetingRecovery.clear());
 handleTrusted('task-context:get', () => taskContextState());
 handleTrusted('task-context:list', (_event, payload = {}) => taskContext.list({ offset: Number(payload.offset), limit: Number(payload.limit) }));
 handleTrusted('task-context:capture', () => captureTaskContextScreen());
@@ -1894,10 +2007,14 @@ handleTrusted('transcript:copy-turn', (_event, id) => {
 });
 handleTrusted('transcript:clear', () => {
   cancelActiveFeature('transcript-clear', { notify: false, invalidate: true });
+  clearSlideTrackingData();
   const cleared = transcript.length;
   transcriptEpoch += 1;
   resetTranscriptData();
   chatHistory.clear();
+  cancelMeetingRecoverySave();
+  meetingRecovery.clearBestEffort();
+  pendingRestoredStartedAt = null;
   buffers.you = []; buffers.them = [];
   if (state.capturing) startTranscriptionPipeline();
   send('transcript:cleared', {});
@@ -1913,8 +2030,18 @@ handleTrusted('history:delete', (_event, id) => {
 });
 handleTrusted('history:clear', () => {
   const result = meetingStore.clear();
+  cancelMeetingRecoverySave();
+  let recoveryDraftCleared = true;
+  try {
+    meetingRecovery.suppress();
+  } catch (error) {
+    // suppress() flips the flag before it touches the filesystem, so saving has
+    // stopped even though the draft file is still on disk. Report both facts.
+    recoveryDraftCleared = false;
+    console.error('[meeting-recovery] draft cleanup failed', String(error && error.message || 'unknown').slice(0, 160));
+  }
   send('history:changed', { cleared: true, count: result.cleared });
-  return result;
+  return { ...result, recoverySuppressed: meetingRecovery.isSuppressed(), recoveryDraftCleared };
 });
 handleTrusted('history:export', (_event, payload) => exportMeetingRecord(payload && payload.id, payload && payload.format));
 handleTrusted('history:recap', (_event, payload) => recapMeetingRecord(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));

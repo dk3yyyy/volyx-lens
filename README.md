@@ -41,7 +41,7 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Separated meeting transcript:** stable timestamped **You** and **Them** turns.
 - **Task Context:** save multiple screens locally, pin important captures, deduplicate near-identical views, and attach a bounded relevant set only when you explicitly ask.
 - **Meeting detection:** opt-in detection flags a sustained two-sided conversation while listening, tags the session, and shows a "Meeting in progress" indicator. Local and in-session only: no audio watcher, no disk writes, no model calls.
-- **Meeting history:** opt-in on-device history saves meetings with a meeting badge, search, notes, and Markdown/TXT/JSON export.
+- **Meeting history and recovery:** when enabled, finalized meetings and an in-progress transcript checkpoint are saved on device. After an unexpected exit, choose whether to restore or discard the draft.
 - **Meeting notes:** generate structured notes (Summary, Key Points, Decisions, Action Items, Follow-Up) for saved records using your configured provider, with long-meeting confirmation before paid requests. Notes persist in meeting history.
 - **Slide tracking:** optional local slide-change detection while listening, with bounded in-memory previews and nearby transcript context; no automatic provider requests.
 - **Provider choice:** 9 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server) and 6 transcription providers (OpenAI, Azure, Deepgram, Azure AI Speech, Groq Whisper, or optional local Whisper). OpenAI and Azure support both roles.
@@ -208,9 +208,11 @@ Task Context cannot read files or code that never appeared on screen. Use it onl
 
 ## Meetings
 
+Meeting detection is opt-in from Settings → Listening and runs locally in-session. Meeting history and crash recovery are also opt-in there and persist transcript text on device.
 
 - **Detect meetings** looks for a sustained two-sided conversation between the Mic and System channels while listening, then shows a subtle "Meeting in progress" indicator and tags the session as a meeting. Detection runs only on finalized in-memory transcript turns: no background audio watcher, no disk writes, and no AI requests.
 - **Save meeting history** keeps the session record on device when listening stops (capture stop, new session, or app quit). Saved records are searchable in the history browser and show a meeting badge when the session was detected as a meeting.
+- While **Save meeting history** is enabled, the in-progress transcript is atomically checkpointed to a restricted-permission local file so it can be restored after an unexpected exit. On next launch, choose **Restore transcript** or **Discard draft**. No raw audio is saved; turning history off or clearing history removes the recovery draft.
 - **Export** a saved record as Markdown, TXT, or structured JSON through a native save dialog.
 - **Generate meeting notes** turns a saved transcript into structured notes using your configured provider. Notes include a Summary, Key Points, Decisions, Action Items, and Follow-Up. Notes are saved alongside the meeting and load instantly when reopened. Long meetings need multiple model requests and require explicit confirmation before paid requests are made.
 

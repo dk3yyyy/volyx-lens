@@ -130,6 +130,18 @@
           </form>
         </dialog>
 
+        <dialog id="meeting-recovery-dialog" aria-labelledby="meeting-recovery-title">
+          <div class="slide-review-dialog-content recovery-dialog-content">
+            <h2 id="meeting-recovery-title">Recover an interrupted meeting?</h2>
+            <p id="meeting-recovery-summary"></p>
+            <p>This transcript was saved locally because Meeting History is enabled. No audio was saved. Choose whether to restore it into this session or permanently discard the recovery draft.</p>
+            <div class="slide-review-actions recovery-dialog-actions">
+              <button id="meeting-recovery-discard" type="button">Discard draft</button>
+              <button id="meeting-recovery-restore" type="button">Restore transcript</button>
+            </div>
+          </div>
+        </dialog>
+
         <div id="action-row">
           <button class="act assist-act" data-mode="assist" type="button"><span class="ic"></span><span class="assist-label">Assist</span><span class="assist-loader" aria-hidden="true"><i></i><i></i><i></i></span></button>
           <select id="assist-context" title="Choose what Assist can use" aria-label="Assist context"><option value="both">Screen + conversation</option><option value="conversation">Conversation only</option><option value="screen">Screen only</option></select>
@@ -357,7 +369,7 @@
           </select>
         </div>
         <div class="s-field"><label for="stt-history-enabled">Save meeting history</label><input id="stt-history-enabled" type="checkbox" /></div>
-        <div class="s-note">Off by default. When enabled, each finalized session (listening stopped, new session started, or app quit) is written to a private on-device history file under the app data directory with restricted permissions. Records contain only the final transcript text of each turn and local timestamps — raw audio is never stored and nothing ever leaves your Mac. You can delete individual records or clear all history at any time.</div>
+        <div class="s-note">Off by default. When enabled, finalized sessions are saved to private on-device history, and the in-progress transcript is checkpointed locally for recovery after an unexpected exit. On next launch, choose whether to restore or discard that draft. Records contain only final transcript text and local timestamps — raw audio is never stored and nothing is uploaded automatically. Delete history at any time.</div>
         <div class="s-field"><label for="stt-meeting-detection">Detect meetings</label><input id="stt-meeting-detection" type="checkbox" /></div>
         <div class="s-note">Off by default. While listening, Volyx Lens looks for a sustained two-sided conversation between the Mic and System channels in the live transcript. When it finds one, a subtle "Meeting in progress" indicator appears and the current session is tagged as a meeting if history is enabled. Detection is local and in-session only — no background audio watcher, no disk writes, and no AI requests are made.</div>
         <div class="s-field"><label for="stt-slide-tracking">Track presentation slides</label><input id="stt-slide-tracking" type="checkbox" /></div>
