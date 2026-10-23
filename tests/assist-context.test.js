@@ -61,6 +61,8 @@ test('answer modes route by the shape of the moment instead of one generic style
   assert.match(MODES.say.system, /write the words to say/i);
   assert.match(MODES['auto-assist'].system, /write the words to say/i);
   assert.match(MODES.assist.system, /at most three sentences/i);
+  assert.match(MODES.assist.system, /a coding problem gets a short approach/i);
+  assert.match(MODES.assist.system, /other technical problem.*likely cause.*specific fix/i);
   assert.match(MODES['assist-screen'].system, /under four sentences/i);
 });
 
