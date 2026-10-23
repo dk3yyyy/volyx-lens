@@ -58,7 +58,9 @@ const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = r
 const chatHistory = createChatHistory();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
 const meetingRecovery = createMeetingRecovery({ file: path.join(currentUserDataPath, 'meeting-recovery.json') });
+const MEETING_RECOVERY_SAVE_DELAY_MS = 500;
 let meetingRecoveryWriteErrorShown = false;
+let meetingRecoverySaveTimer = null;
 const meetingDetector = createMeetingDetector();
 let meetingDetectedNotified = false;
 const slideTracker = createSlideTracker();
@@ -178,6 +180,7 @@ let realtimeDiagnosticPromise = null;
 let liveRealtimeDiagnostic = null;
 let liveRealtimeDiagnosticTimer = null;
 let transcriptSequence = 0;
+let transcriptDroppedTurns = 0;
 let finalizedSegmentWatermark = 0;
 let captureStartedAt = null;
 let lastCaptureStartedAt = null;
@@ -526,6 +529,7 @@ function resetTranscriptData() {
   meetingDetector.reset();
   meetingDetectedNotified = false;
   transcriptSequence = 0;
+  transcriptDroppedTurns = 0;
   transcriptSegmentSequence = 0;
   finalizedSegmentWatermark = 0;
   transcriptionDiagnostics.crossTalkSuppressed = 0;
@@ -573,6 +577,7 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
 
   if (transcript.length > MAX_TRANSCRIPT_TURNS) {
     const removed = transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
+    transcriptDroppedTurns += removed.length;
     const removedTurnIds = new Set(removed.map((oldTurn) => oldTurn.id));
     for (let index = recentTranscriptSegments.length - 1; index >= 0; index -= 1) {
       if (!removedTurnIds.has(recentTranscriptSegments[index].turnId)) continue;
@@ -1180,6 +1185,7 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   const settings = store.getSettings();
   const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
   if (!historyEnabled) {
+    cancelMeetingRecoverySave();
     meetingRecovery.clearBestEffort();
     return { saved: false, reason: 'disabled' };
   }
@@ -1190,8 +1196,9 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   // known capture start/end.
   const startedAt = opts.startedAt || captureStartedAt || lastCaptureStartedAt;
   const endedAt = opts.endedAt || lastCaptureEndedAt;
+  const pendingTurns = pendingFinalizeTurns();
   const result = meetingStore.finalize({
-    turns: pendingFinalizeTurns(),
+    turns: pendingTurns,
     enabled: true,
     reason,
     meeting: meetingDetector.snapshot().meeting,
@@ -1199,18 +1206,32 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
     endedAt,
   });
   advanceFinalizeWatermark();
-  meetingRecovery.clearBestEffort();
+  // An unanswered recovery draft has no transcript in memory, so quitting or
+  // starting a session must not delete it. Only consumed turns clear it.
+  if (result.saved || pendingTurns.length) {
+    cancelMeetingRecoverySave();
+    meetingRecovery.clearBestEffort();
+  }
   if (result.saved) send('history:changed', { saved: true, id: result.id, turnCount: result.turnCount });
   return result;
 }
 
-function persistMeetingRecovery() {
+function cancelMeetingRecoverySave() {
+  if (!meetingRecoverySaveTimer) return;
+  clearTimeout(meetingRecoverySaveTimer);
+  meetingRecoverySaveTimer = null;
+}
+
+function writeMeetingRecovery() {
   const settings = store.getSettings();
   const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
   try {
+    // Checkpoint only turns that are not already saved, using the same boundary
+    // as finalize. Restoring a draft must never re-save finalized history.
     meetingRecovery.save({
       enabled: historyEnabled,
-      turns: transcript.map(publicTranscriptTurn),
+      turns: pendingFinalizeTurns(),
+      droppedTurns: transcriptDroppedTurns,
       startedAt: captureStartedAt || lastCaptureStartedAt,
     });
     meetingRecoveryWriteErrorShown = false;
@@ -1221,6 +1242,17 @@ function persistMeetingRecovery() {
       send('status', { message: 'Meeting History is enabled, but a local recovery checkpoint could not be written. Check available disk space and app-data permissions.' });
     }
   }
+}
+
+function persistMeetingRecovery({ immediate = false } = {}) {
+  cancelMeetingRecoverySave();
+  if (immediate) {
+    writeMeetingRecovery();
+    return;
+  }
+  // Coalesce bursts of finalized turns: each write rewrites the whole draft.
+  meetingRecoverySaveTimer = setTimeout(writeMeetingRecovery, MEETING_RECOVERY_SAVE_DELAY_MS);
+  if (typeof meetingRecoverySaveTimer.unref === 'function') meetingRecoverySaveTimer.unref();
 }
 
 function restoreMeetingRecovery() {
@@ -1883,8 +1915,10 @@ handleTrusted('settings:set', (_e, patch) => {
   const updated = store.updateSettingsAndApiKeys(patch, updates && typeof updates === 'object' ? updates : {});
   const wasHistoryEnabled = previous.transcription && previous.transcription.historyEnabled === true;
   const isHistoryEnabled = updated.transcription && updated.transcription.historyEnabled === true;
-  if (wasHistoryEnabled && !isHistoryEnabled) meetingRecovery.clearBestEffort();
-  else if (!wasHistoryEnabled && isHistoryEnabled && transcript.length) persistMeetingRecovery();
+  if (wasHistoryEnabled && !isHistoryEnabled) {
+    cancelMeetingRecoverySave();
+    meetingRecovery.clearBestEffort();
+  } else if (!wasHistoryEnabled && isHistoryEnabled && transcript.length) persistMeetingRecovery({ immediate: true });
   if (transcriptionSettingsChanged(previous, updated)) {
     resetSttErrorState();
     if (state.capturing) {
@@ -1922,7 +1956,7 @@ handleTrusted('recovery:get', () => {
   const settings = store.getSettings();
   const recovery = meetingRecovery.load({ enabled: Boolean(settings.transcription && settings.transcription.historyEnabled) });
   return recovery
-    ? { turnCount: recovery.turns.length, totalTurns: recovery.totalTurns, truncated: recovery.truncated, startedAt: recovery.startedAt, updatedAt: recovery.updatedAt }
+    ? { turnCount: recovery.turns.length, totalTurns: recovery.totalTurns, truncated: recovery.truncated, clippedTurns: recovery.clippedTurns, startedAt: recovery.startedAt, updatedAt: recovery.updatedAt }
     : null;
 });
 handleTrusted('recovery:restore', () => restoreMeetingRecovery());
@@ -1967,6 +2001,7 @@ handleTrusted('transcript:clear', () => {
   transcriptEpoch += 1;
   resetTranscriptData();
   chatHistory.clear();
+  cancelMeetingRecoverySave();
   meetingRecovery.clearBestEffort();
   pendingRestoredStartedAt = null;
   buffers.you = []; buffers.them = [];
@@ -1985,6 +2020,7 @@ handleTrusted('history:delete', (_event, id) => {
 handleTrusted('history:clear', () => {
   const result = meetingStore.clear();
   let recoverySuppressed = true;
+  cancelMeetingRecoverySave();
   try {
     meetingRecovery.suppress();
   } catch (error) {

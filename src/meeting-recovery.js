@@ -6,12 +6,17 @@ const path = require('node:path');
 const MAX_RECOVERY_TURNS = 500;
 const MAX_TURN_CHARACTERS = 12000;
 
-function normalizeTurns(turns) {
-  if (!Array.isArray(turns)) return [];
-  return turns.slice(-MAX_RECOVERY_TURNS).flatMap((turn) => {
+function sanitizeTurns(turns) {
+  if (!Array.isArray(turns)) return { turns: [], clippedTurns: 0 };
+  let clippedTurns = 0;
+  const normalized = turns.slice(-MAX_RECOVERY_TURNS).flatMap((turn) => {
     if (!turn || typeof turn !== 'object') return [];
-    const text = String(turn.text || '').trim().slice(0, MAX_TURN_CHARACTERS);
-    if (!text) return [];
+    const raw = String(turn.text || '').trim();
+    if (!raw) return [];
+    // Keep the end of a long turn. A single speaker can talk past the per-turn
+    // limit, and the most recent words are what a recovery draft is for.
+    const text = raw.length > MAX_TURN_CHARACTERS ? raw.slice(-MAX_TURN_CHARACTERS) : raw;
+    if (text.length !== raw.length) clippedTurns += 1;
     return [{
       id: Number.isFinite(turn.id) ? turn.id : undefined,
       channel: turn.channel === 'you' ? 'you' : 'them',
@@ -19,6 +24,11 @@ function normalizeTurns(turns) {
       ts: Number.isFinite(turn.ts) ? turn.ts : undefined,
     }];
   });
+  return { turns: normalized, clippedTurns };
+}
+
+function normalizeTurns(turns) {
+  return sanitizeTurns(turns).turns;
 }
 
 function countValidTurns(turns) {
@@ -37,12 +47,14 @@ function normalizeRecord(record) {
     Number.isFinite(record.totalTurns) ? record.totalTurns : turns.length,
     turns.length,
   );
+  const clippedTurns = Number.isFinite(record.clippedTurns) ? Math.max(0, record.clippedTurns) : 0;
   return {
     version: 1,
     startedAt: Number.isFinite(record.startedAt) ? record.startedAt : null,
     updatedAt: Number.isFinite(record.updatedAt) ? record.updatedAt : null,
     totalTurns,
     truncated: totalTurns - turns.length,
+    clippedTurns,
     turns,
   };
 }
@@ -82,7 +94,7 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
     }
   }
 
-  function save({ enabled = false, turns = [], startedAt = null } = {}) {
+  function save({ enabled = false, turns = [], startedAt = null, droppedTurns = 0 } = {}) {
     if (!enabled) {
       clear();
       return { saved: false, reason: 'disabled' };
@@ -91,24 +103,25 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
       clear();
       return { saved: false, reason: 'suppressed' };
     }
-    const normalized = normalizeTurns(turns);
+    const { turns: normalized, clippedTurns } = sanitizeTurns(turns);
     if (!normalized.length) {
       clear();
       return { saved: false, reason: 'empty' };
     }
-    const totalTurns = countValidTurns(turns);
+    const totalTurns = countValidTurns(turns) + Math.max(0, Math.floor(Number(droppedTurns) || 0));
     const record = {
       version: 1,
       startedAt: Number.isFinite(startedAt) ? startedAt : null,
       updatedAt: now(),
       totalTurns,
+      clippedTurns,
       turns: normalized,
     };
     fsImpl.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const tmp = `${file}.tmp`;
     fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
     fsImpl.renameSync(tmp, file);
-    return { saved: true, turnCount: normalized.length, totalTurns, truncated: totalTurns - normalized.length };
+    return { saved: true, turnCount: normalized.length, totalTurns, truncated: totalTurns - normalized.length, clippedTurns };
   }
 
   function load({ enabled = false } = {}) {

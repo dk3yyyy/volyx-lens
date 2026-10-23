@@ -2642,10 +2642,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       const totalTurns = Number.isFinite(recovery.totalTurns) ? recovery.totalTurns : recovery.turnCount;
       const truncated = Number.isFinite(recovery.truncated) ? recovery.truncated : Math.max(0, totalTurns - recovery.turnCount);
       const turnLabel = recovery.turnCount === 1 ? 'turn' : 'turns';
+      const clipped = Number.isFinite(recovery.clippedTurns) ? recovery.clippedTurns : 0;
       const truncationNote = truncated > 0
         ? ` The earliest ${truncated} ${truncated === 1 ? 'turn was' : 'turns were'} not saved because only the most recent turns are kept.`
         : '';
-      $('#meeting-recovery-summary').textContent = `${recovery.turnCount} transcript ${turnLabel} from ${started} can be recovered.${truncationNote}`;
+      const clippedNote = clipped > 0
+        ? ` ${clipped} long ${clipped === 1 ? 'turn was' : 'turns were'} shortened to the most recent text.`
+        : '';
+      $('#meeting-recovery-summary').textContent = `${recovery.turnCount} transcript ${turnLabel} from ${started} can be recovered.${truncationNote}${clippedNote}`;
       volyxLens.setModalState(true);
       meetingRecoveryDialog.showModal();
     }

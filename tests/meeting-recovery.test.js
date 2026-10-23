@@ -21,13 +21,14 @@ test('meeting recovery stores a bounded transcript atomically and loads it', () 
   });
   now += 1000;
 
-  assert.deepEqual(saved, { saved: true, turnCount: 1, totalTurns: 1, truncated: 0 });
+  assert.deepEqual(saved, { saved: true, turnCount: 1, totalTurns: 1, truncated: 0, clippedTurns: 0 });
   assert.deepEqual(recovery.load({ enabled: true }), {
     version: 1,
     startedAt: 500,
     updatedAt: 1000,
     totalTurns: 1,
     truncated: 0,
+    clippedTurns: 0,
     turns: [{ id: 1, channel: 'you', text: 'Keep this text', ts: 600 }],
   });
   recovery.clear();
@@ -92,7 +93,7 @@ test('history clearing suppresses checkpoints until the session is reset', () =>
   assert.equal(fs.existsSync(file), false);
 
   recovery.resume();
-  assert.deepEqual(recovery.save({ enabled: true, turns }), { saved: true, turnCount: 1, totalTurns: 1, truncated: 0 });
+  assert.deepEqual(recovery.save({ enabled: true, turns }), { saved: true, turnCount: 1, totalTurns: 1, truncated: 0, clippedTurns: 0 });
 });
 
 test('clearing recovery also removes an interrupted atomic-write temporary file', () => {
@@ -213,7 +214,7 @@ test('meeting recovery reports how many turns the bounded draft dropped', () => 
   const saved = recovery.save({ enabled: true, turns, startedAt: 500 });
   const draft = recovery.load({ enabled: true });
 
-  assert.deepEqual(saved, { saved: true, turnCount: 500, totalTurns: 620, truncated: 120 });
+  assert.deepEqual(saved, { saved: true, turnCount: 500, totalTurns: 620, truncated: 120, clippedTurns: 0 });
   assert.equal(draft.turns.length, 500);
   assert.equal(draft.totalTurns, 620);
   assert.equal(draft.truncated, 120);
@@ -278,4 +279,78 @@ test('the recovery dialog registers modal state and explains dropped turns', () 
   assert.match(boot, /volyxLens\.setModalState\(true\);\s*meetingRecoveryDialog\.showModal\(\);/);
   assert.match(boot, /recovery\.truncated/);
   assert.match(boot, /not saved because only the most recent turns are kept/);
+});
+
+test('a draft counts turns the live transcript already dropped', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
+  const file = path.join(dir, 'recovery.json');
+  const recovery = createMeetingRecovery({ file, now: () => 9000 });
+  const turns = Array.from({ length: 40 }, (_, index) => ({
+    id: index + 1,
+    channel: 'them',
+    text: `Kept turn ${index + 1}`,
+    ts: 1000 + index,
+  }));
+
+  const saved = recovery.save({ enabled: true, turns, droppedTurns: 80, startedAt: 500 });
+  const draft = recovery.load({ enabled: true });
+
+  assert.deepEqual(saved, { saved: true, turnCount: 40, totalTurns: 120, truncated: 80, clippedTurns: 0 });
+  assert.equal(draft.totalTurns, 120);
+  assert.equal(draft.truncated, 80);
+});
+
+test('an over-long turn keeps its latest text and is reported as shortened', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
+  const file = path.join(dir, 'recovery.json');
+  const recovery = createMeetingRecovery({ file });
+  const longText = `HEAD-MARKER ${'start '.repeat(3000)}the decisive closing sentence`;
+
+  const saved = recovery.save({
+    enabled: true,
+    turns: [{ id: 1, channel: 'you', text: longText, ts: 600 }, { id: 2, channel: 'them', text: 'short', ts: 700 }],
+    startedAt: 500,
+  });
+  const draft = recovery.load({ enabled: true });
+
+  assert.equal(saved.clippedTurns, 1);
+  assert.equal(draft.clippedTurns, 1);
+  assert.ok(draft.turns[0].text.length <= 12000, 'clipped turn should stay within the stored limit');
+  assert.ok(draft.turns[0].text.length > 11900, 'clipped turn should keep a full window of recent text');
+  assert.match(draft.turns[0].text, /the decisive closing sentence$/);
+  assert.doesNotMatch(draft.turns[0].text, /HEAD-MARKER/);
+});
+
+test('an unanswered recovery draft survives quitting and starting a session', () => {
+  const main = read('main.js');
+  const finalize = main.match(/function finalizeMeeting\(reason = 'capture-stop'[\s\S]*?\n\}\n/)?.[0] || '';
+
+  assert.match(finalize, /const pendingTurns = pendingFinalizeTurns\(\);/);
+  assert.match(finalize, /if \(result\.saved \|\| pendingTurns\.length\) \{/);
+  assert.match(finalize, /cancelMeetingRecoverySave\(\);\s*meetingRecovery\.clearBestEffort\(\);/);
+});
+
+test('checkpoints exclude turns that are already saved to history', () => {
+  const main = read('main.js');
+  const write = main.match(/function writeMeetingRecovery\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const record = main.match(/^function recordTranscript[\s\S]*?\n\}/m)?.[0] || '';
+
+  assert.match(write, /turns: pendingFinalizeTurns\(\)/);
+  assert.match(write, /droppedTurns: transcriptDroppedTurns/);
+  assert.doesNotMatch(write, /turns: transcript\.map\(publicTranscriptTurn\)/);
+  assert.match(record, /transcriptDroppedTurns \+= removed\.length;/);
+  assert.match(record, /persistMeetingRecovery\(\);/);
+});
+
+test('checkpoint writes are coalesced and cancelled when the draft is cleared', () => {
+  const main = read('main.js');
+  const persist = main.match(/function persistMeetingRecovery\([\s\S]*?\n\}/)?.[0] || '';
+
+  assert.match(persist, /setTimeout\(writeMeetingRecovery, MEETING_RECOVERY_SAVE_DELAY_MS\)/);
+  assert.match(persist, /unref/);
+  assert.match(persist, /if \(immediate\) \{[\s\S]*writeMeetingRecovery\(\);/);
+  for (const handler of ["handleTrusted('transcript:clear'", "handleTrusted('history:clear'"]) {
+    const block = main.match(new RegExp(`${handler.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?\\n\\}\\);`))?.[0] || '';
+    assert.match(block, /cancelMeetingRecoverySave\(\)/, `${handler} should cancel a scheduled checkpoint`);
+  }
 });

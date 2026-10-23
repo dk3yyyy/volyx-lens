@@ -138,13 +138,14 @@ app.whenReady().then(async () => {
   assert.ok(compact.dialogRight <= compact.width, 'compact Settings dialog must fit');
   await capture(win, 'compact');
 
-  recoveryDraft = { turnCount: 500, totalTurns: 620, truncated: 120, startedAt: Date.now() - 60000, updatedAt: Date.now() };
+  recoveryDraft = { turnCount: 500, totalTurns: 620, truncated: 120, clippedTurns: 2, startedAt: Date.now() - 60000, updatedAt: Date.now() };
   win.reload();
   await waitFor(win, "document.querySelector('#meeting-recovery-dialog').open === true", 'meeting recovery dialog to open after reload', 5000);
   const recoverySummary = await win.webContents.executeJavaScript("document.querySelector('#meeting-recovery-summary').textContent");
   assert.equal(modalReports[modalReports.length - 1], true, 'recovery dialog should report an open modal');
   assert.match(recoverySummary, /500 transcript turns from .+ can be recovered\./, 'recovery summary should describe the restored draft');
   assert.match(recoverySummary, /earliest 120 turns were not saved/, 'recovery summary should disclose dropped turns');
+  assert.match(recoverySummary, /2 long turns were shortened/, 'recovery summary should disclose shortened turns');
   await win.webContents.executeJavaScript("document.querySelector('#meeting-recovery-discard').click()");
   await waitFor(win, "document.querySelector('#meeting-recovery-dialog').open === false", 'recovery dialog to close after discard');
   await wait(50);
