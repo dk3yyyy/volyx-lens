@@ -42,3 +42,10 @@ test('only answer-oriented actions use personal context', () => {
   assert.notEqual(MODES.recap.usesPersonalContext, true);
   assert.notEqual(MODES.leetcode.usesPersonalContext, true);
 });
+
+test('personal context tells the model to use specific details rather than generalities', () => {
+  const context = buildPersonalContext([
+    { kind: 'resume', enabled: true, text: 'Experience: AI automation at Acme, cut invoice handling from 6 days to 2.' },
+  ], { userText: 'Tell me about my automation experience' });
+  assert.match(context.systemRules, /name the project, technology, employer, or result/i);
+});

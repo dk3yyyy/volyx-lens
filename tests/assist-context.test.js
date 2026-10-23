@@ -50,3 +50,24 @@ test('ready-to-speak modes attach a generic style guide with example replies', (
   const serialized = JSON.stringify({ say: MODES.say.examples, auto: MODES['auto-assist'].examples });
   assert.doesNotMatch(serialized, /I worked at|my company|years of experience at/i);
 });
+
+test('answer modes route by the shape of the moment instead of one generic style', () => {
+  for (const mode of ['assist', 'assist-screen', 'assist-conversation', 'say', 'auto-assist']) {
+    assert.match(MODES[mode].system, /gets a direct answer/i, `${mode} should route by question shape`);
+  }
+  assert.match(MODES.assist.system, /opinion or tradeoff/i);
+  assert.match(MODES.assist.system, /status request/i);
+  assert.match(MODES.say.system, /objection/i);
+  assert.match(MODES.say.system, /write the words to say/i);
+  assert.match(MODES['auto-assist'].system, /write the words to say/i);
+  assert.match(MODES.assist.system, /at most three sentences/i);
+  assert.match(MODES.assist.system, /a coding problem gets a short approach/i);
+  assert.match(MODES.assist.system, /other technical problem.*likely cause.*specific fix/i);
+  assert.match(MODES['assist-screen'].system, /under four sentences/i);
+});
+
+test('answer prompts stay general-purpose rather than interview-specific', () => {
+  const systems = Object.values(MODES).map((mode) => mode.system || '').join('\n');
+  assert.doesNotMatch(systems, /STAR|behavioral interview|hiring manager|interviewer/i);
+  assert.doesNotMatch(systems, /compensation expectations/i);
+});
