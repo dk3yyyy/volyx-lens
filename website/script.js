@@ -153,11 +153,6 @@ const DL_ASSETS = {
     label: 'macOS',
     detail: 'Unsigned v0.7.0 · pick Apple Silicon or Intel'
   },
-  'mac-x64': {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.0/volyx-lens-0.7.0-mac-x64-unsigned.dmg',
-    label: 'macOS Intel',
-    detail: 'Unsigned v0.7.0 DMG · right-click Open'
-  },
   'linux-x64': {
     href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.0/volyx-lens-0.7.0-linux-x86_64.AppImage',
     label: 'Linux x64',

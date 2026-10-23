@@ -373,7 +373,7 @@
         </details>
         <details>
           <summary>Is the release notarized?<span aria-hidden="true"></span></summary>
-          <p>The v0.7.0 macOS DMGs attached to the release are unsigned, so macOS blocks a plain double-click; right-click the app and choose Open, or clear the quarantine attribute once. The v0.7.0 macOS production build will be Apple Developer ID–signed and notarized once release signing credentials are configured. The v0.7.0 Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs; Windows shows a SmartScreen "Unknown publisher" warning.</p>
+          <p>The v0.7.0 macOS DMGs attached to the release are unsigned, so macOS blocks a plain double-click. Drag Volyx Lens into Applications, then run <code>xattr -cr "/Applications/Volyx Lens.app"</code> once in Terminal, or right-click the app and choose Open. If macOS says the app is damaged, that Terminal command is what clears it. The v0.7.0 macOS production build will be Apple Developer ID–signed and notarized once release signing credentials are configured. The v0.7.0 Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs; Windows shows a SmartScreen "Unknown publisher" warning.</p>
         </details>
         <details>
           <summary>What works offline?<span aria-hidden="true"></span></summary>
