@@ -179,3 +179,9 @@ test('Gemini smart tier keeps full reasoning and reserves more headroom', async 
   assert.equal(calls[0].config.maxOutputTokens, 1600 + 4096);
   assert.equal(calls[0].config.thinkingConfig, undefined, 'smart tier leaves the model reasoning level alone');
 });
+
+test('a fallback provider failure names the provider that actually failed', () => {
+  const main = read('main.js');
+
+  assert.match(main, /onFallback: \(\{ from, to \}\) => \{\s*responseProviderLabel = to\.label/);
+});

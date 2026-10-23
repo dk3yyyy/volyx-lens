@@ -391,3 +391,47 @@ test('Azure AI Speech region must be a bare region name, never a URL', () => {
   assert.equal(resolved.ready, false);
   assert.match(resolved.configurationError, /region/);
 });
+
+test('retired model ids migrate at read time instead of 404ing forever', () => {
+  const { migrateModelId } = require('../src/provider-config');
+  const settings = getDefaultSettings();
+  settings.provider = 'anthropic';
+  settings.apiKeys.anthropic = 'test-key';
+  settings.models.anthropic.fast = 'claude-3-5-haiku-latest';
+  settings.smart = false;
+
+  assert.equal(migrateModelId('anthropic', 'claude-3-5-haiku-latest', 'fast'), 'claude-haiku-4-5');
+  assert.equal(migrateModelId('deepseek', 'deepseek-chat', 'fast'), 'deepseek-v4-flash');
+  assert.equal(migrateModelId('deepseek', 'deepseek-reasoner', 'smart'), 'deepseek-v4-pro');
+  assert.equal(migrateModelId('gemini', 'gemini-1.5-pro', 'smart'), 'gemini-3.5-flash');
+
+  const resolved = resolveProvider(settings);
+  assert.equal(resolved.model, 'claude-haiku-4-5', 'resolveProvider applies the migration');
+});
+
+test('live and custom model ids are never rewritten', () => {
+  const { migrateModelId } = require('../src/provider-config');
+  for (const [provider, model] of [
+    ['gemini', 'gemini-2.5-pro'],
+    ['gemini', 'gemini-3.5-flash'],
+    ['anthropic', 'claude-sonnet-5'],
+    ['openai', 'gpt-4o'],
+    ['azure', 'my-deployment'],
+    ['openrouter', 'anthropic/claude-sonnet-4.5'],
+    ['ollama', 'llama3.2:3b'],
+  ]) {
+    assert.equal(migrateModelId(provider, model, 'fast'), model, `${provider} ${model} should be left alone`);
+  }
+});
+
+test('a custom endpoint keeps its own model names', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'deepseek';
+  settings.apiKeys.deepseek = 'test-key';
+  settings.models.deepseek.fast = 'deepseek-chat';
+  settings.smart = false;
+  settings.endpointByTier.deepseek = { fast: 'https://gateway.internal/v1' };
+
+  const resolved = resolveProvider(settings);
+  assert.equal(resolved.model, 'deepseek-chat', 'custom endpoints are not rewritten');
+});

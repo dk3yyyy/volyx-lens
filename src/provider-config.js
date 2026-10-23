@@ -190,6 +190,36 @@ function normalizePhraseList(value) {
     .slice(0, 50);
 }
 
+// Model ids a provider has retired. A settings file saved under an old default
+// keeps that id on disk, so every request 404s until the user edits Settings.
+// Migrate at read time, and only for ids we know are gone; anything else is
+// left alone so custom deployments survive. Gemini 2.5 is deliberately absent
+// because this app still ships it as the smart-tier default.
+const RETIRED_MODELS = Object.freeze({
+  openai: [
+    [/^gpt-3\.5/i, { fast: 'gpt-4o-mini', smart: 'gpt-4o' }],
+    [/^gpt-4-(0314|0613|32k|turbo)/i, { fast: 'gpt-4o-mini', smart: 'gpt-4o' }],
+  ],
+  anthropic: [
+    [/^claude-(2(?:\.\d+)?|3-)/i, { fast: 'claude-haiku-4-5', smart: 'claude-sonnet-5' }],
+  ],
+  gemini: [
+    [/^gemini-(1\.0|1\.5|2\.0)(?:-|$)/i, { fast: 'gemini-3.5-flash', smart: 'gemini-3.5-flash' }],
+  ],
+  deepseek: [
+    [/^deepseek-(chat|reasoner)$/i, { fast: 'deepseek-v4-flash', smart: 'deepseek-v4-pro' }],
+  ],
+});
+
+function migrateModelId(provider, model, tier) {
+  const rules = RETIRED_MODELS[provider];
+  if (!rules || !model) return model;
+  for (const [pattern, replacement] of rules) {
+    if (pattern.test(model)) return replacement[tier] || replacement.fast || model;
+  }
+  return model;
+}
+
 // A provider may expose different base URLs per tier (e.g. a fast model on one
 // API and a smart model on another). Settings can override either tier with a
 // custom endpoint; otherwise the tier-specific default or the shared baseURL
@@ -208,10 +238,13 @@ function resolveProvider(settings) {
 
   const tier = settings.smart ? 'smart' : 'fast';
   const apiKey = ((settings.apiKeys || {})[`${provider}.${tier}`] || (settings.apiKeys || {})[provider] || '').trim();
-  const model = ((settings.models || {})[provider] || {})[tier] || '';
   const requiresKey = definition.requiresKey !== false;
   const tierOverrides = (settings.endpointByTier || {})[provider] || {};
   const tierEndpoint = String(tierOverrides[tier] || '').trim();
+  // Retirement rules describe the vendor's own catalogue. A user pointing this
+  // provider at their own server keeps whatever model name that server serves.
+  const configuredModel = ((settings.models || {})[provider] || {})[tier] || '';
+  const model = tierEndpoint ? configuredModel : migrateModelId(provider, configuredModel, tier);
   let baseURL = null;
   let configurationError = null;
 
@@ -320,4 +353,5 @@ module.exports = {
   normalizePhraseList,
   resolveProvider,
   resolveRealtimeTranscription,
+  migrateModelId,
 };
