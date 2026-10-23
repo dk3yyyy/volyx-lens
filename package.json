@@ -19,6 +19,7 @@
     "security:secrets": "node scripts/check-secrets.js",
     "test:azure-realtime": "node scripts/azure-realtime-probe.js",
     "eval:vad": "node scripts/vad-accuracy-eval.js",
+    "eval:answers": "node scripts/answer-quality-eval.js",
     "prestart": "node scripts/build-native.js",
     "start": "electron .",
     "pack": "electron-builder --dir --config.mac.notarize=false",

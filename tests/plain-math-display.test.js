@@ -28,7 +28,8 @@ test('math normalization is applied only to prose while fenced and inline code s
 });
 
 test('model prompts explicitly avoid unsupported LaTeX while retaining safe markdown', () => {
-  assert.match(main, /UI supports plain text and basic Markdown but not LaTeX/);
-  assert.match(main, /never emit/);
+  const context = fs.readFileSync(path.join(root, 'src', 'response-context.js'), 'utf8');
+  assert.match(context, /UI supports plain text and basic Markdown but not LaTeX/);
+  assert.match(context, /never emit/);
   assert.match(main, /const system = `\$\{baseSystem\}\\n\\n\$\{SOURCE_UNCERTAINTY_RULE\}\\n\\n\$\{UNTRUSTED_INPUT_RULE\}\\n\\n\$\{PLAIN_TEXT_OUTPUT_RULE\}`/);
 });
