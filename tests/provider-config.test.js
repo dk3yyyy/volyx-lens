@@ -423,3 +423,15 @@ test('live and custom model ids are never rewritten', () => {
     assert.equal(migrateModelId(provider, model, 'fast'), model, `${provider} ${model} should be left alone`);
   }
 });
+
+test('a custom endpoint keeps its own model names', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'deepseek';
+  settings.apiKeys.deepseek = 'test-key';
+  settings.models.deepseek.fast = 'deepseek-chat';
+  settings.smart = false;
+  settings.endpointByTier.deepseek = { fast: 'https://gateway.internal/v1' };
+
+  const resolved = resolveProvider(settings);
+  assert.equal(resolved.model, 'deepseek-chat', 'custom endpoints are not rewritten');
+});

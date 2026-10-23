@@ -74,7 +74,11 @@ function previousMeetingsContext() {
   if (Date.now() - previousMeetingsCache.at < PREVIOUS_MEETINGS_TTL_MS) return previousMeetingsCache.text;
   let text = '';
   try {
-    const records = meetingStore.list().slice(0, 8).map((entry) => meetingStore.get(entry.id)).filter(Boolean);
+    const records = meetingStore.list()
+      .filter((entry) => entry.hasNotes)
+      .slice(0, 8)
+      .map((entry) => meetingStore.get(entry.id))
+      .filter(Boolean);
     text = buildPreviousMeetingsBlock(records).text;
   } catch (error) {
     console.error('[meeting-memory] lookup failed', String(error && error.message || 'unknown').slice(0, 160));

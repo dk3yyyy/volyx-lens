@@ -67,4 +67,5 @@ test('main only attaches previous meetings when history is enabled', () => {
   assert.match(main, /settings\.transcription\.historyEnabled/);
   assert.match(main, /PREVIOUS_MEETINGS_MODES/);
   assert.match(main, /previousMeetingsCache/);
+  assert.match(main, /\.filter\(\(entry\) => entry\.hasNotes\)[\s\S]{0,40}\.slice\(0, 8\)/);
 });

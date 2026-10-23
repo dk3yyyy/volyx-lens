@@ -238,10 +238,13 @@ function resolveProvider(settings) {
 
   const tier = settings.smart ? 'smart' : 'fast';
   const apiKey = ((settings.apiKeys || {})[`${provider}.${tier}`] || (settings.apiKeys || {})[provider] || '').trim();
-  const model = migrateModelId(provider, ((settings.models || {})[provider] || {})[tier] || '', tier);
   const requiresKey = definition.requiresKey !== false;
   const tierOverrides = (settings.endpointByTier || {})[provider] || {};
   const tierEndpoint = String(tierOverrides[tier] || '').trim();
+  // Retirement rules describe the vendor's own catalogue. A user pointing this
+  // provider at their own server keeps whatever model name that server serves.
+  const configuredModel = ((settings.models || {})[provider] || {})[tier] || '';
+  const model = tierEndpoint ? configuredModel : migrateModelId(provider, configuredModel, tier);
   let baseURL = null;
   let configurationError = null;
 
