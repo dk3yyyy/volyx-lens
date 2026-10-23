@@ -153,3 +153,29 @@ test('screen modes require a vision provider and pass their budget through', () 
   assert.match(main, /The answer stopped at the model output limit/);
   assert.match(main, /maxLongEdge: MAX_LONG_EDGE_PX, format: 'jpeg', quality: REQUEST_JPEG_QUALITY/);
 });
+
+test('Gemini smart tier keeps full reasoning and reserves more headroom', async () => {
+  const calls = [];
+  class FakeGoogleGenAI {
+    constructor() {
+      this.models = {
+        generateContentStream: async (request) => {
+          calls.push(request);
+          return (async function* stream() {
+            yield { text: 'OK', candidates: [{ finishReason: 'STOP' }] };
+          }());
+        },
+      };
+    }
+  }
+  const settings = getDefaultSettings();
+  settings.provider = 'gemini';
+  settings.apiKeys.gemini = 'test-key';
+  settings.models.gemini.smart = 'gemini-pro-test';
+  settings.smart = true;
+
+  await createLLM(settings, { GoogleGenAI: FakeGoogleGenAI }).stream({ ...baseParams, maxTokens: 1600 });
+
+  assert.equal(calls[0].config.maxOutputTokens, 1600 + 4096);
+  assert.equal(calls[0].config.thinkingConfig, undefined, 'smart tier leaves the model reasoning level alone');
+});

@@ -151,3 +151,23 @@ test('rejects when there are no displays at all', async () => {
   const { captureScreenshot } = loadScreen({ displays: [], sources: [] });
   await assert.rejects(() => captureScreenshot({ displayId: 1 }), /intended display is unavailable/);
 });
+
+test('request captures ask for a long-edge bounded thumbnail on any orientation', async () => {
+  const landscape = display(1, { width: 2560, height: 1440, scaleFactor: 2 }); // native 5120x2880
+  const wide = loadScreen({
+    displays: [landscape],
+    sources: [source(1, makeThumbnail({ width: 1568, height: 882 }))],
+    cursorDisplay: landscape,
+  });
+  await wide.captureScreenshot({ maxLongEdge: 1568, format: 'jpeg', quality: 70 });
+  assert.deepEqual(wide.lastThumbnailSize(), { width: 1568, height: 882 });
+
+  const portrait = display(2, { width: 1440, height: 2560, scaleFactor: 2 }); // native 2880x5120
+  const tall = loadScreen({
+    displays: [portrait],
+    sources: [source(2, makeThumbnail({ width: 882, height: 1568 }))],
+    cursorDisplay: portrait,
+  });
+  await tall.captureScreenshot({ maxLongEdge: 1568, format: 'jpeg', quality: 70 });
+  assert.deepEqual(tall.lastThumbnailSize(), { width: 882, height: 1568 });
+});
