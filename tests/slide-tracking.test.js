@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { hashFrame, createSlideTracker } = require('../src/slide-tracking');
+const { hashFrame, hammingDistance, createSlideTracker } = require('../src/slide-tracking');
 const { MODES } = require('../src/prompts');
 const { shouldAttachScreen } = require('../src/response-context');
 
@@ -25,6 +25,30 @@ test('slide tracking rejects invalid frame dimensions and buffers', () => {
   assert.equal(hashFrame(0, 16, Buffer.alloc(16)), null);
   assert.equal(hashFrame(7, 16, Buffer.alloc(7 * 16 * 4)), null);
   assert.equal(hashFrame(16, 16, Buffer.alloc(10)), null);
+});
+
+test('slide frame hash averages each image cell so localized text changes are detected', () => {
+  const width = 90;
+  const height = 80;
+  const plain = Buffer.alloc(width * height * 4);
+  for (let offset = 3; offset < plain.length; offset += 4) plain[offset] = 255;
+  const changed = Buffer.from(plain);
+  for (let y = 1; y < 4; y += 1) {
+    for (let x = 1; x < 4; x += 1) {
+      const offset = (y * width + x) * 4;
+      changed[offset] = 255;
+      changed[offset + 1] = 255;
+      changed[offset + 2] = 255;
+    }
+  }
+
+  assert.ok(hammingDistance(hashFrame(width, height, plain), hashFrame(width, height, changed)) > 0);
+});
+
+test('slide review markup has no orphaned recovery dialog content', () => {
+  const html = read('renderer/index.html');
+  assert.doesNotMatch(html, /recovery-dialog-content/);
+  assert.equal((html.match(/<dialog\b/g) || []).length, (html.match(/<\/dialog>/g) || []).length);
 });
 
 test('first frame establishes a baseline and stable changes emit one slide', () => {
@@ -70,6 +94,21 @@ test('slide tracker bounds its history and clear resets baseline and sequence', 
   assert.equal(tracker.clear().cleared, 2);
   assert.equal(tracker.list().total, 0);
   assert.equal(tracker.observe(frames[0]).emitted, null);
+});
+
+test('slide tracker reports evicted slides so their pending OCR can be cancelled', () => {
+  const tracker = createSlideTracker({ maxSlides: 2, maxDistance: 0 });
+  const frames = [2, 6, 10, 14].map((columns) => hashFrame(16, 16, slideFrame(columns)));
+  tracker.observe(frames[0]);
+  tracker.observe(frames[1]);
+  tracker.observe(frames[1]);
+  tracker.observe(frames[2]);
+  tracker.observe(frames[2]);
+  tracker.observe(frames[3]);
+  const finalResult = tracker.observe(frames[3]);
+
+  assert.deepEqual(finalResult.removed.map((slide) => slide.sequence), [1]);
+  assert.deepEqual(tracker.list().slides.map((slide) => slide.sequence), [2, 3]);
 });
 
 test('slide previews and transcript excerpts stay bounded and clear together', () => {
@@ -134,8 +173,18 @@ test('slide tracking is opt-in, only active while listening, visible, and cleara
   assert.match(preload, /'slide-tracking:state'/);
   assert.match(main, /startSlideTracking\(\)/);
   assert.match(main, /stopSlideTracking\(\)/);
+  assert.match(main, /onTrusted\('app:renderer-ready',[\s\S]*?publishSlideTrackingState\(\)/);
+  const clearTaskContext = main.match(/function clearTaskContext\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(clearTaskContext, /for \(const captureId of pendingTaskContextOcr\) localOcr\.cancel\(captureId\)/);
+  assert.doesNotMatch(clearTaskContext, /cancelAll/);
+  assert.match(main, /fallback: mode === 'slide-review' \? null : selection\.fallback/);
+  const confirmReview = main.match(/function confirmSlideReview\(token\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(confirmReview, /if \(state\.busy \|\| responseDiagnosticPromise\)[\s\S]*?const review = pendingSlideReview/);
   assert.match(main, /handleTrusted\('slide-tracking:clear'/);
   assert.match(main, /localOcr\.recognize\(preview/);
+  assert.match(main, /for \(const removed of result\.removed\) cancelSlideOcr\(removed\.sequence\)/);
+  assert.match(main, /MAX_PENDING_SLIDE_OCR_JOBS/);
+  assert.match(main, /localOcr\.cancelQueued\(jobId\)/);
   assert.match(main, /handleTrusted\('slide-tracking:review'/);
   assert.match(renderer, /slideTrackingReview/);
   assert.match(html, /id="slide-tracking-review"/);

@@ -106,6 +106,7 @@ const linuxMonitorCapture = createLinuxMonitorCapture({
   },
 });
 const MAX_SAVED_TASK_IMAGES_PER_REQUEST = 39;
+const MAX_PENDING_SLIDE_OCR_JOBS = 2;
 const LARGE_TASK_CONTEXT_CONFIRM_THRESHOLD = 8;
 const FEATURE_REQUEST_TIMEOUT_MS = 120000;
 const { capTaskImages } = require('./src/task-image-cap');
@@ -237,8 +238,7 @@ function clearSlideTrackingData() {
   if (slideTrackingTimer !== null) clearInterval(slideTrackingTimer);
   slideTrackingTimer = null;
   slideTrackingGeneration += 1;
-  for (const jobId of slideOcrJobs.values()) localOcr.cancel(jobId);
-  slideOcrJobs.clear();
+  for (const sequence of slideOcrJobs.keys()) cancelSlideOcr(sequence);
   pendingSlideReview = null;
   const result = slideTracker.clear();
   if (restartTracking) startSlideTracking();
@@ -278,6 +278,9 @@ function prepareSlideReview() {
 }
 
 function confirmSlideReview(token) {
+  if (state.busy || responseDiagnosticPromise) {
+    throw new Error('Wait for the active response or provider test to finish before sending slide context.');
+  }
   const review = pendingSlideReview;
   pendingSlideReview = null;
   if (!review || typeof token !== 'string' || token !== review.token || Date.now() - review.createdAt > 120000) {
@@ -320,6 +323,7 @@ async function sampleSlideFrame(generation) {
     const hash = hashFrame(size.width, size.height, image.getBitmap());
     if (!hash) throw new Error('The screen sample could not be analyzed.');
     const result = slideTracker.observe(hash, { transcriptExcerpt: recentSlideTranscriptExcerpt() });
+    for (const removed of result.removed) cancelSlideOcr(removed.sequence);
     if (!result.emitted) return;
     let preview = await captureScreenshot({ maxWidth: 1280, format: 'jpeg', quality: 70, displayId });
     if (generation !== slideTrackingGeneration) return;
@@ -340,7 +344,32 @@ async function sampleSlideFrame(generation) {
   }
 }
 
+function cancelSlideOcr(sequence) {
+  const jobId = slideOcrJobs.get(sequence);
+  if (!jobId) return false;
+  slideOcrJobs.delete(sequence);
+  return localOcr.cancel(jobId);
+}
+
+function cancelOldestQueuedSlideOcr() {
+  for (const [sequence, jobId] of slideOcrJobs) {
+    if (!localOcr.cancelQueued(jobId)) continue;
+    slideOcrJobs.delete(sequence);
+    slideTracker.attachText(sequence, '', 'failed');
+    publishSlideTrackingState();
+    return true;
+  }
+  return false;
+}
+
 async function processSlideOcr(sequence, preview, generation) {
+  if (slideOcrJobs.size >= MAX_PENDING_SLIDE_OCR_JOBS) cancelOldestQueuedSlideOcr();
+  if (slideOcrJobs.size >= MAX_PENDING_SLIDE_OCR_JOBS) {
+    slideTracker.attachText(sequence, '', 'failed');
+    publishSlideTrackingState();
+    send('status', { message: 'Slide OCR queue is full; this slide was skipped to keep queued images bounded.' });
+    return;
+  }
   const jobId = `slide-ocr-${++slideOcrJobSequence}`;
   slideOcrJobs.set(sequence, jobId);
   try {
@@ -444,7 +473,7 @@ function pinTaskContextCapture(id, pinned) {
 function clearTaskContext() {
   taskContextGeneration += 1;
   taskContextOcrGeneration += 1;
-  localOcr.cancelAll();
+  for (const captureId of pendingTaskContextOcr) localOcr.cancel(captureId);
   pendingTaskContextOcr.clear();
   return publishTaskContextState(taskContext.clear());
 }
@@ -1578,7 +1607,7 @@ async function runFeature(mode, userText, {
     const turns = mode === 'ask' ? chatHistory.turnsFor(built) : [{ role: 'user', text: built }];
     const fullAnswer = await streamWithFallback({
       llm,
-      fallback: selection.fallback,
+      fallback: mode === 'slide-review' ? null : selection.fallback,
       params: {
         system,
         turns,
@@ -2002,6 +2031,7 @@ onTrusted('ui:modal-state', (_e, open) => {
 onTrusted('app:renderer-ready', () => {
   if (!rendererModalStateReported) uiModalOpen = true;
   publishDockState();
+  publishSlideTrackingState();
   console.log('VOLYX_LENS_RENDERER_READY');
   if (process.argv.includes('--smoke-test')) setTimeout(() => app.quit(), 50);
 });

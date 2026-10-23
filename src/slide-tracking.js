@@ -12,11 +12,21 @@ function hashFrame(width, height, rgba) {
 
   const samples = new Array(9 * 8);
   for (let y = 0; y < 8; y += 1) {
-    const sourceY = Math.min(height - 1, Math.floor(((y + 0.5) * height) / 8));
+    const startY = Math.floor((y * height) / 8);
+    const endY = Math.floor(((y + 1) * height) / 8);
     for (let x = 0; x < 9; x += 1) {
-      const sourceX = Math.min(width - 1, Math.floor(((x + 0.5) * width) / 9));
-      const offset = (sourceY * width + sourceX) * 4;
-      samples[y * 9 + x] = 0.299 * rgba[offset] + 0.587 * rgba[offset + 1] + 0.114 * rgba[offset + 2];
+      const startX = Math.floor((x * width) / 9);
+      const endX = Math.floor(((x + 1) * width) / 9);
+      let luminance = 0;
+      let pixelCount = 0;
+      for (let sourceY = startY; sourceY < endY; sourceY += 1) {
+        for (let sourceX = startX; sourceX < endX; sourceX += 1) {
+          const offset = (sourceY * width + sourceX) * 4;
+          luminance += 0.299 * rgba[offset] + 0.587 * rgba[offset + 1] + 0.114 * rgba[offset + 2];
+          pixelCount += 1;
+        }
+      }
+      samples[y * 9 + x] = luminance / pixelCount;
     }
   }
 
@@ -74,16 +84,16 @@ function createSlideTracker({
     if (typeof hash !== 'string' || !/^[0-9a-f]{16}$/i.test(hash)) {
       candidateHash = null;
       candidateCount = 0;
-      return { emitted: null };
+      return { emitted: null, removed: [] };
     }
     if (!baselineHash) {
       baselineHash = hash;
-      return { emitted: null };
+      return { emitted: null, removed: [] };
     }
     if (hammingDistance(baselineHash, hash) <= distanceLimit) {
       candidateHash = null;
       candidateCount = 0;
-      return { emitted: null };
+      return { emitted: null, removed: [] };
     }
 
     if (candidateHash && hammingDistance(candidateHash, hash) <= distanceLimit) candidateCount += 1;
@@ -91,7 +101,7 @@ function createSlideTracker({
       candidateHash = hash;
       candidateCount = 1;
     }
-    if (candidateCount < stableCountRequired) return { emitted: null };
+    if (candidateCount < stableCountRequired) return { emitted: null, removed: [] };
 
     baselineHash = hash;
     candidateHash = null;
@@ -106,8 +116,10 @@ function createSlideTracker({
       ocrStatus: 'pending',
     };
     slides.push(slide);
-    if (slides.length > limit) slides.splice(0, slides.length - limit);
-    return { emitted: metadata(slide) };
+    const removed = slides.length > limit
+      ? slides.splice(0, slides.length - limit).map(metadata)
+      : [];
+    return { emitted: metadata(slide), removed };
   }
 
   function attachPreview(sequence, preview) {
