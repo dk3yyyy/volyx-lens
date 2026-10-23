@@ -108,7 +108,7 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
     }
   }
 
-  function save({ enabled = false, turns = [], startedAt = null, droppedTurns = 0 } = {}) {
+  function save({ enabled = false, turns = [], startedAt = null, droppedTurns = 0, clippedTurns = 0 } = {}) {
     if (!enabled) {
       clear();
       return { saved: false, reason: 'disabled' };
@@ -117,25 +117,28 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
       clear();
       return { saved: false, reason: 'suppressed' };
     }
-    const { turns: normalized, clippedTurns } = sanitizeTurns(turns);
+    const sanitized = sanitizeTurns(turns);
+    const normalized = sanitized.turns;
     if (!normalized.length) {
       clear();
       return { saved: false, reason: 'empty' };
     }
+    const carriedClipped = Math.max(0, Math.floor(Number(clippedTurns) || 0));
+    const totalClipped = sanitized.clippedTurns + carriedClipped;
     const totalTurns = countValidTurns(turns) + Math.max(0, Math.floor(Number(droppedTurns) || 0));
     const record = {
       version: 1,
       startedAt: Number.isFinite(startedAt) ? startedAt : null,
       updatedAt: now(),
       totalTurns,
-      clippedTurns,
+      clippedTurns: totalClipped,
       turns: normalized,
     };
     fsImpl.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const tmp = `${file}.tmp`;
     fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
     fsImpl.renameSync(tmp, file);
-    return { saved: true, turnCount: normalized.length, totalTurns, truncated: totalTurns - normalized.length, clippedTurns };
+    return { saved: true, turnCount: normalized.length, totalTurns, truncated: totalTurns - normalized.length, clippedTurns: totalClipped };
   }
 
   function load({ enabled = false } = {}) {

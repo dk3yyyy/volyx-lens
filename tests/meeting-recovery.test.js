@@ -248,7 +248,8 @@ test('recovery draft cleanup never aborts finalize or history clearing', () => {
   assert.match(finalize, /meetingRecovery\.clearBestEffort\(\)/);
   assert.doesNotMatch(clearHistory, /recoverySuppressed: true/);
   assert.match(clearHistory, /try \{\s*meetingRecovery\.suppress\(\);/);
-  assert.match(clearHistory, /recoverySuppressed = false/);
+  assert.match(clearHistory, /recoverySuppressed: meetingRecovery\.isSuppressed\(\)/);
+  assert.match(clearHistory, /recoveryDraftCleared/);
   assert.match(clearTranscript, /meetingRecovery\.clearBestEffort\(\)/);
   assert.match(settingsSet, /meetingRecovery\.clearBestEffort\(\)/);
 });
@@ -378,4 +379,49 @@ test('the lost-turn counter resets once a save advances the boundary', () => {
 
   assert.match(finalize, /advanceFinalizeWatermark\(\);/);
   assert.match(finalize, /transcriptDroppedTurns = 0;/);
+});
+
+test('a checkpoint carries loss counts from an earlier draft', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
+  const file = path.join(dir, 'recovery.json');
+  const recovery = createMeetingRecovery({ file, now: () => 4000 });
+  const longText = `HEAD ${'x'.repeat(12050)} tail`;
+
+  const saved = recovery.save({
+    enabled: true,
+    turns: [{ id: 1, channel: 'them', text: longText, ts: 600 }],
+    droppedTurns: 80,
+    clippedTurns: 2,
+    startedAt: 500,
+  });
+  const draft = recovery.load({ enabled: true });
+
+  assert.equal(saved.truncated, 80);
+  assert.equal(saved.clippedTurns, 3, 'newly clipped turn adds to the carried count');
+  assert.equal(draft.totalTurns, 81);
+  assert.equal(draft.truncated, 80);
+  assert.equal(draft.clippedTurns, 3);
+});
+
+test('restore carries missing-turn counts into the next checkpoint', () => {
+  const main = read('main.js');
+  const restore = main.match(/function restoreMeetingRecovery\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const write = main.match(/function writeMeetingRecovery\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const finalize = main.match(/function finalizeMeeting\(reason = 'capture-stop'[\s\S]*?\n\}\n/)?.[0] || '';
+  const reset = main.match(/function resetTranscriptData\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+
+  assert.match(restore, /transcriptDroppedTurns = Number\.isFinite\(recovery\.truncated\)/);
+  assert.match(restore, /transcriptClippedTurns = Number\.isFinite\(recovery\.clippedTurns\)/);
+  assert.match(write, /clippedTurns: transcriptClippedTurns/);
+  assert.match(finalize, /transcriptClippedTurns = 0;/);
+  assert.match(reset, /transcriptClippedTurns = 0;/);
+});
+
+test('history clearing reports suppression and cleanup separately', () => {
+  const renderer = read('renderer/renderer.js');
+  const clearHistory = renderer.match(/const result = await volyxLens\.historyClear\(\);[\s\S]*?showStatus\(`Deleted/)?.[0] || '';
+
+  assert.match(clearHistory, /result\.recoverySuppressed/);
+  assert.match(clearHistory, /result\.recoveryDraftCleared === false/);
+  assert.match(clearHistory, /could not be removed and will be offered again/);
 });

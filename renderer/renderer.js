@@ -589,10 +589,13 @@
       const result = await volyxLens.historyClear();
       closeMeetingDetail();
       await loadMeetingHistory();
-      const recoveryNotice = result.recoverySuppressed
+      const recoveredNotice = result.recoverySuppressed
         ? ' The current transcript stays in this session but will not be saved or recovered; start a new session to resume history.'
         : '';
-      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'}.${recoveryNotice}`);
+      const cleanupNotice = result.recoveryDraftCleared === false
+        ? ' The on-device recovery draft could not be removed and will be offered again on the next launch.'
+        : '';
+      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'}.${recoveredNotice}${cleanupNotice}`);
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting history could not be cleared.'); }
   });
 

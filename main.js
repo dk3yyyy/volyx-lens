@@ -181,6 +181,7 @@ let liveRealtimeDiagnostic = null;
 let liveRealtimeDiagnosticTimer = null;
 let transcriptSequence = 0;
 let transcriptDroppedTurns = 0;
+let transcriptClippedTurns = 0;
 let finalizedSegmentWatermark = 0;
 let captureStartedAt = null;
 let lastCaptureStartedAt = null;
@@ -530,6 +531,7 @@ function resetTranscriptData() {
   meetingDetectedNotified = false;
   transcriptSequence = 0;
   transcriptDroppedTurns = 0;
+  transcriptClippedTurns = 0;
   transcriptSegmentSequence = 0;
   finalizedSegmentWatermark = 0;
   transcriptionDiagnostics.crossTalkSuppressed = 0;
@@ -1209,6 +1211,7 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   // Anything dropped before this boundary can no longer be recovered, and the
   // draft is rebuilt from the new boundary, so the loss counter starts over.
   transcriptDroppedTurns = 0;
+  transcriptClippedTurns = 0;
   // An unanswered recovery draft has no transcript in memory, so quitting or
   // starting a session must not delete it. Only consumed turns clear it.
   if (result.saved || pendingTurns.length) {
@@ -1235,6 +1238,7 @@ function writeMeetingRecovery() {
       enabled: historyEnabled,
       turns: pendingFinalizeTurns(),
       droppedTurns: transcriptDroppedTurns,
+      clippedTurns: transcriptClippedTurns,
       startedAt: captureStartedAt || lastCaptureStartedAt,
     });
     meetingRecoveryWriteErrorShown = false;
@@ -1278,6 +1282,10 @@ function restoreMeetingRecovery() {
   }
   lastCaptureStartedAt = recovery.startedAt;
   pendingRestoredStartedAt = Number.isFinite(recovery.startedAt) ? recovery.startedAt : null;
+  // Text the earlier draft already lost stays lost; carry the counts so a second
+  // crash reports the real total instead of restarting from zero.
+  transcriptDroppedTurns = Number.isFinite(recovery.truncated) ? recovery.truncated : 0;
+  transcriptClippedTurns = Number.isFinite(recovery.clippedTurns) ? recovery.clippedTurns : 0;
   return { restored: true, turns: transcript.map(publicTranscriptTurn), startedAt: recovery.startedAt, updatedAt: recovery.updatedAt };
 }
 
@@ -2022,16 +2030,18 @@ handleTrusted('history:delete', (_event, id) => {
 });
 handleTrusted('history:clear', () => {
   const result = meetingStore.clear();
-  let recoverySuppressed = true;
   cancelMeetingRecoverySave();
+  let recoveryDraftCleared = true;
   try {
     meetingRecovery.suppress();
   } catch (error) {
-    recoverySuppressed = false;
-    console.error('[meeting-recovery] suppression failed', String(error && error.message || 'unknown').slice(0, 160));
+    // suppress() flips the flag before it touches the filesystem, so saving has
+    // stopped even though the draft file is still on disk. Report both facts.
+    recoveryDraftCleared = false;
+    console.error('[meeting-recovery] draft cleanup failed', String(error && error.message || 'unknown').slice(0, 160));
   }
   send('history:changed', { cleared: true, count: result.cleared });
-  return { ...result, recoverySuppressed };
+  return { ...result, recoverySuppressed: meetingRecovery.isSuppressed(), recoveryDraftCleared };
 });
 handleTrusted('history:export', (_event, payload) => exportMeetingRecord(payload && payload.id, payload && payload.format));
 handleTrusted('history:recap', (_event, payload) => recapMeetingRecord(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));
