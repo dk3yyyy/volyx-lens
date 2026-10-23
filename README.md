@@ -6,14 +6,14 @@
 
 **A user-controlled, context-aware AI assistant for macOS, Windows, and Linux.**
 
-Use your screen, voice, meeting audio, and saved Task Context with the AI provider you choose. Requests go directly from the app to that provider rather than through a Volyx Lens-operated server. You choose when to capture and what context to send. On macOS, the overlay uses the operating system's protected-window mechanism to reduce accidental exposure of its contents in supported capture tools; this is a privacy safeguard, not a way to conceal use. Support varies by platform and capture tool, and exclusion is never guaranteed.
+Use your screen, voice, meeting audio, and saved Task Context with the AI provider you choose. Requests go directly from the app to that provider rather than through a Volyx Lens-operated server. You choose when to capture and what context to send. On macOS the overlay can be excluded from supported screen captures; support varies by platform and capture tool, and exclusion is never guaranteed.
 
 [**Explore the live site**](https://volyxlens.pages.dev/) · [Download](#download) · [Product tour](#product-tour) · [Architecture](docs/architecture.md) · [Privacy](#privacy-and-security)
 
 <br />
 
 <a href="https://volyxlens.pages.dev/">
-  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing the privacy-first macOS and Windows AI assistant that hides from screen shares, its separate screen, voice, and meeting-audio inputs, and direct provider routing" />
+  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing a privacy-first macOS and Windows AI assistant with separate screen, voice, and meeting-audio inputs and direct provider routing" />
 </a>
 
 <sub>Live product site: <a href="https://volyxlens.pages.dev/">volyxlens.pages.dev</a></sub>
@@ -23,7 +23,19 @@ Use your screen, voice, meeting audio, and saved Task Context with the AI provid
 ---
 
 > [!IMPORTANT]
-> **Use Volyx Lens transparently and with consent.** Tell people when you are capturing or transcribing conversations, and get any consent required by law, policy, or the people involved. Disclose AI assistance when an exam, interview, workplace, platform, or other setting requires it. Do not use capture protection to hide recording or assistance, or to bypass those rules. Capture exclusion is best-effort, never guaranteed; modern capture tools or a physical camera may still show the app.
+> **Use Volyx Lens transparently and with consent.** Tell people when you are capturing or transcribing conversations, and get any consent required by law, policy, or the people involved. Disclose AI assistance wherever the setting requires it.
+
+## Intended use
+
+Volyx Lens is for the side of the table where you are an active participant: you are on the call, you have the documents open, and you need to think on your feet.
+
+- Client, sales, and support calls, where account history and next steps should be in view.
+- Meetings and interviews you are running, with the other people informed.
+- Lectures, talks, and training sessions you attend and want to summarize afterwards.
+- Accessibility and language support, including live transcription for people who are hard of hearing or working in a second language.
+- Solo work: reading a dense document or working through a stack trace and wanting a second pass over your own screen.
+
+It is not for exams, proctored assessments, or interviews where outside assistance is not allowed. Do not record or translate people who have not agreed to it, and do not present generated output as your own where disclosure is expected.
 
 ## Why Volyx Lens
 
@@ -48,8 +60,7 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
-- **Native macOS and Windows behavior:** compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
-- **Overlay privacy:** on macOS, the overlay uses the protected-window mechanism to reduce accidental exposure in supported capture tools. This is not guaranteed and is not intended to conceal use. Windows and Linux provide no equivalent capture-exclusion API; see [Platform support](#platform-support).
+- **Native desktop behavior:** compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and optional window exclusion from supported screen captures on macOS.
 
 ## Product tour
 
@@ -133,12 +144,12 @@ Notes:
 | Action | Trigger | Context used |
 |---|---|---|
 | **Assist** | `⌘` `↵` or Assist | screen, conversation, or both (you choose) |
-| **Solve what’s on screen** | `⌘` `H` | current screen |
+| **Explain what’s on screen** | `⌘` `H` | current screen |
 | **Add Task Context screen** | `⌘` `⇧` `C` or Add screen | local capture only; no AI request |
 | **What should I say?** | action button | conversation transcript |
 | **Follow-up questions** | action button | conversation transcript |
 | **Draft answer** | button on a detected question | conversation transcript |
-| **Auto-assist** | opt-in Setting (off by default): auto-drafts replies to confidently detected questions; cooldown and confidence are configurable | conversation transcript |
+| **Auto-assist** | opt-in Setting (off by default): proposes a draft reply when a question is confidently detected, for you to review before using; cooldown and confidence are configurable | conversation transcript |
 | **Recap** | action button | bounded meeting transcript |
 | **Detect meetings** | opt-in Setting (off by default): tags a sustained two-sided conversation while listening, with a "Meeting in progress" indicator | finalized transcript turns only, in memory |
 | **Save meeting history** | opt-in Setting (off by default): keeps the session record on device when listening stops | transcript + meeting flag |
@@ -146,7 +157,7 @@ Notes:
 | **Generate meeting notes** | button on a saved meeting | saved transcript through your provider |
 | **Ask anything** | type and press `↵` | selected screen/conversation context |
 | **New Session** | `/new` or New Session | clears in-memory session context |
-| **Emergency quit** | `⌘` `⇧` `X` or power button | stops capture and clears session media context |
+| **Stop and quit** | `⌘` `⇧` `X` or power button | stops capture and clears session media context |
 
 The **Smart** toggle selects the configured higher-capability model. Settings reports whether each global shortcut registered successfully and keeps equivalent visible buttons available.
 
@@ -190,7 +201,7 @@ Keys stay in the Electron main process and are protected with `safeStorage` / ma
 
 ### 3. Understand screen-share behavior
 
-Capture behavior depends on your operating system and the app being used to share or record. On macOS, some tools can respect Volyx Lens's protected-window flag; others may not. Windows and Linux have no OS-level capture-exclusion API. Assume the overlay may be visible, and do not rely on capture protection to conceal recording or AI assistance.
+On macOS, some capture tools respect the overlay's protected-window flag and some do not. Windows and Linux have no OS-level capture-exclusion API. Assume the overlay may be visible.
 
 ## Task Context
 
@@ -252,7 +263,7 @@ For a deeper dive into the process split, preload bridge surface, provider routi
 - **Protected secrets.** Credentials are accessed in the main process and use `safeStorage` / Keychain when available.
 - **Explicit expensive requests.** Large multi-image requests and multi-part long-meeting recaps require confirmation.
 - **Opt-in slide tracking.** Screen samples are compared locally while Listening is active; only stable-change previews are held in bounded memory and nothing is sent to a provider automatically.
-- **Best-effort overlay privacy.** `setContentProtection(true)` / `NSWindowSharingNone` may reduce accidental capture on macOS, but is not a security guarantee or a concealment feature.
+- **Best-effort overlay privacy.** `setContentProtection(true)` / `NSWindowSharingNone` may reduce accidental capture on macOS, but this is a privacy control rather than a security guarantee.
 
 ## Transcript workspace
 
@@ -283,12 +294,6 @@ You may have granted permission to an older ad-hoc build. Toggle Volyx Lens off 
 <summary><strong>Listening connects but no transcript appears</strong></summary>
 
 Verify the selected realtime provider and exact deployment/model configuration. For Azure, use the official resource endpoint, resource key, and exact realtime transcription deployment name. Stop listening before changing settings, then use **Test Live Mic** to send a bounded five-second sample and require a real transcript. Provider billing may apply.
-</details>
-
-<details>
-<summary><strong>Volyx Lens appears in a Zoom share</strong></summary>
-
-Select **Advanced capture with window filtering** in Zoom as shown above. Capture exclusion remains best-effort, especially on newer macOS capture paths.
 </details>
 
 <details>
