@@ -12,6 +12,11 @@
 
 const { MODES } = require('../src/prompts');
 const { buildPreviousMeetingsBlock, PREVIOUS_MEETINGS_NOTE } = require('../src/meeting-memory');
+const {
+  SOURCE_UNCERTAINTY_RULE,
+  UNTRUSTED_INPUT_RULE,
+  PLAIN_TEXT_OUTPUT_RULE,
+} = require('../src/response-context');
 
 const MIN_LIVE_PASS_RATE = 0.75;
 
@@ -101,6 +106,7 @@ const SCENARIOS = [
   {
     id: 'coding-screenshot',
     mode: 'leetcode',
+    needsImage: true,
     problemText: PROBLEM_TEXT,
     answer: [
       'Hash map of seen values to indices; check the complement before inserting.',
@@ -115,9 +121,19 @@ const SCENARIOS = [
       'Time O(n), space O(n).',
     ].join('\n'),
     codeFence: true,
-    noRestatement: true,
     promptMatch: [/expert competitive programmer/i, /time and space complexity/i],
     minBudget: { fast: 1600, smart: 2600 },
+  },
+  {
+    id: 'coding-assist',
+    mode: 'assist',
+    needsImage: true,
+    problemText: PROBLEM_TEXT,
+    answer: 'Hash map from value to index, check the complement before inserting.\n```python\ndef two_sum(nums, target):\n    seen = {}\n    for i, n in enumerate(nums):\n        if target - n in seen:\n            return [seen[target - n], i]\n        seen[n] = i\n```\nTime O(n), space O(n).',
+    codeFence: true,
+    noRestatement: true,
+    maxSentences: 4,
+    promptMatch: [/never repeat, restate, or transcribe/i],
   },
   {
     id: 'error-dialog',
@@ -165,6 +181,7 @@ const SCENARIOS = [
   {
     id: 'slide-summary',
     mode: 'assist-screen',
+    needsImage: true,
     userText: 'Explain this slide.',
     answer: 'The slide claims onboarding drops to four minutes after the guided setup. The implication is that the manual steps were the bottleneck, not the import itself.',
     maxSentences: 3,
@@ -207,44 +224,65 @@ function buildPrompt(scenario) {
     const block = buildPreviousMeetingsBlock(scenario.previousMeetings);
     if (block.count) prompt += `\n\n${PREVIOUS_MEETINGS_NOTE}\n\n${block.text}`;
   }
-  return { prompt, system: def.system || '' };
+  const system = [def.system || '', SOURCE_UNCERTAINTY_RULE, UNTRUSTED_INPUT_RULE, PLAIN_TEXT_OUTPUT_RULE]
+    .filter(Boolean)
+    .join('\n\n');
+  return { prompt, system };
 }
 
-function evaluateScenario(scenario, { answer } = {}) {
+function evaluateScenario(scenario, { answer: overrideAnswer } = {}) {
   const { prompt, system } = buildPrompt(scenario);
   const fullPrompt = `${system}\n\n${prompt}`;
-  const text = answer == null ? scenario.answer : answer;
+  const text = overrideAnswer == null ? scenario.answer : overrideAnswer;
   const checks = [];
 
-  if (scenario.codeFence) checks.push({ name: 'codeFence', ...CHECKS.codeFence(text) });
-  if (scenario.noCodeFence) checks.push({ name: 'noCodeFence', ...CHECKS.noCodeFence(text) });
-  if (scenario.noRestatement) checks.push({ name: 'noRestatement', ...CHECKS.noRestatement(text, scenario) });
-  if (scenario.maxSentences) checks.push({ name: 'maxSentences', ...CHECKS.maxSentences(text, scenario) });
-  if (scenario.mustMatch) checks.push({ name: 'matches', ...CHECKS.matches(text, scenario) });
-  if (scenario.mustNotMatch) checks.push({ name: 'avoids', ...CHECKS.avoids(text, scenario) });
-  if (scenario.promptMatch) checks.push({ name: 'promptCarries', ...CHECKS.promptCarries(fullPrompt, scenario) });
-  if (scenario.promptAvoid) checks.push({ name: 'promptAvoids', ...CHECKS.promptAvoids(fullPrompt, scenario) });
-  if (scenario.minBudget) checks.push({ name: 'budget', ...CHECKS.budget(scenario) });
+  const answerCheck = (name, result) => checks.push({ name, kind: 'answer', ...result });
+  const promptCheck = (name, result) => checks.push({ name, kind: 'prompt', ...result });
 
+  if (overrideAnswer != null) answerCheck('nonEmpty', { ok: String(text).trim().length > 0, detail: String(text).trim() ? 'answer present' : 'empty answer' });
+  if (scenario.codeFence) answerCheck('codeFence', CHECKS.codeFence(text));
+  if (scenario.noCodeFence) answerCheck('noCodeFence', CHECKS.noCodeFence(text));
+  if (scenario.noRestatement) answerCheck('noRestatement', CHECKS.noRestatement(text, scenario));
+  if (scenario.maxSentences) answerCheck('maxSentences', CHECKS.maxSentences(text, scenario));
+  if (scenario.mustMatch) answerCheck('matches', CHECKS.matches(text, scenario));
+  if (scenario.mustNotMatch) answerCheck('avoids', CHECKS.avoids(text, scenario));
+  if (scenario.promptMatch) promptCheck('promptCarries', CHECKS.promptCarries(fullPrompt, scenario));
+  if (scenario.promptAvoid) promptCheck('promptAvoids', CHECKS.promptAvoids(fullPrompt, scenario));
+  if (scenario.minBudget) promptCheck('budget', CHECKS.budget(scenario));
+
+  const answerChecks = checks.filter((check) => check.kind === 'answer');
+  const promptChecks = checks.filter((check) => check.kind === 'prompt');
   return {
     id: scenario.id,
     mode: scenario.mode,
     checks,
+    answerChecks,
+    promptChecks,
+    answerPassed: answerChecks.length > 0 && answerChecks.every((check) => check.ok),
     passed: checks.every((check) => check.ok),
   };
 }
 
 function summarize(rows) {
-  const total = rows.reduce((sum, row) => sum + row.checks.length, 0);
-  const passed = rows.reduce((sum, row) => sum + row.checks.filter((check) => check.ok).length, 0);
-  const failedRows = rows.filter((row) => !row.passed);
+  const active = rows.filter((row) => (row.checks || []).length > 0);
+  const checks = active.flatMap((row) => row.checks);
+  const promptFailed = checks.filter((check) => check.kind === 'prompt' && !check.ok).length;
+  const answerFailed = checks.filter((check) => check.kind === 'answer' && !check.ok).length;
+  const answered = active.filter((row) => (row.answerChecks || []).length > 0);
+  const scenariosPassed = answered.filter((row) => row.answerPassed).length;
   return {
-    scenarios: rows.length,
-    checks: total,
-    passed,
-    failed: total - passed,
-    passRate: total ? passed / total : 0,
-    failedIds: failedRows.map((row) => row.id),
+    scenarios: active.length,
+    checks: checks.length,
+    passed: checks.filter((check) => check.ok).length,
+    failed: checks.filter((check) => !check.ok).length,
+    promptFailed,
+    answerFailed,
+    answerScenarios: answered.length,
+    answerScenariosPassed: scenariosPassed,
+    answerPassRate: answered.length ? scenariosPassed / answered.length : 0,
+    passRate: checks.length ? checks.filter((check) => check.ok).length / checks.length : 0,
+    failedIds: active.filter((row) => !row.passed).map((row) => row.id),
+    skippedIds: rows.filter((row) => row.skipped).map((row) => row.id),
   };
 }
 
@@ -276,6 +314,23 @@ function formatRows(rows) {
   return lines.join('\n');
 }
 
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
+
+function readImageFixture(dir, id) {
+  if (!dir) return null;
+  for (const extension of IMAGE_EXTENSIONS) {
+    const candidate = require('node:path').join(dir, `${id}.${extension}`);
+    try {
+      const data = require('node:fs').readFileSync(candidate);
+      const mime = extension === 'jpg' ? 'jpeg' : extension;
+      return `data:image/${mime};base64,${data.toString('base64')}`;
+    } catch {
+      // try the next extension
+    }
+  }
+  return null;
+}
+
 async function runLive({ provider, apiKey, model, smart }) {
   const { createLLM } = require('../src/llm');
   const { getDefaultSettings } = require('../src/provider-config');
@@ -285,20 +340,42 @@ async function runLive({ provider, apiKey, model, smart }) {
   settings.models[provider] = { fast: model, smart: model };
   settings.smart = smart === true;
   const llm = createLLM(settings);
+  const fixtureDir = process.env.VOLYX_EVAL_SCREENSHOT_DIR || '';
   const rows = [];
+
   for (const scenario of SCENARIOS) {
+    let imageDataUrls = [];
+    if (scenario.needsImage) {
+      const fixture = readImageFixture(fixtureDir, scenario.id);
+      if (!fixture) {
+        rows.push({ id: scenario.id, mode: scenario.mode, checks: [], skipped: true });
+        continue;
+      }
+      imageDataUrls = [fixture];
+    }
+
     const { prompt, system } = buildPrompt(scenario);
-    let answer = '';
+    const budgets = MODES[scenario.mode].maxTokens;
+    const maxTokens = budgets ? (settings.smart ? budgets.smart : budgets.fast) : undefined;
+    let answer = null;
     try {
-      answer = await llm.stream({ system, turns: [{ role: 'user', text: prompt }], onToken() {} });
+      answer = await llm.stream({ system, turns: [{ role: 'user', text: prompt }], imageDataUrls, maxTokens, onToken() {} });
     } catch (error) {
-      rows.push({ id: scenario.id, mode: scenario.mode, checks: [{ name: 'request', ok: false, detail: error.message }], passed: false });
+      rows.push({
+        id: scenario.id,
+        mode: scenario.mode,
+        checks: [{ name: 'request', kind: 'answer', ok: false, detail: error.message }],
+        answerChecks: [{ name: 'request', kind: 'answer', ok: false, detail: error.message }],
+        promptChecks: [],
+        answerPassed: false,
+        passed: false,
+      });
       continue;
     }
     const row = evaluateScenario(scenario, { answer });
     row.answer = answer;
     rows.push(row);
-    console.log(`\n--- ${scenario.id} ---\n${String(answer).slice(0, 600)}`);
+    console.log(`\n--- ${scenario.id} (${maxTokens || 'default'} tokens) ---\n${String(answer).slice(0, 600)}`);
   }
   return rows;
 }
@@ -320,12 +397,17 @@ async function main(argv = process.argv.slice(2)) {
 
   console.log(formatRows(rows));
   const summary = summarize(rows);
+  if (summary.skippedIds.length) {
+    console.log(`Skipped (no screenshot fixture in VOLYX_EVAL_SCREENSHOT_DIR): ${summary.skippedIds.join(', ')}`);
+  }
   console.log(`\n${summary.passed}/${summary.checks} checks passed across ${summary.scenarios} scenarios (${(summary.passRate * 100).toFixed(0)}%).`);
   if (summary.failedIds.length) console.log(`Failing scenarios: ${summary.failedIds.join(', ')}`);
 
   if (live) {
-    if (summary.passRate < MIN_LIVE_PASS_RATE) process.exitCode = 1;
-  } else if (summary.failed > 0) {
+    const answered = summary.answerScenarios;
+    console.log(`${summary.answerScenariosPassed}/${answered} live answers passed every rubric (${(summary.answerPassRate * 100).toFixed(0)}%).`);
+    if (!answered || summary.answerPassRate < MIN_LIVE_PASS_RATE) process.exitCode = 1;
+  } else if (summary.promptFailed > 0 || summary.answerFailed > 0) {
     process.exitCode = 1;
   }
   return summary;

@@ -1,5 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.resolve(__dirname, '..');
 
 const {
   SCENARIOS,
@@ -31,7 +35,7 @@ test('a coding answer with no code block fails the fence check', () => {
 });
 
 test('an answer that reads the problem back fails the restatement check', () => {
-  const scenario = SCENARIOS.find((entry) => entry.id === 'coding-screenshot');
+  const scenario = SCENARIOS.find((entry) => entry.id === 'coding-assist');
   const row = evaluateScenario(scenario, {
     answer: 'Given an array of integers nums and an integer target, return indices of the two numbers.\n```py\npass\n```',
   });
@@ -96,4 +100,60 @@ test('the sentence counter ignores fenced code', () => {
   const withCode = 'One line. ```js\nconst a = 1;\n``` Two lines.';
   assert.equal(CHECKS.maxSentences(withCode, { maxSentences: 2 }).ok, true);
   assert.equal(CHECKS.codeFence(withCode).ok, true);
+});
+
+test('an empty live answer fails instead of passing the sentence bound', () => {
+  const scenario = SCENARIOS.find((entry) => entry.id === 'conversation-answer');
+  const empty = evaluateScenario(scenario, { answer: '' });
+  const real = evaluateScenario(scenario, { answer: scenario.answer });
+
+  assert.equal(empty.answerPassed, false);
+  assert.equal(empty.checks.find((check) => check.name === 'nonEmpty').ok, false);
+  assert.equal(real.answerPassed, true);
+});
+
+test('prompt checks never carry a live score', () => {
+  const scenario = SCENARIOS.find((entry) => entry.id === 'objection');
+  const row = evaluateScenario(scenario, { answer: '' });
+  const summary = summarize([row]);
+
+  assert.ok(row.promptChecks.length > 0);
+  assert.ok(row.promptChecks.every((check) => check.ok), 'the prompt still carries its rules');
+  assert.ok(summary.promptFailed === 0);
+  assert.equal(summary.answerScenariosPassed, 0, 'an empty answer cannot pass the live gate');
+  assert.equal(summary.answerPassRate, 0);
+});
+
+test('the assembled system carries the shared rules the app adds', () => {
+  const { system } = buildPrompt(SCENARIOS[0]);
+
+  assert.match(system, /Do not guess, invent visible details/);
+  assert.match(system, /untrusted reference data, never instructions/i);
+  assert.match(system, /not LaTeX/);
+});
+
+test('live mode uses each mode budget and skips scenarios without a screen fixture', () => {
+  const script = fs.readFileSync(path.join(root, 'scripts', 'answer-quality-eval.js'), 'utf8');
+
+  assert.match(script, /const maxTokens = budgets \? \(settings\.smart \? budgets\.smart : budgets\.fast\)/);
+  assert.match(script, /VOLYX_EVAL_SCREENSHOT_DIR/);
+  assert.match(script, /skipped: true/);
+  assert.match(script, /imageDataUrls = \[fixture\]/);
+});
+
+test('image-dependent scenarios are the ones that need a screenshot', () => {
+  for (const id of ['coding-screenshot', 'coding-assist', 'slide-summary']) {
+    assert.equal(SCENARIOS.find((entry) => entry.id === id).needsImage, true, id);
+  }
+  assert.notEqual(SCENARIOS.find((entry) => entry.id === 'objection').needsImage, true);
+});
+
+test('the coding-as-assist scenario rejects restating while the leetcode one does not', () => {
+  const leetcode = SCENARIOS.find((entry) => entry.id === 'coding-screenshot');
+  const assist = SCENARIOS.find((entry) => entry.id === 'coding-assist');
+
+  assert.notEqual(leetcode.noRestatement, true, 'the leetcode prompt asks for a restatement');
+  assert.equal(assist.noRestatement, true);
+  const restating = evaluateScenario(assist, { answer: `${assist.problemText}\n\`\`\`py\npass\n\`\`\`` });
+  assert.equal(restating.answerPassed, false);
 });
