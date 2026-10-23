@@ -47,7 +47,7 @@ test('slide frame hash averages each image cell so localized text changes are de
 
 test('slide review markup has no orphaned recovery dialog content', () => {
   const html = read('renderer/index.html');
-  assert.doesNotMatch(html, /recovery-dialog-content/);
+  assert.doesNotMatch(html, /<\/dialog>\s*<div\b[^>]*class="[^"]*recovery-dialog-content/);
   assert.equal((html.match(/<dialog\b/g) || []).length, (html.match(/<\/dialog>/g) || []).length);
 });
 
