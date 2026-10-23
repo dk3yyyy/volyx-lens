@@ -93,9 +93,7 @@ v0.7.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and 
 
 **[Open the v0.7.0 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.0)**
 
-The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.7.0 macOS DMGs are attached unsigned, so macOS requires right-click → Open on first launch. Signed and notarized builds will replace them once release signing credentials are configured.
-
-SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
+The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.7.0 release page was consolidated: it carries only the installers, the macOS DMGs, and the update manifests, with every SHA-256 checksum listed in the release notes instead of as separate files. Later tag-triggered releases publish per-file checksum and SBOM files alongside the installers. Signed and notarized builds will replace them once release signing credentials are configured.
 
 ### Install on Windows and Linux
 
@@ -367,7 +365,7 @@ Local builds are unsigned unless a valid signing identity is installed. Rebuildi
 
 The ad-hoc test workflow builds Apple Silicon and Intel artifacts on native GitHub-hosted macOS runners. Before uploading artifacts, it runs tests, syntax and secret checks, release-readiness checks, native-helper self-tests, ad-hoc signature verification, executable architecture checks, renderer smoke tests, DMG verification/mounting, and SHA-256 generation.
 
-The trusted production path (tag-triggered) builds all three platforms. Windows and Linux jobs run tests and release-readiness checks, then publish the installer/AppImages with SHA-256 checksums, SBOMs, and architecture-specific update metadata; Linux additionally verifies AppImage architecture before upload. The macOS job fails closed unless Developer ID signing and Apple notarization credentials are available, and verifies signatures, notarization staples, Gatekeeper assessment, and updater metadata before publication.
+The trusted production path (tag-triggered) builds all three platforms. Windows and Linux jobs run tests and release-readiness checks, then publish the installer/AppImages with per-file SHA-256 checksums, CycloneDX SBOMs, and architecture-specific update metadata; Linux additionally verifies AppImage architecture before upload. The macOS job fails closed unless Developer ID signing and Apple notarization credentials are available, and verifies signatures, notarization staples, Gatekeeper assessment, and updater metadata before publication.
 
 ## License
 
