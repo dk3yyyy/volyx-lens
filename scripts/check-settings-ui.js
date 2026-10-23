@@ -22,7 +22,8 @@ ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch)
 ipcMain.handle('personal-context:get', () => personalContext);
 ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyTaskContext);
-ipcMain.handle('recovery:get', () => null);
+ipcMain.handle('recovery:get', () => recoveryDraft);
+ipcMain.handle('recovery:discard', () => ({ cleared: true }));
 ipcMain.handle('task-context:list', () => ({ ...emptyTaskContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false }));
 ipcMain.handle('permissions:request', (_event, kind) => ({
@@ -41,6 +42,9 @@ ipcMain.handle('shortcuts:get', () => [
   { id: 'quit', feature: 'Stop all and quit', displayAccelerator: '⌘⇧X', registered: true }
 ]);
 ipcMain.on('mouse:ignore', () => {});
+const modalReports = [];
+ipcMain.on('ui:modal-state', (_event, open) => { modalReports.push(open === true); });
+let recoveryDraft = null;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function waitFor(win, expression, message, timeoutMs = 2500) {
@@ -134,7 +138,19 @@ app.whenReady().then(async () => {
   assert.ok(compact.dialogRight <= compact.width, 'compact Settings dialog must fit');
   await capture(win, 'compact');
 
-  console.log('Settings UI behavior passed: 5 simple pages, stable layout, focus containment/restoration, and compact fit.');
+  recoveryDraft = { turnCount: 500, totalTurns: 620, truncated: 120, startedAt: Date.now() - 60000, updatedAt: Date.now() };
+  win.reload();
+  await waitFor(win, "document.querySelector('#meeting-recovery-dialog').open === true", 'meeting recovery dialog to open after reload', 5000);
+  const recoverySummary = await win.webContents.executeJavaScript("document.querySelector('#meeting-recovery-summary').textContent");
+  assert.equal(modalReports[modalReports.length - 1], true, 'recovery dialog should report an open modal');
+  assert.match(recoverySummary, /500 transcript turns from .+ can be recovered\./, 'recovery summary should describe the restored draft');
+  assert.match(recoverySummary, /earliest 120 turns were not saved/, 'recovery summary should disclose dropped turns');
+  await win.webContents.executeJavaScript("document.querySelector('#meeting-recovery-discard').click()");
+  await waitFor(win, "document.querySelector('#meeting-recovery-dialog').open === false", 'recovery dialog to close after discard');
+  await wait(50);
+  assert.equal(modalReports[modalReports.length - 1], false, 'closing the recovery dialog should clear modal state');
+
+  console.log('Settings UI behavior passed: 5 simple pages, stable layout, focus containment/restoration, compact fit, and recovery dialog modal state.');
   app.quit();
 }).catch((error) => {
   console.error(error);

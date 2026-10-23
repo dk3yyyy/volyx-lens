@@ -21,11 +21,13 @@ test('meeting recovery stores a bounded transcript atomically and loads it', () 
   });
   now += 1000;
 
-  assert.deepEqual(saved, { saved: true, turnCount: 1 });
+  assert.deepEqual(saved, { saved: true, turnCount: 1, totalTurns: 1, truncated: 0 });
   assert.deepEqual(recovery.load({ enabled: true }), {
     version: 1,
     startedAt: 500,
     updatedAt: 1000,
+    totalTurns: 1,
+    truncated: 0,
     turns: [{ id: 1, channel: 'you', text: 'Keep this text', ts: 600 }],
   });
   recovery.clear();
@@ -90,7 +92,7 @@ test('history clearing suppresses checkpoints until the session is reset', () =>
   assert.equal(fs.existsSync(file), false);
 
   recovery.resume();
-  assert.deepEqual(recovery.save({ enabled: true, turns }), { saved: true, turnCount: 1 });
+  assert.deepEqual(recovery.save({ enabled: true, turns }), { saved: true, turnCount: 1, totalTurns: 1, truncated: 0 });
 });
 
 test('clearing recovery also removes an interrupted atomic-write temporary file', () => {
@@ -195,4 +197,85 @@ test('main process checkpoints only opted-in transcripts and exposes restore or 
   assert.match(boot, /recovery && !recovery\.unavailable/);
   assert.match(html, /id="meeting-recovery-dialog"/);
   assert.match(html, /in-progress transcript is checkpointed locally for recovery/);
+});
+
+test('meeting recovery reports how many turns the bounded draft dropped', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
+  const file = path.join(dir, 'recovery.json');
+  const recovery = createMeetingRecovery({ file, now: () => 5000 });
+  const turns = Array.from({ length: 620 }, (_, index) => ({
+    id: index + 1,
+    channel: index % 2 ? 'you' : 'them',
+    text: `Turn ${index + 1}`,
+    ts: 1000 + index,
+  }));
+
+  const saved = recovery.save({ enabled: true, turns, startedAt: 500 });
+  const draft = recovery.load({ enabled: true });
+
+  assert.deepEqual(saved, { saved: true, turnCount: 500, totalTurns: 620, truncated: 120 });
+  assert.equal(draft.turns.length, 500);
+  assert.equal(draft.totalTurns, 620);
+  assert.equal(draft.truncated, 120);
+  assert.equal(draft.turns[0].text, 'Turn 121');
+});
+
+test('clearBestEffort keeps history operations alive when the draft cannot be removed', () => {
+  const failingFs = {
+    unlinkSync() {
+      const error = new Error('operation not permitted');
+      error.code = 'EACCES';
+      throw error;
+    },
+  };
+  const recovery = createMeetingRecovery({ file: '/tmp/never-written/recovery.json', fsImpl: failingFs });
+
+  const result = recovery.clearBestEffort();
+
+  assert.equal(result.cleared, false);
+  assert.match(result.error, /operation not permitted/);
+});
+
+test('recovery draft cleanup never aborts finalize or history clearing', () => {
+  const main = read('main.js');
+  const finalize = main.match(/function finalizeMeeting\(reason = 'capture-stop'[\s\S]*?\n\}/)?.[0] || '';
+  const clearHistory = main.match(/handleTrusted\('history:clear',[\s\S]*?\n\}\);/)?.[0] || '';
+  const clearTranscript = main.match(/handleTrusted\('transcript:clear',[\s\S]*?\n\}\);/)?.[0] || '';
+  const settingsSet = main.match(/handleTrusted\('settings:set',[\s\S]*?\n\}\);/)?.[0] || '';
+
+  assert.doesNotMatch(finalize, /meetingRecovery\.clear\(\)/);
+  assert.match(finalize, /meetingRecovery\.clearBestEffort\(\)/);
+  assert.doesNotMatch(clearHistory, /recoverySuppressed: true/);
+  assert.match(clearHistory, /try \{\s*meetingRecovery\.suppress\(\);/);
+  assert.match(clearHistory, /recoverySuppressed = false/);
+  assert.match(clearTranscript, /meetingRecovery\.clearBestEffort\(\)/);
+  assert.match(settingsSet, /meetingRecovery\.clearBestEffort\(\)/);
+});
+
+test('resuming capture after a restore keeps the recovered meeting start time', () => {
+  const main = read('main.js');
+  const restore = main.match(/function restoreMeetingRecovery\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const applyCapture = main.match(/async function applyCaptureState\(active\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const clearTranscript = main.match(/handleTrusted\('transcript:clear',[\s\S]*?\n\}\);/)?.[0] || '';
+  const newSession = main.match(/function startNewSession\(\) \{[\s\S]*?\n  \};/)?.[0] || '';
+
+  assert.match(restore, /pendingRestoredStartedAt = Number\.isFinite\(recovery\.startedAt\)/);
+  assert.match(applyCapture, /captureStartedAt = pendingRestoredStartedAt \|\| Date\.now\(\)/);
+  assert.match(applyCapture, /pendingRestoredStartedAt = null/);
+  assert.match(clearTranscript, /pendingRestoredStartedAt = null/);
+  assert.match(newSession, /pendingRestoredStartedAt = null/);
+});
+
+test('the recovery dialog registers modal state and explains dropped turns', () => {
+  const renderer = read('renderer/renderer.js');
+  const dialogStart = renderer.indexOf("const meetingRecoveryDialog");
+  const dialogEnd = renderer.indexOf('// ---- meeting history', dialogStart);
+  const recoveryDialog = dialogStart >= 0 && dialogEnd > dialogStart ? renderer.slice(dialogStart, dialogEnd) : '';
+  const boot = renderer.match(/\(async function boot\(\) \{[\s\S]*?\n  \}\)\(\);/)?.[0] || '';
+
+  assert.equal((recoveryDialog.match(/meetingRecoveryDialog\.close\(\);/g) || []).length, 2);
+  assert.equal((recoveryDialog.match(/volyxLens\.setModalState\(false\);/g) || []).length, 2);
+  assert.match(boot, /volyxLens\.setModalState\(true\);\s*meetingRecoveryDialog\.showModal\(\);/);
+  assert.match(boot, /recovery\.truncated/);
+  assert.match(boot, /not saved because only the most recent turns are kept/);
 });

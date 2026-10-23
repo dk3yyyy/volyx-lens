@@ -181,6 +181,7 @@ let transcriptSequence = 0;
 let finalizedSegmentWatermark = 0;
 let captureStartedAt = null;
 let lastCaptureStartedAt = null;
+let pendingRestoredStartedAt = null;
 let lastCaptureEndedAt = null;
 const transcriptionDiagnostics = {
   connectedChannels: 0,
@@ -1179,7 +1180,7 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   const settings = store.getSettings();
   const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
   if (!historyEnabled) {
-    meetingRecovery.clear();
+    meetingRecovery.clearBestEffort();
     return { saved: false, reason: 'disabled' };
   }
   if (meetingRecovery.isSuppressed()) return { saved: false, reason: 'cleared' };
@@ -1198,7 +1199,7 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
     endedAt,
   });
   advanceFinalizeWatermark();
-  meetingRecovery.clear();
+  meetingRecovery.clearBestEffort();
   if (result.saved) send('history:changed', { saved: true, id: result.id, turnCount: result.turnCount });
   return result;
 }
@@ -1241,6 +1242,7 @@ function restoreMeetingRecovery() {
     transcript.push({ id, channel: turn.channel, text: turn.text, ts: segment.ts, segments: [segment] });
   }
   lastCaptureStartedAt = recovery.startedAt;
+  pendingRestoredStartedAt = Number.isFinite(recovery.startedAt) ? recovery.startedAt : null;
   return { restored: true, turns: transcript.map(publicTranscriptTurn), startedAt: recovery.startedAt, updatedAt: recovery.updatedAt };
 }
 
@@ -1266,7 +1268,8 @@ async function applyCaptureState(active) {
     }
     state.capturing = true;
     startSlideTracking();
-    captureStartedAt = Date.now();
+    captureStartedAt = pendingRestoredStartedAt || Date.now();
+    pendingRestoredStartedAt = null;
     lastCaptureStartedAt = captureStartedAt;
     lastCaptureEndedAt = null;
     transcriptionDiagnostics.connectedChannels = 0;
@@ -1275,7 +1278,6 @@ async function applyCaptureState(active) {
     transcriptionDiagnostics.lastStatus = 'connecting';
     transcriptionDiagnostics.lastStatusAt = Date.now();
     transcriptionDiagnostics.crossTalkSuppressed = 0;
-    startSlideTracking();
     scheduleCaptureTimers();
     startTranscriptionPipeline();
     send('capture:state', { active: true });
@@ -1365,7 +1367,6 @@ async function shutdownAll() {
     state.busy = false;
     desiredCapturing = false;
     state.capturing = false;
-    stopSlideTracking();
     lastCaptureEndedAt = Date.now();
     captureStartedAt = null;
     clearCaptureTimers();
@@ -1412,6 +1413,7 @@ function startNewSession() {
     if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
     finalizeMeeting('new-session');
     meetingRecovery.resume();
+    pendingRestoredStartedAt = null;
     resetTranscriptData();
     clearSlideTrackingData();
     chatHistory.clear();
@@ -1881,7 +1883,7 @@ handleTrusted('settings:set', (_e, patch) => {
   const updated = store.updateSettingsAndApiKeys(patch, updates && typeof updates === 'object' ? updates : {});
   const wasHistoryEnabled = previous.transcription && previous.transcription.historyEnabled === true;
   const isHistoryEnabled = updated.transcription && updated.transcription.historyEnabled === true;
-  if (wasHistoryEnabled && !isHistoryEnabled) meetingRecovery.clear();
+  if (wasHistoryEnabled && !isHistoryEnabled) meetingRecovery.clearBestEffort();
   else if (!wasHistoryEnabled && isHistoryEnabled && transcript.length) persistMeetingRecovery();
   if (transcriptionSettingsChanged(previous, updated)) {
     resetSttErrorState();
@@ -1919,7 +1921,9 @@ handleTrusted('session:new', () => startNewSession());
 handleTrusted('recovery:get', () => {
   const settings = store.getSettings();
   const recovery = meetingRecovery.load({ enabled: Boolean(settings.transcription && settings.transcription.historyEnabled) });
-  return recovery ? { turnCount: recovery.turns.length, startedAt: recovery.startedAt, updatedAt: recovery.updatedAt } : null;
+  return recovery
+    ? { turnCount: recovery.turns.length, totalTurns: recovery.totalTurns, truncated: recovery.truncated, startedAt: recovery.startedAt, updatedAt: recovery.updatedAt }
+    : null;
 });
 handleTrusted('recovery:restore', () => restoreMeetingRecovery());
 handleTrusted('recovery:discard', () => meetingRecovery.clear());
@@ -1963,7 +1967,8 @@ handleTrusted('transcript:clear', () => {
   transcriptEpoch += 1;
   resetTranscriptData();
   chatHistory.clear();
-  meetingRecovery.clear();
+  meetingRecovery.clearBestEffort();
+  pendingRestoredStartedAt = null;
   buffers.you = []; buffers.them = [];
   if (state.capturing) startTranscriptionPipeline();
   send('transcript:cleared', {});
@@ -1979,9 +1984,15 @@ handleTrusted('history:delete', (_event, id) => {
 });
 handleTrusted('history:clear', () => {
   const result = meetingStore.clear();
-  meetingRecovery.suppress();
+  let recoverySuppressed = true;
+  try {
+    meetingRecovery.suppress();
+  } catch (error) {
+    recoverySuppressed = false;
+    console.error('[meeting-recovery] suppression failed', String(error && error.message || 'unknown').slice(0, 160));
+  }
   send('history:changed', { cleared: true, count: result.cleared });
-  return { ...result, recoverySuppressed: true };
+  return { ...result, recoverySuppressed };
 });
 handleTrusted('history:export', (_event, payload) => exportMeetingRecord(payload && payload.id, payload && payload.format));
 handleTrusted('history:recap', (_event, payload) => recapMeetingRecord(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));

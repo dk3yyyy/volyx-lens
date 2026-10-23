@@ -21,14 +21,28 @@ function normalizeTurns(turns) {
   });
 }
 
+function countValidTurns(turns) {
+  if (!Array.isArray(turns)) return 0;
+  return turns.reduce((total, turn) => {
+    if (!turn || typeof turn !== 'object') return total;
+    return String(turn.text || '').trim() ? total + 1 : total;
+  }, 0);
+}
+
 function normalizeRecord(record) {
   if (!record || record.version !== 1 || !Array.isArray(record.turns)) return null;
   const turns = normalizeTurns(record.turns);
   if (!turns.length) return null;
+  const totalTurns = Math.max(
+    Number.isFinite(record.totalTurns) ? record.totalTurns : turns.length,
+    turns.length,
+  );
   return {
     version: 1,
     startedAt: Number.isFinite(record.startedAt) ? record.startedAt : null,
     updatedAt: Number.isFinite(record.updatedAt) ? record.updatedAt : null,
+    totalTurns,
+    truncated: totalTurns - turns.length,
     turns,
   };
 }
@@ -50,6 +64,14 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
     }
     if (firstError) throw firstError;
     return { cleared };
+  }
+
+  function clearBestEffort() {
+    try {
+      return clear();
+    } catch (error) {
+      return { cleared: false, error: String(error && error.message || 'unknown').slice(0, 160) };
+    }
   }
 
   function removeTemporaryFile() {
@@ -74,17 +96,19 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
       clear();
       return { saved: false, reason: 'empty' };
     }
+    const totalTurns = countValidTurns(turns);
     const record = {
       version: 1,
       startedAt: Number.isFinite(startedAt) ? startedAt : null,
       updatedAt: now(),
+      totalTurns,
       turns: normalized,
     };
     fsImpl.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const tmp = `${file}.tmp`;
     fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
     fsImpl.renameSync(tmp, file);
-    return { saved: true, turnCount: normalized.length };
+    return { saved: true, turnCount: normalized.length, totalTurns, truncated: totalTurns - normalized.length };
   }
 
   function load({ enabled = false } = {}) {
@@ -129,7 +153,7 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
     return suppressed;
   }
 
-  return { save, load, clear, suppress, resume, isSuppressed };
+  return { save, load, clear, clearBestEffort, suppress, resume, isSuppressed };
 }
 
 module.exports = { createMeetingRecovery, normalizeTurns, MAX_RECOVERY_TURNS, MAX_TURN_CHARACTERS };

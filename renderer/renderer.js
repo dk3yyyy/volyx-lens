@@ -382,6 +382,7 @@
       transcriptTurns = result.turns.map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
       renderTranscriptWorkspace();
       meetingRecoveryDialog.close();
+      volyxLens.setModalState(false);
       showStatus(`Restored ${transcriptTurns.length} transcript turns from the interrupted meeting.`);
     } catch (error) {
       showStatus(error && error.message ? error.message : 'The recovery draft could not be restored.');
@@ -395,6 +396,7 @@
     try {
       await volyxLens.recoveryDiscard();
       meetingRecoveryDialog.close();
+      volyxLens.setModalState(false);
       showStatus('The interrupted meeting draft was permanently discarded.');
     } catch (error) {
       showStatus(error && error.message ? error.message : 'The recovery draft could not be discarded.');
@@ -2637,7 +2639,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     else volyxLens.setModalState(false);
     if (recovery && !recovery.unavailable) {
       const started = Number.isFinite(recovery.startedAt) ? new Date(recovery.startedAt).toLocaleString() : 'an unknown time';
-      $('#meeting-recovery-summary').textContent = `${recovery.turnCount} transcript ${recovery.turnCount === 1 ? 'turn' : 'turns'} from ${started} can be recovered.`;
+      const totalTurns = Number.isFinite(recovery.totalTurns) ? recovery.totalTurns : recovery.turnCount;
+      const truncated = Number.isFinite(recovery.truncated) ? recovery.truncated : Math.max(0, totalTurns - recovery.turnCount);
+      const turnLabel = recovery.turnCount === 1 ? 'turn' : 'turns';
+      const truncationNote = truncated > 0
+        ? ` The earliest ${truncated} ${truncated === 1 ? 'turn was' : 'turns were'} not saved because only the most recent turns are kept.`
+        : '';
+      $('#meeting-recovery-summary').textContent = `${recovery.turnCount} transcript ${turnLabel} from ${started} can be recovered.${truncationNote}`;
+      volyxLens.setModalState(true);
       meetingRecoveryDialog.showModal();
     }
     localizeKeyLabels();
