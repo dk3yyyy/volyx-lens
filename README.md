@@ -106,7 +106,14 @@ SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 
 1. Download the DMG matching your Mac architecture.
 2. Open it and drag **Volyx Lens** into **Applications**.
-3. Launch **Volyx Lens**: the current unsigned DMGs need right-click → **Open** on first launch; signed and notarized builds open normally once credentials are configured.
+3. Clear quarantine once, then launch:
+
+```bash
+xattr -cr "/Applications/Volyx Lens.app"
+open "/Applications/Volyx Lens.app"
+```
+
+The current DMGs are unsigned, so a bare double-click is refused and macOS may call the app damaged. Right-click → **Open** also works on most versions, but the `xattr` command is the reliable fix. Signed and notarized builds will skip this step once credentials are configured.
 4. Grant Microphone and Screen & System Audio Recording access when prompted.
 
 Ad-hoc test builds remain available under their own pre-release tags for early validation.
@@ -115,7 +122,7 @@ Ad-hoc test builds remain available under their own pre-release tags for early v
 
 | Capability | macOS | Windows | Linux |
 |---|---|---|---|
-| Release artifact | Signed/notarized DMG (published once signing credentials are configured) | NSIS installer via release CI | AppImage (x64/arm64) via release CI |
+| Release artifact | Unsigned DMG (signed and notarized once credentials are configured) | NSIS installer via release CI | AppImage (x64/arm64) via release CI |
 | Microphone (You channel) | ✅ | ✅ | ✅ |
 | Screen + coding help | ✅ | ✅ | ✅ |
 | Meeting audio (Them channel) | ✅ ScreenCaptureKit helper | ✅ system-audio loopback | ⚠️ best-effort via PulseAudio/PipeWire monitor |
