@@ -3,7 +3,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createMeetingRecovery } = require('../src/meeting-recovery');
+const { createMeetingRecovery, countUnsavedTurns } = require('../src/meeting-recovery');
 
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -338,7 +338,7 @@ test('checkpoints exclude turns that are already saved to history', () => {
   assert.match(write, /turns: pendingFinalizeTurns\(\)/);
   assert.match(write, /droppedTurns: transcriptDroppedTurns/);
   assert.doesNotMatch(write, /turns: transcript\.map\(publicTranscriptTurn\)/);
-  assert.match(record, /transcriptDroppedTurns \+= removed\.length;/);
+  assert.match(record, /transcriptDroppedTurns \+= countUnsavedTurns\(removed, finalizedSegmentWatermark\);/);
   assert.match(record, /persistMeetingRecovery\(\);/);
 });
 
@@ -353,4 +353,29 @@ test('checkpoint writes are coalesced and cancelled when the draft is cleared', 
     const block = main.match(new RegExp(`${handler.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?\\n\\}\\);`))?.[0] || '';
     assert.match(block, /cancelMeetingRecoverySave\(\)/, `${handler} should cancel a scheduled checkpoint`);
   }
+});
+
+test('trimmed turns that are already saved do not count as lost', () => {
+  const saved = [
+    { id: 1, segments: [{ id: 1 }, { id: 2 }] },
+    { id: 2, segments: [{ id: 3 }] },
+  ];
+  const unsaved = [
+    { id: 3, segments: [{ id: 4 }] },
+    { id: 4, segments: [{ id: 3 }, { id: 5 }] },
+  ];
+
+  assert.equal(countUnsavedTurns(saved, 3), 0);
+  assert.equal(countUnsavedTurns([...saved, ...unsaved], 3), 2);
+  assert.equal(countUnsavedTurns(unsaved, 0), 2);
+  assert.equal(countUnsavedTurns([], 5), 0);
+  assert.equal(countUnsavedTurns(null, 5), 0);
+});
+
+test('the lost-turn counter resets once a save advances the boundary', () => {
+  const main = read('main.js');
+  const finalize = main.match(/function finalizeMeeting\(reason = 'capture-stop'[\s\S]*?\n\}\n/)?.[0] || '';
+
+  assert.match(finalize, /advanceFinalizeWatermark\(\);/);
+  assert.match(finalize, /transcriptDroppedTurns = 0;/);
 });

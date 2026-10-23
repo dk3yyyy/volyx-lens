@@ -51,7 +51,7 @@ const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, rail
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { createMeetingStore } = require('./src/meeting-store');
-const { createMeetingRecovery } = require('./src/meeting-recovery');
+const { createMeetingRecovery, countUnsavedTurns } = require('./src/meeting-recovery');
 const { createMeetingDetector } = require('./src/meeting-detect');
 const { shouldAttachScreen, missingContextMessage, SOURCE_UNCERTAINTY_RULE } = require('./src/response-context');
 
@@ -577,7 +577,7 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
 
   if (transcript.length > MAX_TRANSCRIPT_TURNS) {
     const removed = transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
-    transcriptDroppedTurns += removed.length;
+    transcriptDroppedTurns += countUnsavedTurns(removed, finalizedSegmentWatermark);
     const removedTurnIds = new Set(removed.map((oldTurn) => oldTurn.id));
     for (let index = recentTranscriptSegments.length - 1; index >= 0; index -= 1) {
       if (!removedTurnIds.has(recentTranscriptSegments[index].turnId)) continue;
@@ -1206,6 +1206,9 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
     endedAt,
   });
   advanceFinalizeWatermark();
+  // Anything dropped before this boundary can no longer be recovered, and the
+  // draft is rebuilt from the new boundary, so the loss counter starts over.
+  transcriptDroppedTurns = 0;
   // An unanswered recovery draft has no transcript in memory, so quitting or
   // starting a session must not delete it. Only consumed turns clear it.
   if (result.saved || pendingTurns.length) {

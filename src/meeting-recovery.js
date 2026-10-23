@@ -59,6 +59,20 @@ function normalizeRecord(record) {
   };
 }
 
+/**
+ * Count turns whose text would be lost because none of their segments were
+ * finalized yet. Turns already covered by the finalize watermark are in
+ * history, so trimming them is not a recovery loss.
+ */
+function countUnsavedTurns(turns, watermark) {
+  if (!Array.isArray(turns)) return 0;
+  const boundary = Number.isFinite(watermark) ? watermark : 0;
+  return turns.reduce((total, turn) => {
+    const segments = Array.isArray(turn && turn.segments) ? turn.segments : [];
+    return segments.some((segment) => Number.isFinite(segment.id) && segment.id > boundary) ? total + 1 : total;
+  }, 0);
+}
+
 function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {}) {
   if (!file || typeof file !== 'string') throw new Error('Meeting recovery requires a file path.');
   let suppressed = false;
@@ -169,4 +183,4 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
   return { save, load, clear, clearBestEffort, suppress, resume, isSuppressed };
 }
 
-module.exports = { createMeetingRecovery, normalizeTurns, MAX_RECOVERY_TURNS, MAX_TURN_CHARACTERS };
+module.exports = { createMeetingRecovery, normalizeTurns, countUnsavedTurns, MAX_RECOVERY_TURNS, MAX_TURN_CHARACTERS };
