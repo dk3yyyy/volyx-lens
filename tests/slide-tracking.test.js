@@ -160,3 +160,11 @@ test('clearing slide tracking invalidates in-flight sampling and resumes while l
   assert.match(clearFunction, /slideTrackingGeneration \+= 1/);
   assert.match(clearFunction, /if \(restartTracking\) startSlideTracking\(\)/);
 });
+
+test('capture lifecycle starts enabled tracking and clears it when listening stops', () => {
+  const main = read('main.js');
+  const captureFunction = main.match(/async function applyCaptureState\(active\) \{[\s\S]*?\n\}/)?.[0] || '';
+
+  assert.match(captureFunction, /state\.capturing = true;[\s\S]*?startSlideTracking\(\);/);
+  assert.match(captureFunction, /state\.capturing = false;[\s\S]*?stopSlideTracking\(\);/);
+});

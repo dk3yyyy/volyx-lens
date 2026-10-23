@@ -1186,6 +1186,7 @@ async function applyCaptureState(active) {
       }
     }
     state.capturing = true;
+    startSlideTracking();
     captureStartedAt = Date.now();
     lastCaptureStartedAt = captureStartedAt;
     lastCaptureEndedAt = null;
@@ -1206,6 +1207,7 @@ async function applyCaptureState(active) {
   else micEchoCoordinator.drain();
   acousticEchoFilter.reset();
   state.capturing = false;
+  stopSlideTracking();
   lastCaptureEndedAt = Date.now();
   const captureStartedAtEnd = captureStartedAt;
   captureStartedAt = null;
