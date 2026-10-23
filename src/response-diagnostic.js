@@ -35,7 +35,7 @@ function diagnosticMessage(error, { provider, model, route, timedOut }) {
     }
   }
 
-  return sanitizeProviderError(error, { timedOut: false });
+  return sanitizeProviderError(error, { timedOut: false, providerLabel: provider ? `${provider[0].toUpperCase()}${provider.slice(1)}` : '' });
 }
 
 async function runResponseDiagnostic({

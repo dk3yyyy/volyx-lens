@@ -1544,6 +1544,7 @@ async function runFeature(mode, userText, {
   const isCurrent = () => generation === sessionGeneration && runId === featureRunId;
   let featureRequest = null;
   let requestTimeout = null;
+  let responseProviderLabel = '';
   try {
     const orderedTranscript = (Array.isArray(slideReviewTranscript) ? slideReviewTranscript : [...transcript]).sort((a, b) => a.ts - b.ts);
     const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' || mode === 'auto-assist' ? userText : null);
@@ -1561,6 +1562,7 @@ async function runFeature(mode, userText, {
     const selection = chooseInitialProvider(route, { requiresVision: needsScreen });
     const llm = selection.llm;
     if (!llm) { send('llm:error', { message: selection.reason || 'No compatible provider is configured.' }); return; }
+    responseProviderLabel = llm.label || settings.provider;
     const personalContext = def.usesPersonalContext
       ? buildPersonalContext(personalContextStore.getEnabledDocuments(), { transcript: orderedTranscript, userText: userText || '' })
       : { text: '', sources: [], systemRules: '' };
@@ -1738,7 +1740,7 @@ async function runFeature(mode, userText, {
     }
     featureCompleted = true;
   } catch (e) {
-    if (isCurrent()) send('llm:error', { message: sanitizeProviderError(e, { timedOut: featureRequest && featureRequest.reason === 'timeout' }) });
+    if (isCurrent()) send('llm:error', { message: sanitizeProviderError(e, { timedOut: featureRequest && featureRequest.reason === 'timeout', providerLabel: responseProviderLabel }) });
   } finally {
     if (requestTimeout) clearTimeout(requestTimeout);
     if (activeFeatureRequest === featureRequest) activeFeatureRequest = null;
