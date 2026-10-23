@@ -1763,6 +1763,7 @@ async function runFeature(mode, userText, {
         onFinish: ({ reason }) => { if (TRUNCATED_FINISH_REASON.test(String(reason || ''))) answerTruncated = true; }
       },
       onFallback: ({ from, to }) => {
+        responseProviderLabel = to.label || responseProviderLabel;
         if (!isCurrent()) return;
         send('status', { message: `${from.label} failed before producing text. Using fallback ${to.label}.` });
         send('llm:provider', { label: to.label, fallback: true });
@@ -1843,6 +1844,7 @@ async function recapMeetingRecord(id, options = {}) {
     if (!isCurrent()) return { ok: false, code: 'canceled' };
     const notes = parseNotes(fullAnswer);
     meetingStore.updateNotes(record.id, notes);
+    invalidatePreviousMeetings();
     return { ok: true, id: record.id, text: fullAnswer, notes };
   } finally {
     if (historyRecapController === controller) historyRecapController = null;
