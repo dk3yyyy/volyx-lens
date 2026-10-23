@@ -27,6 +27,7 @@ const MODES = {
     usesPersonalContext: true,
     userBubble: null,
     small: false,
+    maxTokens: { fast: 1200, smart: 2200 },
     system:
       'You are Volyx Lens, a discreet real-time copilot overlaid on the user\'s screen during a call or coding session. ' +
       'Look at the screenshot and the recent conversation, decide what the user needs RIGHT NOW, and deliver it directly with no preamble. ' +
@@ -50,6 +51,7 @@ const MODES = {
     usesPersonalContext: true,
     userBubble: 'Assist · Screen only',
     small: false,
+    maxTokens: { fast: 1200, smart: 2200 },
     system:
       'You are Volyx Lens, a screen-aware copilot. Use only the current screenshot. Do not assume or reference any conversation history. ' +
       'Identify what help is needed and respond directly. For a coding problem, provide a short approach, correct code, and complexity. ' +
@@ -63,6 +65,7 @@ const MODES = {
     usesPersonalContext: true,
     userBubble: 'Assist · Conversation only',
     small: false,
+    maxTokens: { fast: 600, smart: 900 },
     system:
       'You are Volyx Lens, a live conversation copilot. Use only the supplied transcript; no screenshot is available. ' +
       'Answer the latest question or give the user a concise first-person response they can say next. Do not invent visual context.',
@@ -78,6 +81,7 @@ const MODES = {
     usesPersonalContext: true,
     userBubble: 'What should I say?',
     small: false,
+    maxTokens: { fast: 400, smart: 600 },
     system:
       'You are Volyx Lens, whispering suggested replies to the user during a live conversation. ' +
       '"Them" is the other person; "You" is the user. Based on what Them just said and what You already said, ' +
@@ -102,6 +106,7 @@ const MODES = {
     usesPersonalContext: true,
     userBubble: null, // the detected question becomes the visible bubble
     small: false,
+    maxTokens: { fast: 400, smart: 600 },
     system:
       'You are Volyx Lens, whispering suggested replies during a live conversation. ' +
       '"Them" is the other participant; "You" is the user. Them just asked a question. ' +
@@ -127,6 +132,7 @@ const MODES = {
     usesPersonalContext: true,
     userBubble: 'Follow-up questions',
     small: true,
+    maxTokens: { fast: 400, smart: 600 },
     system:
       'You are Volyx Lens. Given the conversation, suggest 2–4 sharp, relevant follow-up questions the user could ask next ' +
       'to sound engaged and drive the discussion. Return them as a short bullet list, nothing else.',
@@ -141,6 +147,7 @@ const MODES = {
     needsScreen: false,
     userBubble: 'Recap',
     small: true,
+    maxTokens: { fast: 1200, smart: 2000 },
     system:
       'You are Volyx Lens. Summarize the conversation so far for someone who joined late: ' +
       'a few key points, any decisions, and action items. Use short bullets under bold headers. Be brief.',
@@ -155,6 +162,7 @@ const MODES = {
     usesPersonalContext: false,
     userBubble: 'Review tracked slides',
     small: true,
+    maxTokens: { fast: 1200, smart: 2000 },
     system:
       'You are Volyx Lens. Prepare a concise, factual review of the supplied meeting transcript and locally extracted presentation text. ' +
       'OCR may be incomplete or incorrect: identify uncertainty, do not invent slide content, and distinguish transcript statements from slide text. ' +
@@ -174,6 +182,7 @@ const MODES = {
     usesPersonalContext: true,
     userBubble: null, // uses the typed text as the bubble
     small: false,
+    maxTokens: { fast: 1000, smart: 1800 },
     system:
       'You are Volyx Lens, a real-time copilot with recent conversation context and, when attached, the user\'s current screen. ' +
       'Answer the user\'s question directly and concisely. Use screen details only if a screenshot is attached, and ground claims in the supplied context. No preamble.',
@@ -188,6 +197,7 @@ const MODES = {
     needsScreen: true,
     userBubble: 'Solve what\'s on screen',
     small: false,
+    maxTokens: { fast: 1600, smart: 2600 },
     system:
       'You are an expert competitive programmer. The screenshot contains a coding problem. ' +
       'Respond with: (1) a one-line restatement, (2) a short approach, (3) a clean, correct, idiomatic solution in a fenced code block ' +

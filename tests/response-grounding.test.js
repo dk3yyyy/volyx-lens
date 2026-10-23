@@ -25,7 +25,7 @@ test('main process uses bounded chat history for typed follow-ups and clears it 
 
 test('main process resolves screen attachment and missing conversation before provider work', () => {
   assert.match(main, /shouldAttachScreen\(\{ mode, userText:/);
-  assert.match(main, /requiresVision: mode === 'leetcode' \|\| \(mode === 'ask' && needsScreen\)/);
+  assert.match(main, /requiresVision: needsScreen/);
   assert.match(main, /missingContextMessage\(\{ mode, transcript:/);
 });
 
