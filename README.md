@@ -78,7 +78,7 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ### Current release: v0.7.0
 
-v0.7.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows and Linux builds are unsigned; macOS builds are signed and notarized and launch without Gatekeeper workarounds. Auto-update metadata is published for Windows and Linux; the macOS updater is published together with the DMGs.
+v0.7.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux; the macOS updater is published together with the DMGs.
 
 | Mac | Installer |
 |---|---|
@@ -106,7 +106,7 @@ SHA-256 checksum files, ZIP packages, and SBOMs are included in the release.
 
 1. Download the DMG matching your Mac architecture.
 2. Open it and drag **Volyx Lens** into **Applications**.
-3. Launch **Volyx Lens** normally: the signed and notarized build opens without right-click workarounds.
+3. Launch **Volyx Lens**: the current unsigned DMGs need right-click → **Open** on first launch; signed and notarized builds open normally once credentials are configured.
 4. Grant Microphone and Screen & System Audio Recording access when prompted.
 
 Ad-hoc test builds remain available under their own pre-release tags for early validation.

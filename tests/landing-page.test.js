@@ -28,7 +28,7 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, new RegExp(`Release[\\s\\S]*?v${v}`, 'i'));
   assert.match(html, new RegExp(`Windows and Linux installers are live in v${v}`, 'i'));
   assert.match(html, new RegExp(`v${v} macOS build will be signed and notarized once release signing credentials are configured`, 'i'));
-  assert.match(html, /<a[^>]*>unsigned macOS DMG<\/a> is attached to the release/i);
+  assert.match(html, /<a[^>]*>unsigned macOS DMGs<\/a> are attached to the release/i);
   assert.match(html, /Windows and Linux installers ship unsigned with published SHA-256 checksums and SBOMs/i);
   assert.doesNotMatch(html, /current signed Mac release is v0\.4\.0|Get the signed v0\.4\.0|Download v0\.4\.0/i);
   assert.match(html, /best-effort/i);
@@ -45,7 +45,7 @@ test('landing page offers per-platform downloads with direct release assets', ()
   assert.match(html, new RegExp(`data-os="win"[^>]*volyx-lens-${version}-win-x64\\.exe`, 'i'));
   assert.match(html, new RegExp(`data-os="linux-x64"[^>]*volyx-lens-${version}-linux-x86_64\\.AppImage`, 'i'));
   assert.match(html, new RegExp(`data-os="linux-arm64"[^>]*volyx-lens-${version}-linux-arm64\\.AppImage`, 'i'));
-  assert.match(html, new RegExp(`data-os="mac"[^>]*volyx-lens-${version}-mac-arm64-unsigned\\.dmg`, 'i'));
+  assert.match(html, new RegExp(`data-os="mac"[^>]*releases\\/tag\\/v${version}`, 'i'));
   assert.match(html, new RegExp(`data-os="mac-arm64"[^>]*volyx-lens-${version}-mac-arm64-unsigned\\.dmg`, 'i'));
   assert.match(html, new RegExp(`data-os="mac-x64"[^>]*volyx-lens-${version}-mac-x64-unsigned\\.dmg`, 'i'));
 });

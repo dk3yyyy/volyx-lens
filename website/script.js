@@ -149,9 +149,9 @@ const DL_ASSETS = {
     detail: 'x64 NSIS installer · v0.7.0'
   },
   mac: {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.0/volyx-lens-0.7.0-mac-arm64-unsigned.dmg',
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.0',
     label: 'macOS',
-    detail: 'Unsigned v0.7.0 DMG · right-click Open'
+    detail: 'Unsigned v0.7.0 · pick Apple Silicon or Intel'
   },
   'mac-x64': {
     href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.0/volyx-lens-0.7.0-mac-x64-unsigned.dmg',
