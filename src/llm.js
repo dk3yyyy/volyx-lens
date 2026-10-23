@@ -40,6 +40,7 @@ async function streamOpenAICompatible({
   tokenLimitParameter,
   extraBody,
   onToken,
+  onFinish,
   signal,
 }) {
   const client = new OpenAI(clientOptions);
@@ -69,14 +70,18 @@ async function streamOpenAICompatible({
     }, { signal });
   }
   let full = '';
+  let finishReason = null;
   for await (const part of stream) {
-    const delta = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
+    const choice = part.choices && part.choices[0];
+    if (choice && choice.finish_reason) finishReason = choice.finish_reason;
+    const delta = choice && choice.delta && choice.delta.content;
     if (delta) { full += delta; onToken(delta); }
   }
+  if (typeof onFinish === 'function') onFinish({ reason: finishReason });
   return full;
 }
 
-async function streamAnthropic({ Anthropic, apiKey, model, system, turns, imageDataUrl, imageDataUrls, maxTokens, onToken, signal }) {
+async function streamAnthropic({ Anthropic, apiKey, model, system, turns, imageDataUrl, imageDataUrls, maxTokens, onToken, onFinish, signal }) {
   const client = new Anthropic({ apiKey });
   const images = collectImageDataUrls(imageDataUrls, imageDataUrl);
   const messages = turns.map((turn, index) => {
@@ -94,16 +99,25 @@ async function streamAnthropic({ Anthropic, apiKey, model, system, turns, imageD
   });
   const stream = await client.messages.create({ model, max_tokens: maxTokens, system, messages, stream: true }, { signal });
   let full = '';
+  let stopReason = null;
   for await (const event of stream) {
+    if (event.type === 'message_delta' && event.delta && event.delta.stop_reason) stopReason = event.delta.stop_reason;
     if (event.type === 'content_block_delta' && event.delta && event.delta.type === 'text_delta') {
       full += event.delta.text;
       onToken(event.delta.text);
     }
   }
+  if (typeof onFinish === 'function') onFinish({ reason: stopReason });
   return full;
 }
 
-async function streamGemini({ GoogleGenAI, apiKey, model, system, turns, imageDataUrl, imageDataUrls, maxTokens, onToken, signal }) {
+// Gemini 3.x counts internal "thinking" tokens against maxOutputTokens, so a
+// fixed cap can be consumed by reasoning and leave the visible answer cut off.
+// Give the cap headroom, and use the lowest thinking level on the fast tier
+// where latency matters more than depth.
+const GEMINI_THINKING_HEADROOM = { fast: 1024, smart: 4096 };
+
+async function streamGemini({ GoogleGenAI, apiKey, model, system, turns, imageDataUrl, imageDataUrls, maxTokens, thinking = false, onToken, onFinish, signal }) {
   const ai = new GoogleGenAI({ apiKey });
   const images = collectImageDataUrls(imageDataUrls, imageDataUrl);
   const contents = turns.map((turn, index) => {
@@ -117,16 +131,30 @@ async function streamGemini({ GoogleGenAI, apiKey, model, system, turns, imageDa
     }
     return { role: turn.role === 'assistant' ? 'model' : 'user', parts };
   });
-  const stream = await ai.models.generateContentStream({
-    model,
-    contents,
-    config: { systemInstruction: system, maxOutputTokens: maxTokens, abortSignal: signal },
-  });
+  const config = {
+    systemInstruction: system,
+    maxOutputTokens: maxTokens + (thinking ? GEMINI_THINKING_HEADROOM.smart : GEMINI_THINKING_HEADROOM.fast),
+    abortSignal: signal,
+  };
+  if (!thinking) config.thinkingConfig = { thinkingLevel: 'low' };
+  let stream;
+  try {
+    stream = await ai.models.generateContentStream({ model, contents, config });
+  } catch (error) {
+    // A model or endpoint that predates thinkingLevel should still answer.
+    if (!config.thinkingConfig || !/thinking/i.test((error && error.message) || '')) throw error;
+    delete config.thinkingConfig;
+    stream = await ai.models.generateContentStream({ model, contents, config });
+  }
   let full = '';
+  let finishReason = null;
   for await (const chunk of stream) {
+    const candidate = chunk && chunk.candidates && chunk.candidates[0];
+    if (candidate && candidate.finishReason) finishReason = candidate.finishReason;
     const text = chunk && chunk.text;
     if (text) { full += text; onToken(text); }
   }
+  if (typeof onFinish === 'function') onFinish({ reason: finishReason });
   return full;
 }
 
@@ -143,7 +171,8 @@ function createLLM(settings, dependencies = {}) {
         throw new Error(`${resolved.label} does not support image input. Choose a vision-capable provider for screen features.`);
       }
 
-      const args = { ...resolved, maxTokens, ...params };
+      // params.maxTokens lets a mode ask for more room than the tier default.
+      const args = { ...resolved, maxTokens, thinking: !!settings.smart, ...params };
       if (resolved.provider === 'openai') {
         const OpenAI = dependencies.OpenAI || require('openai');
         return streamOpenAICompatible({ ...args, OpenAI, clientOptions: { apiKey: resolved.apiKey } });
