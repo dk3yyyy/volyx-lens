@@ -65,7 +65,7 @@ test('DeepSeek routes through its official OpenAI-compatible endpoint', async ()
   await llm.stream(baseParams);
 
   assert.equal(fake.instances[0].options.baseURL, 'https://api.deepseek.com');
-  assert.equal(fake.instances[0].requests[0].model, 'deepseek-v4-flash');
+  assert.equal(fake.instances[0].requests[0].model, 'deepseek-flash');
 });
 
 test('Groq routes through its official OpenAI-compatible endpoint', async () => {
@@ -183,19 +183,24 @@ test('OpenAI-compatible requests receive the active cancellation signal', async 
   assert.equal(fake.instances[0].requestOptions[0].signal, controller.signal);
 });
 
-test('DeepSeek refuses to send screenshots to its text-only API', async () => {
+test('DeepSeek Flash accepts screenshots while V4 Pro refuses them', async () => {
   const settings = getDefaultSettings();
   settings.provider = 'deepseek';
   settings.apiKeys.deepseek = 'deepseek-test-key';
 
-  const fake = fakeOpenAI();
-  const llm = createLLM(settings, { OpenAI: fake.FakeOpenAI });
+  const visionFake = fakeOpenAI();
+  const flash = createLLM(settings, { OpenAI: visionFake.FakeOpenAI });
+  await flash.stream({ ...baseParams, imageDataUrl: null, imageDataUrls: ['data:image/png;base64,AA=='] });
+  assert.equal(visionFake.instances.length, 1);
 
+  settings.smart = true;
+  const textFake = fakeOpenAI();
+  const pro = createLLM(settings, { OpenAI: textFake.FakeOpenAI });
   await assert.rejects(
-    llm.stream({ ...baseParams, imageDataUrl: null, imageDataUrls: ['data:image/png;base64,AA=='] }),
+    pro.stream({ ...baseParams, imageDataUrl: null, imageDataUrls: ['data:image/png;base64,AA=='] }),
     /does not support image input/i,
   );
-  assert.equal(fake.instances.length, 0);
+  assert.equal(textFake.instances.length, 0);
 });
 
 test('an aborted OpenAI-compatible request never retries with another token parameter', async () => {

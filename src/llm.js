@@ -168,7 +168,7 @@ function createLLM(settings, dependencies = {}) {
       if (!resolved.ready) throw new Error(resolved.configurationError);
       const hasImages = collectImageDataUrls(params.imageDataUrls, params.imageDataUrl).length > 0;
       if (hasImages && !resolved.supportsVision) {
-        throw new Error(`${resolved.label} does not support image input. Choose a vision-capable provider for screen features.`);
+        throw new Error(`${resolved.label} ${resolved.model} does not support image input. Choose a vision-capable provider or model for screen features.`);
       }
 
       // params.maxTokens lets a mode ask for more room than the tier default.

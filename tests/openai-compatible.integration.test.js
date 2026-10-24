@@ -72,7 +72,7 @@ test('real OpenAI SDK constructs the official DeepSeek request without network a
   assert.equal(result.output, 'OK');
   assert.equal(result.requests[0].url, 'https://api.deepseek.com/chat/completions');
   assert.equal(result.requests[0].headers.authorization, 'Bearer deepseek-test-key');
-  assert.equal(result.requests[0].body.model, 'deepseek-v4-flash');
+  assert.equal(result.requests[0].body.model, 'deepseek-flash');
   assert.equal(result.requests[0].body.max_tokens, 700);
 });
 
