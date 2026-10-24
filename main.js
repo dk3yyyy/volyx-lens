@@ -16,7 +16,7 @@ const { MODES, formatTranscript: formatPromptTranscript } = require('./src/promp
 const { createResponseRoute, chooseInitialProvider, streamWithFallback } = require('./src/response-router');
 const { rms16 } = require('./src/wav');
 const { planScreenInput } = require('./src/capabilities');
-const { mediaPermissionStatus, requestMediaPermission } = require('./src/permissions');
+const { mediaPermissionStatus, requestMediaPermission, PRIVACY_PANES } = require('./src/permissions');
 const { RealtimeTranscriptionManager } = require('./src/realtime-stt');
 const { AUDIO_SAMPLE_RATE } = require('./src/audio-config');
 const { resolveRealtimeTranscription } = require('./src/provider-config');
@@ -2159,6 +2159,12 @@ handleTrusted('permissions:status', (_event, kind) => mediaPermissionStatus(Stri
   systemPreferences,
   isPackaged: app.isPackaged,
 }));
+handleTrusted('permissions:open-settings', async (_event, kind) => {
+  const pane = PRIVACY_PANES[String(kind || '')];
+  if (!pane) return { ok: false, error: 'unsupported' };
+  await shell.openExternal(pane);
+  return { ok: true };
+});
 onTrusted('ask', (_e, payload = {}) => runFeature(payload.mode, String(payload.text || '').slice(0, 12000), {
   confirmedLongRecap: payload.confirmedLongRecap === true,
   confirmedTaskContext: payload.confirmedTaskContext === true,

@@ -48,7 +48,6 @@ async function requestMediaPermission(kind, dependencies) {
     platform = process.platform,
     systemPreferences,
     desktopCapturer,
-    openExternal,
     isPackaged = true,
   } = dependencies;
 
@@ -84,7 +83,7 @@ async function requestMediaPermission(kind, dependencies) {
   let status = systemPreferences.getMediaAccessStatus(kind);
   const developmentClient = isPackaged !== true;
   if (status === 'granted') {
-    return { kind, granted: true, status, settingsOpened: false, developmentClient };
+    return { kind, granted: true, status, settingsOpened: false, requiresSettings: false, settingsUrl: PRIVACY_PANES[kind], developmentClient };
   }
 
   if (kind === 'microphone' && status === 'not-determined') {
@@ -105,16 +104,22 @@ async function requestMediaPermission(kind, dependencies) {
   }
 
   const granted = status === 'granted';
-  let settingsOpened = false;
-  if (!granted) {
-    await openExternal(PRIVACY_PANES[kind]);
-    settingsOpened = true;
-  }
-
+  // macOS has no API that grants screen recording; the switch lives in System
+  // Settings. Hand the pane back to the renderer instead of yanking the user
+  // out of the app, so they choose when to leave and can re-check in place.
   const message = !granted && developmentClient
     ? 'This npm start development build is a separate macOS permission client. Quit it and open the packaged app; a grant for Volyx Lens.app does not apply to this process.'
     : undefined;
-  return { kind, granted, status, settingsOpened, developmentClient, ...(message ? { message } : {}) };
+  return {
+    kind,
+    granted,
+    status,
+    settingsOpened: false,
+    requiresSettings: !granted,
+    settingsUrl: PRIVACY_PANES[kind],
+    developmentClient,
+    ...(message ? { message } : {}),
+  };
 }
 
 module.exports = { PRIVACY_PANES, SUPPORTED_KINDS, mediaPermissionStatus, requestMediaPermission };

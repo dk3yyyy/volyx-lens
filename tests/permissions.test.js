@@ -41,13 +41,15 @@ test('microphone permission uses the native macOS consent prompt', async () => {
   assert.deepEqual(calls.opened, []);
 });
 
-test('denied microphone permission opens the correct System Settings pane', async () => {
+test('denied microphone permission hands the pane back without opening it', async () => {
   const { dependencies, calls } = harness({ statuses: ['denied', 'denied'], microphoneGranted: false });
   const result = await requestMediaPermission('microphone', dependencies);
 
   assert.equal(result.granted, false);
-  assert.equal(result.settingsOpened, true);
-  assert.deepEqual(calls.opened, [PRIVACY_PANES.microphone]);
+  assert.equal(result.settingsOpened, false);
+  assert.equal(result.requiresSettings, true);
+  assert.equal(result.settingsUrl, PRIVACY_PANES.microphone);
+  assert.deepEqual(calls.opened, []);
 });
 
 test('screen permission triggers desktop capture and rechecks macOS status', async () => {
@@ -60,7 +62,7 @@ test('screen permission triggers desktop capture and rechecks macOS status', asy
   assert.deepEqual(calls.opened, []);
 });
 
-test('denied screen permission opens the Screen Recording settings pane', async () => {
+test('denied screen permission hands the pane back without opening it', async () => {
   const { dependencies, calls } = harness({
     statuses: ['denied', 'denied'],
     screenError: new Error('screen access denied'),
@@ -68,8 +70,19 @@ test('denied screen permission opens the Screen Recording settings pane', async 
   const result = await requestMediaPermission('screen', dependencies);
 
   assert.equal(result.granted, false);
-  assert.equal(result.settingsOpened, true);
-  assert.deepEqual(calls.opened, [PRIVACY_PANES.screen]);
+  assert.equal(result.settingsOpened, false);
+  assert.equal(result.requiresSettings, true);
+  assert.equal(result.settingsUrl, PRIVACY_PANES.screen);
+  assert.deepEqual(calls.opened, []);
+});
+
+test('granted screen permission reports no settings detour', async () => {
+  const { dependencies } = harness({ statuses: ['granted'] });
+  const result = await requestMediaPermission('screen', dependencies);
+
+  assert.equal(result.granted, true);
+  assert.equal(result.requiresSettings, false);
+  assert.equal(result.settingsOpened, false);
 });
 
 test('development Electron permission status identifies its separate macOS TCC client', () => {

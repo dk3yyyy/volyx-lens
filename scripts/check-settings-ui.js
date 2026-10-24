@@ -30,7 +30,7 @@ ipcMain.handle('permissions:request', (_event, kind) => ({
   kind,
   granted: false,
   status: 'denied',
-  settingsOpened: true,
+  settingsOpened: false, requiresSettings: true,
   developmentClient: true,
   message: 'This npm start development build is a separate macOS permission client. Quit it and open the packaged app; a grant for Volyx Lens.app does not apply to this process.',
 }));

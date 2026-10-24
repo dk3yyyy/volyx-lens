@@ -29,8 +29,8 @@ let developmentPermissionClient = false;
 ipcMain.handle('permissions:request', (_event, kind) => (
   kind === 'screen'
     ? developmentPermissionClient
-      ? { kind, granted: false, status: 'denied', settingsOpened: true, developmentClient: true, message: 'This npm start development build is a separate macOS permission client.' }
-      : { kind, granted: false, settingsOpened: true, developmentClient: false }
+      ? { kind, granted: false, status: 'denied', settingsOpened: false, requiresSettings: true, developmentClient: true, message: 'This npm start development build is a separate macOS permission client.' }
+      : { kind, granted: false, settingsOpened: false, requiresSettings: true, developmentClient: false }
     : { kind, granted: true }
 ));
 ipcMain.handle('permissions:status', (_event, kind) => ({ kind, status: 'not-determined', granted: false }));

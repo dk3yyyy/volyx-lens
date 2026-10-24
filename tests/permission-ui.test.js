@@ -21,6 +21,16 @@ test('onboarding buttons request native microphone and screen permissions', () =
   assert.match(renderer, /kind: 'screen', icon: 'camera', label: 'Screen Recording'/);
 });
 
+test('permission grants stay inside the app instead of opening System Settings', () => {
+  assert.match(renderer, /result\.requiresSettings/);
+  assert.match(renderer, /volyxLens\.openPermissionSettings\(kind\)/);
+  assert.match(renderer, /window\.addEventListener\('focus'/);
+  assert.match(renderer, /macOS applies it after the app restarts/);
+  assert.doesNotMatch(renderer, /result\.settingsOpened/);
+  assert.match(preload, /openPermissionSettings: \(kind\) => ipcRenderer\.invoke\('permissions:open-settings', kind\)/);
+  assert.match(main, /handleTrusted\('permissions:open-settings'/);
+});
+
 test('onboarding uses an accessible split setup layout with clear progress and permission cards', () => {
   for (const id of ['ob-brand-mark', 'ob-step-label', 'ob-stage', 'ob-content', 'ob-title', 'ob-body', 'ob-buttons', 'ob-permission-status']) {
     assert.match(html, new RegExp(`id="${id}"`));
