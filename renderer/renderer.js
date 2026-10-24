@@ -2374,7 +2374,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       obPermissionStatus.className = 'ob-permission-status denied';
     }
   }
-  async function refreshPermissionStates() {
+  async function refreshPermissionStates({ rerender = true } = {}) {
     const previousStates = { ...permissionStates };
     const results = await Promise.all(['microphone', 'screen'].map(async (kind) => {
       try { return await volyxLens.permissionStatus(kind); }
@@ -2387,7 +2387,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       else if (result.status === 'unsupported') setPermissionState(result.kind, 'Unavailable', 'denied');
       else setPermissionState(result.kind, 'Not requested', '');
     }
-    if (obIndex === 1) {
+    if (rerender && obIndex === 1) {
       renderOnboard();
       const mismatch = results.find((result) => result.developmentClient && ['denied', 'restricted'].includes(result.status));
       if (mismatch) showDevelopmentPermissionMismatch(mismatch.kind);
@@ -2570,8 +2570,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     return [...$('#onboard').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
       .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden');
   }
+  // Re-check quietly on focus: a full re-render here can steal focus from the
+  // heading while the dialog is opening, which the UI harness catches.
   window.addEventListener('focus', () => {
-    if (obScrim && !obScrim.classList.contains('hidden')) void refreshPermissionStates();
+    if (obScrim && !obScrim.classList.contains('hidden')) void refreshPermissionStates({ rerender: false });
   });
 
   function handleOnboardKeydown(event) {
