@@ -2338,16 +2338,30 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         obPermissionStatus.className = 'ob-permission-status granted';
       } else if (result.developmentClient) {
         showDevelopmentPermissionMismatch(kind);
-      } else if (result.settingsOpened) {
+      } else if (result.requiresSettings) {
         setPermissionState(kind, 'Needs settings', 'denied');
         const message = document.createElement('span');
-        message.textContent = label + ' access was not granted. Enable Volyx Lens in System Settings, then restart Volyx Lens.';
-        const restart = document.createElement('button');
-        restart.type = 'button';
-        restart.className = 'ob-restart';
-        restart.textContent = 'Restart Volyx Lens';
-        restart.addEventListener('click', () => volyxLens.relaunch());
-        obPermissionStatus.replaceChildren(message, restart);
+        message.textContent = label + ' is off in macOS. Open the pane, switch Volyx Lens on, and this screen updates when you come back.';
+        const openSettings = document.createElement('button');
+        openSettings.type = 'button';
+        openSettings.className = 'ob-restart';
+        openSettings.textContent = 'Open Settings';
+        openSettings.addEventListener('click', async () => {
+          openSettings.disabled = true;
+          try {
+            const opened = await volyxLens.openPermissionSettings(kind);
+            if (opened && opened.ok === false) throw new Error('unsupported');
+          } catch {
+            const hint = document.createElement('span');
+            const pane = kind === 'microphone' ? 'Microphone' : 'Screen & System Audio Recording';
+            hint.textContent = label + ' pane could not be opened. Go to System Settings → Privacy & Security → ' + pane + ' and switch Volyx Lens on.';
+            obPermissionStatus.replaceChildren(hint, openSettings);
+            obPermissionStatus.className = 'ob-permission-status denied has-action';
+          } finally {
+            openSettings.disabled = false;
+          }
+        });
+        obPermissionStatus.replaceChildren(message, openSettings);
         obPermissionStatus.className = 'ob-permission-status denied has-action';
       } else {
         setPermissionState(kind, 'Unavailable', 'denied');
@@ -2361,6 +2375,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     }
   }
   async function refreshPermissionStates() {
+    const previousStates = { ...permissionStates };
     const results = await Promise.all(['microphone', 'screen'].map(async (kind) => {
       try { return await volyxLens.permissionStatus(kind); }
       catch { return { kind, status: 'unknown', granted: false }; }
@@ -2376,6 +2391,22 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       renderOnboard();
       const mismatch = results.find((result) => result.developmentClient && ['denied', 'restricted'].includes(result.status));
       if (mismatch) showDevelopmentPermissionMismatch(mismatch.kind);
+    }
+    const newlyGranted = results.filter((result) => result.granted
+      && previousStates[result.kind]
+      && previousStates[result.kind].className === 'denied');
+    if (newlyGranted.length && obScrim && !obScrim.classList.contains('hidden')) {
+      const label = newlyGranted[0].kind === 'microphone' ? 'Microphone' : 'Screen Recording';
+      const applied = document.createElement('span');
+      applied.textContent = label + ' is allowed now. macOS applies it after the app restarts.';
+      const restart = document.createElement('button');
+      restart.type = 'button';
+      restart.className = 'ob-restart';
+      restart.textContent = 'Restart Volyx Lens';
+      restart.addEventListener('click', () => volyxLens.relaunch());
+      obPermissionStatus.replaceChildren(applied, restart);
+      obPermissionStatus.className = 'ob-permission-status granted has-action';
+      obPermissionStatus.classList.remove('hidden');
     }
   }
   const OB_STEPS = [
@@ -2539,6 +2570,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     return [...$('#onboard').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
       .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden');
   }
+  window.addEventListener('focus', () => {
+    if (obScrim && !obScrim.classList.contains('hidden')) void refreshPermissionStates();
+  });
+
   function handleOnboardKeydown(event) {
     if (event.key === 'Escape') {
       event.preventDefault();
