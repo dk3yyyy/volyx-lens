@@ -2645,10 +2645,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     setIgnore(false);
     requestAnimationFrame(() => {
       const title = $('#ob-title');
-      title.focus();
-      setTimeout(() => {
-        if (!obScrim.classList.contains('hidden') && document.activeElement !== title) title.focus();
-      }, 0);
+      const focusTitle = () => {
+        if (obScrim.classList.contains('hidden')) return;
+        if (document.activeElement !== title) title.focus();
+      };
+      focusTitle();
+      // Cold starts (first paint on a shared runner) can swallow the initial
+      // focus call, so retry briefly instead of leaving focus on the body.
+      [0, 120, 400].forEach((delay) => setTimeout(focusTitle, delay));
     });
     void refreshPermissionStates();
   }
