@@ -1837,6 +1837,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if (route === 'foundry-resource') return 'Azure Foundry resource endpoint';
     return '';
   }
+  // Guards against a slow capability reply landing after the form moved on.
+  let capabilityNoteRequestId = 0;
   function renderProviderConfig() {
     const label = PROVIDER_LABELS[providerView] || providerView;
     const present = (settings.credentialStatus && settings.credentialStatus.present) || {};
@@ -1880,13 +1882,47 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#provider-key-label').childNodes[0].nodeValue = `${label} API key `;
     $('#provider-model-hint').textContent = providerView === 'azure' ? 'exact Azure deployment names' : `used by ${label}`;
     const capability = (settings.providerCapabilities || {})[providerView] || {};
-    $('#provider-capability-note').classList.toggle('hidden', capability.supportsVision !== false);
     const models = settings.models[providerView] || { fast: '', smart: '' };
+    // A provider can mix tiers: DeepSeek's Fast model reads screenshots while
+    // Smart does not. The note follows the live form values, so editing a model
+    // updates the warning without waiting for a save.
+    async function refreshCapabilityNote() {
+      const requestId = ++capabilityNoteRequestId;
+      const tier = settings.smart ? 'smart' : 'fast';
+      const modelInput = $(tier === 'smart' ? '#model-smart' : '#model-fast');
+      const endpointInput = $(tier === 'smart' ? '#endpoint-smart' : '#endpoint-fast');
+      const liveModel = String((modelInput && modelInput.value) || '').trim();
+      const liveEndpoint = String((endpointInput && endpointInput.value) || '').trim();
+      const savedModel = String(models[tier] || '').trim();
+      const savedEndpoint = String(((settings.endpointByTier || {})[providerView] || {})[tier] || '').trim();
+      let supports = capability.visionByTier ? capability.visionByTier[tier] : capability.supportsVision !== false;
+      if (capability.supportsVision !== false && (liveModel !== savedModel || liveEndpoint !== savedEndpoint)) {
+        try {
+          const resolved = await volyxLens.providerCapability({ provider: providerView, tier, model: liveModel, endpoint: liveEndpoint });
+          if (requestId !== capabilityNoteRequestId) return;
+          if (resolved && typeof resolved.supportsVision === 'boolean') supports = resolved.supportsVision;
+        } catch { /* keep the last known answer */ }
+      }
+      if (requestId !== capabilityNoteRequestId) return;
+      const note = $('#provider-capability-note');
+      const textOnly = supports === false;
+      note.classList.toggle('hidden', !textOnly);
+      if (textOnly) {
+        note.textContent = capability.supportsVision === false
+          ? 'This provider is text-only in Volyx Lens. Meeting and transcript modes work; screen-only analysis requires a vision-capable provider.'
+          : `${tier === 'smart' ? 'Smart' : 'Fast'} (${liveModel || 'no model set'}) is text-only in Volyx Lens. Turn Smart off or pick a model that accepts images to use screen features.`;
+      }
+    }
+    $('#model-fast').oninput = () => { void refreshCapabilityNote(); };
+    $('#model-smart').oninput = () => { void refreshCapabilityNote(); };
+    $('#endpoint-fast').oninput = () => { void refreshCapabilityNote(); };
+    $('#endpoint-smart').oninput = () => { void refreshCapabilityNote(); };
     $('#model-fast').value = models.fast || '';
     $('#model-smart').value = models.smart || '';
     const tierEndpoints = (settings.endpointByTier && settings.endpointByTier[providerView]) || {};
     $('#endpoint-fast').value = tierEndpoints.fast || '';
     $('#endpoint-smart').value = tierEndpoints.smart || '';
+    void refreshCapabilityNote();
     const fallback = $('#provider-fallback');
     [...fallback.options].forEach((option) => { option.disabled = option.value === settings.provider; });
     if (settings.fallbackProvider === settings.provider) settings.fallbackProvider = '';

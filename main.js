@@ -19,7 +19,7 @@ const { planScreenInput } = require('./src/capabilities');
 const { mediaPermissionStatus, requestMediaPermission, PRIVACY_PANES } = require('./src/permissions');
 const { RealtimeTranscriptionManager } = require('./src/realtime-stt');
 const { AUDIO_SAMPLE_RATE } = require('./src/audio-config');
-const { resolveRealtimeTranscription } = require('./src/provider-config');
+const { resolveRealtimeTranscription, resolveProvider, PROVIDERS } = require('./src/provider-config');
 const { runRealtimeDiagnostic, LiveRealtimeDiagnostic } = require('./src/realtime-diagnostic');
 const { runResponseDiagnostic } = require('./src/response-diagnostic');
 const { createShortcutRegistry } = require('./src/shortcut-registry');
@@ -2159,6 +2159,29 @@ handleTrusted('permissions:status', (_event, kind) => mediaPermissionStatus(Stri
   systemPreferences,
   isPackaged: app.isPackaged,
 }));
+handleTrusted('provider:capability', (_event, payload = {}) => {
+  const provider = String(payload.provider || '');
+  const tier = payload.tier === 'smart' ? 'smart' : 'fast';
+  if (!Object.hasOwn(PROVIDERS, provider)) return { supportsVision: false, model: '' };
+  const baseline = store.getSettings();
+  const candidate = {
+    ...baseline,
+    // resolveProvider reads settings.provider; the form may be editing a
+    // provider other than the saved default.
+    provider,
+    smart: tier === 'smart',
+    models: {
+      ...(baseline.models || {}),
+      [provider]: { ...((baseline.models || {})[provider] || {}), [tier]: String(payload.model || '') },
+    },
+    endpointByTier: {
+      ...(baseline.endpointByTier || {}),
+      [provider]: { ...(((baseline.endpointByTier || {})[provider]) || {}), [tier]: String(payload.endpoint || '') },
+    },
+  };
+  const resolved = resolveProvider(candidate);
+  return { supportsVision: resolved.supportsVision === true, model: resolved.model };
+});
 handleTrusted('permissions:open-settings', async (_event, kind) => {
   const pane = PRIVACY_PANES[String(kind || '')];
   if (!pane) return { ok: false, error: 'unsupported' };

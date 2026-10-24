@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
-const { getDefaultSettings, PROVIDERS } = require('./provider-config');
+const { getDefaultSettings, PROVIDERS, migrateModelId, modelSupportsVision } = require('./provider-config');
 const { createCredentialVault } = require('./credential-vault');
 const { sanitizeShortcutsPatch } = require('./shortcut-validator');
 const { DEFAULT_SHORTCUT_DEFS } = require('./shortcut-defaults');
@@ -128,11 +128,26 @@ function publicSettings() {
   // Read-only capability metadata so the renderer can derive UI (e.g. which
   // providers are text-only) instead of hardcoding provider lists.
   result.providerCapabilities = Object.fromEntries(
-    Object.entries(PROVIDERS).map(([id, definition]) => [id, {
-      label: definition.label,
-      supportsVision: definition.supportsVision === true,
-      requiresKey: definition.requiresKey !== false,
-    }]),
+    Object.entries(PROVIDERS).map(([id, definition]) => {
+      const models = (result.models || {})[id] || {};
+      const tierEndpoints = (result.endpointByTier || {})[id] || {};
+      // Judge the model a request will actually use: saved ids migrate first, and
+      // a custom endpoint keeps its own names untouched (same rule as resolveProvider).
+      const resolvedModel = (tier) => {
+        const raw = String(models[tier] || '').trim();
+        return String(tierEndpoints[tier] || '').trim() ? raw : migrateModelId(id, raw, tier);
+      };
+      return [id, {
+        label: definition.label,
+        supportsVision: definition.supportsVision === true,
+        visionModels: Array.isArray(definition.visionModels) ? [...definition.visionModels] : null,
+        visionByTier: {
+          fast: modelSupportsVision(definition, resolvedModel('fast')),
+          smart: modelSupportsVision(definition, resolvedModel('smart')),
+        },
+        requiresKey: definition.requiresKey !== false,
+      }];
+    }),
   );
   return result;
 }

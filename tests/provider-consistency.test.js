@@ -66,7 +66,9 @@ test('renderer labels and the capability note derive from provider metadata', ()
   const labels = Object.entries(PROVIDERS).map(([id, provider]) => `${id}: '${provider.label}'`).join(', ');
   assert.ok(rendererJs.includes(`PROVIDER_LABELS = Object.freeze({ ${labels} })`), 'PROVIDER_LABELS is out of sync with PROVIDERS');
   assert.ok(storeJs.includes('providerCapabilities'), 'store does not expose providerCapabilities');
-  assert.ok(rendererJs.includes('supportsVision !== false'), 'capability note must derive from supportsVision');
+  assert.ok(rendererJs.includes('capability.supportsVision === false'), 'capability note must derive from supportsVision');
+  assert.ok(rendererJs.includes('capability.visionByTier'), 'capability note must honor the per-tier vision state');
+  assert.ok(storeJs.includes('visionByTier'), 'store must expose per-tier vision support');
   assert.ok(!rendererJs.includes("['deepseek', 'groq']"), 'capability note must not hardcode a provider list');
 });
 
