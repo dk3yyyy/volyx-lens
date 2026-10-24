@@ -180,7 +180,7 @@ Each provider stores separate **Fast** and **Smart** model/deployment names, so 
 | **Anthropic** | responses | API key; transcription requires another provider |
 | **Google Gemini** | responses + batch transcription | Gemini API key |
 | **Azure Foundry** | responses + realtime transcription | resource key, official resource endpoint, and exact deployment names |
-| **DeepSeek** | text responses | screen analysis requires a vision-capable default/fallback |
+| **DeepSeek** | text and screen | Flash reads screenshots; Smart (V4 Pro) is text-only, so turn Smart off or pick another provider for screen features |
 | **Groq** | text responses | API key; fast Llama models served on Groq's LPU |
 | **OpenRouter** | responses | API key; routes to many hosted models with one key |
 | **NVIDIA** | responses | API key from build.nvidia.com; OpenAI-compatible Nemotron and hosted open models (`https://integrate.api.nvidia.com/v1`); vision requires a VLM model (e.g. `meta/llama-3.2-11b-vision-instruct`) |

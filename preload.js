@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   requestPermission: (kind) => ipcRenderer.invoke('permissions:request', kind),
   permissionStatus: (kind) => ipcRenderer.invoke('permissions:status', kind),
   openPermissionSettings: (kind) => ipcRenderer.invoke('permissions:open-settings', kind),
+  providerCapability: (payload) => ipcRenderer.invoke('provider:capability', payload),
   micPcm: (arrayBuffer) => ipcRenderer.send('mic:pcm', arrayBuffer),
   systemPcm: (arrayBuffer) => ipcRenderer.send('system:pcm', arrayBuffer),
   setIgnoreMouse: (v) => ipcRenderer.send('mouse:ignore', v),
