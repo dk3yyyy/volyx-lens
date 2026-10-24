@@ -30,7 +30,7 @@ test('defaults include Azure Foundry and DeepSeek without changing the app name'
   assert.deepEqual(settings.models.anthropic, { fast: 'claude-haiku-4-5', smart: 'claude-sonnet-5' });
   assert.deepEqual(settings.models.gemini, { fast: 'gemini-3.5-flash', smart: 'gemini-2.5-pro' });
   assert.deepEqual(settings.models.deepseek, {
-    fast: 'deepseek-v4-flash',
+    fast: 'deepseek-flash',
     smart: 'deepseek-v4-pro',
   });
   assert.deepEqual(settings.models.groq, {
@@ -95,7 +95,7 @@ test('Azure Foundry requires an API key, deployment name, and valid endpoint', (
   assert.equal(resolved.supportsVision, true);
 });
 
-test('DeepSeek uses the official API endpoint and is marked text-only', () => {
+test('DeepSeek exposes its multimodal Flash model on the official endpoint', () => {
   const settings = getDefaultSettings();
   settings.provider = 'deepseek';
   settings.apiKeys.deepseek = 'test-key';
@@ -103,8 +103,34 @@ test('DeepSeek uses the official API endpoint and is marked text-only', () => {
   const resolved = resolveProvider(settings);
   assert.equal(resolved.ready, true);
   assert.equal(resolved.baseURL, 'https://api.deepseek.com');
-  assert.equal(resolved.model, 'deepseek-v4-flash');
-  assert.equal(resolved.supportsVision, false);
+  assert.equal(resolved.model, 'deepseek-flash');
+  assert.equal(resolved.supportsVision, true);
+});
+
+test('DeepSeek vision follows the selected tier: Pro is text-only', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'deepseek';
+  settings.apiKeys.deepseek = 'test-key';
+
+  settings.smart = true;
+  const smart = resolveProvider(settings);
+  assert.equal(smart.model, 'deepseek-v4-pro');
+  assert.equal(smart.supportsVision, false);
+
+  settings.smart = false;
+  const fast = resolveProvider(settings);
+  assert.equal(fast.supportsVision, true);
+});
+
+test('retired DeepSeek ids migrate to the current catalogue', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'deepseek';
+  settings.apiKeys.deepseek = 'test-key';
+  settings.models.deepseek.fast = 'deepseek-v4-flash-vision-exp';
+
+  const resolved = resolveProvider(settings);
+  assert.equal(resolved.model, 'deepseek-flash');
+  assert.equal(resolved.supportsVision, true);
 });
 
 test('Groq uses its OpenAI-compatible endpoint and is marked text-only', () => {
@@ -401,7 +427,7 @@ test('retired model ids migrate at read time instead of 404ing forever', () => {
   settings.smart = false;
 
   assert.equal(migrateModelId('anthropic', 'claude-3-5-haiku-latest', 'fast'), 'claude-haiku-4-5');
-  assert.equal(migrateModelId('deepseek', 'deepseek-chat', 'fast'), 'deepseek-v4-flash');
+  assert.equal(migrateModelId('deepseek', 'deepseek-chat', 'fast'), 'deepseek-flash');
   assert.equal(migrateModelId('deepseek', 'deepseek-reasoner', 'smart'), 'deepseek-v4-pro');
   assert.equal(migrateModelId('gemini', 'gemini-1.5-pro', 'smart'), 'gemini-3.5-flash');
 

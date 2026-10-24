@@ -22,8 +22,11 @@ const PROVIDERS = Object.freeze({
   },
   deepseek: {
     label: 'DeepSeek',
-    models: { fast: 'deepseek-v4-flash', smart: 'deepseek-v4-pro' },
-    supportsVision: false,
+    // DeepSeek ships one multimodal model: Flash (V4.1) reads images. V4 Pro is
+    // text-only, so the provider flag is narrowed per model — see visionModels.
+    models: { fast: 'deepseek-flash', smart: 'deepseek-v4-pro' },
+    supportsVision: true,
+    visionModels: ['deepseek-flash'],
     baseURL: 'https://api.deepseek.com',
   },
   groq: {
@@ -207,9 +210,24 @@ const RETIRED_MODELS = Object.freeze({
     [/^gemini-(1\.0|1\.5|2\.0)(?:-|$)/i, { fast: 'gemini-3.5-flash', smart: 'gemini-3.5-flash' }],
   ],
   deepseek: [
-    [/^deepseek-(chat|reasoner)$/i, { fast: 'deepseek-v4-flash', smart: 'deepseek-v4-pro' }],
+    [/^deepseek-(chat|reasoner)$/i, { fast: 'deepseek-flash', smart: 'deepseek-v4-pro' }],
+    // V4 Flash was renamed to deepseek-flash, and the experimental vision id
+    // resolves to the same model now.
+    [/^deepseek-v4-flash(?:-vision-exp)?$/i, { fast: 'deepseek-flash', smart: 'deepseek-v4-pro' }],
   ],
 });
+
+// A provider catalogue can mix capabilities across tiers: DeepSeek's Flash reads
+// images while V4 Pro is text-only. `visionModels` narrows the provider-wide
+// flag to the ids that actually accept pixels; without it every model inherits
+// the flag.
+function modelSupportsVision(definition, model) {
+  if (!definition || definition.supportsVision !== true) return false;
+  const allowed = definition.visionModels;
+  if (!Array.isArray(allowed) || allowed.length === 0) return true;
+  const name = String(model || '').trim().toLowerCase();
+  return allowed.some((entry) => String(entry).toLowerCase() === name);
+}
 
 function migrateModelId(provider, model, tier) {
   const rules = RETIRED_MODELS[provider];
@@ -284,7 +302,7 @@ function resolveProvider(settings) {
     model,
     tier,
     baseURL,
-    supportsVision: definition.supportsVision,
+    supportsVision: modelSupportsVision(definition, model),
     maxImagesPerRequest: definition.maxImagesPerRequest || null,
     tokenLimitParameter: definition.tokenLimitParameter || 'max_tokens',
     configurationError,
