@@ -12,6 +12,7 @@ const {
   evaluateScenario,
   summarize,
   coverageIssue,
+  scenarioMaxTokens,
   MIN_LIVE_PASS_RATE,
 } = require('../scripts/answer-quality-eval');
 const { MODES } = require('../src/prompts');
@@ -77,7 +78,7 @@ test('meeting memory is only in the prompt when summaries are supplied', () => {
 test('coverage reports duplicate ids and unknown modes instead of passing quietly', () => {
   const base = SCENARIOS[0];
   assert.match(coverageIssue([base, base]), /duplicate/i);
-  assert.match(coverageIssue([{ ...base, mode: 'nope' }]), /unknown mode/i);
+  assert.match(coverageIssue([{ ...base, mode: 'nope' }]), /unknown prompt/i);
   assert.equal(coverageIssue([]), 'missing a coding scenario');
 });
 
@@ -135,7 +136,7 @@ test('the assembled system carries the shared rules the app adds', () => {
 test('live mode uses each mode budget and skips scenarios without a screen fixture', () => {
   const script = fs.readFileSync(path.join(root, 'scripts', 'answer-quality-eval.js'), 'utf8');
 
-  assert.match(script, /const maxTokens = budgets \? \(settings\.smart \? budgets\.smart : budgets\.fast\)/);
+  assert.match(script, /const maxTokens = scenarioMaxTokens\(scenario, settings\.smart === true\);/);
   assert.match(script, /VOLYX_EVAL_SCREENSHOT_DIR/);
   assert.match(script, /skipped: true/);
   assert.match(script, /imageDataUrls = \[fixture\]/);
@@ -156,4 +157,64 @@ test('the coding-as-assist scenario rejects restating while the leetcode one doe
   assert.equal(assist.noRestatement, true);
   const restating = evaluateScenario(assist, { answer: `${assist.problemText}\n\`\`\`py\npass\n\`\`\`` });
   assert.equal(restating.answerPassed, false);
+});
+
+test('the cleanup prompt is reachable from the eval gate', () => {
+  const scenario = SCENARIOS.find((entry) => entry.id === 'transcript-clean-format');
+  assert.ok(scenario, 'the cleanup pass has a scenario');
+  assert.equal(scenario.promptSource, 'transcript-cleanup');
+  assert.equal(coverageIssue(), null);
+
+  const { system, prompt } = buildPrompt(scenario);
+  assert.match(system, /same number of lines/i);
+  assert.match(system, /never change a negation/i);
+  assert.match(prompt, /\[0\] Them: /);
+  assert.match(prompt, /\[1\] You: /);
+});
+
+test('a cleanup that paraphrases instead of repairing fails the gate', () => {
+  const scenario = SCENARIOS.find((entry) => entry.id === 'transcript-clean-format');
+  const row = evaluateScenario(scenario, {
+    answer: '[0] Them: They deprecated the model.\n[1] You: We will ship before the audit.',
+  });
+  assert.equal(row.passed, false);
+  assert.equal(row.checks.find((check) => check.name === 'sourceFidelity').ok, false);
+});
+
+test('a cleanup that drops or reorders markers fails the gate', () => {
+  const scenario = SCENARIOS.find((entry) => entry.id === 'transcript-clean-format');
+  const dropped = evaluateScenario(scenario, {
+    answer: '[0] Them: So the deprecation of the Flash model is going ahead next quarter.',
+  });
+  assert.equal(dropped.checks.find((check) => check.name === 'markerLines').ok, false);
+
+  const reordered = evaluateScenario(scenario, {
+    answer: '[1] You: Right, and we will not ship the migration before the audit.\n[0] Them: So the deprecation of the Flash model is going ahead next quarter.',
+  });
+  assert.equal(reordered.checks.find((check) => check.name === 'markerLines').ok, false);
+});
+
+test('a cleanup that drops a negation or changes an amount fails the gate', () => {
+  const scenario = SCENARIOS.find((entry) => entry.id === 'transcript-clean-format');
+
+  const flipped = evaluateScenario(scenario, {
+    answer: '[0] Them: So the deprecation of the Flash model is going ahead in 3 weeks.\n[1] You: Right, and we will ship the migration before the audit.',
+  });
+  assert.equal(flipped.checks.find((check) => check.name === 'sourceFidelity').ok, false);
+  assert.match(flipped.checks.find((check) => check.name === 'sourceFidelity').detail, /negation/);
+
+  const changedAmount = evaluateScenario(scenario, {
+    answer: '[0] Them: So the deprecation of the Flash model is going ahead in 3 weeks.\n[1] You: Right, and we will not ship the migration before the audit until 2027.',
+  });
+  assert.equal(changedAmount.checks.find((check) => check.name === 'sourceFidelity').ok, false);
+});
+
+test('the cleanup scenario uses the production prompt and budget', () => {
+  const scenario = SCENARIOS.find((entry) => entry.id === 'transcript-clean-format');
+  const { planCleanBatches, buildCleanPrompt } = require('../src/transcript-cleanup');
+  const batch = planCleanBatches(scenario.transcript).batches[0];
+
+  assert.equal(buildPrompt(scenario).prompt, buildCleanPrompt(batch));
+  assert.equal(scenarioMaxTokens(scenario, false), batch.maxTokens);
+  assert.equal(scenarioMaxTokens(scenario, true), batch.maxTokens);
 });

@@ -11,6 +11,8 @@
 // prompt or temperature changes with numbers instead of impressions.
 
 const { MODES } = require('../src/prompts');
+const { CLEAN_SYSTEM_PROMPT, planCleanBatches, buildCleanPrompt, fidelityIssue } = require('../src/transcript-cleanup');
+const { tokenRecall } = require('../src/transcript-dedupe');
 const { buildPreviousMeetingsBlock, PREVIOUS_MEETINGS_NOTE } = require('../src/meeting-memory');
 const {
   SOURCE_UNCERTAINTY_RULE,
@@ -37,6 +39,42 @@ function firstWords(text, count) {
 }
 
 const CHECKS = {
+  // A cleanup answer must keep every turn's marker, once each, in order. A
+  // missing or duplicated marker means the text no longer lines up with the
+  // recording, which is worse than an unpolished sentence.
+  markerLines(answer, scenario) {
+    const expected = Array.isArray(scenario.transcript) ? scenario.transcript.length : 0;
+    const lines = String(answer || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    const markers = lines
+      .map((line) => (line.match(/^\[(\d+)\]/) || [])[1])
+      .filter((value) => value !== undefined)
+      .map(Number);
+    const ok = expected > 0
+      && lines.length === expected
+      && markers.length === expected
+      && markers.every((marker, index) => marker === index);
+    return { ok, detail: `${markers.length}/${expected} marker(s) in order` };
+  },
+
+  // A repair may fix wording but must not drop the content: every source turn
+  // keeps nearly all of its words, and every number survives.
+  sourceFidelity(answer, scenario) {
+    const turns = Array.isArray(scenario.transcript) ? scenario.transcript : [];
+    if (!turns.length) return { ok: true, detail: 'no source turns' };
+    const lines = String(answer || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    for (let index = 0; index < turns.length; index += 1) {
+      const raw = String(turns[index] && turns[index].text || '');
+      const text = (lines[index] || '').replace(/^\[\d+\]\s*(?:(?:you|them)\s*:\s*)?/i, '');
+      const recall = tokenRecall(text, raw);
+      if (recall < 0.9) return { ok: false, detail: `turn ${index} kept ${Math.round(recall * 100)}% of its words` };
+      // Word recall cannot see a flipped negation or a changed amount, so the
+      // same guard the app applies before storing a cleaned turn runs here.
+      const issue = fidelityIssue(raw, text);
+      if (issue) return { ok: false, detail: `turn ${index}: ${issue}` };
+    }
+    return { ok: true, detail: `${turns.length} turn(s) preserved` };
+  },
+
   codeFence(answer) {
     const blocks = String(answer || '').match(/```[\s\S]+?```/g) || [];
     return { ok: blocks.length > 0, detail: `${blocks.length} fenced block(s)` };
@@ -91,8 +129,13 @@ const CHECKS = {
   },
 
   budget(scenario) {
-    const budgets = MODES[scenario.mode] && MODES[scenario.mode].maxTokens;
-    if (!budgets) return { ok: false, detail: `${scenario.mode} has no budget` };
+    const def = promptDefinition(scenario);
+    let budgets = def && def.maxTokens;
+    if (def && def.resolve) {
+      const resolved = def.resolve(scenario).maxTokens;
+      budgets = Number.isFinite(resolved) ? { fast: resolved, smart: resolved } : null;
+    }
+    if (!budgets) return { ok: false, detail: `${scenario.promptSource || scenario.mode} has no budget` };
     const ok = scenario.minBudget.fast <= budgets.fast && scenario.minBudget.smart <= budgets.smart;
     return { ok, detail: `${budgets.fast}/${budgets.smart}, need ${scenario.minBudget.fast}/${scenario.minBudget.smart}` };
   },
@@ -208,18 +251,62 @@ const SCENARIOS = [
     maxSentences: 3,
     promptMatch: [/gets a direct answer/i, /three sentences at most/i],
   },
+  {
+    // Not a user-facing mode: the cleanup pass writes back into a saved record,
+    // so its prompt is gated here rather than being left to unit assertions.
+    id: 'transcript-clean-format',
+    mode: 'clean',
+    promptSource: 'transcript-cleanup',
+    transcript: [
+      { channel: 'them', text: 'so the deprecation of the flash model is going ahead in 3 weeks' },
+      { channel: 'you', text: 'right and we will not ship the migration before the audit' },
+    ],
+    answer: [
+      '[0] Them: So the deprecation of the Flash model is going ahead in 3 weeks.',
+      '[1] You: Right, and we will not ship the migration before the audit.',
+    ].join('\n'),
+    markerLines: true,
+    sourceFidelity: true,
+    promptMatch: [/same number of lines/i, /same order/i, /not\b[^.]*summar/i, /never change a negation/i],
+    // The cleanup budget is computed per batch, not fixed per tier, so this
+    // asserts a real floor rather than pinning today's number.
+    minBudget: { fast: 200, smart: 200 },
+  },
 ];
 
 // ----- evaluation -----------------------------------------------------------
 
+// Prompts that are not user-facing modes still need coverage: the cleanup pass
+// writes back into a saved record, so it belongs in the same gate.
+const PROMPT_SOURCES = {
+  'transcript-cleanup': {
+    system: CLEAN_SYSTEM_PROMPT,
+    // Built by the same planner and prompt builder the app uses, so a change to
+    // either one shows up here instead of leaving the gate green.
+    resolve(scenario) {
+      const plan = planCleanBatches(scenario.transcript || []);
+      const batch = plan.batches[0];
+      if (!batch) return { prompt: '', maxTokens: null };
+      return { prompt: buildCleanPrompt(batch), maxTokens: batch.maxTokens };
+    },
+  },
+};
+
+function promptDefinition(scenario) {
+  if (scenario.promptSource) return PROMPT_SOURCES[scenario.promptSource] || null;
+  return MODES[scenario.mode] || null;
+}
+
 function buildPrompt(scenario) {
-  const def = MODES[scenario.mode];
-  if (!def) throw new Error(`Unknown mode in scenario ${scenario.id}: ${scenario.mode}`);
-  let prompt = def.build({
-    transcript: scenario.transcript || [],
-    userText: scenario.userText || '',
-    slideContext: scenario.slideContext || '',
-  });
+  const def = promptDefinition(scenario);
+  if (!def) throw new Error(`Unknown prompt for scenario ${scenario.id}: ${scenario.promptSource || scenario.mode}`);
+  let prompt = def.resolve
+    ? def.resolve(scenario).prompt
+    : def.build({
+      transcript: scenario.transcript || [],
+      userText: scenario.userText || '',
+      slideContext: scenario.slideContext || '',
+    });
   if (scenario.previousMeetings) {
     const block = buildPreviousMeetingsBlock(scenario.previousMeetings);
     if (block.count) prompt += `\n\n${PREVIOUS_MEETINGS_NOTE}\n\n${block.text}`;
@@ -228,6 +315,17 @@ function buildPrompt(scenario) {
     .filter(Boolean)
     .join('\n\n');
   return { prompt, system };
+}
+
+function scenarioMaxTokens(scenario, smart = false) {
+  const def = promptDefinition(scenario);
+  if (!def) return undefined;
+  if (def.resolve) {
+    const resolved = def.resolve(scenario).maxTokens;
+    return Number.isFinite(resolved) ? resolved : undefined;
+  }
+  const budgets = def.maxTokens;
+  return budgets ? (smart ? budgets.smart : budgets.fast) : undefined;
 }
 
 function evaluateScenario(scenario, { answer: overrideAnswer } = {}) {
@@ -246,6 +344,8 @@ function evaluateScenario(scenario, { answer: overrideAnswer } = {}) {
   if (scenario.maxSentences) answerCheck('maxSentences', CHECKS.maxSentences(text, scenario));
   if (scenario.mustMatch) answerCheck('matches', CHECKS.matches(text, scenario));
   if (scenario.mustNotMatch) answerCheck('avoids', CHECKS.avoids(text, scenario));
+  if (scenario.markerLines) answerCheck('markerLines', CHECKS.markerLines(text, scenario));
+  if (scenario.sourceFidelity) answerCheck('sourceFidelity', CHECKS.sourceFidelity(text, scenario));
   if (scenario.promptMatch) promptCheck('promptCarries', CHECKS.promptCarries(fullPrompt, scenario));
   if (scenario.promptAvoid) promptCheck('promptAvoids', CHECKS.promptAvoids(fullPrompt, scenario));
   if (scenario.minBudget) promptCheck('budget', CHECKS.budget(scenario));
@@ -292,7 +392,7 @@ function coverageIssue(scenarios = SCENARIOS) {
   for (const scenario of scenarios) {
     if (ids.has(scenario.id)) return `duplicate scenario id: ${scenario.id}`;
     ids.add(scenario.id);
-    if (!MODES[scenario.mode]) return `unknown mode: ${scenario.mode}`;
+    if (!promptDefinition(scenario)) return `unknown prompt: ${scenario.promptSource || scenario.mode}`;
     modes.add(scenario.mode);
   }
   if (!modes.has('leetcode')) return 'missing a coding scenario';
@@ -355,8 +455,7 @@ async function runLive({ provider, apiKey, model, smart }) {
     }
 
     const { prompt, system } = buildPrompt(scenario);
-    const budgets = MODES[scenario.mode].maxTokens;
-    const maxTokens = budgets ? (settings.smart ? budgets.smart : budgets.fast) : undefined;
+    const maxTokens = scenarioMaxTokens(scenario, settings.smart === true);
     let answer = null;
     try {
       answer = await llm.stream({ system, turns: [{ role: 'user', text: prompt }], imageDataUrls, maxTokens, onToken() {} });
@@ -423,6 +522,9 @@ if (require.main === module) {
 module.exports = {
   SCENARIOS,
   CHECKS,
+  PROMPT_SOURCES,
+  promptDefinition,
+  scenarioMaxTokens,
   buildPrompt,
   evaluateScenario,
   summarize,

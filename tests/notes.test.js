@@ -2,20 +2,13 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { buildNotesPrompt, parseNotes } = require('../src/notes');
+const { parseNotes } = require('../src/notes');
 
 const transcript = [
   { channel: 'them', text: 'We need to launch by Friday.', ts: 1 },
   { channel: 'you', text: 'I can handle the API work.', ts: 2 },
   { channel: 'them', text: 'Send the release notes to eng.', ts: 3 }
 ];
-
-test('buildNotesPrompt formats speakers and preserves order', () => {
-  const p = buildNotesPrompt(transcript);
-  assert.ok(p.includes('Them: We need to launch by Friday.'));
-  assert.ok(p.includes('You: I can handle the API work.'));
-  assert.ok(p.includes('Action Items:'));
-});
 
 test('parseNotes extracts all five sections', () => {
   const blob = [

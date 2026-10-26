@@ -1,29 +1,10 @@
 'use strict';
 
-// Structured meeting notes — turns a raw transcript into Summary / Key Points /
-// Decisions / Action Items / Follow-Up. The LLM produces the text; this module
-// handles prompt construction and structured parsing of the response.
+// Structured meeting notes: the recap mode's answer is parsed into Summary /
+// Key Points / Decisions / Action Items / Follow-Up. The prompt lives in
+// prompts.js as MODES.recap, so there is no second prompt builder here; this
+// module only parses the response.
 
-function buildNotesPrompt(transcript) {
-  const who = (t) => (t.channel === 'you' ? 'You' : 'Them');
-  const lines = (Array.isArray(transcript) ? transcript : [])
-    .filter((t) => t && t.text && String(t.text).trim())
-    .map((t) => who(t) + ': ' + String(t.text).trim())
-    .join('\n');
-
-  return (
-    'Meeting transcript:\n' +
-    (lines || '(empty)') +
-    '\n\nWrite concise meeting notes with EXACTLY these five headings, each ' +
-    'heading alone on its own line:\n' +
-    'Meeting Summary:\n' +
-    'Key Points:\n' +
-    'Decisions:\n' +
-    'Action Items:\n' +
-    'Follow-Up:\n' +
-    'Use a hyphen at the start of each bullet. Keep Summary to 2–3 sentences.'
-  );
-}
 
 const HEADERS = [
   ['summary', /^meeting summary\s*:?\s*$/i],
@@ -70,4 +51,4 @@ function parseNotes(text) {
   return out;
 }
 
-module.exports = { buildNotesPrompt, parseNotes, HEADERS };
+module.exports = { parseNotes, HEADERS };
