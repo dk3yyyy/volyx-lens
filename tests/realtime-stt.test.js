@@ -547,3 +547,16 @@ test('a session with no vocabulary sends none of it', () => {
   assert.deepEqual(manager.vocabulary, { phrases: [], keyterms: [], prompt: '' });
   assert.deepEqual(manager.channels.you.keyterms, []);
 });
+
+test('overlapping azure phrases do not consume the same slot twice', () => {
+  const phrases = Array.from({ length: 40 }, (_, index) => `Phrase${index}`);
+  const vocab = [
+    ...Array.from({ length: 40 }, (_, index) => `phrase${index}`),
+    ...Array.from({ length: 20 }, (_, index) => `Term${index}`),
+  ];
+  const result = channelVocabulary({ provider: 'azureSpeech', phrases, vocab });
+  const lower = result.phrases.map((phrase) => phrase.toLowerCase());
+  assert.equal(new Set(lower).size, lower.length, 'no duplicate reaches the service');
+  assert.equal(result.phrases.length, 50);
+  assert.deepEqual(result.phrases.slice(0, 40), phrases, 'configured phrases keep their priority');
+});

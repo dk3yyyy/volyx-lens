@@ -206,3 +206,13 @@ test('the realtime pipeline seeds the same vocabulary the batch path uses', () =
   assert.match(main, /vocab: buildSttTermList\(\{\s*personalContext:/);
   assert.match(main, /getEnabledDocuments\(\)/);
 });
+
+test('personal names win the cap before generic words do', () => {
+  const personal = Array.from({ length: 45 }, (_, index) => `Project${String.fromCharCode(65 + index)}Alpha`).join(' ');
+  const terms = buildSttTermList({ personalContext: personal, limit: 10 });
+  assert.equal(terms.length, 10);
+  assert.ok(
+    terms.every((term) => /^Project[A-Z]Alpha$/.test(term)),
+    'a recognizer miss on a name matters more than on a generic word',
+  );
+});

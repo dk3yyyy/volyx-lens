@@ -42,7 +42,20 @@ function channelVocabulary({ provider = 'openai', phrases = [], vocab = [] } = {
     .filter(Boolean)
     .slice(0, 50);
   const existing = (Array.isArray(phrases) ? phrases : []).filter(Boolean);
-  if (provider === 'azureSpeech') return { phrases: [...existing, ...terms].slice(0, 50), keyterms: [], prompt: '' };
+  if (provider === 'azureSpeech') {
+    // Both lists feed one 50-phrase budget, so a phrase configured by the user
+    // and also present in the vocabulary must not consume two slots.
+    const seen = new Set();
+    const merged = [];
+    for (const phrase of [...existing, ...terms]) {
+      const value = String(phrase || '').trim();
+      const key = value.toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(value);
+    }
+    return { phrases: merged.slice(0, 50), keyterms: [], prompt: '' };
+  }
   if (provider === 'deepgram') return { phrases: existing, keyterms: terms, prompt: '' };
   return { phrases: existing, keyterms: [], prompt: terms.join(', ') };
 }

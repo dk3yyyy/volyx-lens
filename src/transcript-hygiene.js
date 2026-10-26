@@ -99,9 +99,11 @@ function buildSttVocab({ personalContext = '', base = BASE_STT_VOCAB, maxChars =
  * `buildSttVocab` (a sentence-style initial prompt); realtime APIs take terms.
  */
 function buildSttTermList({ personalContext = '', base = BASE_STT_VOCAB, limit = 40, maxTermCharacters = 40 } = {}) {
+  // Names and product terms go first: a fixed list of generic words must never
+  // take the slots that a recognizer miss on a person's name would need.
   const candidates = [
-    ...String(base || '').split(','),
     ...extractDomainTerms(personalContext),
+    ...String(base || '').split(','),
   ];
   const seen = new Set();
   const terms = [];
