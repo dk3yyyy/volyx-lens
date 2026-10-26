@@ -68,8 +68,15 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   // Every mutation goes through a temp file plus rename, so a crash or a full
   // disk leaves the previous record intact instead of a truncated one. The
   // original mtime is restored because list() and prune() order by it.
+  // Each write gets its own temp name. Two app instances can share this folder
+  // (there is no single-instance lock), and a sweep must never mistake another
+  // instance's in-flight file for a crashed one.
+  function temporaryPath(target) {
+    return `${target}.${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`;
+  }
+
   function writeRecord(target, record, originalStat) {
-    const tmp = `${target}.tmp`;
+    const tmp = temporaryPath(target);
     try {
       fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
       fsImpl.renameSync(tmp, target);
@@ -84,8 +91,11 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
   }
 
-  // Temp files are only meaningful while a write is in flight. Anything left
-  // behind by a crash is swept by the same paths that prune or clear records.
+  // Temp files are only meaningful while a write is in flight. A file this old
+  // belongs to a writer that died, so it is swept; anything newer may belong to
+  // another running instance and is left alone.
+  const STALE_TEMP_MS = 60 * 1000;
+
   function sweepTemporaryFiles() {
     let entries;
     try {
@@ -94,8 +104,13 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       return;
     }
     for (const name of entries) {
-      if (!name.endsWith('.json.tmp')) continue;
-      try { fsImpl.unlinkSync(path.join(dir, name)); } catch {}
+      if (!/\.json(\..*)?\.tmp$/.test(name)) continue;
+      const file = path.join(dir, name);
+      try {
+        const stat = fsImpl.statSync(file);
+        if (now() - stat.mtimeMs < STALE_TEMP_MS) continue;
+        fsImpl.unlinkSync(file);
+      } catch {}
     }
   }
 
@@ -226,7 +241,13 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   function remove(id) {
     if (!isSafeId(id)) throw new Error(`Invalid meeting id: ${String(id).slice(0, 40)}`);
     const target = recordPath(id);
-    try { fsImpl.unlinkSync(`${target}.tmp`); } catch {}
+    try {
+      for (const name of fsImpl.readdirSync(dir)) {
+        if (name.startsWith(`${path.basename(target)}.`) && name.endsWith('.tmp')) {
+          try { fsImpl.unlinkSync(path.join(dir, name)); } catch {}
+        }
+      }
+    } catch {}
     try {
       fsImpl.unlinkSync(target);
       return { removed: true };
@@ -244,7 +265,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
     let cleared = 0;
     for (const name of entries) {
-      if (name.endsWith('.json.tmp')) { try { fsImpl.unlinkSync(path.join(dir, name)); } catch {} continue; }
+      if (/\.json(\..*)?\.tmp$/.test(name)) { try { fsImpl.unlinkSync(path.join(dir, name)); } catch {} continue; }
       if (!name.endsWith('.json')) continue;
       try {
         fsImpl.unlinkSync(path.join(dir, name));

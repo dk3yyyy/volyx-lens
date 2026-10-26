@@ -180,9 +180,12 @@ test('updateNotes writes through a temp file and keeps the record where it was',
   assert.equal(result.updated, true);
 
   const writes = calls.filter((call) => call[0] === 'write').map((call) => call[1]);
-  assert.deepEqual(writes, [`${target}.tmp`], 'the live record is never written in place');
-  assert.deepEqual(calls.find((call) => call[0] === 'rename'), ['rename', `${target}.tmp`, target]);
-  assert.equal(fs.existsSync(`${target}.tmp`), false, 'the temp file does not survive');
+  assert.equal(writes.length, 1);
+  assert.match(writes[0], /\.json\.[\w-]+\.tmp$/, 'the write goes to its own temp file');
+  assert.notEqual(writes[0], target, 'the live record is never written in place');
+  const rename = calls.find((call) => call[0] === 'rename');
+  assert.deepEqual(rename, ['rename', writes[0], target]);
+  assert.equal(fs.existsSync(writes[0]), false, 'the temp file does not survive');
   assert.equal(fs.statSync(target).mtimeMs, mtimeBefore, 'a derived write does not reorder history');
   assert.equal(store.get(saved.id).notes.summary, 'S');
   store.clear();
@@ -225,7 +228,8 @@ test('a failed write leaves no meeting copy behind', () => {
   failRename = true;
   const result = store.updateNotes(saved.id, { summary: 'S', keyPoints: [], decisions: [], actionItems: [], followUp: [] });
   assert.equal(result.updated, false);
-  assert.equal(fs.existsSync(path.join(dir, `${saved.id}.json.tmp`)), false, 'the temp copy is removed');
+  const leftovers = fs.readdirSync(dir).filter((name) => name.endsWith('.tmp'));
+  assert.deepEqual(leftovers, [], 'the temp copy is removed');
   store.clear();
 });
 
@@ -237,4 +241,25 @@ test('orphaned temp files are swept by clear', () => {
   const result = store.clear();
   assert.ok(result.cleared >= 1);
   assert.equal(fs.existsSync(path.join(dir, 'abandoned.json.tmp')), false);
+});
+
+
+test('prune sweeps a stale temp copy but leaves another instance write alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  for (let index = 0; index < 201; index += 1) {
+    store.finalize({ turns: [{ channel: 'you', text: `turn ${index}`, ts: index }], enabled: true, reason: 'capture-stop' });
+  }
+  const stale = path.join(dir, 'crashed.json.tmp');
+  const fresh = path.join(dir, 'inflight.json.tmp');
+  fs.writeFileSync(stale, '{}');
+  fs.writeFileSync(fresh, '{}');
+  const longAgo = (Date.now() - 10 * 60 * 1000) / 1000;
+  fs.utimesSync(stale, longAgo, longAgo);
+
+  store.finalize({ turns: [{ channel: 'you', text: 'last session', ts: 9999 }], enabled: true });
+
+  assert.equal(fs.existsSync(stale), false, 'a temp copy from a dead writer is cleaned up');
+  assert.equal(fs.existsSync(fresh), true, 'an in-flight write by another instance is left alone');
+  store.clear();
 });
