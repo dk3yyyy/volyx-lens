@@ -114,6 +114,9 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       turnCount: normalized.length,
       turns: normalized,
       notes: null,
+      // A cleaned, readable copy of the same turns, written only when the user
+      // asks for it. `turns` above always keeps the recognizer's wording.
+      cleaned: null,
     };
     const target = recordPath(id);
     const tmp = `${target}.tmp`;
@@ -151,6 +154,9 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
           turnCount: Array.isArray(record.turns) ? record.turns.length : 0,
           preview: previewText(record.turns),
           hasNotes: !!record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length),
+          hasCleaned: Array.isArray(record.cleaned && record.cleaned.texts)
+            && record.cleaned.texts.length === (Array.isArray(record.turns) ? record.turns.length : 0)
+            && record.cleaned.texts.length > 0,
         });
       } catch {
         // Skip corrupt records rather than breaking the whole list.
@@ -169,7 +175,17 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       return null;
     }
     if (!record || typeof record !== 'object') return null;
-    return { ...record, turns: snapshotTurns(record.turns) };
+    const turns = snapshotTurns(record.turns);
+    // A cleaned copy is only surfaced when it still describes these exact turns.
+    const stored = record.cleaned;
+    let cleaned = null;
+    if (stored && Array.isArray(stored.texts) && stored.texts.length === turns.length && turns.length) {
+      const currentHash = fingerprint(turns) ? fingerprint(turns).contentHash : null;
+      if (currentHash && (!stored.sourceHash || stored.sourceHash === currentHash)) {
+        cleaned = { ...stored, texts: stored.texts.map((text) => String(text || '').slice(0, 12000)) };
+      }
+    }
+    return { ...record, turns, cleaned };
   }
 
   function remove(id) {
@@ -219,7 +235,59 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
   }
 
-  return { finalize, list, get, remove, clear, updateNotes, recordPath, fingerprint };
+  // Store a readable copy of the same turns. The record's own `turns` array is
+  // never rewritten: the cleaned copy must stay parallel (same length, matching
+  // source hash) or it is refused, because a mismatch would mean content was
+  // dropped or invented somewhere upstream. Only text is stored; speaker and
+  // timestamp always come from the saved turn, so a model cannot reassign who
+  // said what.
+  function updateCleaned(id, cleaned) {
+    if (!isSafeId(id)) return { updated: false, reason: 'invalid_id' };
+    const target = recordPath(id);
+    let record;
+    let originalStat = null;
+    try {
+      originalStat = fsImpl.statSync(target);
+      record = JSON.parse(fsImpl.readFileSync(target, 'utf8'));
+    } catch {
+      return { updated: false, reason: 'not_found' };
+    }
+    if (!record || typeof record !== 'object') return { updated: false, reason: 'not_found' };
+    const source = Array.isArray(record.turns) ? record.turns : [];
+    const incoming = Array.isArray(cleaned && cleaned.texts) ? cleaned.texts : null;
+    if (!incoming) return { updated: false, reason: 'invalid_payload' };
+    if (incoming.length !== source.length) return { updated: false, reason: 'turn_count_mismatch' };
+    const sourceHash = fingerprint(source) ? fingerprint(source).contentHash : null;
+    if (!sourceHash) return { updated: false, reason: 'empty_source' };
+    if (cleaned.sourceHash && cleaned.sourceHash !== sourceHash) {
+      return { updated: false, reason: 'source_changed' };
+    }
+    const texts = [];
+    for (let index = 0; index < incoming.length; index += 1) {
+      const text = String(incoming[index] == null ? '' : incoming[index]).trim();
+      if (!text) return { updated: false, reason: 'empty_text' };
+      texts.push(text.slice(0, 12000));
+    }
+    record.cleaned = {
+      version: 1,
+      at: Number.isFinite(cleaned && cleaned.at) ? cleaned.at : now(),
+      model: cleaned && cleaned.model ? String(cleaned.model).slice(0, 120) : null,
+      provider: cleaned && cleaned.provider ? String(cleaned.provider).slice(0, 120) : null,
+      sourceHash,
+      texts,
+    };
+    const tmp = `${target}.tmp`;
+    fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
+    fsImpl.renameSync(tmp, target);
+    // A derived copy must not reorder history: prune() and list() order by
+    // mtime, so cleaning an old meeting keeps the meeting where it was.
+    if (originalStat && Number.isFinite(originalStat.atimeMs)) {
+      try { fsImpl.utimesSync(target, originalStat.atimeMs / 1000, originalStat.mtimeMs / 1000); } catch {}
+    }
+    return { updated: true, turnCount: texts.length };
+  }
+
+  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, recordPath, fingerprint };
 }
 
 module.exports = { createMeetingStore, snapshotTurns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };
