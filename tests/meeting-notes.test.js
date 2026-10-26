@@ -150,10 +150,12 @@ test('markdown and text exports use the cleaned copy and say so', () => {
   assert.match(txt, /Transcript: cleaned copy/);
 });
 
-test('subtitle exports use the cleaned copy too', () => {
+test('subtitle exports stay literal because a subtitle file has no notice slot', () => {
   const record = cleanedRecord();
-  assert.match(formatMeetingRecord(record, 'srt'), /Cleaned line 1\./);
-  assert.match(formatMeetingRecord(record, 'vtt'), /Cleaned line 3\./);
+  assert.match(formatMeetingRecord(record, 'srt'), new RegExp(record.turns[0].text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(formatMeetingRecord(record, 'srt'), /Cleaned line 1\./);
+  assert.doesNotMatch(formatMeetingRecord(record, 'vtt'), /Cleaned line 3\./);
+  assert.doesNotMatch(formatMeetingRecord(record, 'vtt'), /Transcript: cleaned copy/);
 });
 
 test('exports fall back to the raw wording when the cleaned copy is not parallel', () => {

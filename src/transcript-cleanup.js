@@ -152,16 +152,27 @@ function buildCleanPrompt(batch) {
  * negation, so the facts a repair must not change are checked directly:
  * numbers stay numbers, and the number of negations cannot change.
  */
+/**
+ * Standalone digit runs with separators stripped, so 1,000 and 1000 compare
+ * equal while a model id such as V4 or 2FA is not mistaken for a quantity.
+ */
+function numericRuns(text) {
+  const runs = String(text || '').match(/(?<![\p{L}\d])\d[\d,.:/-]*\d(?![\p{L}])|(?<![\p{L}\d])\d(?![\p{L}])/gu) || [];
+  return runs.map((run) => run.replace(/\D/g, ''));
+}
+
 function fidelityIssue(raw, cleaned) {
   const source = String(raw || '');
   const result = String(cleaned || '');
   const rawNegations = (source.match(NEGATION_PATTERN) || []).length;
   const cleanedNegations = (result.match(NEGATION_PATTERN) || []).length;
   if (cleanedNegations !== rawNegations) return `negation count changed (${rawNegations} -> ${cleanedNegations})`;
-  const digits = source.match(/\d[\d,.:/-]*/g) || [];
-  for (const run of digits) {
-    if (!result.includes(run)) return `number "${run}" was not preserved`;
-  }
+  // Complete values, not substrings: "100" is contained in "1000", so a
+  // substring check would wave through a changed amount.
+  const rawRuns = numericRuns(source).sort();
+  const cleanedRuns = numericRuns(result).sort();
+  const same = rawRuns.length === cleanedRuns.length && rawRuns.every((run, index) => run === cleanedRuns[index]);
+  if (!same) return `numbers changed (${rawRuns.join(', ') || 'none'} -> ${cleanedRuns.join(', ') || 'none'})`;
   return null;
 }
 
@@ -188,10 +199,14 @@ function parseCleanBatch(reply, batch) {
     if (!line.trim()) continue;
     const match = line.match(/^\s*\[(\d+)\]\s*(?:(you|them)\s*:\s*)?(.*)$/i);
     if (!match) {
-      // Some providers hard-wrap long lines. Text that does not start a new
-      // marker continues the previous turn rather than being thrown away.
-      if (/^\s*\[/.test(line)) { malformed = true; continue; }
-      if (parsed.length) parsed[parsed.length - 1].text = `${parsed[parsed.length - 1].text} ${line.trim()}`.trim();
+      const trimmed = line.trim();
+      // A wrapped continuation starts inside a sentence: lowercase or closing
+      // punctuation. A line that starts a new sentence, a number, or a list
+      // marker is model commentary we did not ask for, and joining it would
+      // save that commentary as something a person said.
+      const continuation = trimmed.length > 0 && !/^[\p{Lu}\d]/u.test(trimmed);
+      if (/^\s*\[/.test(line) || !continuation || !parsed.length) { malformed = true; continue; }
+      parsed[parsed.length - 1].text = `${parsed[parsed.length - 1].text} ${trimmed}`.trim();
       continue;
     }
     parsed.push({ index: Number(match[1]), text: String(match[3] || '').trim() });

@@ -734,19 +734,25 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   $('#meeting-clean').addEventListener('click', async () => {
     if (!meetingDetail || meetingCleanRunning) return;
+    // Hold the id: the pane can be closed or switched to another meeting while
+    // the provider is working, and the slow path must not touch the new one.
+    const requestedId = meetingDetail.id;
+    const stillOpen = () => !!meetingDetail && meetingDetail.id === requestedId;
     meetingCleanRunning = true;
     setMeetingActionBusy(true);
     showStatus('Cleaning the transcript\u2026');
     try {
       let confirmed = false;
       for (;;) {
-        const result = await volyxLens.historyClean(meetingDetail.id, confirmed);
+        const result = await volyxLens.historyClean(requestedId, confirmed);
         if (result && result.ok) {
-          const record = await volyxLens.historyGet(meetingDetail.id);
-          if (record) {
-            meetingDetail = record;
-            meetingViewMode = 'cleaned';
-            renderMeetingTurns();
+          if (stillOpen()) {
+            const record = await volyxLens.historyGet(requestedId);
+            if (record && stillOpen()) {
+              meetingDetail = record;
+              meetingViewMode = 'cleaned';
+              renderMeetingTurns();
+            }
           }
           const kept = result.rawFallbacks
             ? ` ${result.rawFallbacks} turn${result.rawFallbacks === 1 ? '' : 's'} kept as heard.`
@@ -755,6 +761,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
           break;
         }
         if (result && result.code === 'requires_confirmation') {
+          if (!stillOpen()) break;
           if (!window.confirm(`${result.message} Continue?`)) { showStatus('Cleanup canceled.'); break; }
           confirmed = true;
           continue;

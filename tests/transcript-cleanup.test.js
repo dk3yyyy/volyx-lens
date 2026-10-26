@@ -242,6 +242,30 @@ test('cleanedTextsFrom returns text only, aligned to the saved turns', () => {
 test('fidelity helpers describe what they reject', () => {
   assert.equal(fidelityIssue('we cannot ship on 12 friday', 'We cannot ship on 12 Friday.'), null);
   assert.match(fidelityIssue('we cannot ship', 'We can ship'), /negation/);
-  assert.match(fidelityIssue('12 items arrived', 'Twelve items arrived'), /number/);
+  assert.match(fidelityIssue('12 items arrived', 'Twelve items arrived'), /numbers/);
   assert.equal(collapseRepeatedTokens('the the the point is'), 'the point is');
+});
+
+test('a changed amount fails even though the old digits appear inside the new ones', () => {
+  const input = [{ id: 1, channel: 'them', text: 'the budget is 100 dollars for this quarter', ts: 10 }];
+  const batch = planCleanBatches(input).batches[0];
+  const result = parseCleanBatch('[0] Them: The budget is 1000 dollars for this quarter.', batch);
+  assert.equal(result.accepted.has(0), false);
+  assert.match(result.rejected[0].reason, /numbers changed/);
+});
+
+test('a thousands separator is not a changed number', () => {
+  assert.equal(fidelityIssue('the invoice was 1000 dollars', 'The invoice was 1,000 dollars.'), null);
+});
+
+test('an unmarked commentary line fails the batch instead of becoming speech', () => {
+  const input = [{ id: 1, channel: 'them', text: 'we should ship the migration on friday and then watch the error rate', ts: 10 }];
+  const batch = planCleanBatches(input).batches[0];
+  const result = parseCleanBatch([
+    '[0] Them: We should ship the migration on Friday and then watch the error rate.',
+    'I fixed the punctuation.',
+  ].join('\n'), batch);
+  assert.equal(result.failed, true);
+  assert.equal(result.reason, 'marker_mismatch');
+  assert.equal(result.accepted.size, 0);
 });

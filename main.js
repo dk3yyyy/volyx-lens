@@ -1872,14 +1872,13 @@ async function recapMeetingRecord(id, options = {}) {
       },
     });
     if (!isCurrent()) return { ok: false, code: 'canceled' };
-    // Notes record which transcript they describe, so a later cleanup does not
-    // leave them looking like they came from the copy on screen.
+    // Notes record the exact copy they describe. Hashing the readable turns
+    // (not the raw record) is what makes a second cleanup of the same meeting
+    // visibly change the notes' source instead of leaving a stale claim.
     const notes = {
       ...parseNotes(fullAnswer),
       source: readingCleaned ? 'cleaned' : 'raw',
-      sourceHash: (readingCleaned && record.cleaned && record.cleaned.sourceHash)
-        || (meetingStore.fingerprint(record.turns) || {}).contentHash
-        || null,
+      sourceHash: (meetingStore.fingerprint(readableTurns) || {}).contentHash || null,
     };
     const stored = meetingStore.updateNotes(record.id, notes);
     if (!stored.updated) {
@@ -1937,6 +1936,10 @@ async function cleanMeetingTranscript(id, options = {}) {
   activeHistoryJob = job;
   const isCurrent = () => activeHistoryJob === job;
   const sourceHash = (meetingStore.fingerprint(record.turns) || {}).contentHash || null;
+  // A fallback can take over mid-run, so provenance follows what actually
+  // served the batches rather than the provider selected at the start.
+  let servedProvider = providerLabel;
+  let servedModel = llm.model || null;
   const accepted = new Map();
   let rawFallbacks = 0;
   let failedBatches = 0;
@@ -1969,9 +1972,15 @@ async function cleanMeetingTranscript(id, options = {}) {
           },
         },
         onFallback: ({ from, to }) => {
+          const fromLabel = from.label || providerLabel;
+          const toLabel = to.label || 'fallback';
+          if (!servedProvider.split(' plus ').includes(toLabel)) servedProvider = `${providerLabel} plus ${toLabel}`;
+          if (to.model && !String(servedModel || '').split(' plus ').includes(to.model)) {
+            servedModel = [servedModel, to.model].filter(Boolean).join(' plus ');
+          }
           if (!isCurrent()) return;
-          send('status', { message: `${from.label} failed before producing text. Using fallback ${to.label} for transcript cleanup.` });
-          send('llm:provider', { label: to.label, fallback: true });
+          send('status', { message: `${fromLabel} failed before producing text. Using fallback ${toLabel} for transcript cleanup.` });
+          send('llm:provider', { label: toLabel, fallback: true });
         },
       });
       if (!isCurrent()) return { ok: false, code: 'canceled' };
@@ -2000,8 +2009,8 @@ async function cleanMeetingTranscript(id, options = {}) {
     const texts = cleanedTextsFrom(record.turns, accepted);
     const written = meetingStore.updateCleaned(record.id, {
       texts,
-      model: llm.model || null,
-      provider: providerLabel,
+      model: servedModel,
+      provider: servedProvider,
       sourceHash,
       at: Date.now(),
     });
@@ -2017,8 +2026,8 @@ async function cleanMeetingTranscript(id, options = {}) {
       rawFallbacks,
       failedBatches,
       batches: batched,
-      model: llm.model || null,
-      provider: providerLabel,
+      model: servedModel,
+      provider: servedProvider,
     };
   } catch (error) {
     if (controller.signal.aborted) return { ok: false, code: 'canceled' };

@@ -138,8 +138,11 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
     }
     return JSON.stringify(payload, null, 2) + '\n';
   }
-  if (format === 'srt') return formatMeetingRecordSrt(record, { source });
-  if (format === 'vtt') return formatMeetingRecordVtt(record, { source });
+  // Subtitles stay literal: SRT has no comment slot and VTT comments render
+  // differently per player, so a repaired subtitle file could look like an
+  // exact transcript. Markdown, TXT, and JSON carry the provenance instead.
+  if (format === 'srt') return formatMeetingRecordSrt(record, { source: 'raw' });
+  if (format === 'vtt') return formatMeetingRecordVtt(record, { source: 'raw' });
   const isMarkdown = format === 'md';
   const body = turns.map((turn) => {
     const speaker = turn.channel === 'you' ? 'You' : 'Them';
