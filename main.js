@@ -33,7 +33,8 @@ const { joinTranscriptSegments, appendConversationSegment } = require('./src/tra
 const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
 const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap, transcriptText } = require('./src/meeting-recap');
-const { meetingFilename, formatMeetingRecord } = require('./src/meeting-notes');
+const { meetingFilename, formatMeetingRecord, resolveTurns } = require('./src/meeting-notes');
+const { planCleanBatches, buildCleanPrompt, parseCleanBatch, cleanedTextsFrom, CLEAN_SYSTEM_PROMPT } = require('./src/transcript-cleanup');
 const { buildSttVocab } = require('./src/transcript-hygiene');
 const { buildNotesPrompt, parseNotes } = require('./src/notes');
 const { createTaskContext } = require('./src/task-context');
@@ -746,8 +747,9 @@ async function exportTranscript(format) {
   return { canceled: false, filename: path.basename(result.filePath), turns: transcript.length };
 }
 
-async function exportMeetingRecord(id, format) {
+async function exportMeetingRecord(id, format, source) {
   const normalizedFormat = ['txt', 'md', 'json', 'srt', 'vtt'].includes(format) ? format : 'md';
+  const normalizedSource = source === 'raw' ? 'raw' : 'auto';
   const record = meetingStore.get(String(id || ''));
   if (!record) throw new Error('That meeting record is no longer available.');
   const result = await dialog.showSaveDialog(win, {
@@ -761,7 +763,7 @@ async function exportMeetingRecord(id, format) {
     ],
   });
   if (result.canceled || !result.filePath) return { canceled: true };
-  await writePrivateExport(result.filePath, formatMeetingRecord(record, normalizedFormat));
+  await writePrivateExport(result.filePath, formatMeetingRecord(record, normalizedFormat, Date.now(), { source: normalizedSource }));
   return { canceled: false, filename: path.basename(result.filePath), turns: record.turns.length };
 }
 
@@ -1457,7 +1459,7 @@ async function shutdownAll() {
     await systemAudioCapture.stop({ immediate: true });
     await linuxMonitorCapture.stop({ immediate: true });
     await stopTranscriptionPipeline({ immediate: true });
-    if (historyRecapController) historyRecapController.abort();
+    abortActiveHistoryJob();
     finalizeMeeting('app-quit');
     localOcr.cancelAll();
     clearTaskContext();
@@ -1790,13 +1792,32 @@ async function runFeature(mode, userText, {
   }
 }
 
-let historyRecapController = null;
+// One model job at a time over saved meetings. Notes and transcript cleanup
+// share this slot so they cannot both stream against the same record, and so a
+// delete or history-off can cancel whichever one is running.
+let activeHistoryJob = null;
+
+function abortActiveHistoryJob() {
+  const job = activeHistoryJob;
+  if (!job) return false;
+  activeHistoryJob = null;
+  if (!job.controller.signal.aborted) job.controller.abort();
+  return true;
+}
+
+function historyJobBusyMessage() {
+  if (!activeHistoryJob) return '';
+  return activeHistoryJob.kind === 'clean'
+    ? 'A transcript cleanup is already running. Wait for it to finish.'
+    : 'Meeting notes are already being generated.';
+}
+
 async function recapMeetingRecord(id, options = {}) {
   const confirmed = options.confirmed === true;
   const record = meetingStore.get(String(id || ''));
   if (!record) throw new Error('That meeting record is no longer available.');
   if (state.busy) return { ok: false, code: 'answer_active', message: 'Wait for the active answer to finish before generating meeting notes.' };
-  if (historyRecapController) return { ok: false, code: 'recap_active', message: 'Meeting notes are already being generated.' };
+  if (activeHistoryJob) return { ok: false, code: 'recap_active', message: historyJobBusyMessage() };
   const settings = store.getSettings();
   const route = createResponseRoute(settings);
   const selection = chooseInitialProvider(route, { requiresVision: false });
@@ -1805,7 +1826,11 @@ async function recapMeetingRecord(id, options = {}) {
   if (!llm.ready) {
     return { ok: false, code: 'not_configured', message: llm.configurationError || ('Configure ' + settings.provider + ' in Settings to generate meeting notes.') };
   }
-  const plan = planMeetingRecap(record.turns);
+  // The plan and the text must come from the same view of the record, or a
+  // cleaned transcript could flip a single-request recap into a chunked one
+  // between the confirmation and the run.
+  const { turns: readableTurns, cleaned: readingCleaned } = resolveTurns(record);
+  const plan = planMeetingRecap(readableTurns);
   if (plan.requiresChunking && !confirmed) {
     return {
       ok: false,
@@ -1815,15 +1840,16 @@ async function recapMeetingRecord(id, options = {}) {
     };
   }
   const controller = new AbortController();
-  historyRecapController = controller;
-  const isCurrent = () => historyRecapController === controller;
+  const job = { kind: 'recap', id: record.id, controller };
+  activeHistoryJob = job;
+  const isCurrent = () => activeHistoryJob === job;
   try {
     const system = `${MODES.recap.system}\n\n${SOURCE_UNCERTAINTY_RULE}\n\n${UNTRUSTED_INPUT_RULE}\n\n${PLAIN_TEXT_OUTPUT_RULE}`;
     let built;
     if (plan.requiresChunking) {
       built = await summarizeMeetingChunks({ plan, llm, fallback: selection.fallback, isCurrent, signal: controller.signal });
     } else {
-      built = `Full transcript:\n${transcriptText(record.turns)}\n\nRecap this.`;
+      built = `Full transcript:\n${transcriptText(readableTurns)}\n\nRecap this.`;
     }
     if (!built || !isCurrent()) return { ok: false, code: 'canceled' };
     const fullAnswer = await streamWithFallback({
@@ -1846,12 +1872,159 @@ async function recapMeetingRecord(id, options = {}) {
       },
     });
     if (!isCurrent()) return { ok: false, code: 'canceled' };
-    const notes = parseNotes(fullAnswer);
-    meetingStore.updateNotes(record.id, notes);
+    // Notes record which transcript they describe, so a later cleanup does not
+    // leave them looking like they came from the copy on screen.
+    const notes = {
+      ...parseNotes(fullAnswer),
+      source: readingCleaned ? 'cleaned' : 'raw',
+      sourceHash: (readingCleaned && record.cleaned && record.cleaned.sourceHash)
+        || (meetingStore.fingerprint(record.turns) || {}).contentHash
+        || null,
+    };
+    const stored = meetingStore.updateNotes(record.id, notes);
+    if (!stored.updated) {
+      return { ok: false, code: 'write_failed', message: 'The meeting notes could not be saved. The record may have been deleted.' };
+    }
     invalidatePreviousMeetings();
-    return { ok: true, id: record.id, text: fullAnswer, notes };
+    return { ok: true, id: record.id, text: fullAnswer, notes, source: notes.source };
   } finally {
-    if (historyRecapController === controller) historyRecapController = null;
+    if (activeHistoryJob === job) activeHistoryJob = null;
+  }
+}
+
+/**
+ * On-demand cleanup of a saved meeting: repair recognition damage so the
+ * transcript reads properly, without changing what was said. Runs only on an
+ * explicit request from the meeting pane, one batch at a time, behind the same
+ * job slot as notes.
+ */
+async function cleanMeetingTranscript(id, options = {}) {
+  const confirmed = options.confirmed === true;
+  const record = meetingStore.get(String(id || ''));
+  if (!record) throw new Error('That meeting record is no longer available.');
+  if (state.busy) return { ok: false, code: 'answer_active', message: 'Wait for the active answer to finish before cleaning a transcript.' };
+  if (activeHistoryJob) return { ok: false, code: 'history_busy', message: historyJobBusyMessage() };
+  const plan = planCleanBatches(record.turns);
+  if (plan.tooLong) {
+    return {
+      ok: false,
+      code: 'too_long',
+      plan: { requestCount: plan.requestCount, totalTurns: plan.totalTurns, maxBatches: plan.maxBatches },
+      message: `This meeting has ${plan.totalTurns} turns and would need ${plan.requestCount} model requests. Cleanup is capped at ${plan.maxBatches}, so export the raw transcript instead.`,
+    };
+  }
+  if (!plan.requestCount) return { ok: false, code: 'empty', message: 'This meeting has no transcript text to clean.' };
+  const settings = store.getSettings();
+  const route = createResponseRoute(settings);
+  const selection = chooseInitialProvider(route, { requiresVision: false });
+  const llm = selection.llm;
+  if (!llm) return { ok: false, code: 'not_configured', message: selection.reason || 'No compatible provider is configured.' };
+  if (!llm.ready) {
+    return { ok: false, code: 'not_configured', message: llm.configurationError || ('Configure ' + settings.provider + ' in Settings to clean this transcript.') };
+  }
+  const providerLabel = llm.label || settings.provider;
+  if (plan.requestCount > 1 && !confirmed) {
+    return {
+      ok: false,
+      code: 'requires_confirmation',
+      plan: { requestCount: plan.requestCount, sourceCharacters: plan.sourceCharacters, turns: plan.turnsCovered, provider: providerLabel },
+      message: `Cleaning this transcript needs ${plan.requestCount} model requests with ${providerLabel}, sending the whole saved transcript.`,
+    };
+  }
+
+  const controller = new AbortController();
+  const job = { kind: 'clean', id: record.id, controller };
+  activeHistoryJob = job;
+  const isCurrent = () => activeHistoryJob === job;
+  const sourceHash = (meetingStore.fingerprint(record.turns) || {}).contentHash || null;
+  const accepted = new Map();
+  let rawFallbacks = 0;
+  let failedBatches = 0;
+  let batched = 0;
+  try {
+    const system = `${CLEAN_SYSTEM_PROMPT}\n\n${SOURCE_UNCERTAINTY_RULE}\n\n${UNTRUSTED_INPUT_RULE}\n\n${PLAIN_TEXT_OUTPUT_RULE}`;
+    for (let index = 0; index < plan.batches.length; index += 1) {
+      if (!isCurrent()) return { ok: false, code: 'canceled' };
+      const batch = plan.batches[index];
+      send('history:clean-progress', {
+        id: record.id,
+        batch: index + 1,
+        batches: plan.batches.length,
+        provider: providerLabel,
+      });
+      let truncated = false;
+      let answer = '';
+      await streamWithFallback({
+        llm,
+        fallback: selection.fallback,
+        params: {
+          system,
+          turns: [{ role: 'user', text: buildCleanPrompt(batch) }],
+          imageDataUrl: null,
+          signal: controller.signal,
+          maxTokens: batch.maxTokens,
+          onToken: (token) => { answer += token; },
+          onFinish: ({ reason }) => {
+            if (TRUNCATED_FINISH_REASON.test(String(reason || ''))) truncated = true;
+          },
+        },
+        onFallback: ({ from, to }) => {
+          if (!isCurrent()) return;
+          send('status', { message: `${from.label} failed before producing text. Using fallback ${to.label} for transcript cleanup.` });
+          send('llm:provider', { label: to.label, fallback: true });
+        },
+      });
+      if (!isCurrent()) return { ok: false, code: 'canceled' };
+      batched += 1;
+      // A truncated or misaligned batch is discarded whole: those turns keep
+      // their original wording rather than a half-repaired line.
+      const parsed = truncated
+        ? { failed: true, accepted: new Map(), missing: batch.indices }
+        : parseCleanBatch(answer, batch);
+      if (parsed.failed) {
+        failedBatches += 1;
+        rawFallbacks += batch.indices.length;
+        continue;
+      }
+      for (const [turnIndex, text] of parsed.accepted) accepted.set(turnIndex, text);
+      rawFallbacks += parsed.missing.length;
+    }
+    if (!isCurrent()) return { ok: false, code: 'canceled' };
+    if (!accepted.size) {
+      return {
+        ok: false,
+        code: 'no_change',
+        message: 'The provider returned no usable repairs, so the transcript was left as it was.',
+      };
+    }
+    const texts = cleanedTextsFrom(record.turns, accepted);
+    const written = meetingStore.updateCleaned(record.id, {
+      texts,
+      model: llm.model || null,
+      provider: providerLabel,
+      sourceHash,
+      at: Date.now(),
+    });
+    if (!written.updated) {
+      return { ok: false, code: 'write_failed', message: `The cleaned transcript could not be saved (${written.reason}).` };
+    }
+    invalidatePreviousMeetings();
+    return {
+      ok: true,
+      id: record.id,
+      turnCount: texts.length,
+      cleanedTurns: accepted.size,
+      rawFallbacks,
+      failedBatches,
+      batches: batched,
+      model: llm.model || null,
+      provider: providerLabel,
+    };
+  } catch (error) {
+    if (controller.signal.aborted) return { ok: false, code: 'canceled' };
+    return { ok: false, code: 'error', message: sanitizeProviderError(error, { providerLabel }) };
+  } finally {
+    if (activeHistoryJob === job) activeHistoryJob = null;
   }
 }
 
@@ -1985,6 +2158,9 @@ handleTrusted('settings:set', (_e, patch) => {
   const wasHistoryEnabled = previous.transcription && previous.transcription.historyEnabled === true;
   const isHistoryEnabled = updated.transcription && updated.transcription.historyEnabled === true;
   if (wasHistoryEnabled && !isHistoryEnabled) {
+    // Stored transcripts stop being fair game the moment history is turned off:
+    // cancel any cleanup or notes run that is already streaming them out.
+    abortActiveHistoryJob();
     cancelMeetingRecoverySave();
     meetingRecovery.clearBestEffort();
     invalidatePreviousMeetings();
@@ -2083,6 +2259,7 @@ handleTrusted('transcript:export', (_event, format) => exportTranscript(String(f
 handleTrusted('history:list', () => meetingStore.list());
 handleTrusted('history:get', (_event, id) => meetingStore.get(String(id || '')));
 handleTrusted('history:delete', (_event, id) => {
+  abortActiveHistoryJob();
   const result = meetingStore.remove(String(id || ''));
   if (result.removed) {
     invalidatePreviousMeetings();
@@ -2091,6 +2268,7 @@ handleTrusted('history:delete', (_event, id) => {
   return result;
 });
 handleTrusted('history:clear', () => {
+  abortActiveHistoryJob();
   const result = meetingStore.clear();
   invalidatePreviousMeetings();
   cancelMeetingRecoverySave();
@@ -2106,8 +2284,9 @@ handleTrusted('history:clear', () => {
   send('history:changed', { cleared: true, count: result.cleared });
   return { ...result, recoverySuppressed: meetingRecovery.isSuppressed(), recoveryDraftCleared };
 });
-handleTrusted('history:export', (_event, payload) => exportMeetingRecord(payload && payload.id, payload && payload.format));
+handleTrusted('history:export', (_event, payload) => exportMeetingRecord(payload && payload.id, payload && payload.format, payload && payload.source));
 handleTrusted('history:recap', (_event, payload) => recapMeetingRecord(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));
+handleTrusted('history:clean', (_event, payload) => cleanMeetingTranscript(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));
 handleTrusted('diagnostics:get', () => getSessionDiagnostics());
 handleTrusted('shortcuts:get', () => getShortcutStatus());
 handleTrusted('shortcuts:retry', () => registerShortcuts());

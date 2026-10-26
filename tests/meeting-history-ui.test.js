@@ -84,7 +84,7 @@ test('history list surfaces a text preview for search without shipping full turn
   assert.match(store, /function previewText\(turns\)/);
   assert.match(store, /return text\.slice\(0, 120\)/);
   assert.match(store, /preview: previewText\(record\.turns\)/);
-  assert.match(preload, /historyExport: \(id, format\) => ipcRenderer\.invoke\('history:export'/);
+  assert.match(preload, /historyExport: \(id, format, source = 'auto'\) => ipcRenderer\.invoke\('history:export'/);
   assert.match(preload, /historyRecap: \(id, confirmed = false\)/);
   assert.match(preload, /'history:recap-token'/);
   assert.match(renderer, /record\.preview \|\| ''/);

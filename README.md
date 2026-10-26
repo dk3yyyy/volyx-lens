@@ -149,6 +149,7 @@ Notes:
 | **Save meeting history** | opt-in Setting (off by default): keeps the session record on device when listening stops | transcript + meeting flag |
 | **Search meetings** | history browser | on-device meeting history |
 | **Generate meeting notes** | button on a saved meeting | saved transcript through your provider |
+| **Clean transcript** | button on a saved meeting | the whole saved transcript through your provider, in one or more requests |
 | **Ask anything** | type and press `↵` | selected screen/conversation context |
 | **New Session** | `/new` or New Session | clears in-memory session context |
 | **Emergency quit** | `⌘` `⇧` `X` or power button | stops capture and clears session media context |
@@ -219,6 +220,7 @@ Meeting detection is opt-in from Settings → Listening and runs locally in-sess
 - **Save meeting history** keeps the session record on device when listening stops (capture stop, new session, or app quit). Saved records are searchable in the history browser and show a meeting badge when the session was detected as a meeting.
 - While **Save meeting history** is enabled, the in-progress transcript is atomically checkpointed to a restricted-permission local file so it can be restored after an unexpected exit. On next launch, choose **Restore transcript** or **Discard draft**. No raw audio is saved; turning history off or clearing history removes the recovery draft.
 - **Export** a saved record as Markdown, TXT, or structured JSON through a native save dialog.
+- **Clean transcript** repairs speech-recognition damage in a saved session so it reads properly: misheard words that are obvious from context, punctuation, capitalisation, and accidental stutters. Every turn keeps its place and nothing is summarised. A turn the provider cannot repair cleanly keeps its original wording, the exact transcript is always kept and one click away, and multi-request cleanups ask for confirmation before any paid request is made.
 - **Generate meeting notes** turns a saved transcript into structured notes using your configured provider. Notes include a Summary, Key Points, Decisions, Action Items, and Follow-Up. Notes are saved alongside the meeting and load instantly when reopened. Long meetings need multiple model requests and require explicit confirmation before paid requests are made.
 
 History is stored on device and cleared with the Clear history action; it is never uploaded to a Volyx Lens-operated server.
@@ -255,7 +257,7 @@ For a deeper dive into the process split, preload bridge surface, provider routi
 - **Bounded personal context.** Imported documents store extracted text and status, not the original file path or raw document, and send only relevant bounded excerpts for answer-oriented actions.
 - **Sandboxed UI.** Chromium sandboxing, context isolation, no renderer Node integration, restrictive CSP, denied popup/navigation requests, and bounded IPC payloads are enabled.
 - **Protected secrets.** Credentials are accessed in the main process and use `safeStorage` / Keychain when available.
-- **Explicit expensive requests.** Large multi-image requests and multi-part long-meeting recaps require confirmation.
+- **Explicit expensive requests.** Large multi-image requests, multi-part long-meeting recaps, and multi-request transcript cleanups require confirmation.
 - **Opt-in slide tracking.** Screen samples are compared locally while Listening is active; only stable-change previews are held in bounded memory and nothing is sent to a provider automatically.
 - **Best-effort overlay privacy.** `setContentProtection(true)` / `NSWindowSharingNone` may reduce accidental capture on macOS, but is not a security guarantee or a concealment feature.
 

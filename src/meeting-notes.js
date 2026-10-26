@@ -65,12 +65,13 @@ function meetingHeader(record = {}, { cleaned = false } = {}) {
  * an export can never silently lose or reorder a turn. Raw wording is the
  * fallback and stays authoritative.
  */
-function resolveTurns(record = {}) {
+function resolveTurns(record = {}, { source = 'auto' } = {}) {
   const raw = normalizeTurns(record);
-  const cleaned = record && record.cleaned && Array.isArray(record.cleaned.turns) ? record.cleaned.turns : null;
+  if (source === 'raw') return { turns: raw, cleaned: false };
+  const cleaned = record && record.cleaned && Array.isArray(record.cleaned.texts) ? record.cleaned.texts : null;
   if (!cleaned || !cleaned.length || cleaned.length !== raw.length) return { turns: raw, cleaned: false };
   const merged = raw.map((turn, index) => {
-    const text = String((cleaned[index] && cleaned[index].text) || '').trim().slice(0, 12000);
+    const text = String(cleaned[index] || '').trim().slice(0, 12000);
     return text ? { channel: turn.channel, text, ts: turn.ts } : turn;
   });
   return { turns: merged, cleaned: true };
@@ -86,8 +87,8 @@ function normalizeTurns(record = {}) {
     .filter((turn) => turn.text);
 }
 
-function formatMeetingRecordSrt(record = {}) {
-  const { turns } = resolveTurns(record);
+function formatMeetingRecordSrt(record = {}, { source = 'auto' } = {}) {
+  const { turns } = resolveTurns(record, { source });
   const blocks = [];
   turns.forEach((turn, index) => {
     const speaker = turn.channel === 'you' ? 'You' : 'Them';
@@ -98,8 +99,8 @@ function formatMeetingRecordSrt(record = {}) {
   return blocks.join('\n\n') + (blocks.length ? '\n' : '');
 }
 
-function formatMeetingRecordVtt(record = {}) {
-  const { turns } = resolveTurns(record);
+function formatMeetingRecordVtt(record = {}, { source = 'auto' } = {}) {
+  const { turns } = resolveTurns(record, { source });
   const blocks = ['WEBVTT\n'];
   turns.forEach((turn) => {
     const speaker = turn.channel === 'you' ? 'You' : 'Them';
@@ -110,8 +111,8 @@ function formatMeetingRecordVtt(record = {}) {
   return blocks.join('\n\n') + (turns.length ? '\n' : '');
 }
 
-function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()) {
-  const { turns, cleaned } = resolveTurns(record);
+function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now(), { source = 'auto' } = {}) {
+  const { turns, cleaned } = resolveTurns(record, { source });
   if (format === 'json') {
     const payload = {
       version: 1,
@@ -126,23 +127,19 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
     // JSON keeps the raw transcript authoritative and carries the readable copy
     // beside it, so a consumer can diff what was said against what was cleaned.
     const stored = record && record.cleaned;
-    if (stored && Array.isArray(stored.turns) && stored.turns.length) {
+    if (stored && Array.isArray(stored.texts) && stored.texts.length) {
       payload.cleaned = {
         version: 1,
         at: Number.isFinite(stored.at) ? stored.at : null,
         model: stored.model || null,
         provider: stored.provider || null,
-        turns: stored.turns.map((turn) => ({
-          channel: turn && turn.channel === 'you' ? 'you' : 'them',
-          text: String((turn && turn.text) || ''),
-          ts: Number.isFinite(turn && turn.ts) ? turn.ts : undefined,
-        })),
+        texts: stored.texts.map((text) => String(text || '')),
       };
     }
     return JSON.stringify(payload, null, 2) + '\n';
   }
-  if (format === 'srt') return formatMeetingRecordSrt(record);
-  if (format === 'vtt') return formatMeetingRecordVtt(record);
+  if (format === 'srt') return formatMeetingRecordSrt(record, { source });
+  if (format === 'vtt') return formatMeetingRecordVtt(record, { source });
   const isMarkdown = format === 'md';
   const body = turns.map((turn) => {
     const speaker = turn.channel === 'you' ? 'You' : 'Them';

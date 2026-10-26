@@ -67,17 +67,15 @@ test('updateCleaned stores a parallel cleaned copy without touching raw turns', 
     version: 1,
     at: 1700000000000,
     model: 'deepseek-flash',
-    turns: [
-      { channel: 'them', text: 'So the V4 Pro is going away.', ts: 1000 },
-      { channel: 'you', text: 'Right, the Flash model stays.', ts: 2000 },
-    ],
+    texts: ['So the V4 Pro is going away.', 'Right, the Flash model stays.'],
   });
   assert.equal(result.updated, true);
   const after = store.get(saved.id);
   assert.deepStrictEqual(after.turns, before.turns, 'raw turns are byte-identical after cleaning');
-  assert.equal(after.cleaned.turns.length, 2);
-  assert.equal(after.cleaned.turns[0].text, 'So the V4 Pro is going away.');
+  assert.equal(after.cleaned.texts.length, 2);
+  assert.equal(after.cleaned.texts[0], 'So the V4 Pro is going away.');
   assert.equal(after.cleaned.model, 'deepseek-flash');
+  assert.match(after.cleaned.sourceHash, /^[0-9a-f]{64}$/);
   store.clear();
 });
 
@@ -91,7 +89,7 @@ test('updateCleaned refuses a copy whose turn count does not match the record', 
   });
   const result = store.updateCleaned(saved.id, {
     version: 1,
-    turns: [{ channel: 'you', text: 'Hello world.', ts: 1000 }],
+    texts: ['Hello world.'],
   });
   assert.equal(result.updated, false);
   assert.equal(result.reason, 'turn_count_mismatch');
@@ -117,19 +115,19 @@ test('list() reports hasCleaned and notes and cleaned copies coexist', () => {
   });
   assert.equal(store.list()[0].hasCleaned, false);
   store.updateNotes(saved.id, { summary: 'S', keyPoints: [], decisions: [], actionItems: [], followUp: [] });
-  store.updateCleaned(saved.id, { version: 1, turns: [{ channel: 'you', text: 'Hello, world.', ts: 1000 }] });
+  store.updateCleaned(saved.id, { version: 1, texts: ['Hello, world.'] });
   const listed = store.list()[0];
   assert.equal(listed.hasCleaned, true);
   assert.equal(Boolean(listed.hasNotes), true);
   const record = store.get(saved.id);
-  assert.equal(record.cleaned.turns[0].text, 'Hello, world.');
+  assert.equal(record.cleaned.texts[0], 'Hello, world.');
   assert.equal(record.notes.summary, 'S', 'writing a cleaned copy preserves the notes');
   store.updateNotes(saved.id, { summary: 'S2', keyPoints: [], decisions: [], actionItems: [], followUp: [] });
-  assert.equal(store.get(saved.id).cleaned.turns[0].text, 'Hello, world.', 'writing notes preserves the cleaned copy');
+  assert.equal(store.get(saved.id).cleaned.texts[0], 'Hello, world.', 'writing notes preserves the cleaned copy');
   store.clear();
 });
 
-test('updateCleaned normalises speaker, caps text length, and stamps nothing it was not given', () => {
+test('updateCleaned stores text only, caps length, rejects source drift and blank lines', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
   const store = createMeetingStore({ dir });
   const saved = store.finalize({
@@ -138,10 +136,27 @@ test('updateCleaned normalises speaker, caps text length, and stamps nothing it 
     reason: 'capture-stop',
   });
   const long = 'x'.repeat(20000);
-  store.updateCleaned(saved.id, { turns: [{ channel: 'someone', text: long, ts: 1000 }] });
+  store.updateCleaned(saved.id, { texts: [long] });
   const cleaned = store.get(saved.id).cleaned;
-  assert.equal(cleaned.turns[0].channel, 'them');
-  assert.equal(cleaned.turns[0].text.length, 12000);
-  assert.equal(cleaned.turns[0].ts, 1000);
+  assert.equal(cleaned.texts[0].length, 12000);
+  assert.equal('turns' in cleaned, false, 'no speaker or timestamp is stored with the cleaned text');
+  assert.equal(store.get(saved.id).turns[0].channel, 'them');
+  assert.equal(store.get(saved.id).turns[0].ts, 1000);
+
+  assert.equal(store.updateCleaned(saved.id, { texts: ['   '] }).reason, 'empty_text');
+  assert.equal(store.updateCleaned(saved.id, { texts: ['Hi there.'], sourceHash: 'deadbeef' }).reason, 'source_changed');
+  store.clear();
+});
+
+test('cleaning an older meeting does not reorder history', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  const older = store.finalize({ turns: [{ channel: 'you', text: 'first meeting transcript', ts: 1 }], enabled: true });
+  const newer = store.finalize({ turns: [{ channel: 'you', text: 'second meeting transcript', ts: 2 }], enabled: true });
+  const before = store.list().map((record) => record.id);
+  store.updateCleaned(older.id, { texts: ['First meeting transcript.'] });
+  const after = store.list().map((record) => record.id);
+  assert.deepEqual(after, before, 'a derived write keeps the record in its place');
+  assert.ok(after.includes(newer.id));
   store.clear();
 });

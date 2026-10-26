@@ -102,27 +102,28 @@ test('normalizeTurns drops blank and non-text turns and clamps channels', () => 
 });
 
 test('main process exports saved records and refuses empty ones through trusted IPC', () => {
-  assert.match(main, /const \{ meetingFilename, formatMeetingRecord \} = require\('\.\/src\/meeting-notes'\)/);
-  assert.match(main, /async function exportMeetingRecord\(id, format\)/);
+  assert.match(main, /const \{ meetingFilename, formatMeetingRecord, resolveTurns \} = require\('\.\/src\/meeting-notes'\)/);
+  assert.match(main, /async function exportMeetingRecord\(id, format, source\)/);
   assert.match(main, /meetingStore\.get\(String\(id \|\| ''\)\)/);
-  assert.match(main, /formatMeetingRecord\(record, normalizedFormat\)/);
+  assert.match(main, /formatMeetingRecord\(record, normalizedFormat, Date\.now\(\), \{ source: normalizedSource \}\)/);
   assert.match(main, /handleTrusted\('history:export'/);
   assert.match(main, /handleTrusted\('history:recap'/);
 });
 
 test('structured notes run through the recap pipeline with confirmation for long meetings', () => {
   assert.match(main, /async function recapMeetingRecord\(id, options = \{\}\)/);
-  assert.match(main, /planMeetingRecap\(record\.turns\)/);
+  assert.match(main, /const \{ turns: readableTurns, cleaned: readingCleaned \} = resolveTurns\(record\);/);
+  assert.match(main, /planMeetingRecap\(readableTurns\)/);
   assert.match(main, /requires_confirmation/);
   assert.match(main, /requestCount/);
   assert.match(main, /summarizeMeetingChunks\(\{ plan, llm, fallback: selection\.fallback, isCurrent, signal: controller\.signal \}\)/);
   assert.match(main, /history:recap-token/);
-  assert.match(main, /historyRecapController\.abort\(\)/);
+  assert.match(main, /abortActiveHistoryJob\(\)/);
   assert.match(main, /if \(state\.busy\) return \{ ok: false, code: 'answer_active'/);
 });
 
 test('preload exposes export and recap without a side-channel beyond allowed events', () => {
-  assert.match(preload, /historyExport: \(id, format\) => ipcRenderer\.invoke\('history:export', \{ id, format \}\)/);
+  assert.match(preload, /historyExport: \(id, format, source = 'auto'\) => ipcRenderer\.invoke\('history:export', \{ id, format, source \}\)/);
   assert.match(preload, /historyRecap: \(id, confirmed = false\) => ipcRenderer\.invoke\('history:recap', \{ id, confirmed \}\)/);
   assert.match(preload, /'history:recap-token'/);
 });
@@ -132,12 +133,7 @@ function cleanedRecord(overrides = {}) {
     version: 1,
     at: 1700004000000,
     model: 'deepseek-flash',
-    turnCount: record.turns.length,
-    turns: record.turns.map((turn, index) => ({
-      channel: turn.channel,
-      text: `Cleaned line ${index + 1}.`,
-      ts: turn.ts,
-    })),
+    texts: record.turns.map((_, index) => `Cleaned line ${index + 1}.`),
   };
   return record;
 }
@@ -162,7 +158,7 @@ test('subtitle exports use the cleaned copy too', () => {
 
 test('exports fall back to the raw wording when the cleaned copy is not parallel', () => {
   const record = sampleRecord();
-  record.cleaned = { version: 1, turns: [{ channel: 'you', text: 'Only one line.', ts: 1 }] };
+  record.cleaned = { version: 1, texts: ['Only one line.'] };
   const md = formatMeetingRecord(record, 'md');
   assert.match(md, new RegExp(record.turns[0].text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(md, /Only one line\./);
@@ -173,6 +169,6 @@ test('json export keeps the raw transcript and carries the cleaned copy alongsid
   const record = cleanedRecord();
   const parsed = JSON.parse(formatMeetingRecord(record, 'json', 1700009999999));
   assert.equal(parsed.turns[0].text, record.turns[0].text, 'raw wording preserved in json');
-  assert.equal(parsed.cleaned.turns[0].text, 'Cleaned line 1.');
+  assert.equal(parsed.cleaned.texts[0], 'Cleaned line 1.');
   assert.equal(parsed.cleaned.model, 'deepseek-flash');
 });

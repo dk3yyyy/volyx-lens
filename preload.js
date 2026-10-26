@@ -37,8 +37,9 @@ contextBridge.exposeInMainWorld('volyxLens', {
   historyGet: (id) => ipcRenderer.invoke('history:get', id),
   historyDelete: (id) => ipcRenderer.invoke('history:delete', id),
   historyClear: () => ipcRenderer.invoke('history:clear'),
-  historyExport: (id, format) => ipcRenderer.invoke('history:export', { id, format }),
+  historyExport: (id, format, source = 'auto') => ipcRenderer.invoke('history:export', { id, format, source }),
   historyRecap: (id, confirmed = false) => ipcRenderer.invoke('history:recap', { id, confirmed }),
+  historyClean: (id, confirmed = false) => ipcRenderer.invoke('history:clean', { id, confirmed }),
   recoveryGet: () => ipcRenderer.invoke('recovery:get'),
   recoveryRestore: () => ipcRenderer.invoke('recovery:restore'),
   recoveryDiscard: () => ipcRenderer.invoke('recovery:discard'),
@@ -74,7 +75,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   relaunch: () => ipcRenderer.send('app:relaunch'),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['audio:level', 'capture:state', 'session:cleared', 'task-context:state', 'slide-tracking:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcription:state', 'update:state', 'window:dock-state', 'history:changed', 'history:recap-token', 'meeting:detected', 'meeting:cleared'];
+    const allowed = ['audio:level', 'capture:state', 'session:cleared', 'task-context:state', 'slide-tracking:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcription:state', 'update:state', 'window:dock-state', 'history:changed', 'history:recap-token', 'history:clean-progress', 'meeting:detected', 'meeting:cleared'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

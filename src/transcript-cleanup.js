@@ -7,23 +7,36 @@
 // identity-preserving repair pass over a SAVED meeting:
 //
 // - Turns keep their identity. The model is given numbered lines and must
-//   return the same number of lines, in the same order, with the same markers.
-//   Nothing is merged, split, dropped, reordered, or summarised, so the cleaned
-//   copy stays a transcript rather than becoming a paraphrase of one.
+//   return every marker exactly once, in ascending order. Nothing is merged,
+//   split, dropped, reordered, or summarised, so the cleaned copy stays a
+//   transcript rather than becoming a paraphrase of one.
 // - The raw turns are never mutated. The cleaned copy lives beside them, and a
-//   turn whose cleaned line is missing or suspicious falls back to raw text.
+//   turn whose cleaned line is missing or suspicious keeps its raw wording.
 // - Only mechanical recognition damage is repaired: homophones, split or merged
 //   words, casing of names, punctuation and capitalisation. Unintelligible
 //   words are left as they arrived instead of being invented.
+// - A batch whose markers do not line up exactly is thrown away whole. Partial
+//   trust in a misaligned batch is how text ends up under the wrong speaker.
 //
 // Scope note: this runs only when the user asks for it, after a session is
 // saved. It never touches the live capture path.
 
-const CLEAN_BATCH_TURNS = 40;
+const CLEAN_BATCH_TURNS = 100;
 const CLEAN_BATCH_CHARACTERS = 6000;
-const MAX_CLEAN_BATCHES = 20;
-const MIN_LENGTH_RATIO = 0.4;
-const MAX_LENGTH_RATIO = 2.5;
+const MAX_CLEAN_BATCHES = 30;
+
+// Turns this short carry too little signal for a length-based fidelity check,
+// so they are never rewritten.
+const MIN_SHORT_TURN_CHARS = 12;
+
+// A repair may collapse filler ("that that that" -> "that") and may add
+// punctuation, so the lower bound is measured against the turn with repeated
+// adjacent words already collapsed. The upper bound guards against invention.
+const MIN_LOWER_RATIO = 0.4;
+const MAX_UPPER_RATIO = 2;
+const MIN_CLEANED_CHARACTERS = 8;
+
+const NEGATION_PATTERN = /\b(?:not|no|never|none|cannot|without)\b|n't/gi;
 
 const CLEAN_SYSTEM_PROMPT =
   'You repair speech-to-text output. You are not summarising, rewriting, or answering anything. ' +
@@ -31,6 +44,8 @@ const CLEAN_SYSTEM_PROMPT =
   'Return exactly the same number of lines, in the same order, each starting with the same [n] marker and the same speaker label. ' +
   'Fix only mechanical recognition damage: words the recognizer misheard but that are obvious from context (homophones, split or merged words, the casing of names and product terms), missing sentence punctuation and capitalisation, and accidental stutters such as "the the". ' +
   'You must not add information, remove content, soften or shorten what was said, drop a line, merge two lines, split one line, or reorder anything. ' +
+  'Never turn a spoken number into digits and never turn a digit into words; keep numbers exactly as they arrived. ' +
+  'Never change a negation: if the speaker said not, keep not. ' +
   'When a word is unintelligible and you cannot tell what was said, leave that word exactly as it arrived. ' +
   'Keep the speaker\'s register, including profanity and filler words. ' +
   'Output only the repaired lines. No preamble, no explanation, no code fences.';
@@ -39,11 +54,24 @@ function speakerLabel(channel) {
   return channel === 'you' ? 'You' : 'Them';
 }
 
+/** Collapse runs of the same adjacent word, case-insensitively: "the the the" -> "the". */
+function collapseRepeatedTokens(text) {
+  const tokens = String(text || '').trim().split(/\s+/).filter(Boolean);
+  const kept = [];
+  for (const token of tokens) {
+    const strip = (value) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    const previous = kept[kept.length - 1];
+    if (previous && strip(previous) && strip(previous) === strip(token)) continue;
+    kept.push(token);
+  }
+  return kept.join(' ');
+}
+
 /**
  * Split saved turns into request-sized batches. Indices are GLOBAL positions in
  * the saved turn array, so a cleaned line can always be mapped back to the turn
  * it came from. No sampling: a dropped turn would be a silent hole in the
- * transcript, so an over-long meeting is reported instead.
+ * transcript, so an over-long meeting is refused rather than sampled.
  */
 function planCleanBatches(turns, {
   turnLimit = CLEAN_BATCH_TURNS,
@@ -82,18 +110,31 @@ function planCleanBatches(turns, {
   if (current && current.entries.length) batches.push(current);
 
   if (batches.length > maxBatches) {
-    return { tooLong: true, requestCount: batches.length, batches: [], sourceCharacters, maxBatches };
+    return {
+      tooLong: true,
+      requestCount: batches.length,
+      batches: [],
+      sourceCharacters,
+      turnsCovered: 0,
+      totalTurns: entries.length,
+      maxBatches,
+    };
   }
 
   return {
     tooLong: false,
     sourceCharacters,
     maxBatches,
+    turnsCovered: entries.length,
+    totalTurns: entries.length,
     requestCount: batches.length,
     batches: batches.map((batch) => ({
       indices: batch.entries.map((entry) => entry.index),
       text: batch.text,
       entries: batch.entries,
+      // A repair pass echoes the input, so the output budget tracks the batch
+      // size. The shared 700/1400 default truncates anything but tiny batches.
+      maxTokens: Math.ceil(batch.text.length / 3) + 300,
     })),
   };
 }
@@ -107,62 +148,121 @@ function buildCleanPrompt(batch) {
 }
 
 /**
+ * Fidelity guards. A length check cannot catch a fluent rewrite or a flipped
+ * negation, so the facts a repair must not change are checked directly:
+ * numbers stay numbers, and the number of negations cannot change.
+ */
+function fidelityIssue(raw, cleaned) {
+  const source = String(raw || '');
+  const result = String(cleaned || '');
+  const rawNegations = (source.match(NEGATION_PATTERN) || []).length;
+  const cleanedNegations = (result.match(NEGATION_PATTERN) || []).length;
+  if (cleanedNegations !== rawNegations) return `negation count changed (${rawNegations} -> ${cleanedNegations})`;
+  const digits = source.match(/\d[\d,.:/-]*/g) || [];
+  for (const run of digits) {
+    if (!result.includes(run)) return `number "${run}" was not preserved`;
+  }
+  return null;
+}
+
+/**
  * Parse a model reply back into cleaned per-turn text.
  *
- * Accepted: a marker that was actually sent, non-empty text, and a length close
- * enough to the raw turn that the line is a repair rather than a rewrite.
- * Rejected or missing lines are simply absent from `accepted`, so the caller
- * keeps the raw wording for those turns.
+ * The marker set must match the batch exactly, once each and ascending;
+ * anything else fails the whole batch, because a misaligned batch silently
+ * moves words under the wrong speaker and timecode. Within a well-formed batch,
+ * a single turn that fails a guard keeps its raw wording.
  */
 function parseCleanBatch(reply, batch) {
   const entries = (batch && Array.isArray(batch.entries)) ? batch.entries : [];
   const byIndex = new Map(entries.map((entry) => [entry.index, entry]));
+  const expected = entries.map((entry) => entry.index);
   const accepted = new Map();
   const rejected = [];
 
   const lines = String(reply || '').replace(/```[a-z]*\n?/gi, '').split(/\r?\n/);
+  const parsed = [];
+  let malformed = false;
   for (const rawLine of lines) {
-    const match = rawLine.match(/^\s*\[(\d+)\]\s*(?:(you|them)\s*:\s*)?(.*)$/i);
-    if (!match) continue;
-    const index = Number(match[1]);
-    const entry = byIndex.get(index);
-    if (!entry) continue;
-    const text = String(match[3] || '').trim();
-    if (!text) continue;
-    if (accepted.has(index)) continue;
+    const line = rawLine.trimEnd();
+    if (!line.trim()) continue;
+    const match = line.match(/^\s*\[(\d+)\]\s*(?:(you|them)\s*:\s*)?(.*)$/i);
+    if (!match) {
+      // Some providers hard-wrap long lines. Text that does not start a new
+      // marker continues the previous turn rather than being thrown away.
+      if (/^\s*\[/.test(line)) { malformed = true; continue; }
+      if (parsed.length) parsed[parsed.length - 1].text = `${parsed[parsed.length - 1].text} ${line.trim()}`.trim();
+      continue;
+    }
+    parsed.push({ index: Number(match[1]), text: String(match[3] || '').trim() });
+  }
+
+  const seen = parsed.map((line) => line.index);
+  const markersMatch =
+    !malformed &&
+    seen.length === expected.length &&
+    new Set(seen).size === seen.length &&
+    seen.every((index, position) => index === expected[position]);
+  if (!markersMatch) {
+    return {
+      failed: true,
+      reason: 'marker_mismatch',
+      accepted,
+      rejected,
+      missing: expected,
+    };
+  }
+
+  for (const line of parsed) {
+    const entry = byIndex.get(line.index);
+    const text = line.text;
+    if (!text) {
+      rejected.push({ index: line.index, reason: 'empty line' });
+      continue;
+    }
     const rawLength = entry.text.trim().length;
-    const cleanedLength = text.length;
-    if (rawLength > 0 && (cleanedLength < rawLength * MIN_LENGTH_RATIO || cleanedLength > rawLength * MAX_LENGTH_RATIO)) {
+    if (rawLength < MIN_SHORT_TURN_CHARS) {
+      rejected.push({ index: line.index, reason: 'short turn is never rewritten' });
+      continue;
+    }
+    const collapsedLength = collapseRepeatedTokens(entry.text).length;
+    const fillerCollapsed = collapsedLength < rawLength * 0.9;
+    const lowerBound = fillerCollapsed
+      ? Math.max(4, MIN_LOWER_RATIO * collapsedLength)
+      : Math.max(MIN_CLEANED_CHARACTERS, MIN_LOWER_RATIO * rawLength);
+    const upperBound = MAX_UPPER_RATIO * rawLength;
+    if (text.length < lowerBound || text.length > upperBound) {
       rejected.push({
-        index,
-        reason: `length guard: ${cleanedLength} chars for a ${rawLength}-char turn`,
+        index: line.index,
+        reason: `length guard: ${text.length} chars for a ${rawLength}-char turn`,
       });
       continue;
     }
-    accepted.set(index, text);
+    const issue = fidelityIssue(entry.text, text);
+    if (issue) {
+      rejected.push({ index: line.index, reason: issue });
+      continue;
+    }
+    accepted.set(line.index, text);
   }
 
-  const missing = entries
-    .map((entry) => entry.index)
-    .filter((index) => !accepted.has(index) && !rejected.some((item) => item.index === index));
-
-  return { accepted, rejected, missing };
+  // Every turn that has no accepted line keeps its raw wording; the count is
+  // what the UI reports ("N turns kept as heard").
+  const missing = expected.filter((index) => !accepted.has(index));
+  return { failed: false, accepted, rejected, missing };
 }
 
 /**
- * Build the parallel cleaned turn array: same length, same speakers, same
- * timestamps, cleaned text where a line was accepted and raw text otherwise.
+ * Build the parallel cleaned array of TEXT ONLY. Speaker and timestamp are
+ * always taken from the saved turn, so a model can never reassign who said
+ * what, and a turn with no accepted line keeps its raw wording.
  */
-function cleanedTurnsFrom(turns, accepted) {
+function cleanedTextsFrom(turns, accepted) {
   const map = accepted instanceof Map ? accepted : new Map(Object.entries(accepted || {}).map(([key, value]) => [Number(key), value]));
   return (Array.isArray(turns) ? turns : []).map((turn, index) => {
     const cleaned = map.get(index);
-    const text = typeof cleaned === 'string' && cleaned.trim() ? cleaned.trim() : String((turn && turn.text) || '');
-    return {
-      channel: turn && turn.channel === 'you' ? 'you' : 'them',
-      text,
-      ts: Number.isFinite(turn && turn.ts) ? turn.ts : undefined,
-    };
+    if (typeof cleaned === 'string' && cleaned.trim()) return cleaned.trim();
+    return String((turn && turn.text) || '');
   });
 }
 
@@ -170,11 +270,14 @@ module.exports = {
   CLEAN_BATCH_TURNS,
   CLEAN_BATCH_CHARACTERS,
   MAX_CLEAN_BATCHES,
-  MIN_LENGTH_RATIO,
-  MAX_LENGTH_RATIO,
+  MIN_SHORT_TURN_CHARS,
+  MIN_LOWER_RATIO,
+  MAX_UPPER_RATIO,
   CLEAN_SYSTEM_PROMPT,
   planCleanBatches,
   buildCleanPrompt,
   parseCleanBatch,
-  cleanedTurnsFrom,
+  fidelityIssue,
+  collapseRepeatedTokens,
+  cleanedTextsFrom,
 };

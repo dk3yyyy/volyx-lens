@@ -112,6 +112,8 @@
               <div class="history-detail-actions">
                 <select id="meeting-history-export-format" aria-label="Export format"><option value="md">Markdown</option><option value="txt">TXT</option><option value="json">JSON</option><option value="srt">SRT</option><option value="vtt">VTT</option></select>
                 <button id="meeting-history-export" type="button">Export</button>
+                <button id="meeting-clean" type="button" title="Repair speech-recognition errors so the transcript reads properly">Clean text</button>
+                <button id="meeting-view-toggle" type="button" class="hidden" aria-pressed="false" title="Showing the exact wording that was heard.">Raw</button>
                 <button id="meeting-notes-generate" type="button">Notes</button>
                 <button id="meeting-history-delete" type="button">Delete</button>
               </div>
@@ -369,7 +371,7 @@
           </select>
         </div>
         <div class="s-field"><label for="stt-history-enabled">Save meeting history</label><input id="stt-history-enabled" type="checkbox" /></div>
-        <div class="s-note">Off by default. When enabled, finalized sessions are saved to private on-device history, and the in-progress transcript is checkpointed locally for recovery after an unexpected exit. On next launch, choose whether to restore or discard that draft. Records contain only final transcript text and local timestamps — raw audio is never stored and nothing is uploaded automatically. Delete history at any time.</div>
+        <div class="s-note">Off by default. When enabled, finalized sessions are saved to private on-device history, and the in-progress transcript is checkpointed locally for recovery after an unexpected exit. On next launch, choose whether to restore or discard that draft. Records contain only final transcript text and local timestamps, and raw audio is never stored. Nothing is uploaded automatically. The two buttons on a saved meeting are explicit requests: Generate meeting notes and Clean transcript send that saved transcript to the response provider you configured. A cleaned copy is stored beside the original and never replaces it. Delete history at any time.</div>
         <div class="s-field"><label for="stt-meeting-detection">Detect meetings</label><input id="stt-meeting-detection" type="checkbox" /></div>
         <div class="s-note">Off by default. While listening, Volyx Lens looks for a sustained two-sided conversation between the Mic and System channels in the live transcript. When it finds one, a subtle "Meeting in progress" indicator appears and the current session is tagged as a meeting if history is enabled. Detection is local and in-session only — no background audio watcher, no disk writes, and no AI requests are made.</div>
         <div class="s-field"><label for="stt-slide-tracking">Track presentation slides</label><input id="stt-slide-tracking" type="checkbox" /></div>

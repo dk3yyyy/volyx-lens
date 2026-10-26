@@ -412,6 +412,9 @@
   let meetingDetail = null;
   let meetingNotesText = '';
   let meetingHistorySearchTimer = null;
+  // Which copy of a saved transcript the pane shows: the cleaned one when the
+  // user asked for it, otherwise exactly what was heard.
+  let meetingViewMode = 'cleaned';
 
   function meetingReasonLabel(reason) {
     if (reason === 'capture-stop') return 'listening stopped';
@@ -512,11 +515,39 @@
     setMeetingHistoryOpen($('#meeting-history-toggle').getAttribute('aria-expanded') !== 'true');
   });
 
+  function hasCleanedView() {
+    return !!meetingDetail
+      && meetingDetail.cleaned
+      && Array.isArray(meetingDetail.cleaned.texts)
+      && meetingDetail.cleaned.texts.length === meetingDetail.turns.length;
+  }
+
+  function readableMeetingTurns() {
+    if (!meetingDetail) return [];
+    if (meetingViewMode !== 'cleaned' || !hasCleanedView()) return meetingDetail.turns;
+    return meetingDetail.turns.map((turn, index) => ({
+      ...turn,
+      text: String(meetingDetail.cleaned.texts[index] || '').trim() || turn.text,
+    }));
+  }
+
+  function updateMeetingViewToggle() {
+    const toggle = $('#meeting-view-toggle');
+    if (!toggle) return;
+    const available = hasCleanedView();
+    toggle.classList.toggle('hidden', !available);
+    toggle.setAttribute('aria-pressed', String(available && meetingViewMode === 'cleaned'));
+    toggle.textContent = available && meetingViewMode === 'cleaned' ? 'Cleaned' : 'Raw';
+    toggle.title = available && meetingViewMode === 'cleaned'
+      ? 'Showing the cleaned copy. Click for the exact wording that was heard.'
+      : 'Showing the exact wording that was heard.';
+  }
+
   function renderMeetingTurns() {
     const container = $('#meeting-history-turns');
     container.replaceChildren();
     if (!meetingDetail) return;
-    for (const turn of meetingDetail.turns) {
+    for (const turn of readableMeetingTurns()) {
       const row = document.createElement('div');
       row.className = `history-turn ${turn.channel === 'you' ? 'you' : 'them'}`;
       const speaker = document.createElement('span'); speaker.className = 'history-speaker'; speaker.textContent = turn.channel === 'you' ? 'You' : 'Them';
@@ -528,7 +559,9 @@
     const count = meetingDetail.turns.length;
     const parts = [`${count} ${count === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(meetingDetail.reason)} · ${meetingDateLabel(meetingDetail.endedAt || meetingDetail.startedAt)}`];
     if (meetingDetail.meeting) parts.unshift('Meeting detected');
+    if (hasCleanedView() && meetingViewMode === 'cleaned') parts.push('cleaned for readability');
     $('#meeting-history-detail-meta').textContent = parts.join(' · ');
+    updateMeetingViewToggle();
   }
 
   async function openMeetingDetail(id) {
@@ -537,6 +570,7 @@
       if (!record) { showStatus('That meeting is no longer available.'); return; }
       meetingDetail = record;
       meetingNotesText = '';
+      meetingViewMode = 'cleaned';
       const out = $('#meeting-notes-output');
       out.classList.add('hidden');
       out.textContent = '';
@@ -554,6 +588,7 @@
   function closeMeetingDetail() {
     meetingDetail = null;
     meetingNotesText = '';
+    meetingViewMode = 'cleaned';
     $('#meeting-notes-output').classList.add('hidden');
     $('#meeting-history-detail').classList.add('hidden');
     $('#meeting-history-list').classList.remove('hidden');
@@ -675,6 +710,60 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       }
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting notes could not be generated.'); }
     finally { button.disabled = false; button.textContent = original; }
+  });
+
+  $('#meeting-view-toggle').addEventListener('click', () => {
+    if (!meetingDetail || !hasCleanedView()) return;
+    meetingViewMode = meetingViewMode === 'cleaned' ? 'raw' : 'cleaned';
+    renderMeetingTurns();
+  });
+
+  let meetingCleanRunning = false;
+
+  function setMeetingActionBusy(busy) {
+    const clean = $('#meeting-clean');
+    const notes = $('#meeting-notes-generate');
+    if (clean) clean.disabled = busy;
+    if (notes) notes.disabled = busy;
+  }
+
+  volyxLens.on('history:clean-progress', (payload) => {
+    if (!payload || !meetingDetail || payload.id !== meetingDetail.id) return;
+    showStatus(`Cleaning transcript part ${payload.batch} of ${payload.batches}\u2026`);
+  });
+
+  $('#meeting-clean').addEventListener('click', async () => {
+    if (!meetingDetail || meetingCleanRunning) return;
+    meetingCleanRunning = true;
+    setMeetingActionBusy(true);
+    showStatus('Cleaning the transcript\u2026');
+    try {
+      let confirmed = false;
+      for (;;) {
+        const result = await volyxLens.historyClean(meetingDetail.id, confirmed);
+        if (result && result.ok) {
+          const record = await volyxLens.historyGet(meetingDetail.id);
+          if (record) {
+            meetingDetail = record;
+            meetingViewMode = 'cleaned';
+            renderMeetingTurns();
+          }
+          const kept = result.rawFallbacks
+            ? ` ${result.rawFallbacks} turn${result.rawFallbacks === 1 ? '' : 's'} kept as heard.`
+            : '';
+          showStatus(`Transcript cleaned.${kept}`);
+          break;
+        }
+        if (result && result.code === 'requires_confirmation') {
+          if (!window.confirm(`${result.message} Continue?`)) { showStatus('Cleanup canceled.'); break; }
+          confirmed = true;
+          continue;
+        }
+        showStatus(result && result.message ? result.message : 'The transcript could not be cleaned.');
+        break;
+      }
+    } catch (error) { showStatus(error && error.message ? error.message : 'The transcript could not be cleaned.'); }
+    finally { meetingCleanRunning = false; setMeetingActionBusy(false); }
   });
 
   $('#meeting-history-search').addEventListener('input', () => {
