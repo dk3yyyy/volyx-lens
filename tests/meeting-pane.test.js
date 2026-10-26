@@ -79,11 +79,37 @@ test('the retention window is a setting, applied at startup and on change', () =
   assert.match(renderer, /historyRetentionDays: Number\(\$\('#stt-retention-days'\)\.value\) \|\| 0/);
   assert.match(main, /function enforceHistoryRetention\(\)/);
   assert.match(main, /meetingStore\.pruneOlderThan\(days\)/);
-  assert.match(main, /app\.whenReady\(\)\.then\(\(\) => \{\s*enforceHistoryRetention\(\);/);
+  assert.match(main, /app\.whenReady\(\)\.then\(\(\) => \{/);
+  assert.match(main, /enforceHistoryRetention\(\);/);
   assert.match(main, /previous\.transcription\.historyRetentionDays !== updated\.transcription\.historyRetentionDays/);
 });
 
 test('a retention of zero keeps everything', () => {
   const { getDefaultSettings } = require('../src/provider-config');
   assert.equal(getDefaultSettings().transcription.historyRetentionDays, 0);
+});
+
+test('a second launch focuses the first window instead of sharing the folder', () => {
+  assert.match(main, /const primaryInstance = app\.requestSingleInstanceLock\(\);/);
+  assert.match(main, /if \(!primaryInstance\) app\.quit\(\);/);
+  assert.match(main, /app\.on\('second-instance', \(\) => \{/);
+  assert.match(main, /if \(!primaryInstance\) return;/);
+});
+
+test('the meeting list can be driven from the keyboard', () => {
+  assert.match(renderer, /\$\('#meeting-history-list'\)\.addEventListener\('keydown'/);
+  assert.match(renderer, /event\.key === 'ArrowDown'/);
+  assert.match(renderer, /event\.key === 'ArrowUp'/);
+  assert.match(renderer, /event\.key === 'Home'/);
+  assert.match(renderer, /event\.key === 'End'/);
+  assert.match(renderer, /event\.key === 'Escape' && meetingSelectMode/);
+  assert.match(renderer, /row\.setAttribute\('role', 'listitem'\)/);
+  assert.match(renderer, /open\.setAttribute\('aria-label'/);
+});
+
+test('focus moves into the detail view and comes back to the meeting it came from', () => {
+  assert.match(renderer, /let meetingDetailOpenerId = null;/);
+  assert.match(renderer, /meetingDetailOpenerId = id;/);
+  assert.match(renderer, /\$\('#meeting-history-back'\)\.focus\(\);/);
+  assert.match(renderer, /document\.querySelector\(`#meeting-history-list \.history-entry\[data-meeting-id="\$\{openerId\}"\]/);
 });

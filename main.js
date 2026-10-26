@@ -824,6 +824,17 @@ function fitWindowToMovedEdge(anchor) {
   applyDockBounds({ side, collapsed: false, anchor, targetDisplay: display });
 }
 
+// One app instance owns the meetings folder. A second launch focuses the first
+// window instead of racing it on the same JSON files.
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+else app.on('second-instance', () => {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   const { width: W, height: H } = DEFAULT_DOCK_SIZES.expanded;
@@ -2578,6 +2589,7 @@ function resetShortcuts() {
 
 // -------- lifecycle --------
 app.whenReady().then(() => {
+  if (!primaryInstance) return;
   enforceHistoryRetention();
   if (process.platform === 'darwin') {
     if (app.dock) app.dock.hide();
