@@ -909,3 +909,46 @@ html[data-theme='light'] .history-notes-badge {
   color: #0a7a9c;
   background: rgba(14, 155, 196, 0.1);
 }
+
+/* Cleaned badge in meeting list */
+.history-cleaned-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7c6cff;
+  background: rgba(124, 108, 255, 0.14);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+html[data-theme='light'] .history-cleaned-badge {
+  color: #5b4bd6;
+  background: rgba(124, 108, 255, 0.12);
+}
+
+/* Named speaker control */
+.history-detail-who { display: flex; align-items: center; gap: 6px; padding: 2px 2px 6px; }
+.history-detail-who label { font-size: 9px; font-weight: 700; color: var(--tx-mut); text-transform: uppercase; letter-spacing: 0.05em; }
+#meeting-participant {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid rgba(199, 206, 255, 0.15);
+  background: rgba(199, 206, 255, 0.055);
+  color: var(--tx-2);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font: 600 10px var(--font);
+  outline: none;
+}
+#meeting-participant:focus { border-color: var(--accent); }
+#meeting-discard-cleaned { font-size: 9px; white-space: nowrap; }
+
+/* What cleanup changed */
+.history-turn .history-text-before { color: var(--tx-mut); text-decoration: line-through; display: block; }
+.history-turn .history-text-after { color: var(--tx-2); display: block; }
+
+/* Notes provenance line */
+.notes-source { margin: 0 0 6px; font-size: 9px; line-height: 1.4; color: var(--tx-mut); }

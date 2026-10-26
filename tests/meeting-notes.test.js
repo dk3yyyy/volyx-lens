@@ -174,3 +174,21 @@ test('json export keeps the raw transcript and carries the cleaned copy alongsid
   assert.equal(parsed.cleaned.texts[0], 'Cleaned line 1.');
   assert.equal(parsed.cleaned.model, 'deepseek-flash');
 });
+
+test('exports name the other speaker when the meeting has one', () => {
+  const record = sampleRecord({ participant: 'Ada Lovelace' });
+  const md = formatMeetingRecord(record, 'md');
+  const txt = formatMeetingRecord(record, 'txt');
+  const srt = formatMeetingRecord(record, 'srt');
+  assert.match(md, /Ada Lovelace:/);
+  assert.doesNotMatch(md, /Them:/);
+  assert.match(txt, /Ada Lovelace:/);
+  assert.match(srt, /Ada Lovelace:/);
+  assert.match(md, /Participants: You, Ada Lovelace/);
+});
+
+test('a meeting with no named participant still reads as Them', () => {
+  const record = sampleRecord();
+  assert.match(formatMeetingRecord(record, 'md'), /Them:/);
+  assert.doesNotMatch(formatMeetingRecord(record, 'md'), /Participants:/);
+});

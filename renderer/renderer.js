@@ -432,7 +432,14 @@
     const list = $('#meeting-history-list');
     const query = meetingHistorySearch.trim().toLowerCase();
     const records = query
-      ? meetingHistoryRecords.filter((record) => [meetingDateLabel(record.endedAt || record.startedAt), meetingReasonLabel(record.reason), record.preview || ''].join(' ').toLowerCase().includes(query))
+      ? meetingHistoryRecords.filter((record) => [
+        meetingDateLabel(record.endedAt || record.startedAt),
+        meetingReasonLabel(record.reason),
+        record.participant || '',
+        record.preview || '',
+        record.previewCleaned || '',
+        record.notesSummary || '',
+      ].join(' ').toLowerCase().includes(query))
       : meetingHistoryRecords;
     list.replaceChildren();
     $('#meeting-history-count').textContent = `${records.length} ${records.length === 1 ? 'meeting' : 'meetings'}`;
@@ -466,11 +473,19 @@
       if (record.hasNotes) {
         const notesBadge = document.createElement('span');
         notesBadge.className = 'history-notes-badge';
-        notesBadge.textContent = 'Notes';
+        notesBadge.textContent = record.notesSource === 'cleaned' ? 'Notes · cleaned' : 'Notes';
         when.append(' ', notesBadge);
       }
+      if (record.hasCleaned) {
+        const cleanedBadge = document.createElement('span');
+        cleanedBadge.className = 'history-cleaned-badge';
+        cleanedBadge.textContent = 'Cleaned';
+        when.append(' ', cleanedBadge);
+      }
       const meta = document.createElement('span');
-      meta.textContent = `${record.turnCount} ${record.turnCount === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(record.reason)}${record.preview ? ' · ' + record.preview : ''}`;
+      const who = record.participant ? ` · ${record.participant}` : '';
+      const shown = record.previewCleaned || record.preview;
+      meta.textContent = `${record.turnCount} ${record.turnCount === 1 ? 'turn' : 'turns'}${who} · ${meetingReasonLabel(record.reason)}${shown ? ' · ' + shown : ''}`;
       open.append(when, meta);
       open.addEventListener('click', () => openMeetingDetail(record.id));
       const remove = document.createElement('button');
@@ -531,37 +546,99 @@
     }));
   }
 
+  const VIEW_ORDER = ['cleaned', 'raw', 'changes'];
+  const VIEW_LABELS = { cleaned: 'Cleaned', raw: 'Raw', changes: 'Changes' };
+  const VIEW_TITLES = {
+    cleaned: 'Showing the cleaned copy. Click for the exact wording that was heard.',
+    raw: 'Showing the exact wording that was heard. Click to see what cleanup changed.',
+    changes: 'Showing only the turns where the wording changed. Click to return to the cleaned copy.',
+  };
+
   function updateMeetingViewToggle() {
     const toggle = $('#meeting-view-toggle');
     if (!toggle) return;
     const available = hasCleanedView();
     toggle.classList.toggle('hidden', !available);
     toggle.setAttribute('aria-pressed', String(available && meetingViewMode === 'cleaned'));
-    toggle.textContent = available && meetingViewMode === 'cleaned' ? 'Cleaned' : 'Raw';
-    toggle.title = available && meetingViewMode === 'cleaned'
-      ? 'Showing the cleaned copy. Click for the exact wording that was heard.'
-      : 'Showing the exact wording that was heard.';
+    toggle.textContent = VIEW_LABELS[meetingViewMode] || 'Raw';
+    toggle.title = VIEW_TITLES[meetingViewMode] || VIEW_TITLES.raw;
+  }
+
+  // Turns the cleanup actually changed, so the user can audit the pass instead
+  // of trusting it.
+  function changedMeetingTurns() {
+    if (!hasCleanedView()) return [];
+    const rows = [];
+    meetingDetail.turns.forEach((turn, index) => {
+      const cleaned = String(meetingDetail.cleaned.texts[index] || '').trim();
+      if (!cleaned || cleaned === String(turn.text || '').trim()) return;
+      rows.push({ channel: turn.channel, raw: turn.text, cleaned, ts: turn.ts });
+    });
+    return rows;
+  }
+
+  function speakerLabelFor(channel) {
+    if (channel === 'you') return 'You';
+    const named = meetingDetail && meetingDetail.participant ? String(meetingDetail.participant).trim() : '';
+    return named || 'Them';
   }
 
   function renderMeetingTurns() {
     const container = $('#meeting-history-turns');
     container.replaceChildren();
     if (!meetingDetail) return;
-    for (const turn of readableMeetingTurns()) {
-      const row = document.createElement('div');
-      row.className = `history-turn ${turn.channel === 'you' ? 'you' : 'them'}`;
-      const speaker = document.createElement('span'); speaker.className = 'history-speaker'; speaker.textContent = turn.channel === 'you' ? 'You' : 'Them';
-      const text = document.createElement('span'); text.className = 'history-text'; text.textContent = turn.text;
-      const time = document.createElement('time'); time.className = 'history-time'; time.dateTime = new Date(turn.ts).toISOString(); time.textContent = transcriptTime(turn.ts);
-      row.append(speaker, text, time);
-      container.appendChild(row);
+    if (meetingViewMode === 'changes' && hasCleanedView()) {
+      const changes = changedMeetingTurns();
+      if (!changes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'history-empty';
+        empty.textContent = 'Cleanup left every turn as it was heard.';
+        container.appendChild(empty);
+      }
+      for (const change of changes) {
+        const row = document.createElement('div');
+        row.className = `history-turn ${change.channel === 'you' ? 'you' : 'them'}`;
+        const speaker = document.createElement('span');
+        speaker.className = 'history-speaker';
+        speaker.textContent = speakerLabelFor(change.channel);
+        const body = document.createElement('span');
+        const before = document.createElement('span');
+        before.className = 'history-text history-text-before';
+        before.textContent = change.raw;
+        const after = document.createElement('span');
+        after.className = 'history-text history-text-after';
+        after.textContent = change.cleaned;
+        body.append(before, after);
+        const time = document.createElement('time');
+        time.className = 'history-time';
+        time.dateTime = new Date(change.ts).toISOString();
+        time.textContent = transcriptTime(change.ts);
+        row.append(speaker, body, time);
+        container.appendChild(row);
+      }
+    } else {
+      for (const turn of readableMeetingTurns()) {
+        const row = document.createElement('div');
+        row.className = `history-turn ${turn.channel === 'you' ? 'you' : 'them'}`;
+        const speaker = document.createElement('span'); speaker.className = 'history-speaker'; speaker.textContent = speakerLabelFor(turn.channel);
+        const text = document.createElement('span'); text.className = 'history-text'; text.textContent = turn.text;
+        const time = document.createElement('time'); time.className = 'history-time'; time.dateTime = new Date(turn.ts).toISOString(); time.textContent = transcriptTime(turn.ts);
+        row.append(speaker, text, time);
+        container.appendChild(row);
+      }
     }
     const count = meetingDetail.turns.length;
     const parts = [`${count} ${count === 1 ? 'turn' : 'turns'} · ${meetingReasonLabel(meetingDetail.reason)} · ${meetingDateLabel(meetingDetail.endedAt || meetingDetail.startedAt)}`];
     if (meetingDetail.meeting) parts.unshift('Meeting detected');
     if (hasCleanedView() && meetingViewMode === 'cleaned') parts.push('cleaned for readability');
+    const stats = hasCleanedView() && meetingDetail.cleaned.stats;
+    if (stats && Number.isFinite(stats.cleanedTurns)) {
+      const kept = Number.isFinite(stats.rawFallbacks) ? stats.rawFallbacks : 0;
+      parts.push(`${stats.cleanedTurns} of ${count} turns cleaned${kept ? `, ${kept} kept as heard` : ''}`);
+    }
     $('#meeting-history-detail-meta').textContent = parts.join(' · ');
     updateMeetingViewToggle();
+    updateMeetingExtras();
   }
 
   async function openMeetingDetail(id) {
@@ -578,6 +655,14 @@
       if (record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length)) {
         const out = $('#meeting-notes-output');
         out.innerHTML = renderStructuredNotes(record.notes, '');
+        const source = document.createElement('p');
+        source.className = 'notes-source';
+        if (record.notes.source === 'cleaned') source.textContent = 'These notes were generated from the cleaned transcript.';
+        else if (record.notes.source === 'raw') source.textContent = 'These notes were generated from the transcript as it was heard.';
+        if (source.textContent) {
+          if (record.notes.source === 'raw' && hasCleanedView()) source.textContent += ' Regenerate them to use the cleaned copy.';
+          out.prepend(source);
+        }
         out.classList.remove('hidden');
       }
       $('#meeting-history-list').classList.add('hidden');
@@ -715,8 +800,54 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   $('#meeting-view-toggle').addEventListener('click', () => {
     if (!meetingDetail || !hasCleanedView()) return;
-    meetingViewMode = meetingViewMode === 'cleaned' ? 'raw' : 'cleaned';
+    const next = (VIEW_ORDER.indexOf(meetingViewMode) + 1) % VIEW_ORDER.length;
+    meetingViewMode = VIEW_ORDER[next];
     renderMeetingTurns();
+  });
+
+  function updateMeetingExtras() {
+    const input = $('#meeting-participant');
+    if (input) input.value = meetingDetail && meetingDetail.participant ? meetingDetail.participant : '';
+    const discard = $('#meeting-discard-cleaned');
+    if (discard) discard.classList.toggle('hidden', !hasCleanedView());
+  }
+
+  $('#meeting-participant').addEventListener('change', async () => {
+    if (!meetingDetail) return;
+    const id = meetingDetail.id;
+    const value = $('#meeting-participant').value;
+    try {
+      const result = await volyxLens.historyParticipant(id, value);
+      if (!meetingDetail || meetingDetail.id !== id) return;
+      if (!result || !result.updated) {
+        showStatus('The speaker name could not be saved.');
+        return;
+      }
+      meetingDetail.participant = result.participant;
+      renderMeetingTurns();
+      showStatus(result.participant ? `Saved. The other speaker is ${result.participant}.` : 'Cleared the speaker name.');
+    } catch (error) { showStatus(error && error.message ? error.message : 'The speaker name could not be saved.'); }
+  });
+
+  $('#meeting-discard-cleaned').addEventListener('click', async () => {
+    if (!meetingDetail || !hasCleanedView()) return;
+    if (!window.confirm('Discard the cleaned copy? The wording that was heard stays.')) return;
+    const id = meetingDetail.id;
+    try {
+      const result = await volyxLens.historyDiscardCleaned(id);
+      if (!meetingDetail || meetingDetail.id !== id) return;
+      if (!result || !result.updated) {
+        showStatus('The cleaned copy could not be discarded.');
+        return;
+      }
+      const record = await volyxLens.historyGet(id);
+      if (record && meetingDetail && meetingDetail.id === id) {
+        meetingDetail = record;
+        meetingViewMode = 'raw';
+        renderMeetingTurns();
+      }
+      showStatus('Cleaned copy discarded. The transcript is back to the wording that was heard.');
+    } catch (error) { showStatus(error && error.message ? error.message : 'The cleaned copy could not be discarded.'); }
   });
 
   let meetingCleanRunning = false;

@@ -47,6 +47,14 @@ function vttTimecode(ms) {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(millis, 3)}`;
 }
 
+// "Them" is a placeholder. When the user names the other speaker, that name is
+// what the transcript, the subtitles and the notes should call them.
+function speakerName(turn, record = {}) {
+  if (turn && turn.channel === 'you') return 'You';
+  const named = record && record.participant ? String(record.participant).trim() : '';
+  return named || 'Them';
+}
+
 function meetingHeader(record = {}, { cleaned = false } = {}) {
   const turns = Array.isArray(record.turns) ? record.turns : [];
   const lines = [`# Volyx Lens ${record.meeting === true ? 'meeting' : 'session'}`];
@@ -55,6 +63,7 @@ function meetingHeader(record = {}, { cleaned = false } = {}) {
   lines.push(`Session end: ${reasonLabel(record.reason)}`);
   lines.push(`Turns: ${turns.length}`);
   if (record.meeting === true) lines.push('Meeting: detected as a two-sided conversation');
+  if (record.participant) lines.push(`Participants: You, ${String(record.participant).trim()}`);
   if (cleaned) lines.push('Transcript: cleaned copy, wording repaired from speech recognition; the raw transcript is kept in the app');
   return lines.join('\n');
 }
@@ -91,7 +100,7 @@ function formatMeetingRecordSrt(record = {}, { source = 'auto' } = {}) {
   const { turns } = resolveTurns(record, { source });
   const blocks = [];
   turns.forEach((turn, index) => {
-    const speaker = turn.channel === 'you' ? 'You' : 'Them';
+    const speaker = speakerName(turn, record);
     const start = Number.isFinite(turn.ts) ? turn.ts : 0;
     const end = start + 4000;
     blocks.push(`${index + 1}\n${srtTimecode(start)} --> ${srtTimecode(end)}\n${speaker}: ${escapeSubtitle(turn.text)}`);
@@ -103,7 +112,7 @@ function formatMeetingRecordVtt(record = {}, { source = 'auto' } = {}) {
   const { turns } = resolveTurns(record, { source });
   const blocks = ['WEBVTT\n'];
   turns.forEach((turn) => {
-    const speaker = turn.channel === 'you' ? 'You' : 'Them';
+    const speaker = speakerName(turn, record);
     const start = Number.isFinite(turn.ts) ? turn.ts : 0;
     const end = start + 4000;
     blocks.push(`${vttTimecode(start)} --> ${vttTimecode(end)}\n${speaker}: ${escapeSubtitle(turn.text)}`);
@@ -145,11 +154,11 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
   if (format === 'vtt') return formatMeetingRecordVtt(record, { source: 'raw' });
   const isMarkdown = format === 'md';
   const body = turns.map((turn) => {
-    const speaker = turn.channel === 'you' ? 'You' : 'Them';
+    const speaker = speakerName(turn, record);
     if (isMarkdown) return `- **${timeLabel(turn.ts)} · ${speaker}:** ${turn.text.replace(/\n/g, '\n  ')}`;
     return `[${timeLabel(turn.ts)}] ${speaker}: ${turn.text}`;
   }).join(isMarkdown ? '\n\n' : '\n');
   return `${meetingHeader(record, { cleaned })}\n\n${body}${body ? '\n' : ''}`;
 }
 
-module.exports = { meetingFilename, meetingHeader, formatMeetingRecord, formatMeetingRecordSrt, formatMeetingRecordVtt, reasonLabel, localStamp, normalizeTurns, resolveTurns, srtTimecode, vttTimecode };
+module.exports = { meetingFilename, meetingHeader, formatMeetingRecord, formatMeetingRecordSrt, formatMeetingRecordVtt, reasonLabel, localStamp, normalizeTurns, resolveTurns, speakerName, srtTimecode, vttTimecode };
