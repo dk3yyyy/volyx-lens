@@ -11,6 +11,8 @@
 // prompt or temperature changes with numbers instead of impressions.
 
 const { MODES } = require('../src/prompts');
+const { CLEAN_SYSTEM_PROMPT } = require('../src/transcript-cleanup');
+const { tokenRecall } = require('../src/transcript-dedupe');
 const { buildPreviousMeetingsBlock, PREVIOUS_MEETINGS_NOTE } = require('../src/meeting-memory');
 const {
   SOURCE_UNCERTAINTY_RULE,
@@ -37,6 +39,41 @@ function firstWords(text, count) {
 }
 
 const CHECKS = {
+  // A cleanup answer must keep every turn's marker, once each, in order. A
+  // missing or duplicated marker means the text no longer lines up with the
+  // recording, which is worse than an unpolished sentence.
+  markerLines(answer, scenario) {
+    const expected = Array.isArray(scenario.transcript) ? scenario.transcript.length : 0;
+    const lines = String(answer || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    const markers = lines
+      .map((line) => (line.match(/^\[(\d+)\]/) || [])[1])
+      .filter((value) => value !== undefined)
+      .map(Number);
+    const ok = expected > 0
+      && lines.length === expected
+      && markers.length === expected
+      && markers.every((marker, index) => marker === index);
+    return { ok, detail: `${markers.length}/${expected} marker(s) in order` };
+  },
+
+  // A repair may fix wording but must not drop the content: every source turn
+  // keeps nearly all of its words, and every number survives.
+  sourceFidelity(answer, scenario) {
+    const turns = Array.isArray(scenario.transcript) ? scenario.transcript : [];
+    if (!turns.length) return { ok: true, detail: 'no source turns' };
+    const lines = String(answer || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    for (let index = 0; index < turns.length; index += 1) {
+      const raw = String(turns[index] && turns[index].text || '');
+      const text = (lines[index] || '').replace(/^\[\d+\]\s*(?:(?:you|them)\s*:\s*)?/i, '');
+      const recall = tokenRecall(text, raw);
+      if (recall < 0.9) return { ok: false, detail: `turn ${index} kept ${Math.round(recall * 100)}% of its words` };
+      for (const run of raw.match(/\d+/g) || []) {
+        if (!text.includes(run)) return { ok: false, detail: `turn ${index} lost the number ${run}` };
+      }
+    }
+    return { ok: true, detail: `${turns.length} turn(s) preserved` };
+  },
+
   codeFence(answer) {
     const blocks = String(answer || '').match(/```[\s\S]+?```/g) || [];
     return { ok: blocks.length > 0, detail: `${blocks.length} fenced block(s)` };
@@ -91,8 +128,9 @@ const CHECKS = {
   },
 
   budget(scenario) {
-    const budgets = MODES[scenario.mode] && MODES[scenario.mode].maxTokens;
-    if (!budgets) return { ok: false, detail: `${scenario.mode} has no budget` };
+    const def = promptDefinition(scenario);
+    const budgets = def && def.maxTokens;
+    if (!budgets) return { ok: false, detail: `${scenario.promptSource || scenario.mode} has no budget` };
     const ok = scenario.minBudget.fast <= budgets.fast && scenario.minBudget.smart <= budgets.smart;
     return { ok, detail: `${budgets.fast}/${budgets.smart}, need ${scenario.minBudget.fast}/${scenario.minBudget.smart}` };
   },
@@ -208,13 +246,52 @@ const SCENARIOS = [
     maxSentences: 3,
     promptMatch: [/gets a direct answer/i, /three sentences at most/i],
   },
+  {
+    // Not a user-facing mode: the cleanup pass writes back into a saved record,
+    // so its prompt is gated here rather than being left to unit assertions.
+    id: 'transcript-clean-format',
+    mode: 'clean',
+    promptSource: 'transcript-cleanup',
+    transcript: [
+      { channel: 'them', text: 'so the deprecation of the flash model is going ahead next quarter' },
+      { channel: 'you', text: 'right and we will not ship the migration before the audit' },
+    ],
+    answer: [
+      '[0] Them: So the deprecation of the Flash model is going ahead next quarter.',
+      '[1] You: Right, and we will not ship the migration before the audit.',
+    ].join('\n'),
+    markerLines: true,
+    sourceFidelity: true,
+    promptMatch: [/same number of lines/i, /same order/i, /not\b[^.]*summar/i, /never change a negation/i],
+    minBudget: { fast: 600, smart: 600 },
+  },
 ];
 
 // ----- evaluation -----------------------------------------------------------
 
+// Prompts that are not user-facing modes still need coverage: the cleanup pass
+// writes back into a saved record, so it belongs in the same gate.
+const PROMPT_SOURCES = {
+  'transcript-cleanup': {
+    system: CLEAN_SYSTEM_PROMPT,
+    maxTokens: { fast: 1200, smart: 2000 },
+    build(scenario) {
+      const lines = (Array.isArray(scenario.transcript) ? scenario.transcript : [])
+        .map((turn, index) => `[${index}] ${turn.channel === 'you' ? 'You' : 'Them'}: ${turn.text}`)
+        .join('\n');
+      return 'Repair these transcript lines for readability. Same line count, same order, same [n] markers.\n\n' + lines;
+    },
+  },
+};
+
+function promptDefinition(scenario) {
+  if (scenario.promptSource) return PROMPT_SOURCES[scenario.promptSource] || null;
+  return MODES[scenario.mode] || null;
+}
+
 function buildPrompt(scenario) {
-  const def = MODES[scenario.mode];
-  if (!def) throw new Error(`Unknown mode in scenario ${scenario.id}: ${scenario.mode}`);
+  const def = promptDefinition(scenario);
+  if (!def) throw new Error(`Unknown prompt for scenario ${scenario.id}: ${scenario.promptSource || scenario.mode}`);
   let prompt = def.build({
     transcript: scenario.transcript || [],
     userText: scenario.userText || '',
@@ -246,6 +323,8 @@ function evaluateScenario(scenario, { answer: overrideAnswer } = {}) {
   if (scenario.maxSentences) answerCheck('maxSentences', CHECKS.maxSentences(text, scenario));
   if (scenario.mustMatch) answerCheck('matches', CHECKS.matches(text, scenario));
   if (scenario.mustNotMatch) answerCheck('avoids', CHECKS.avoids(text, scenario));
+  if (scenario.markerLines) answerCheck('markerLines', CHECKS.markerLines(text, scenario));
+  if (scenario.sourceFidelity) answerCheck('sourceFidelity', CHECKS.sourceFidelity(text, scenario));
   if (scenario.promptMatch) promptCheck('promptCarries', CHECKS.promptCarries(fullPrompt, scenario));
   if (scenario.promptAvoid) promptCheck('promptAvoids', CHECKS.promptAvoids(fullPrompt, scenario));
   if (scenario.minBudget) promptCheck('budget', CHECKS.budget(scenario));
@@ -292,7 +371,7 @@ function coverageIssue(scenarios = SCENARIOS) {
   for (const scenario of scenarios) {
     if (ids.has(scenario.id)) return `duplicate scenario id: ${scenario.id}`;
     ids.add(scenario.id);
-    if (!MODES[scenario.mode]) return `unknown mode: ${scenario.mode}`;
+    if (!promptDefinition(scenario)) return `unknown prompt: ${scenario.promptSource || scenario.mode}`;
     modes.add(scenario.mode);
   }
   if (!modes.has('leetcode')) return 'missing a coding scenario';
@@ -423,6 +502,8 @@ if (require.main === module) {
 module.exports = {
   SCENARIOS,
   CHECKS,
+  PROMPT_SOURCES,
+  promptDefinition,
   buildPrompt,
   evaluateScenario,
   summarize,
