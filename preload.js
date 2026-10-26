@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   historyList: () => ipcRenderer.invoke('history:list'),
   historyGet: (id) => ipcRenderer.invoke('history:get', id),
   historyDelete: (id) => ipcRenderer.invoke('history:delete', id),
+  historyDeleteMany: (ids) => ipcRenderer.invoke('history:delete-many', ids),
   historyClear: () => ipcRenderer.invoke('history:clear'),
   historyExport: (id, format, source = 'auto') => ipcRenderer.invoke('history:export', { id, format, source }),
   historyRecap: (id, confirmed = false) => ipcRenderer.invoke('history:recap', { id, confirmed }),

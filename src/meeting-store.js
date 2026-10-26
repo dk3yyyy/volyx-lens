@@ -336,6 +336,37 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { cleared };
   }
 
+  // Delete records that ended before the retention window. Zero, a negative
+  // number, or anything that is not a number keeps everything: losing a
+  // transcript to a bad setting is worse than keeping it longer.
+  function pruneOlderThan(days, options = {}) {
+    const window = Number(days);
+    if (!Number.isFinite(window) || window <= 0) return { removed: 0 };
+    const reference = Number.isFinite(options.now) ? options.now : now();
+    const cutoff = reference - window * 24 * 60 * 60 * 1000;
+    let entries;
+    try {
+      entries = fsImpl.readdirSync(dir).filter((name) => name.endsWith('.json'));
+    } catch {
+      return { removed: 0 };
+    }
+    let removed = 0;
+    for (const name of entries) {
+      const id = name.slice(0, -'.json'.length);
+      if (!isSafeId(id)) continue;
+      try {
+        const record = JSON.parse(fsImpl.readFileSync(path.join(dir, name), 'utf8'));
+        const endedAt = Number.isFinite(record && record.endedAt) ? record.endedAt : null;
+        if (endedAt === null || endedAt >= cutoff) continue;
+        fsImpl.unlinkSync(path.join(dir, name));
+        removed += 1;
+      } catch {
+        // A record that cannot be read is left for the next pass.
+      }
+    }
+    return { removed };
+  }
+
   function updateNotes(id, notes) {
     if (!isSafeId(id)) return { updated: false, reason: 'invalid_id' };
     const target = recordPath(id);
@@ -415,7 +446,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { updated: true, turnCount: texts.length };
   }
 
-  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, updateParticipant, clearCleaned, recordPath, fingerprint };
+  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, updateParticipant, clearCleaned, pruneOlderThan, recordPath, fingerprint };
 }
 
 module.exports = { createMeetingStore, snapshotTurns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };

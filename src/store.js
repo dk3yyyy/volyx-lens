@@ -209,6 +209,12 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'offlineCloudFallback') && typeof value.offlineCloudFallback === 'boolean') transcription.offlineCloudFallback = value.offlineCloudFallback;
     if (Object.hasOwn(value, 'language')) transcription.language = String(value.language || '').slice(0, 20);
     if (Object.hasOwn(value, 'historyEnabled') && typeof value.historyEnabled === 'boolean') transcription.historyEnabled = value.historyEnabled;
+    if (Object.hasOwn(value, 'historyRetentionDays')) {
+      const days = Math.floor(Number(value.historyRetentionDays));
+      // 0 means keep everything; anything unusable falls back to that rather
+      // than to a window that would quietly delete transcripts.
+      transcription.historyRetentionDays = Number.isFinite(days) && days > 0 ? Math.min(days, 3650) : 0;
+    }
     if (Object.hasOwn(value, 'meetingDetection') && typeof value.meetingDetection === 'boolean') transcription.meetingDetection = value.meetingDetection;
     if (Object.hasOwn(value, 'slideTracking') && typeof value.slideTracking === 'boolean') transcription.slideTracking = value.slideTracking;
     if (Object.hasOwn(value, 'delay') && ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(value.delay)) transcription.delay = value.delay;

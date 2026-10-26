@@ -132,6 +132,8 @@ function getDefaultSettings() {
       delay: 'low',
       whisperModel: 'base.en',
       historyEnabled: false,
+      // Days to keep saved meetings. 0 keeps everything up to the store cap.
+      historyRetentionDays: 0,
       meetingDetection: false,
       slideTracking: false,
     },
