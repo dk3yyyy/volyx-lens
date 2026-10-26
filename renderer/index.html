@@ -118,6 +118,11 @@
                 <button id="meeting-history-delete" type="button">Delete</button>
               </div>
             </div>
+            <div class="history-detail-who">
+              <label for="meeting-participant">Other speaker</label>
+              <input id="meeting-participant" type="text" maxlength="80" placeholder="Them" autocomplete="off" />
+              <button id="meeting-discard-cleaned" type="button" class="hidden" title="Keep the wording that was heard and remove the cleaned copy">Discard cleaned</button>
+            </div>
             <div id="meeting-history-turns" class="history-turns"></div>
             <div id="meeting-notes-output" class="history-notes hidden"></div>
           </div>

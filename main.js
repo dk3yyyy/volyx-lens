@@ -2032,6 +2032,12 @@ async function cleanMeetingTranscript(id, options = {}) {
       provider: servedProvider,
       sourceHash,
       at: Date.now(),
+      stats: {
+        cleanedTurns: accepted.size,
+        rawFallbacks,
+        failedBatches,
+        batches: batched,
+      },
     });
     if (!written.updated) {
       return { ok: false, code: 'write_failed', message: `The cleaned transcript could not be saved (${written.reason}).` };
@@ -2315,6 +2321,19 @@ handleTrusted('history:clear', () => {
 handleTrusted('history:export', (_event, payload) => exportMeetingRecord(payload && payload.id, payload && payload.format, payload && payload.source));
 handleTrusted('history:recap', (_event, payload) => recapMeetingRecord(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));
 handleTrusted('history:clean', (_event, payload) => cleanMeetingTranscript(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));
+handleTrusted('history:participant', (_event, payload) => {
+  const result = meetingStore.updateParticipant(String(payload && payload.id || ''), payload && payload.participant);
+  if (result.updated) send('history:changed', { id: String(payload && payload.id || ''), participant: result.participant });
+  return result;
+});
+handleTrusted('history:discard-cleaned', (_event, id) => {
+  const result = meetingStore.clearCleaned(String(id || ''));
+  if (result.updated) {
+    invalidatePreviousMeetings();
+    send('history:changed', { id: String(id), cleaned: false });
+  }
+  return result;
+});
 handleTrusted('diagnostics:get', () => getSessionDiagnostics());
 handleTrusted('shortcuts:get', () => getShortcutStatus());
 handleTrusted('shortcuts:retry', () => registerShortcuts());

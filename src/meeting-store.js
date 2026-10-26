@@ -163,6 +163,9 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       endedAt: Number.isFinite(endedAt) ? endedAt : now(),
       turnCount: normalized.length,
       turns: normalized,
+      // What the other channel is called in the UI and in exports. "Them" is a
+      // placeholder, not a person.
+      participant: null,
       notes: null,
       // A cleaned, readable copy of the same turns, written only when the user
       // asks for it. `turns` above always keeps the recognizer's wording.
@@ -178,6 +181,53 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     lastSavedFingerprint = fp;
     prune();
     return { saved: true, id, turnCount: normalized.length };
+  }
+
+  // Name the other speaker. Display and export only; the turns themselves keep
+  // their channel, so changing the name never rewrites who spoke.
+  function updateParticipant(id, name) {
+    if (!isSafeId(id)) return { updated: false, reason: 'invalid_id' };
+    const target = recordPath(id);
+    let record;
+    let originalStat = null;
+    try {
+      originalStat = fsImpl.statSync(target);
+      record = JSON.parse(fsImpl.readFileSync(target, 'utf8'));
+    } catch {
+      return { updated: false, reason: 'not_found' };
+    }
+    if (!record || typeof record !== 'object') return { updated: false, reason: 'not_found' };
+    const value = String(name == null ? '' : name).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    record.participant = value || null;
+    try {
+      writeRecord(target, record, originalStat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
+    }
+    return { updated: true, participant: record.participant };
+  }
+
+  // Drop the readable copy and keep everything else. The raw transcript is the
+  // record of what was said, so removing a cleaned copy must never touch it.
+  function clearCleaned(id) {
+    if (!isSafeId(id)) return { updated: false, reason: 'invalid_id' };
+    const target = recordPath(id);
+    let record;
+    let originalStat = null;
+    try {
+      originalStat = fsImpl.statSync(target);
+      record = JSON.parse(fsImpl.readFileSync(target, 'utf8'));
+    } catch {
+      return { updated: false, reason: 'not_found' };
+    }
+    if (!record || typeof record !== 'object') return { updated: false, reason: 'not_found' };
+    record.cleaned = null;
+    try {
+      writeRecord(target, record, originalStat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
+    }
+    return { updated: true };
   }
 
   function list() {
@@ -197,6 +247,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         if (!record || typeof record !== 'object') continue;
         records.push({
           id,
+          participant: record.participant || null,
           reason: record.reason || null,
           meeting: record.meeting === true,
           startedAt: Number.isFinite(record.startedAt) ? record.startedAt : null,
@@ -207,6 +258,13 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
           hasCleaned: Array.isArray(record.cleaned && record.cleaned.texts)
             && record.cleaned.texts.length === (Array.isArray(record.turns) ? record.turns.length : 0)
             && record.cleaned.texts.length > 0,
+          // The pane searches what it shows, so the list has to carry the
+          // readable wording and the notes, not just the raw preview.
+          previewCleaned: Array.isArray(record.cleaned && record.cleaned.texts)
+            ? String(record.cleaned.texts.find((text) => String(text || '').trim()) || '').trim().slice(0, 120)
+            : '',
+          notesSummary: record.notes && record.notes.summary ? String(record.notes.summary).slice(0, 120) : '',
+          notesSource: record.notes && record.notes.source ? String(record.notes.source) : null,
         });
       } catch {
         // Skip corrupt records rather than breaking the whole list.
@@ -332,12 +390,21 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       if (!text) return { updated: false, reason: 'empty_text' };
       texts.push(text.slice(0, 12000));
     }
+    const stats = cleaned && cleaned.stats && typeof cleaned.stats === 'object' ? {
+      cleanedTurns: Number.isFinite(cleaned.stats.cleanedTurns) ? cleaned.stats.cleanedTurns : null,
+      rawFallbacks: Number.isFinite(cleaned.stats.rawFallbacks) ? cleaned.stats.rawFallbacks : null,
+      failedBatches: Number.isFinite(cleaned.stats.failedBatches) ? cleaned.stats.failedBatches : null,
+      batches: Number.isFinite(cleaned.stats.batches) ? cleaned.stats.batches : null,
+    } : null;
     record.cleaned = {
       version: 1,
       at: Number.isFinite(cleaned && cleaned.at) ? cleaned.at : now(),
       model: cleaned && cleaned.model ? String(cleaned.model).slice(0, 120) : null,
       provider: cleaned && cleaned.provider ? String(cleaned.provider).slice(0, 120) : null,
       sourceHash,
+      // How much of the transcript the pass actually repaired, so the pane can
+      // say "42 of 45 turns" long after the run finished.
+      stats,
       texts,
     };
     try {
@@ -348,7 +415,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { updated: true, turnCount: texts.length };
   }
 
-  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, recordPath, fingerprint };
+  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, updateParticipant, clearCleaned, recordPath, fingerprint };
 }
 
 module.exports = { createMeetingStore, snapshotTurns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };

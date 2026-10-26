@@ -266,3 +266,60 @@ test('prune sweeps a stale temp copy but leaves another instance write alone', (
   assert.equal(fs.existsSync(fresh), true, 'an in-flight write by another instance is left alone');
   store.clear();
 });
+
+test('a meeting can name the other speaker, and the name survives a re-read', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  const saved = store.finalize({ turns: [{ channel: 'them', text: 'Hello there', ts: 1000 }], enabled: true });
+  assert.equal(store.get(saved.id).participant, null);
+  assert.equal(store.updateParticipant(saved.id, '  Ada Lovelace  ').updated, true);
+  assert.equal(store.get(saved.id).participant, 'Ada Lovelace');
+  assert.equal(store.updateParticipant(saved.id, '').updated, true);
+  assert.equal(store.get(saved.id).participant, null, 'an empty name clears it');
+  store.clear();
+});
+
+test('a participant name is bounded and cannot be anything but text', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  const saved = store.finalize({ turns: [{ channel: 'them', text: 'Hello there', ts: 1000 }], enabled: true });
+  assert.equal(store.updateParticipant(saved.id, 'x'.repeat(200)).updated, true);
+  assert.equal(store.get(saved.id).participant.length, 80);
+  assert.equal(store.updateParticipant('../etc/passwd', 'Ada').updated, false);
+  assert.equal(store.updateParticipant('missing-record', 'Ada').updated, false);
+  store.clear();
+});
+
+test('discarding a cleaned copy keeps the raw transcript and the notes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'hello world', ts: 1000 }], enabled: true });
+  store.updateCleaned(saved.id, { texts: ['Hello, world.'], model: 'm', provider: 'p' });
+  store.updateNotes(saved.id, { summary: 'S', keyPoints: [], decisions: [], actionItems: [], followUp: [] });
+  assert.equal(store.list()[0].hasCleaned, true);
+
+  assert.equal(store.clearCleaned(saved.id).updated, true);
+  const record = store.get(saved.id);
+  assert.equal(record.cleaned, null);
+  assert.equal(record.turns[0].text, 'hello world', 'the raw wording is untouched');
+  assert.equal(record.notes.summary, 'S');
+  assert.equal(store.list()[0].hasCleaned, false);
+  store.clear();
+});
+
+test('the list carries what the pane searches and badges', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  const saved = store.finalize({ turns: [{ channel: 'them', text: 'the raw wording mentions pineapple', ts: 1000 }], enabled: true });
+  store.updateParticipant(saved.id, 'Ada');
+  store.updateCleaned(saved.id, { texts: ['The cleaned wording mentions mango.'] });
+  store.updateNotes(saved.id, { summary: 'Talked about oranges', keyPoints: [], decisions: [], actionItems: [], followUp: [], source: 'cleaned' });
+
+  const row = store.list()[0];
+  assert.equal(row.participant, 'Ada');
+  assert.equal(row.previewCleaned, 'The cleaned wording mentions mango.');
+  assert.equal(row.notesSummary, 'Talked about oranges');
+  assert.equal(row.notesSource, 'cleaned');
+  assert.match(row.preview, /pineapple/, 'the raw preview is still available');
+  store.clear();
+});
