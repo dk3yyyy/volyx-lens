@@ -461,6 +461,7 @@
       const row = document.createElement('div');
       row.className = 'history-entry';
       row.dataset.meetingId = record.id;
+      row.setAttribute('role', 'listitem');
       if (meetingSelectMode) {
         const check = document.createElement('input');
         check.type = 'checkbox';
@@ -502,6 +503,8 @@
       const shown = record.previewCleaned || record.preview;
       meta.textContent = `${record.turnCount} ${record.turnCount === 1 ? 'turn' : 'turns'}${who} · ${meetingReasonLabel(record.reason)}${shown ? ' · ' + shown : ''}`;
       open.append(when, meta);
+      const whoPrefix = record.participant ? `${record.participant}, ` : '';
+      open.setAttribute('aria-label', `${meetingDateLabel(record.endedAt || record.startedAt)}, ${whoPrefix}${record.turnCount} ${record.turnCount === 1 ? 'turn' : 'turns'}, ${meetingReasonLabel(record.reason)}`);
       open.addEventListener('click', () => openMeetingDetail(record.id));
       const remove = document.createElement('button');
       remove.type = 'button';
@@ -545,6 +548,30 @@
 
   $('#meeting-history-toggle').addEventListener('click', () => {
     setMeetingHistoryOpen($('#meeting-history-toggle').getAttribute('aria-expanded') !== 'true');
+  });
+
+  function meetingEntryButtons() {
+    return [...document.querySelectorAll('#meeting-history-list .history-entry-open')];
+  }
+
+  $('#meeting-history-list').addEventListener('keydown', (event) => {
+    const buttons = meetingEntryButtons();
+    if (!buttons.length) return;
+    const index = buttons.indexOf(document.activeElement);
+    const focusAt = (position) => {
+      const target = buttons[Math.max(0, Math.min(buttons.length - 1, position))];
+      if (target) target.focus();
+    };
+    if (event.key === 'ArrowDown') { event.preventDefault(); focusAt(index < 0 ? 0 : index + 1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); focusAt(index < 0 ? 0 : index - 1); }
+    else if (event.key === 'Home') { event.preventDefault(); focusAt(0); }
+    else if (event.key === 'End') { event.preventDefault(); focusAt(buttons.length - 1); }
+    else if (event.key === 'Escape' && meetingSelectMode) {
+      event.preventDefault();
+      meetingSelectMode = false;
+      meetingSelected.clear();
+      renderMeetingHistory();
+    }
   });
 
   function updateMeetingSelectionUi() {
@@ -694,11 +721,14 @@
     updateMeetingExtras();
   }
 
+  let meetingDetailOpenerId = null;
+
   async function openMeetingDetail(id) {
     try {
       const record = await volyxLens.historyGet(id);
       if (!record) { showStatus('That meeting is no longer available.'); return; }
       meetingDetail = record;
+      meetingDetailOpenerId = id;
       meetingNotesText = '';
       meetingViewMode = 'cleaned';
       const out = $('#meeting-notes-output');
@@ -720,16 +750,24 @@
       }
       $('#meeting-history-list').classList.add('hidden');
       $('#meeting-history-detail').classList.remove('hidden');
+      $('#meeting-history-back').focus();
     } catch (error) { showStatus(error && error.message ? error.message : 'That meeting could not be opened.'); }
   }
 
   function closeMeetingDetail() {
     meetingDetail = null;
+    const openerId = meetingDetailOpenerId;
+    meetingDetailOpenerId = null;
     meetingNotesText = '';
     meetingViewMode = 'cleaned';
     $('#meeting-notes-output').classList.add('hidden');
     $('#meeting-history-detail').classList.add('hidden');
     $('#meeting-history-list').classList.remove('hidden');
+    const opener = openerId
+      ? document.querySelector(`#meeting-history-list .history-entry[data-meeting-id="${openerId}"] .history-entry-open`)
+      : null;
+    const target = opener || meetingEntryButtons()[0];
+    if (target) target.focus();
   }
 
   $('#meeting-history-back').addEventListener('click', closeMeetingDetail);
