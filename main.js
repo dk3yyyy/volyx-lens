@@ -1583,7 +1583,10 @@ async function runFeature(mode, userText, {
   // Notes and transcript cleanup stream model requests too. Starting a live
   // answer on top of one double-spends and leaves two jobs racing the UI.
   if (activeHistoryJob) {
-    send('status', { message: historyJobBusyMessage() });
+    // runMode() already flipped the renderer into its busy state, so this has
+    // to come back as a terminal event; a status line would leave the buttons
+    // disabled until something else happened to fire.
+    send('llm:error', { message: historyJobBusyMessage() });
     return;
   }
   const def = MODES[mode];

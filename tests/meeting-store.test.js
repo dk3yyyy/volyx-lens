@@ -209,3 +209,32 @@ test('a failed notes write leaves the previous record readable', () => {
   assert.equal(record.notes, null);
   store.clear();
 });
+
+test('a failed write leaves no meeting copy behind', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  let failRename = false;
+  const fsImpl = {
+    ...fs,
+    renameSync: (from, to) => {
+      if (failRename && to.endsWith('.json')) throw new Error('disk full');
+      return fs.renameSync(from, to);
+    },
+  };
+  const store = createMeetingStore({ dir, fsImpl });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'Hello world', ts: 1000 }], enabled: true });
+  failRename = true;
+  const result = store.updateNotes(saved.id, { summary: 'S', keyPoints: [], decisions: [], actionItems: [], followUp: [] });
+  assert.equal(result.updated, false);
+  assert.equal(fs.existsSync(path.join(dir, `${saved.id}.json.tmp`)), false, 'the temp copy is removed');
+  store.clear();
+});
+
+test('orphaned temp files are swept by clear', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  store.finalize({ turns: [{ channel: 'you', text: 'Hello world', ts: 1000 }], enabled: true });
+  fs.writeFileSync(path.join(dir, 'abandoned.json.tmp'), '{"partial":true}');
+  const result = store.clear();
+  assert.ok(result.cleared >= 1);
+  assert.equal(fs.existsSync(path.join(dir, 'abandoned.json.tmp')), false);
+});

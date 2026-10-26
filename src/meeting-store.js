@@ -70,14 +70,37 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   // original mtime is restored because list() and prune() order by it.
   function writeRecord(target, record, originalStat) {
     const tmp = `${target}.tmp`;
-    fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
-    fsImpl.renameSync(tmp, target);
+    try {
+      fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
+      fsImpl.renameSync(tmp, target);
+    } catch (error) {
+      // A half-written temp file is a full copy of the meeting left on disk,
+      // so it is removed before the failure is reported.
+      try { fsImpl.unlinkSync(tmp); } catch {}
+      throw error;
+    }
     if (originalStat && Number.isFinite(originalStat.atimeMs)) {
       try { fsImpl.utimesSync(target, originalStat.atimeMs / 1000, originalStat.mtimeMs / 1000); } catch {}
     }
   }
 
+  // Temp files are only meaningful while a write is in flight. Anything left
+  // behind by a crash is swept by the same paths that prune or clear records.
+  function sweepTemporaryFiles() {
+    let entries;
+    try {
+      entries = fsImpl.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      if (!name.endsWith('.json.tmp')) continue;
+      try { fsImpl.unlinkSync(path.join(dir, name)); } catch {}
+    }
+  }
+
   function prune() {
+    sweepTemporaryFiles();
     let entries;
     try {
       entries = fsImpl.readdirSync(dir).filter((name) => name.endsWith('.json'));
@@ -203,6 +226,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   function remove(id) {
     if (!isSafeId(id)) throw new Error(`Invalid meeting id: ${String(id).slice(0, 40)}`);
     const target = recordPath(id);
+    try { fsImpl.unlinkSync(`${target}.tmp`); } catch {}
     try {
       fsImpl.unlinkSync(target);
       return { removed: true };
@@ -220,6 +244,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
     let cleared = 0;
     for (const name of entries) {
+      if (name.endsWith('.json.tmp')) { try { fsImpl.unlinkSync(path.join(dir, name)); } catch {} continue; }
       if (!name.endsWith('.json')) continue;
       try {
         fsImpl.unlinkSync(path.join(dir, name));
