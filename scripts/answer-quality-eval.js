@@ -11,7 +11,7 @@
 // prompt or temperature changes with numbers instead of impressions.
 
 const { MODES } = require('../src/prompts');
-const { CLEAN_SYSTEM_PROMPT } = require('../src/transcript-cleanup');
+const { CLEAN_SYSTEM_PROMPT, planCleanBatches, buildCleanPrompt, fidelityIssue } = require('../src/transcript-cleanup');
 const { tokenRecall } = require('../src/transcript-dedupe');
 const { buildPreviousMeetingsBlock, PREVIOUS_MEETINGS_NOTE } = require('../src/meeting-memory');
 const {
@@ -67,9 +67,10 @@ const CHECKS = {
       const text = (lines[index] || '').replace(/^\[\d+\]\s*(?:(?:you|them)\s*:\s*)?/i, '');
       const recall = tokenRecall(text, raw);
       if (recall < 0.9) return { ok: false, detail: `turn ${index} kept ${Math.round(recall * 100)}% of its words` };
-      for (const run of raw.match(/\d+/g) || []) {
-        if (!text.includes(run)) return { ok: false, detail: `turn ${index} lost the number ${run}` };
-      }
+      // Word recall cannot see a flipped negation or a changed amount, so the
+      // same guard the app applies before storing a cleaned turn runs here.
+      const issue = fidelityIssue(raw, text);
+      if (issue) return { ok: false, detail: `turn ${index}: ${issue}` };
     }
     return { ok: true, detail: `${turns.length} turn(s) preserved` };
   },
@@ -129,7 +130,11 @@ const CHECKS = {
 
   budget(scenario) {
     const def = promptDefinition(scenario);
-    const budgets = def && def.maxTokens;
+    let budgets = def && def.maxTokens;
+    if (def && def.resolve) {
+      const resolved = def.resolve(scenario).maxTokens;
+      budgets = Number.isFinite(resolved) ? { fast: resolved, smart: resolved } : null;
+    }
     if (!budgets) return { ok: false, detail: `${scenario.promptSource || scenario.mode} has no budget` };
     const ok = scenario.minBudget.fast <= budgets.fast && scenario.minBudget.smart <= budgets.smart;
     return { ok, detail: `${budgets.fast}/${budgets.smart}, need ${scenario.minBudget.fast}/${scenario.minBudget.smart}` };
@@ -253,17 +258,19 @@ const SCENARIOS = [
     mode: 'clean',
     promptSource: 'transcript-cleanup',
     transcript: [
-      { channel: 'them', text: 'so the deprecation of the flash model is going ahead next quarter' },
+      { channel: 'them', text: 'so the deprecation of the flash model is going ahead in 3 weeks' },
       { channel: 'you', text: 'right and we will not ship the migration before the audit' },
     ],
     answer: [
-      '[0] Them: So the deprecation of the Flash model is going ahead next quarter.',
+      '[0] Them: So the deprecation of the Flash model is going ahead in 3 weeks.',
       '[1] You: Right, and we will not ship the migration before the audit.',
     ].join('\n'),
     markerLines: true,
     sourceFidelity: true,
     promptMatch: [/same number of lines/i, /same order/i, /not\b[^.]*summar/i, /never change a negation/i],
-    minBudget: { fast: 600, smart: 600 },
+    // The cleanup budget is computed per batch, not fixed per tier, so this
+    // asserts a real floor rather than pinning today's number.
+    minBudget: { fast: 200, smart: 200 },
   },
 ];
 
@@ -274,12 +281,13 @@ const SCENARIOS = [
 const PROMPT_SOURCES = {
   'transcript-cleanup': {
     system: CLEAN_SYSTEM_PROMPT,
-    maxTokens: { fast: 1200, smart: 2000 },
-    build(scenario) {
-      const lines = (Array.isArray(scenario.transcript) ? scenario.transcript : [])
-        .map((turn, index) => `[${index}] ${turn.channel === 'you' ? 'You' : 'Them'}: ${turn.text}`)
-        .join('\n');
-      return 'Repair these transcript lines for readability. Same line count, same order, same [n] markers.\n\n' + lines;
+    // Built by the same planner and prompt builder the app uses, so a change to
+    // either one shows up here instead of leaving the gate green.
+    resolve(scenario) {
+      const plan = planCleanBatches(scenario.transcript || []);
+      const batch = plan.batches[0];
+      if (!batch) return { prompt: '', maxTokens: null };
+      return { prompt: buildCleanPrompt(batch), maxTokens: batch.maxTokens };
     },
   },
 };
@@ -292,11 +300,13 @@ function promptDefinition(scenario) {
 function buildPrompt(scenario) {
   const def = promptDefinition(scenario);
   if (!def) throw new Error(`Unknown prompt for scenario ${scenario.id}: ${scenario.promptSource || scenario.mode}`);
-  let prompt = def.build({
-    transcript: scenario.transcript || [],
-    userText: scenario.userText || '',
-    slideContext: scenario.slideContext || '',
-  });
+  let prompt = def.resolve
+    ? def.resolve(scenario).prompt
+    : def.build({
+      transcript: scenario.transcript || [],
+      userText: scenario.userText || '',
+      slideContext: scenario.slideContext || '',
+    });
   if (scenario.previousMeetings) {
     const block = buildPreviousMeetingsBlock(scenario.previousMeetings);
     if (block.count) prompt += `\n\n${PREVIOUS_MEETINGS_NOTE}\n\n${block.text}`;
@@ -305,6 +315,17 @@ function buildPrompt(scenario) {
     .filter(Boolean)
     .join('\n\n');
   return { prompt, system };
+}
+
+function scenarioMaxTokens(scenario, smart = false) {
+  const def = promptDefinition(scenario);
+  if (!def) return undefined;
+  if (def.resolve) {
+    const resolved = def.resolve(scenario).maxTokens;
+    return Number.isFinite(resolved) ? resolved : undefined;
+  }
+  const budgets = def.maxTokens;
+  return budgets ? (smart ? budgets.smart : budgets.fast) : undefined;
 }
 
 function evaluateScenario(scenario, { answer: overrideAnswer } = {}) {
@@ -434,8 +455,7 @@ async function runLive({ provider, apiKey, model, smart }) {
     }
 
     const { prompt, system } = buildPrompt(scenario);
-    const budgets = MODES[scenario.mode].maxTokens;
-    const maxTokens = budgets ? (settings.smart ? budgets.smart : budgets.fast) : undefined;
+    const maxTokens = scenarioMaxTokens(scenario, settings.smart === true);
     let answer = null;
     try {
       answer = await llm.stream({ system, turns: [{ role: 'user', text: prompt }], imageDataUrls, maxTokens, onToken() {} });
@@ -504,6 +524,7 @@ module.exports = {
   CHECKS,
   PROMPT_SOURCES,
   promptDefinition,
+  scenarioMaxTokens,
   buildPrompt,
   evaluateScenario,
   summarize,
