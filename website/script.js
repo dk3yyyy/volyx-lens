@@ -144,24 +144,24 @@ window.addEventListener('storage', (event) => {
 
 const DL_ASSETS = {
   win: {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.2/volyx-lens-0.7.2-win-x64.exe',
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.3/volyx-lens-0.7.3-win-x64.exe',
     label: 'Windows',
-    detail: 'x64 NSIS installer · v0.7.2'
+    detail: 'x64 NSIS installer · v0.7.3'
   },
   mac: {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.2',
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.3',
     label: 'macOS',
-    detail: 'Unsigned v0.7.2 · pick Apple Silicon or Intel'
+    detail: 'Unsigned v0.7.3 · pick Apple Silicon or Intel'
   },
   'linux-x64': {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.2/volyx-lens-0.7.2-linux-x86_64.AppImage',
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.3/volyx-lens-0.7.3-linux-x86_64.AppImage',
     label: 'Linux x64',
-    detail: 'AppImage · v0.7.2'
+    detail: 'AppImage · v0.7.3'
   },
   'linux-arm64': {
-    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.2/volyx-lens-0.7.2-linux-arm64.AppImage',
+    href: 'https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.3/volyx-lens-0.7.3-linux-arm64.AppImage',
     label: 'Linux arm64',
-    detail: 'AppImage · v0.7.2'
+    detail: 'AppImage · v0.7.3'
   }
 };
 
