@@ -65,7 +65,57 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return path.join(dir, `${id}.json`);
   }
 
+  // Every mutation goes through a temp file plus rename, so a crash or a full
+  // disk leaves the previous record intact instead of a truncated one. The
+  // original mtime is restored because list() and prune() order by it.
+  // Each write gets its own temp name. Two app instances can share this folder
+  // (there is no single-instance lock), and a sweep must never mistake another
+  // instance's in-flight file for a crashed one.
+  function temporaryPath(target) {
+    return `${target}.${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`;
+  }
+
+  function writeRecord(target, record, originalStat) {
+    const tmp = temporaryPath(target);
+    try {
+      fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
+      fsImpl.renameSync(tmp, target);
+    } catch (error) {
+      // A half-written temp file is a full copy of the meeting left on disk,
+      // so it is removed before the failure is reported.
+      try { fsImpl.unlinkSync(tmp); } catch {}
+      throw error;
+    }
+    if (originalStat && Number.isFinite(originalStat.atimeMs)) {
+      try { fsImpl.utimesSync(target, originalStat.atimeMs / 1000, originalStat.mtimeMs / 1000); } catch {}
+    }
+  }
+
+  // Temp files are only meaningful while a write is in flight. A file this old
+  // belongs to a writer that died, so it is swept; anything newer may belong to
+  // another running instance and is left alone.
+  const STALE_TEMP_MS = 60 * 1000;
+
+  function sweepTemporaryFiles() {
+    let entries;
+    try {
+      entries = fsImpl.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      if (!/\.json(\..*)?\.tmp$/.test(name)) continue;
+      const file = path.join(dir, name);
+      try {
+        const stat = fsImpl.statSync(file);
+        if (now() - stat.mtimeMs < STALE_TEMP_MS) continue;
+        fsImpl.unlinkSync(file);
+      } catch {}
+    }
+  }
+
   function prune() {
+    sweepTemporaryFiles();
     let entries;
     try {
       entries = fsImpl.readdirSync(dir).filter((name) => name.endsWith('.json'));
@@ -192,6 +242,13 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     if (!isSafeId(id)) throw new Error(`Invalid meeting id: ${String(id).slice(0, 40)}`);
     const target = recordPath(id);
     try {
+      for (const name of fsImpl.readdirSync(dir)) {
+        if (name.startsWith(`${path.basename(target)}.`) && name.endsWith('.tmp')) {
+          try { fsImpl.unlinkSync(path.join(dir, name)); } catch {}
+        }
+      }
+    } catch {}
+    try {
       fsImpl.unlinkSync(target);
       return { removed: true };
     } catch {
@@ -208,6 +265,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
     let cleared = 0;
     for (const name of entries) {
+      if (/\.json(\..*)?\.tmp$/.test(name)) { try { fsImpl.unlinkSync(path.join(dir, name)); } catch {} continue; }
       if (!name.endsWith('.json')) continue;
       try {
         fsImpl.unlinkSync(path.join(dir, name));
@@ -221,18 +279,24 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   }
 
   function updateNotes(id, notes) {
-    if (!isSafeId(id)) throw new Error(`Invalid meeting id`);
+    if (!isSafeId(id)) return { updated: false, reason: 'invalid_id' };
     const target = recordPath(id);
+    let originalStat = null;
+    let record;
     try {
-      const raw = fsImpl.readFileSync(target, 'utf8');
-      const record = JSON.parse(raw);
-      if (!record || typeof record !== 'object') return { updated: false };
-      record.notes = notes;
-      fsImpl.writeFileSync(target, JSON.stringify(record), { mode: 0o600 });
-      return { updated: true };
+      originalStat = fsImpl.statSync(target);
+      record = JSON.parse(fsImpl.readFileSync(target, 'utf8'));
     } catch {
-      return { updated: false };
+      return { updated: false, reason: 'not_found' };
     }
+    if (!record || typeof record !== 'object') return { updated: false, reason: 'not_found' };
+    record.notes = notes;
+    try {
+      writeRecord(target, record, originalStat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
+    }
+    return { updated: true };
   }
 
   // Store a readable copy of the same turns. The record's own `turns` array is
@@ -276,13 +340,10 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       sourceHash,
       texts,
     };
-    const tmp = `${target}.tmp`;
-    fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
-    fsImpl.renameSync(tmp, target);
-    // A derived copy must not reorder history: prune() and list() order by
-    // mtime, so cleaning an old meeting keeps the meeting where it was.
-    if (originalStat && Number.isFinite(originalStat.atimeMs)) {
-      try { fsImpl.utimesSync(target, originalStat.atimeMs / 1000, originalStat.mtimeMs / 1000); } catch {}
+    try {
+      writeRecord(target, record, originalStat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
     }
     return { updated: true, turnCount: texts.length };
   }
