@@ -415,6 +415,8 @@
   // Which copy of a saved transcript the pane shows: the cleaned one when the
   // user asked for it, otherwise exactly what was heard.
   let meetingViewMode = 'cleaned';
+  let meetingSelectMode = false;
+  const meetingSelected = new Set();
 
   function meetingReasonLabel(reason) {
     if (reason === 'capture-stop') return 'listening stopped';
@@ -459,6 +461,19 @@
       const row = document.createElement('div');
       row.className = 'history-entry';
       row.dataset.meetingId = record.id;
+      if (meetingSelectMode) {
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.className = 'history-entry-select';
+        check.checked = meetingSelected.has(record.id);
+        check.setAttribute('aria-label', `Select meeting from ${meetingDateLabel(record.endedAt || record.startedAt)}`);
+        check.addEventListener('change', () => {
+          if (check.checked) meetingSelected.add(record.id);
+          else meetingSelected.delete(record.id);
+          updateMeetingSelectionUi();
+        });
+        row.appendChild(check);
+      }
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'history-entry-open';
@@ -498,6 +513,7 @@
         if (!window.confirm('Delete this saved meeting? This cannot be undone.')) return;
         try {
           const result = await volyxLens.historyDelete(record.id);
+          meetingSelected.delete(record.id);
           showStatus(result && result.removed ? 'Meeting deleted.' : 'That meeting is no longer available.');
           await loadMeetingHistory();
         } catch (error) { showStatus(error && error.message ? error.message : 'The meeting could not be deleted.'); }
@@ -505,6 +521,7 @@
       row.append(open, remove);
       list.appendChild(row);
     }
+    updateMeetingSelectionUi();
   }
 
   async function loadMeetingHistory({ quiet = false } = {}) {
@@ -528,6 +545,42 @@
 
   $('#meeting-history-toggle').addEventListener('click', () => {
     setMeetingHistoryOpen($('#meeting-history-toggle').getAttribute('aria-expanded') !== 'true');
+  });
+
+  function updateMeetingSelectionUi() {
+    const toggle = $('#meeting-history-select');
+    if (toggle) {
+      toggle.setAttribute('aria-pressed', String(meetingSelectMode));
+      toggle.textContent = meetingSelectMode ? 'Cancel' : 'Select';
+    }
+    const remove = $('#meeting-history-delete-selected');
+    if (remove) {
+      remove.classList.toggle('hidden', !meetingSelectMode || meetingSelected.size === 0);
+      remove.textContent = meetingSelected.size ? `Delete ${meetingSelected.size}` : 'Delete selected';
+    }
+  }
+
+  $('#meeting-history-select').addEventListener('click', () => {
+    meetingSelectMode = !meetingSelectMode;
+    if (!meetingSelectMode) meetingSelected.clear();
+    renderMeetingHistory();
+    updateMeetingSelectionUi();
+  });
+
+  $('#meeting-history-delete-selected').addEventListener('click', async () => {
+    const ids = [...meetingSelected];
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} saved meeting${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    try {
+      const result = await volyxLens.historyDeleteMany(ids);
+      meetingSelected.clear();
+      meetingSelectMode = false;
+      showStatus(result && result.removed
+        ? `Deleted ${result.removed} saved meeting${result.removed === 1 ? '' : 's'}.`
+        : 'Nothing was deleted.');
+      await loadMeetingHistory();
+      updateMeetingSelectionUi();
+    } catch (error) { showStatus(error && error.message ? error.message : 'Those meetings could not be deleted.'); }
   });
 
   function hasCleanedView() {
@@ -2200,6 +2253,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
     $('#stt-history-enabled').checked = transcription.historyEnabled === true;
+    if ($('#stt-retention-days')) $('#stt-retention-days').value = String(transcription.historyRetentionDays || 0);
     $('#stt-meeting-detection').checked = transcription.meetingDetection === true;
     $('#stt-slide-tracking').checked = transcription.slideTracking === true;
     const audio = settings.audio || {};
@@ -2379,6 +2433,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       language: ['auto', 'automatic'].includes($('#stt-language').value.trim().toLowerCase()) ? '' : $('#stt-language').value.trim().toLowerCase(),
       delay: $('#stt-delay').value,
       historyEnabled: $('#stt-history-enabled').checked,
+      historyRetentionDays: Number($('#stt-retention-days').value) || 0,
       meetingDetection: $('#stt-meeting-detection').checked,
       slideTracking: $('#stt-slide-tracking').checked,
     };

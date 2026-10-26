@@ -323,3 +323,29 @@ test('the list carries what the pane searches and badges', () => {
   assert.match(row.preview, /pineapple/, 'the raw preview is still available');
   store.clear();
 });
+
+test('retention deletes only records older than the cutoff', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  let clock = 1_000_000_000_000;
+  const store = createMeetingStore({ dir, now: () => clock });
+  const old = store.finalize({ turns: [{ channel: 'you', text: 'older session', ts: 1 }], enabled: true, endedAt: clock });
+  clock += 40 * 24 * 60 * 60 * 1000;
+  const recent = store.finalize({ turns: [{ channel: 'you', text: 'newer session', ts: 2 }], enabled: true, endedAt: clock });
+
+  const result = store.pruneOlderThan(30);
+  assert.equal(result.removed, 1);
+  assert.equal(store.get(old.id), null, 'the record past the window is gone');
+  assert.ok(store.get(recent.id), 'the record inside the window survives');
+  store.clear();
+});
+
+test('retention zero or a nonsense value keeps everything', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  store.finalize({ turns: [{ channel: 'you', text: 'a session', ts: 1 }], enabled: true, endedAt: 1 });
+  assert.equal(store.pruneOlderThan(0).removed, 0);
+  assert.equal(store.pruneOlderThan(-5).removed, 0);
+  assert.equal(store.pruneOlderThan('abc').removed, 0);
+  assert.equal(store.list().length, 1);
+  store.clear();
+});

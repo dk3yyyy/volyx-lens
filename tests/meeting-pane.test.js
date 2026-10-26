@@ -60,3 +60,30 @@ test('notes say which transcript they were generated from', () => {
   assert.match(renderer, /Regenerate them to use the cleaned copy/);
   assert.match(css, /\.notes-source/);
 });
+
+test('history can be kept tidy without opening dialogs one by one', () => {
+  assert.match(html, /id="meeting-history-select"/);
+  assert.match(html, /id="meeting-history-delete-selected"/);
+  assert.match(preload, /historyDeleteMany: \(ids\) => ipcRenderer\.invoke\('history:delete-many', ids\)/);
+  assert.match(main, /handleTrusted\('history:delete-many'/);
+
+  const start = renderer.indexOf("$('#meeting-history-delete-selected').addEventListener('click'");
+  assert.ok(start > 0, 'the bulk delete button is wired');
+  const body = renderer.slice(start, start + 700);
+  assert.match(body, /historyDeleteMany/);
+  assert.match(body, /cannot be undone/);
+});
+
+test('the retention window is a setting, applied at startup and on change', () => {
+  assert.match(html, /id="stt-retention-days"/);
+  assert.match(renderer, /historyRetentionDays: Number\(\$\('#stt-retention-days'\)\.value\) \|\| 0/);
+  assert.match(main, /function enforceHistoryRetention\(\)/);
+  assert.match(main, /meetingStore\.pruneOlderThan\(days\)/);
+  assert.match(main, /app\.whenReady\(\)\.then\(\(\) => \{\s*enforceHistoryRetention\(\);/);
+  assert.match(main, /previous\.transcription\.historyRetentionDays !== updated\.transcription\.historyRetentionDays/);
+});
+
+test('a retention of zero keeps everything', () => {
+  const { getDefaultSettings } = require('../src/provider-config');
+  assert.equal(getDefaultSettings().transcription.historyRetentionDays, 0);
+});

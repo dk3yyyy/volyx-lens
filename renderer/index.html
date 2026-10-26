@@ -101,6 +101,8 @@
             <div class="history-title"><strong>History</strong><span id="meeting-history-count">0 meetings</span></div>
             <div class="history-tools">
               <input id="meeting-history-search" type="search" placeholder="Search meetings…" aria-label="Search saved meetings" autocomplete="off" spellcheck="false" />
+              <button id="meeting-history-select" type="button" aria-pressed="false">Select</button>
+              <button id="meeting-history-delete-selected" type="button" class="hidden">Delete selected</button>
               <button id="meeting-history-clear" type="button" disabled>Clear all</button>
             </div>
           </div>
@@ -375,7 +377,7 @@
             <option value="distil-large-v3">distil-large-v3 (1550M params, distilled, faster than large-v3)</option>
           </select>
         </div>
-        <div class="s-field"><label for="stt-history-enabled">Save meeting history</label><input id="stt-history-enabled" type="checkbox" /></div>
+        <div class="s-field"><label for="stt-history-enabled">Save meeting history</label><input id="stt-history-enabled" type="checkbox" /><select id="stt-retention-days" aria-label="Keep meeting history for"><option value="0">Keep all</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></div>
         <div class="s-note">Off by default. When enabled, finalized sessions are saved to private on-device history, and the in-progress transcript is checkpointed locally for recovery after an unexpected exit. On next launch, choose whether to restore or discard that draft. Records contain only final transcript text and local timestamps, and raw audio is never stored. Nothing is uploaded automatically. The two buttons on a saved meeting are explicit requests: Generate meeting notes and Clean transcript send that saved transcript to the response provider you configured. A cleaned copy is stored beside the original and never replaces it. Delete history at any time.</div>
         <div class="s-field"><label for="stt-meeting-detection">Detect meetings</label><input id="stt-meeting-detection" type="checkbox" /></div>
         <div class="s-note">Off by default. While listening, Volyx Lens looks for a sustained two-sided conversation between the Mic and System channels in the live transcript. When it finds one, a subtle "Meeting in progress" indicator appears and the current session is tagged as a meeting if history is enabled. Detection is local and in-session only — no background audio watcher, no disk writes, and no AI requests are made.</div>

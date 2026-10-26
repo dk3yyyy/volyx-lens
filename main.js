@@ -1826,6 +1826,23 @@ function historyJobBusyMessage() {
     : 'Meeting notes are already being generated.';
 }
 
+// Retention runs at startup and whenever the setting changes. 0 keeps
+// everything, and history has to be on for stored meetings to exist at all.
+function enforceHistoryRetention() {
+  const settings = store.getSettings();
+  const transcription = settings.transcription || {};
+  if (transcription.historyEnabled !== true) return { removed: 0 };
+  const days = Number(transcription.historyRetentionDays) || 0;
+  if (days <= 0) return { removed: 0 };
+  const result = meetingStore.pruneOlderThan(days);
+  if (result.removed) {
+    invalidatePreviousMeetings();
+    send('history:changed', { pruned: result.removed });
+    send('status', { message: `Removed ${result.removed} saved meeting${result.removed === 1 ? '' : 's'} older than ${days} days.` });
+  }
+  return result;
+}
+
 async function recapMeetingRecord(id, options = {}) {
   const confirmed = options.confirmed === true;
   const record = meetingStore.get(String(id || ''));
@@ -2191,6 +2208,11 @@ handleTrusted('settings:set', (_e, patch) => {
   const updated = store.updateSettingsAndApiKeys(patch, updates && typeof updates === 'object' ? updates : {});
   const wasHistoryEnabled = previous.transcription && previous.transcription.historyEnabled === true;
   const isHistoryEnabled = updated.transcription && updated.transcription.historyEnabled === true;
+  if (previous.transcription && updated.transcription
+    && (previous.transcription.historyRetentionDays !== updated.transcription.historyRetentionDays
+      || previous.transcription.historyEnabled !== updated.transcription.historyEnabled)) {
+    enforceHistoryRetention();
+  }
   if (wasHistoryEnabled && !isHistoryEnabled) {
     // Stored transcripts stop being fair game the moment history is turned off:
     // cancel any cleanup or notes run that is already streaming them out.
@@ -2300,6 +2322,21 @@ handleTrusted('history:delete', (_event, id) => {
     send('history:changed', { deleted: true, id: String(id) });
   }
   return result;
+});
+handleTrusted('history:delete-many', (_event, ids) => {
+  const list = (Array.isArray(ids) ? ids : []).map((id) => String(id || '')).filter((id) => id).slice(0, 500);
+  if (!list.length) return { removed: 0 };
+  abortActiveHistoryJob();
+  let removed = 0;
+  for (const id of list) {
+    const result = meetingStore.remove(id);
+    if (result.removed) removed += 1;
+  }
+  if (removed) {
+    invalidatePreviousMeetings();
+    send('history:changed', { deletedMany: removed });
+  }
+  return { removed };
 });
 handleTrusted('history:clear', () => {
   abortActiveHistoryJob();
@@ -2541,6 +2578,7 @@ function resetShortcuts() {
 
 // -------- lifecycle --------
 app.whenReady().then(() => {
+  enforceHistoryRetention();
   if (process.platform === 'darwin') {
     if (app.dock) app.dock.hide();
     app.setActivationPolicy('accessory');
