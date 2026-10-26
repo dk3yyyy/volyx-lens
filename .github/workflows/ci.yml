@@ -29,6 +29,7 @@ jobs:
       - run: npm run check:syntax
       - run: xvfb-run -a npm run check:onboarding-ui -- --no-sandbox
       - run: xvfb-run -a npm run check:settings-ui -- --no-sandbox
+      - run: xvfb-run -a npm run check:history-ui -- --no-sandbox
       - run: xvfb-run -a npm run check:e2e-smoke
       - run: npm run security:secrets
       - name: Reject dependency vulnerabilities

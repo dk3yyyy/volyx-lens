@@ -644,17 +644,29 @@
     toggle.title = VIEW_TITLES[meetingViewMode] || VIEW_TITLES.raw;
   }
 
-  // Turns the cleanup actually changed, so the user can audit the pass instead
-  // of trusting it.
+  // Compare what was said, not how it was punctuated. Cleanup adds a full stop
+  // to most turns, and listing every one of those would bury the repairs that
+  // actually changed words.
+  function normalizeMeetingText(text) {
+    return String(text || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  // Turns whose words changed, plus a count of turns the pass only punctuated,
+  // so the user can audit the pass instead of trusting it.
   function changedMeetingTurns() {
-    if (!hasCleanedView()) return [];
+    if (!hasCleanedView()) return { rows: [], punctuationOnly: 0 };
     const rows = [];
+    let punctuationOnly = 0;
     meetingDetail.turns.forEach((turn, index) => {
       const cleaned = String(meetingDetail.cleaned.texts[index] || '').trim();
       if (!cleaned || cleaned === String(turn.text || '').trim()) return;
+      if (normalizeMeetingText(cleaned) === normalizeMeetingText(turn.text)) {
+        punctuationOnly += 1;
+        return;
+      }
       rows.push({ channel: turn.channel, raw: turn.text, cleaned, ts: turn.ts });
     });
-    return rows;
+    return { rows, punctuationOnly };
   }
 
   function speakerLabelFor(channel) {
@@ -668,12 +680,20 @@
     container.replaceChildren();
     if (!meetingDetail) return;
     if (meetingViewMode === 'changes' && hasCleanedView()) {
-      const changes = changedMeetingTurns();
+      const { rows: changes, punctuationOnly } = changedMeetingTurns();
       if (!changes.length) {
         const empty = document.createElement('div');
         empty.className = 'history-empty';
-        empty.textContent = 'Cleanup left every turn as it was heard.';
+        empty.textContent = punctuationOnly
+          ? 'Cleanup only fixed punctuation and capitalisation.'
+          : 'Cleanup left every turn as it was heard.';
         container.appendChild(empty);
+      }
+      if (punctuationOnly) {
+        const summary = document.createElement('div');
+        summary.className = 'history-empty';
+        summary.textContent = `Cleanup fixed punctuation or capitalisation on ${punctuationOnly} turn${punctuationOnly === 1 ? '' : 's'}.`;
+        container.appendChild(summary);
       }
       for (const change of changes) {
         const row = document.createElement('div');

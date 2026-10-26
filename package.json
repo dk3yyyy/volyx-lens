@@ -32,7 +32,8 @@
     "release:verify": "node scripts/verify-macos-release.js",
     "release:linux": "electron-builder --linux AppImage --publish never",
     "release:win": "electron-builder --win nsis --publish never",
-    "dist": "npm run release:mac"
+    "dist": "npm run release:mac",
+    "check:history-ui": "electron scripts/check-history-ui.js"
   },
   "build": {
     "appId": "ai.volyx.lens",
