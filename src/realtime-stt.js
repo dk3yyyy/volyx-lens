@@ -22,6 +22,44 @@ function buildRealtimeConnection({ provider = 'openai', endpoint, apiKey, model 
   };
 }
 
+// The transcription models that accept a `prompt` hint in a realtime session.
+// The realtime-whisper model takes no such field, so it is left untouched
+// rather than being sent a parameter the server may reject.
+const REALTIME_PROMPT_MODELS = /whisper-1|gpt-4o-transcribe|gpt-4o-mini-transcribe/i;
+
+function realtimePromptSupported(model) {
+  return REALTIME_PROMPT_MODELS.test(String(model || ''));
+}
+
+/**
+ * Shape the session vocabulary for the provider that will receive it. Each
+ * provider accepts something different: Deepgram keyterms, an OpenAI
+ * transcription prompt, or Azure AI Speech context phrases.
+ */
+function channelVocabulary({ provider = 'openai', phrases = [], vocab = [] } = {}) {
+  const terms = (Array.isArray(vocab) ? vocab : [])
+    .map((term) => String(term || '').trim())
+    .filter(Boolean)
+    .slice(0, 50);
+  const existing = (Array.isArray(phrases) ? phrases : []).filter(Boolean);
+  if (provider === 'azureSpeech') {
+    // Both lists feed one 50-phrase budget, so a phrase configured by the user
+    // and also present in the vocabulary must not consume two slots.
+    const seen = new Set();
+    const merged = [];
+    for (const phrase of [...existing, ...terms]) {
+      const value = String(phrase || '').trim();
+      const key = value.toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(value);
+    }
+    return { phrases: merged.slice(0, 50), keyterms: [], prompt: '' };
+  }
+  if (provider === 'deepgram') return { phrases: existing, keyterms: terms, prompt: '' };
+  return { phrases: existing, keyterms: [], prompt: terms.join(', ') };
+}
+
 // Thin provider-tuned alias to the shared classifier in realtime-errors.js.
 const cleanError = (error, channel) => classifyRealtimeError(error, channel);
 
@@ -34,6 +72,7 @@ class OpenAIRealtimeChannel {
     model = STT_MODELS.realtime,
     language = '',
     delay = 'low',
+    prompt = '',
     sampleRate = 24000,
     maxQueuedBytes = sampleRate * 2 * 3,
     maxBufferedBytes = sampleRate * 2 * 5,
@@ -53,6 +92,7 @@ class OpenAIRealtimeChannel {
     this.model = model;
     this.language = normalizeTranscriptionLanguage(language);
     this.delay = delay;
+    this.prompt = String(prompt || '');
     this.sampleRate = sampleRate;
     this.maxQueuedBytes = maxQueuedBytes;
     this.maxBufferedBytes = maxBufferedBytes;
@@ -113,6 +153,7 @@ class OpenAIRealtimeChannel {
         const transcription = { model: this.model };
         if (this.language) transcription.language = this.language;
         if (this.delay) transcription.delay = this.delay;
+        if (this.prompt && realtimePromptSupported(this.model)) transcription.prompt = this.prompt;
         this._send({
           type: 'session.update',
           session: {
@@ -316,6 +357,7 @@ class RealtimeTranscriptionManager {
     endpoint = null,
     region = null,
     phrases = [],
+    vocab = [],
     model = STT_MODELS.realtime,
     language = '',
     delay = 'low',
@@ -344,6 +386,7 @@ class RealtimeTranscriptionManager {
     this.onState = onState;
     this.onLatency = onLatency;
     this.provider = provider;
+    this.vocabulary = channelVocabulary({ provider, phrases, vocab });
     this.sampleRate = sampleRate;
     this.enabledChannels = [...new Set((Array.isArray(enabledChannels) ? enabledChannels : []).filter((channel) => ['you', 'them'].includes(channel)))];
     if (!this.enabledChannels.length) this.enabledChannels.push('you');
@@ -375,7 +418,9 @@ class RealtimeTranscriptionManager {
         provider,
         endpoint,
         region,
-        phrases,
+        phrases: this.vocabulary.phrases,
+        keyterms: this.vocabulary.keyterms,
+        prompt: this.vocabulary.prompt,
         model,
         language,
         delay,
@@ -566,4 +611,4 @@ class RealtimeTranscriptionManager {
   }
 }
 
-module.exports = { OpenAIRealtimeChannel, RealtimeTranscriptionManager, OPENAI_REALTIME_URL, buildRealtimeConnection };
+module.exports = { OpenAIRealtimeChannel, RealtimeTranscriptionManager, OPENAI_REALTIME_URL, buildRealtimeConnection, channelVocabulary, realtimePromptSupported };

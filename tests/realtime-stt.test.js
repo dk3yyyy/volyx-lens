@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 
-const { OpenAIRealtimeChannel, RealtimeTranscriptionManager } = require('../src/realtime-stt');
+const { OpenAIRealtimeChannel, RealtimeTranscriptionManager, channelVocabulary } = require('../src/realtime-stt');
 
 class FakeWebSocket extends EventEmitter {
   static OPEN = 1;
@@ -466,4 +466,97 @@ test('channel reports connection health and transcript latency', async () => {
   assert.deepEqual(states.slice(0, 2).map((event) => event.state), ['connecting', 'connected']);
   assert.deepEqual(latencies.map((event) => event.kind), ['first_partial', 'final']);
   assert.equal(latencies.every((event) => event.latencyMs >= 0), true);
+});
+
+test('a vocabulary prompt is only sent to transcription models that accept one', async () => {
+  const supported = buildChannel({ model: 'gpt-4o-mini-transcribe', prompt: 'Volyx, DeepSeek' });
+  const connecting = supported.channel.connect();
+  FakeWebSocket.instances[0].open();
+  await connecting;
+  const update = FakeWebSocket.instances[0].sent.find((message) => message.type === 'session.update');
+  assert.equal(update.session.audio.input.transcription.prompt, 'Volyx, DeepSeek');
+
+  FakeWebSocket.instances = [];
+  const unsupported = buildChannel({ model: 'gpt-realtime-whisper', prompt: 'Volyx, DeepSeek' });
+  const secondConnect = unsupported.channel.connect();
+  FakeWebSocket.instances[0].open();
+  await secondConnect;
+  const second = FakeWebSocket.instances[0].sent.find((message) => message.type === 'session.update');
+  assert.equal('prompt' in second.session.audio.input.transcription, false, 'the realtime model is left alone');
+});
+
+test('each realtime provider gets vocabulary in the shape it accepts', () => {
+  assert.deepEqual(channelVocabulary({ provider: 'openai', vocab: ['Volyx', 'DeepSeek'] }), {
+    phrases: [],
+    keyterms: [],
+    prompt: 'Volyx, DeepSeek',
+  });
+  assert.deepEqual(channelVocabulary({ provider: 'deepgram', vocab: ['Volyx', 'DeepSeek'] }), {
+    phrases: [],
+    keyterms: ['Volyx', 'DeepSeek'],
+    prompt: '',
+  });
+  assert.deepEqual(channelVocabulary({ provider: 'azureSpeech', phrases: ['Nwachinemere'], vocab: ['Volyx'] }), {
+    phrases: ['Nwachinemere', 'Volyx'],
+    keyterms: [],
+    prompt: '',
+  });
+  assert.deepEqual(channelVocabulary({ provider: 'openai' }), { phrases: [], keyterms: [], prompt: '' });
+});
+
+test('channel vocabulary is capped and trimmed before it reaches a provider', () => {
+  const vocab = [...Array(60)].map((_, index) => ` term${index} `).concat(['', '   ']);
+  const result = channelVocabulary({ provider: 'deepgram', vocab });
+  assert.equal(result.keyterms.length, 50);
+  assert.equal(result.keyterms[0], 'term0');
+  assert.ok(result.keyterms.every((term) => term === term.trim() && term.length > 0));
+});
+
+test('the manager hands vocabulary to each channel in the shape that channel accepts', () => {
+  const deepgram = new RealtimeTranscriptionManager({
+    apiKey: 'test-key',
+    provider: 'deepgram',
+    sampleRate: 16000,
+    enabledChannels: ['you'],
+    vocab: ['Volyx', 'DeepSeek'],
+    DeepgramClientImpl: {},
+  });
+  assert.deepEqual(deepgram.vocabulary.keyterms, ['Volyx', 'DeepSeek']);
+  assert.deepEqual(deepgram.channels.you.keyterms, ['Volyx', 'DeepSeek']);
+
+  const openai = new RealtimeTranscriptionManager({
+    apiKey: 'test-key',
+    provider: 'openai',
+    sampleRate: 16000,
+    enabledChannels: ['you'],
+    vocab: ['Volyx'],
+    WebSocketImpl: FakeWebSocket,
+  });
+  assert.equal(openai.channels.you.prompt, 'Volyx');
+  assert.deepEqual(openai.vocabulary.keyterms, []);
+});
+
+test('a session with no vocabulary sends none of it', () => {
+  const manager = new RealtimeTranscriptionManager({
+    apiKey: 'test-key',
+    provider: 'deepgram',
+    sampleRate: 16000,
+    enabledChannels: ['you'],
+    DeepgramClientImpl: {},
+  });
+  assert.deepEqual(manager.vocabulary, { phrases: [], keyterms: [], prompt: '' });
+  assert.deepEqual(manager.channels.you.keyterms, []);
+});
+
+test('overlapping azure phrases do not consume the same slot twice', () => {
+  const phrases = Array.from({ length: 40 }, (_, index) => `Phrase${index}`);
+  const vocab = [
+    ...Array.from({ length: 40 }, (_, index) => `phrase${index}`),
+    ...Array.from({ length: 20 }, (_, index) => `Term${index}`),
+  ];
+  const result = channelVocabulary({ provider: 'azureSpeech', phrases, vocab });
+  const lower = result.phrases.map((phrase) => phrase.toLowerCase());
+  assert.equal(new Set(lower).size, lower.length, 'no duplicate reaches the service');
+  assert.equal(result.phrases.length, 50);
+  assert.deepEqual(result.phrases.slice(0, 40), phrases, 'configured phrases keep their priority');
 });

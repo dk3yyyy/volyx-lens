@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const Module = require('node:module');
-const { buildSttVocab, looksLikeHallucination, filterTranscript, extractDomainTerms, BASE_STT_VOCAB } = require('../src/transcript-hygiene');
+const { buildSttVocab, buildSttTermList, looksLikeHallucination, filterTranscript, extractDomainTerms, BASE_STT_VOCAB } = require('../src/transcript-hygiene');
 const { createSTT } = require('../src/stt');
 const { runWhisperCli } = require('../src/offline-stt');
 
@@ -176,4 +176,43 @@ test('real transcribeOpenAI omits the prompt when no vocab is configured', async
   } finally {
     Module._load = originalLoad;
   }
+});
+
+test('buildSttTermList merges base and personal-context terms without duplicates', () => {
+  const terms = buildSttTermList({
+    personalContext: 'I work on Volyx Lens with DeepSeek and TypeScript at Acme. volyx again, deepseek once more.',
+  });
+  assert.ok(terms.length > 0);
+  const lower = terms.map((term) => term.toLowerCase());
+  assert.equal(new Set(lower).size, lower.length, 'no duplicate terms whatever the casing');
+  assert.ok(lower.includes('volyx'), 'domain names from personal context are kept');
+  assert.ok(lower.includes('deepseek'));
+  assert.ok(terms.length <= 40, 'the list stays inside what providers accept');
+  for (const term of terms) {
+    assert.ok(term.length <= 40, 'a term is never a paragraph');
+    assert.doesNotMatch(term, /[,\n]/, 'no separators leak into a single term');
+  }
+});
+
+test('buildSttTermList honours a limit and drops tokens too short to help', () => {
+  const terms = buildSttTermList({ personalContext: '', limit: 5 });
+  assert.equal(terms.length, 5);
+  assert.ok(terms.every((term) => term.length >= 3));
+});
+
+test('the realtime pipeline seeds the same vocabulary the batch path uses', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(main, /buildSttTermList/);
+  assert.match(main, /vocab: buildSttTermList\(\{\s*personalContext:/);
+  assert.match(main, /getEnabledDocuments\(\)/);
+});
+
+test('personal names win the cap before generic words do', () => {
+  const personal = Array.from({ length: 45 }, (_, index) => `Project${String.fromCharCode(65 + index)}Alpha`).join(' ');
+  const terms = buildSttTermList({ personalContext: personal, limit: 10 });
+  assert.equal(terms.length, 10);
+  assert.ok(
+    terms.every((term) => /^Project[A-Z]Alpha$/.test(term)),
+    'a recognizer miss on a name matters more than on a generic word',
+  );
 });

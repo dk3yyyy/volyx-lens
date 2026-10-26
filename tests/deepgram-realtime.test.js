@@ -333,3 +333,17 @@ test('connection diagnostic verifies Deepgram without sending audio or exposing 
   assert.equal(FakeDeepgramClient.instances[0].connection.media.length, 0);
   assert.doesNotMatch(JSON.stringify(result), /deepgram-secret/);
 });
+
+test('keyterm prompting is only sent to the models that support it', () => {
+  const supported = buildDeepgramOptions({ model: 'nova-3', sampleRate: 24000, keyterms: ['Volyx', 'DeepSeek'] });
+  assert.deepEqual(supported.keyterm, ['Volyx', 'DeepSeek']);
+
+  const legacy = buildDeepgramOptions({ model: 'nova-2', sampleRate: 24000, keyterms: ['Volyx'] });
+  assert.equal('keyterm' in legacy, false, 'older models reject the parameter');
+
+  const empty = buildDeepgramOptions({ model: 'nova-3', sampleRate: 24000, keyterms: [] });
+  assert.equal('keyterm' in empty, false);
+
+  const blank = buildDeepgramOptions({ model: 'nova-3', sampleRate: 24000, keyterms: ['  ', ''] });
+  assert.equal('keyterm' in blank, false, 'blank terms are not sent');
+});
