@@ -160,3 +160,52 @@ test('cleaning an older meeting does not reorder history', () => {
   assert.ok(after.includes(newer.id));
   store.clear();
 });
+
+test('updateNotes writes through a temp file and keeps the record where it was', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const calls = [];
+  const fsImpl = {
+    ...fs,
+    writeFileSync: (file, data, options) => { calls.push(['write', file]); return fs.writeFileSync(file, data, options); },
+    renameSync: (from, to) => { calls.push(['rename', from, to]); return fs.renameSync(from, to); },
+    utimesSync: (...args) => { calls.push(['utimes', args[0]]); return fs.utimesSync(...args); },
+  };
+  const store = createMeetingStore({ dir, fsImpl });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'Hello world', ts: 1000 }], enabled: true });
+  const target = path.join(dir, `${saved.id}.json`);
+  const mtimeBefore = fs.statSync(target).mtimeMs;
+  calls.length = 0;
+
+  const result = store.updateNotes(saved.id, { summary: 'S', keyPoints: [], decisions: [], actionItems: [], followUp: [] });
+  assert.equal(result.updated, true);
+
+  const writes = calls.filter((call) => call[0] === 'write').map((call) => call[1]);
+  assert.deepEqual(writes, [`${target}.tmp`], 'the live record is never written in place');
+  assert.deepEqual(calls.find((call) => call[0] === 'rename'), ['rename', `${target}.tmp`, target]);
+  assert.equal(fs.existsSync(`${target}.tmp`), false, 'the temp file does not survive');
+  assert.equal(fs.statSync(target).mtimeMs, mtimeBefore, 'a derived write does not reorder history');
+  assert.equal(store.get(saved.id).notes.summary, 'S');
+  store.clear();
+});
+
+test('a failed notes write leaves the previous record readable', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  let failRename = false;
+  const fsImpl = {
+    ...fs,
+    renameSync: (from, to) => {
+      if (failRename && to.endsWith('.json')) { failRename = false; throw new Error('disk full'); }
+      return fs.renameSync(from, to);
+    },
+  };
+  const store = createMeetingStore({ dir, fsImpl });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'Hello world', ts: 1000 }], enabled: true });
+  failRename = true;
+  const result = store.updateNotes(saved.id, { summary: 'S', keyPoints: [], decisions: [], actionItems: [], followUp: [] });
+  assert.equal(result.updated, false);
+  const record = store.get(saved.id);
+  assert.ok(record, 'the record still parses');
+  assert.equal(record.turns[0].text, 'Hello world');
+  assert.equal(record.notes, null);
+  store.clear();
+});

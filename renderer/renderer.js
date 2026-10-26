@@ -680,6 +680,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if (!meetingDetail) return;
     const button = $('#meeting-notes-generate');
     const original = button.textContent;
+    meetingNotesGenerating = true;
     button.disabled = true;
     meetingNotesText = '';
     const out = $('#meeting-notes-output');
@@ -709,7 +710,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         break;
       }
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting notes could not be generated.'); }
-    finally { button.disabled = false; button.textContent = original; }
+    finally { meetingNotesGenerating = false; button.disabled = false; button.textContent = original; }
   });
 
   $('#meeting-view-toggle').addEventListener('click', () => {
@@ -719,6 +720,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   });
 
   let meetingCleanRunning = false;
+  let meetingNotesGenerating = false;
 
   function setMeetingActionBusy(busy) {
     const clean = $('#meeting-clean');
@@ -891,6 +893,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       button.title = processing ? `${ACTION_LABELS[buttonMode]} is processing…` : ACTION_LABELS[buttonMode];
     });
     $('#assist-context').disabled = value;
+    // The saved-meeting actions stream to the same provider, so they are not
+    // offered while a live answer owns the socket.
+    for (const id of ['#meeting-clean', '#meeting-notes-generate']) {
+      const button = $(id);
+      if (button) button.disabled = value || meetingCleanRunning || meetingNotesGenerating;
+    }
     if (!value) activeRequestMode = null;
   }
 

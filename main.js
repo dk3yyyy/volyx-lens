@@ -1580,6 +1580,12 @@ async function runFeature(mode, userText, {
   slideReviewTranscript = null,
 } = {}) {
   if (state.busy || responseDiagnosticPromise) return;
+  // Notes and transcript cleanup stream model requests too. Starting a live
+  // answer on top of one double-spends and leaves two jobs racing the UI.
+  if (activeHistoryJob) {
+    send('status', { message: historyJobBusyMessage() });
+    return;
+  }
   const def = MODES[mode];
   if (!def) return;
   state.busy = true;
@@ -1891,6 +1897,11 @@ async function recapMeetingRecord(id, options = {}) {
     }
     invalidatePreviousMeetings();
     return { ok: true, id: record.id, text: fullAnswer, notes, source: notes.source };
+  } catch (error) {
+    if (controller.signal.aborted) return { ok: false, code: 'canceled' };
+    // The recap path used to let raw provider text reach the renderer, which
+    // can echo request bodies. Route it through the same sanitizer as answers.
+    return { ok: false, code: 'error', message: sanitizeProviderError(error, { providerLabel: llm.label || settings.provider }) };
   } finally {
     if (activeHistoryJob === job) activeHistoryJob = null;
   }

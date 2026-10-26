@@ -85,3 +85,23 @@ test('progress is reported per batch with the provider that is doing the work', 
   assert.match(body, /batches: plan\.batches\.length/);
   assert.match(body, /provider: providerLabel/);
 });
+
+test('a live answer and a saved-meeting job never stream at the same time', () => {
+  assert.match(main, /if \(activeHistoryJob\) \{\s*\n\s*send\('status', \{ message: historyJobBusyMessage\(\) \}\);/);
+  assert.match(main, /if \(state\.busy \|\| responseDiagnosticPromise\) return;/);
+});
+
+test('meeting notes surface provider failures as sanitized states', () => {
+  const start = main.indexOf('async function recapMeetingRecord');
+  const end = main.indexOf('async function cleanMeetingTranscript');
+  const body = main.slice(start, end);
+  assert.match(body, /if \(controller\.signal\.aborted\) return \{ ok: false, code: 'canceled' \};/);
+  assert.match(body, /sanitizeProviderError\(error, \{ providerLabel: llm\.label \|\| settings\.provider \}\)/);
+});
+
+test('the pane disables its model actions while a live answer runs', () => {
+  assert.match(renderer, /let meetingNotesGenerating = false;/);
+  assert.match(renderer, /button\.disabled = value \|\| meetingCleanRunning \|\| meetingNotesGenerating;/);
+  assert.match(renderer, /meetingNotesGenerating = true;/);
+  assert.match(renderer, /finally \{ meetingNotesGenerating = false;/);
+});

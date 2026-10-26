@@ -65,6 +65,18 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return path.join(dir, `${id}.json`);
   }
 
+  // Every mutation goes through a temp file plus rename, so a crash or a full
+  // disk leaves the previous record intact instead of a truncated one. The
+  // original mtime is restored because list() and prune() order by it.
+  function writeRecord(target, record, originalStat) {
+    const tmp = `${target}.tmp`;
+    fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
+    fsImpl.renameSync(tmp, target);
+    if (originalStat && Number.isFinite(originalStat.atimeMs)) {
+      try { fsImpl.utimesSync(target, originalStat.atimeMs / 1000, originalStat.mtimeMs / 1000); } catch {}
+    }
+  }
+
   function prune() {
     let entries;
     try {
@@ -221,18 +233,24 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   }
 
   function updateNotes(id, notes) {
-    if (!isSafeId(id)) throw new Error(`Invalid meeting id`);
+    if (!isSafeId(id)) return { updated: false, reason: 'invalid_id' };
     const target = recordPath(id);
+    let originalStat = null;
+    let record;
     try {
-      const raw = fsImpl.readFileSync(target, 'utf8');
-      const record = JSON.parse(raw);
-      if (!record || typeof record !== 'object') return { updated: false };
-      record.notes = notes;
-      fsImpl.writeFileSync(target, JSON.stringify(record), { mode: 0o600 });
-      return { updated: true };
+      originalStat = fsImpl.statSync(target);
+      record = JSON.parse(fsImpl.readFileSync(target, 'utf8'));
     } catch {
-      return { updated: false };
+      return { updated: false, reason: 'not_found' };
     }
+    if (!record || typeof record !== 'object') return { updated: false, reason: 'not_found' };
+    record.notes = notes;
+    try {
+      writeRecord(target, record, originalStat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
+    }
+    return { updated: true };
   }
 
   // Store a readable copy of the same turns. The record's own `turns` array is
@@ -276,13 +294,10 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       sourceHash,
       texts,
     };
-    const tmp = `${target}.tmp`;
-    fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
-    fsImpl.renameSync(tmp, target);
-    // A derived copy must not reorder history: prune() and list() order by
-    // mtime, so cleaning an old meeting keeps the meeting where it was.
-    if (originalStat && Number.isFinite(originalStat.atimeMs)) {
-      try { fsImpl.utimesSync(target, originalStat.atimeMs / 1000, originalStat.mtimeMs / 1000); } catch {}
+    try {
+      writeRecord(target, record, originalStat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
     }
     return { updated: true, turnCount: texts.length };
   }
