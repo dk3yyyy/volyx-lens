@@ -114,6 +114,9 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       turnCount: normalized.length,
       turns: normalized,
       notes: null,
+      // A cleaned, readable copy of the same turns, written only when the user
+      // asks for it. `turns` above always keeps the recognizer's wording.
+      cleaned: null,
     };
     const target = recordPath(id);
     const tmp = `${target}.tmp`;
@@ -151,6 +154,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
           turnCount: Array.isArray(record.turns) ? record.turns.length : 0,
           preview: previewText(record.turns),
           hasNotes: !!record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length),
+          hasCleaned: Array.isArray(record.cleaned && record.cleaned.turns) && record.cleaned.turns.length > 0,
         });
       } catch {
         // Skip corrupt records rather than breaking the whole list.
@@ -219,7 +223,44 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
   }
 
-  return { finalize, list, get, remove, clear, updateNotes, recordPath, fingerprint };
+  // Store a readable copy of the same turns. The record's own `turns` array is
+  // never rewritten: the cleaned copy must stay parallel (same length, same
+  // speakers, same timestamps) or it is refused, because a mismatch would mean
+  // content was dropped or invented somewhere upstream.
+  function updateCleaned(id, cleaned) {
+    if (!isSafeId(id)) return { updated: false, reason: 'invalid_id' };
+    const target = recordPath(id);
+    let record;
+    try {
+      record = JSON.parse(fsImpl.readFileSync(target, 'utf8'));
+    } catch {
+      return { updated: false, reason: 'not_found' };
+    }
+    if (!record || typeof record !== 'object') return { updated: false, reason: 'not_found' };
+    const source = Array.isArray(record.turns) ? record.turns : [];
+    const incoming = Array.isArray(cleaned && cleaned.turns) ? cleaned.turns : null;
+    if (!incoming) return { updated: false, reason: 'invalid_payload' };
+    if (incoming.length !== source.length) return { updated: false, reason: 'turn_count_mismatch' };
+    const turns = incoming.map((turn, index) => ({
+      channel: turn && turn.channel === 'you' ? 'you' : 'them',
+      text: String((turn && turn.text) || '').slice(0, 12000),
+      ts: Number.isFinite(turn && turn.ts) ? turn.ts : source[index] && source[index].ts,
+    }));
+    record.cleaned = {
+      version: 1,
+      at: Number.isFinite(cleaned && cleaned.at) ? cleaned.at : now(),
+      model: cleaned && cleaned.model ? String(cleaned.model).slice(0, 120) : null,
+      provider: cleaned && cleaned.provider ? String(cleaned.provider).slice(0, 120) : null,
+      turnCount: turns.length,
+      turns,
+    };
+    const tmp = `${target}.tmp`;
+    fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
+    fsImpl.renameSync(tmp, target);
+    return { updated: true, turnCount: turns.length };
+  }
+
+  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, recordPath, fingerprint };
 }
 
 module.exports = { createMeetingStore, snapshotTurns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };

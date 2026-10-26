@@ -47,7 +47,7 @@ function vttTimecode(ms) {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(millis, 3)}`;
 }
 
-function meetingHeader(record = {}) {
+function meetingHeader(record = {}, { cleaned = false } = {}) {
   const turns = Array.isArray(record.turns) ? record.turns : [];
   const lines = [`# Volyx Lens ${record.meeting === true ? 'meeting' : 'session'}`];
   if (Number.isFinite(record.startedAt)) lines.push(`\nStarted: ${localStamp(record.startedAt)}`);
@@ -55,7 +55,25 @@ function meetingHeader(record = {}) {
   lines.push(`Session end: ${reasonLabel(record.reason)}`);
   lines.push(`Turns: ${turns.length}`);
   if (record.meeting === true) lines.push('Meeting: detected as a two-sided conversation');
+  if (cleaned) lines.push('Transcript: cleaned copy, wording repaired from speech recognition; the raw transcript is kept in the app');
   return lines.join('\n');
+}
+
+/**
+ * Pick the turn list an export should print. A cleaned copy is used only when
+ * it is parallel to the saved turns (same length, non-empty text per turn), so
+ * an export can never silently lose or reorder a turn. Raw wording is the
+ * fallback and stays authoritative.
+ */
+function resolveTurns(record = {}) {
+  const raw = normalizeTurns(record);
+  const cleaned = record && record.cleaned && Array.isArray(record.cleaned.turns) ? record.cleaned.turns : null;
+  if (!cleaned || !cleaned.length || cleaned.length !== raw.length) return { turns: raw, cleaned: false };
+  const merged = raw.map((turn, index) => {
+    const text = String((cleaned[index] && cleaned[index].text) || '').trim().slice(0, 12000);
+    return text ? { channel: turn.channel, text, ts: turn.ts } : turn;
+  });
+  return { turns: merged, cleaned: true };
 }
 
 function normalizeTurns(record = {}) {
@@ -69,7 +87,7 @@ function normalizeTurns(record = {}) {
 }
 
 function formatMeetingRecordSrt(record = {}) {
-  const turns = normalizeTurns(record);
+  const { turns } = resolveTurns(record);
   const blocks = [];
   turns.forEach((turn, index) => {
     const speaker = turn.channel === 'you' ? 'You' : 'Them';
@@ -81,7 +99,7 @@ function formatMeetingRecordSrt(record = {}) {
 }
 
 function formatMeetingRecordVtt(record = {}) {
-  const turns = normalizeTurns(record);
+  const { turns } = resolveTurns(record);
   const blocks = ['WEBVTT\n'];
   turns.forEach((turn) => {
     const speaker = turn.channel === 'you' ? 'You' : 'Them';
@@ -93,9 +111,9 @@ function formatMeetingRecordVtt(record = {}) {
 }
 
 function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()) {
-  const turns = normalizeTurns(record);
+  const { turns, cleaned } = resolveTurns(record);
   if (format === 'json') {
-    return JSON.stringify({
+    const payload = {
       version: 1,
       id: record.id || null,
       reason: record.reason || null,
@@ -103,8 +121,25 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
       startedAt: Number.isFinite(record.startedAt) ? record.startedAt : null,
       endedAt: Number.isFinite(record.endedAt) ? record.endedAt : null,
       exportedAt: new Date(exportedAt).toISOString(),
-      turns,
-    }, null, 2) + '\n';
+      turns: normalizeTurns(record),
+    };
+    // JSON keeps the raw transcript authoritative and carries the readable copy
+    // beside it, so a consumer can diff what was said against what was cleaned.
+    const stored = record && record.cleaned;
+    if (stored && Array.isArray(stored.turns) && stored.turns.length) {
+      payload.cleaned = {
+        version: 1,
+        at: Number.isFinite(stored.at) ? stored.at : null,
+        model: stored.model || null,
+        provider: stored.provider || null,
+        turns: stored.turns.map((turn) => ({
+          channel: turn && turn.channel === 'you' ? 'you' : 'them',
+          text: String((turn && turn.text) || ''),
+          ts: Number.isFinite(turn && turn.ts) ? turn.ts : undefined,
+        })),
+      };
+    }
+    return JSON.stringify(payload, null, 2) + '\n';
   }
   if (format === 'srt') return formatMeetingRecordSrt(record);
   if (format === 'vtt') return formatMeetingRecordVtt(record);
@@ -114,7 +149,7 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
     if (isMarkdown) return `- **${timeLabel(turn.ts)} · ${speaker}:** ${turn.text.replace(/\n/g, '\n  ')}`;
     return `[${timeLabel(turn.ts)}] ${speaker}: ${turn.text}`;
   }).join(isMarkdown ? '\n\n' : '\n');
-  return `${meetingHeader(record)}\n\n${body}${body ? '\n' : ''}`;
+  return `${meetingHeader(record, { cleaned })}\n\n${body}${body ? '\n' : ''}`;
 }
 
-module.exports = { meetingFilename, meetingHeader, formatMeetingRecord, formatMeetingRecordSrt, formatMeetingRecordVtt, reasonLabel, localStamp, normalizeTurns, srtTimecode, vttTimecode };
+module.exports = { meetingFilename, meetingHeader, formatMeetingRecord, formatMeetingRecordSrt, formatMeetingRecordVtt, reasonLabel, localStamp, normalizeTurns, resolveTurns, srtTimecode, vttTimecode };

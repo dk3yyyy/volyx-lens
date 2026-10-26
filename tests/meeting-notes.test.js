@@ -126,3 +126,53 @@ test('preload exposes export and recap without a side-channel beyond allowed eve
   assert.match(preload, /historyRecap: \(id, confirmed = false\) => ipcRenderer\.invoke\('history:recap', \{ id, confirmed \}\)/);
   assert.match(preload, /'history:recap-token'/);
 });
+function cleanedRecord(overrides = {}) {
+  const record = sampleRecord(overrides);
+  record.cleaned = {
+    version: 1,
+    at: 1700004000000,
+    model: 'deepseek-flash',
+    turnCount: record.turns.length,
+    turns: record.turns.map((turn, index) => ({
+      channel: turn.channel,
+      text: `Cleaned line ${index + 1}.`,
+      ts: turn.ts,
+    })),
+  };
+  return record;
+}
+
+test('markdown and text exports use the cleaned copy and say so', () => {
+  const record = cleanedRecord();
+  const md = formatMeetingRecord(record, 'md', 1700009999999);
+  assert.match(md, /Cleaned line 1\./);
+  assert.doesNotMatch(md, new RegExp(record.turns[0].text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(md, /Transcript: cleaned copy/);
+
+  const txt = formatMeetingRecord(record, 'txt');
+  assert.match(txt, /Cleaned line 2\./);
+  assert.match(txt, /Transcript: cleaned copy/);
+});
+
+test('subtitle exports use the cleaned copy too', () => {
+  const record = cleanedRecord();
+  assert.match(formatMeetingRecord(record, 'srt'), /Cleaned line 1\./);
+  assert.match(formatMeetingRecord(record, 'vtt'), /Cleaned line 3\./);
+});
+
+test('exports fall back to the raw wording when the cleaned copy is not parallel', () => {
+  const record = sampleRecord();
+  record.cleaned = { version: 1, turns: [{ channel: 'you', text: 'Only one line.', ts: 1 }] };
+  const md = formatMeetingRecord(record, 'md');
+  assert.match(md, new RegExp(record.turns[0].text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(md, /Only one line\./);
+  assert.doesNotMatch(md, /Transcript: cleaned copy/);
+});
+
+test('json export keeps the raw transcript and carries the cleaned copy alongside', () => {
+  const record = cleanedRecord();
+  const parsed = JSON.parse(formatMeetingRecord(record, 'json', 1700009999999));
+  assert.equal(parsed.turns[0].text, record.turns[0].text, 'raw wording preserved in json');
+  assert.equal(parsed.cleaned.turns[0].text, 'Cleaned line 1.');
+  assert.equal(parsed.cleaned.model, 'deepseek-flash');
+});
