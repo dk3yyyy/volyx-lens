@@ -9,7 +9,7 @@ const DEFAULT_UTTERANCE_END_MS = 1000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 const DEFAULT_KEEPALIVE_MS = 5000;
 
-function buildDeepgramOptions({ model = DEFAULT_MODEL, language = '', sampleRate = 24000 } = {}) {
+function buildDeepgramOptions({ model = DEFAULT_MODEL, language = '', sampleRate = 24000, keyterms = [] } = {}) {
   const options = {
     model: String(model || DEFAULT_MODEL),
     encoding: 'linear16',
@@ -25,6 +25,13 @@ function buildDeepgramOptions({ model = DEFAULT_MODEL, language = '', sampleRate
   };
   const normalizedLanguage = String(language || '').trim().toLowerCase();
   if (normalizedLanguage && !['auto', 'automatic'].includes(normalizedLanguage)) options.language = normalizedLanguage;
+  // Keyterm prompting is a Nova-3 feature. Older models reject the parameter,
+  // so it is only attached when the model can take it.
+  const terms = (Array.isArray(keyterms) ? keyterms : [])
+    .map((term) => String(term || '').trim())
+    .filter(Boolean)
+    .slice(0, 50);
+  if (terms.length && /nova-3/i.test(options.model)) options.keyterm = terms;
   return options;
 }
 
@@ -39,6 +46,7 @@ class DeepgramRealtimeChannel {
     model = DEFAULT_MODEL,
     language = '',
     sampleRate = 24000,
+    keyterms = [],
     connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
     keepAliveMs = DEFAULT_KEEPALIVE_MS,
     maxBufferedBytes = sampleRate * 2 * 5,
@@ -54,6 +62,7 @@ class DeepgramRealtimeChannel {
     this.model = model || DEFAULT_MODEL;
     this.language = language;
     this.sampleRate = sampleRate;
+    this.keyterms = Array.isArray(keyterms) ? keyterms : [];
     this.connectTimeoutMs = connectTimeoutMs;
     this.keepAliveMs = keepAliveMs;
     this.maxBufferedBytes = maxBufferedBytes;
@@ -104,6 +113,7 @@ class DeepgramRealtimeChannel {
       model: this.model,
       language: this.language,
       sampleRate: this.sampleRate,
+      keyterms: this.keyterms,
     }));
     void connectionPromise.then((lateConnection) => {
       if (this.intentionalClose) this._disposeConnection(lateConnection, false);

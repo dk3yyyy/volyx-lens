@@ -94,6 +94,30 @@ function buildSttVocab({ personalContext = '', base = BASE_STT_VOCAB, maxChars =
 }
 
 /**
+ * Build a discrete term list for the realtime providers that accept one:
+ * Deepgram keyterms and the OpenAI transcription prompt. The batch path uses
+ * `buildSttVocab` (a sentence-style initial prompt); realtime APIs take terms.
+ */
+function buildSttTermList({ personalContext = '', base = BASE_STT_VOCAB, limit = 40, maxTermCharacters = 40 } = {}) {
+  const candidates = [
+    ...String(base || '').split(','),
+    ...extractDomainTerms(personalContext),
+  ];
+  const seen = new Set();
+  const terms = [];
+  for (const raw of candidates) {
+    const term = String(raw || '').replace(/[\r\n,]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (term.length < 3 || term.length > maxTermCharacters) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    terms.push(term);
+    if (terms.length >= limit) break;
+  }
+  return terms;
+}
+
+/**
  * True when the text is empty, emoji-only, or one of the known whisper silence
  * artifacts. Used to drop phantom rows before they reach the transcript.
  */
@@ -111,4 +135,4 @@ function filterTranscript(text) {
   return String(text || '').trim();
 }
 
-module.exports = { BASE_STT_VOCAB, buildSttVocab, looksLikeHallucination, filterTranscript, extractDomainTerms };
+module.exports = { BASE_STT_VOCAB, buildSttVocab, buildSttTermList, looksLikeHallucination, filterTranscript, extractDomainTerms };

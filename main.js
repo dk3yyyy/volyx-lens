@@ -35,7 +35,7 @@ const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap, transcriptText } = require('./src/meeting-recap');
 const { meetingFilename, formatMeetingRecord, resolveTurns } = require('./src/meeting-notes');
 const { planCleanBatches, buildCleanPrompt, parseCleanBatch, cleanedTextsFrom, CLEAN_SYSTEM_PROMPT } = require('./src/transcript-cleanup');
-const { buildSttVocab } = require('./src/transcript-hygiene');
+const { buildSttVocab, buildSttTermList } = require('./src/transcript-hygiene');
 const { buildNotesPrompt, parseNotes } = require('./src/notes');
 const { createTaskContext } = require('./src/task-context');
 const { createSlideTracker, hashFrame } = require('./src/slide-tracking');
@@ -1057,6 +1057,11 @@ function startTranscriptionPipeline() {
       endpoint: realtime.endpoint,
       region: realtime.region,
       phrases: realtime.phrases,
+      // Realtime providers can be seeded with the same domain terms the batch
+      // path uses, so names and product ids are not the thing that gets missed.
+      vocab: buildSttTermList({
+        personalContext: personalContextStore.getEnabledDocuments().map((document) => document.text || '').join(' '),
+      }),
       model: realtime.model,
       language: transcription.language || '',
       delay: transcription.delay || 'low',
