@@ -48,6 +48,7 @@ const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
+const { resolveWhisperBinary, defaultBinariesDir } = require('./src/whisper-sidecar');
 const { createRendererLogForwarder } = require('./src/renderer-log');
 const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
@@ -2423,6 +2424,21 @@ function transcriptionSettingsChanged(previous, updated) {
   return JSON.stringify(relevant(previous)) !== JSON.stringify(relevant(updated));
 }
 
+// The published build ships no whisper-server binary, so the Settings toggle must
+// not promise an engine that cannot start (VR-02). The env var and a provisioned
+// binary are both honoured; anything else reports unavailable with a reason.
+function offlineWhisperStatus() {
+  try {
+    const resolved = resolveWhisperBinary({
+      binariesDir: defaultBinariesDir(),
+      resourcesPath: typeof process.resourcesPath === 'string' ? process.resourcesPath : '',
+    });
+    return { available: true, source: resolved.source };
+  } catch (error) {
+    return { available: false, reason: String(error && error.message ? error.message : error) };
+  }
+}
+
 // -------- IPC --------
 function assertTrustedIpc(event) {
   if (!event) throw new Error('Untrusted IPC sender.');
@@ -2454,8 +2470,12 @@ function onTrusted(channel, handler) {
   });
 }
 
-handleTrusted('settings:get', () => store.getPublicSettings());
-handleTrusted('settings:set', (_e, patch) => {
+handleTrusted('settings:get', () => ({ ...store.getPublicSettings(), offlineWhisper: offlineWhisperStatus() }));
+handleTrusted('settings:set', (_e, patch = {}) => {
+  const offlineWhisper = offlineWhisperStatus();
+  if (offlineWhisper.available !== true && patch && patch.transcription && patch.transcription.offlineEnabled === true) {
+    patch = { ...patch, transcription: { ...patch.transcription, offlineEnabled: false } };
+  }
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
   const updates = patch && patch.apiKeyUpdates;
   const updated = store.updateSettingsAndApiKeys(patch, updates && typeof updates === 'object' ? updates : {});
@@ -2487,7 +2507,7 @@ handleTrusted('settings:set', (_e, patch) => {
     else if (!isSlideTrackingEnabled) stopSlideTracking();
     else publishSlideTrackingState();
   }
-  return store.getPublicSettings();
+  return { ...store.getPublicSettings(), offlineWhisper };
 });
 handleTrusted('credentials:clear', (_e, provider) => {
   const previous = JSON.parse(JSON.stringify(store.getSettings()));

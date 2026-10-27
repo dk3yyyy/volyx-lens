@@ -2628,7 +2628,18 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-delay').value = transcription.delay || 'low';
     $('#stt-fallback-model').value = transcription.fallbackModel || '';
     $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || '';
-    $('#stt-offline-enabled').checked = transcription.offlineEnabled === true;
+    const offlineWhisper = settings.offlineWhisper || { available: true };
+    const offlineToggle = $('#stt-offline-enabled');
+    const offlineUnavailable = offlineWhisper.available === false;
+    offlineToggle.checked = transcription.offlineEnabled === true && !offlineUnavailable;
+    offlineToggle.disabled = offlineUnavailable;
+    const offlineNote = $('#stt-offline-note');
+    if (offlineNote) {
+      offlineNote.textContent = offlineUnavailable
+        ? 'Local Whisper needs a whisper-server binary, which this build does not include. Use a cloud transcription provider, or point VOLYX_LENS_WHISPER_SIDECAR_BIN at a whisper.cpp server.'
+        : '';
+      offlineNote.classList.toggle('hidden', !offlineUnavailable);
+    }
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
     $('#stt-history-enabled').checked = transcription.historyEnabled === true;
@@ -3203,7 +3214,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       note: 'Choose where audio is converted to text.',
       firstRun: false,
       title: 'Local or cloud STT.',
-      body: '<p><span class="hl">Local whisper</span> runs entirely on your Mac — audio is transcribed in memory and never written to disk. <span class="hl">Cloud STT</span> (like Deepgram) offers richer accuracy and faster setup. Choose in Listening settings, under transcription provider.</p><div class="ob-note">Your transcript is only sent to a transcription provider you have configured; otherwise it stays local.</div>'
+      body: '<p><span class="hl">Local whisper</span> runs entirely on your device when a whisper-server binary is configured — audio is transcribed in memory and never written to disk. <span class="hl">Cloud STT</span> (like Deepgram) offers richer accuracy and faster setup. Choose in Listening settings, under transcription provider.</p><div class="ob-note">Your transcript is only sent to a transcription provider you have configured; otherwise it stays local.</div>'
     },
     {
       stepLabel: 'Ready',

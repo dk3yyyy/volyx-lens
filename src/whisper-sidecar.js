@@ -501,6 +501,7 @@ module.exports = {
   sha256File,
   buildInferenceBody,
   resolveWhisperBinary,
+  defaultBinariesDir,
   isExecutableFile,
   WhisperSidecar,
 };
