@@ -7,13 +7,13 @@
   --cyan: #42CFE8;
   --live: #4FD19B;
   --warning: #F3B84B;
-  --danger: #FF6678;
+  --danger: #FF7C8C;
 
   --surface-0: #0B1020;
   --surface-1: #131A2B;
   --tx-1: #F5F7FF;
   --tx-2: #DCE1F2;
-  --tx-mut: #98A2B8;
+  --tx-mut: #AEB8CC;
   --ic: #DCE1F2;
 
   --bd-hair: rgba(199,206,255,0.14);
@@ -53,13 +53,13 @@ html, body {
    variables here means every control that uses them follows, instead of every
    component needing its own inactive rule. */
 body.window-inactive {
-  --accent: #55618F;
-  --accent-hi: #6A75A3;
+  --accent: #7181C4;
+  --accent-hi: #7A8AD0;
   --accent-soft: #A9B1CC;
   --cyan: #3E8A99;
-  --live: #3F8F73;
+  --live: #4FA98A;
   --warning: #A98A4B;
-  --danger: #B4646F;
+  --danger: #C9707F;
   --ic: #AEB5C7;
   --tx-1: #D7DCEA;
   --tx-2: #C2C8DB;
@@ -174,7 +174,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 #live-dot.off { background: rgba(255,255,255,0.28); box-shadow: none; animation: none; }
 
 .glass {
-  background: rgba(11,16,32,0.78);
+  background: rgba(11,16,32,0.86);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid var(--bd-hair);
