@@ -31,7 +31,9 @@ test('settings behavior harness covers navigation, modal focus, and compact fit'
   assert.match(settingsHarness, /closing Settings should restore focus/);
   assert.match(settingsHarness, /compact Settings must not overflow horizontally/);
   assert.match(renderer, /function handleSettingsKeydown\(event\)/);
-  assert.match(styles, /button:focus-visible[\s\S]*outline:\s*2px solid var\(--cyan\)/);
+  // The ring moved from cyan to the accent family so a focused control and the
+  // live-capture indicator are not the same colour (VR-36).
+  assert.match(styles, /button:focus-visible[\s\S]*outline:\s*2px solid var\(--accent-soft\)/);
 });
 
 test('settings navigation is compact and interactive controls use restrained liquid-glass squircles', () => {

@@ -56,6 +56,21 @@ app.whenReady().then(async () => {
     console.log(JSON.stringify({ requested: [width, height], ...report }));
   }
 
+  const focusProbe = await win.webContents.executeJavaScript(`(() => {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      try { rules.push(...sheet.cssRules); } catch {}
+    }
+    const withFocus = rules.filter((item) => item.selectorText && item.selectorText.includes(':focus-visible'));
+    const root = getComputedStyle(document.documentElement);
+    return {
+      found: withFocus.map((r) => ({ sel: r.selectorText.slice(0, 50), outline: r.style.outline, border: r.style.outlineColor })),
+      accentSoft: root.getPropertyValue('--accent-soft').trim(),
+      cyan: root.getPropertyValue('--cyan').trim(),
+    };
+  })()`);
+  console.log('FOCUS ' + JSON.stringify(focusProbe));
+
   // What the renderer thinks the four provider columns need.
   const tabs = await win.webContents.executeJavaScript(`(() => {
     const seg = document.querySelector('#provider-seg');
