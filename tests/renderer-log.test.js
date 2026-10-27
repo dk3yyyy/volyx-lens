@@ -59,3 +59,16 @@ test('display intent is only honoured while a capture is starting or running', (
   assert.match(handler, /pendingDisplayCapture = false;/, 'and a refused intent clears any queued one');
   assert.match(handler, /setTimeout\(/, 'a granted intent expires instead of waiting for the next capture');
 });
+
+test('the Windows loopback start asks for capture before declaring display intent', () => {
+  // The intent is refused until the main process knows a capture is starting, so
+  // the toggle has to be sent first or Windows system audio never gets its track.
+  const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
+  const start = renderer.indexOf("$('#stop-btn').addEventListener");
+  const block = renderer.slice(start, start + 1600);
+  const toggle = block.indexOf('volyxLens.captureToggle()');
+  const audio = block.indexOf('startSystemAudio()');
+  assert.ok(toggle > -1, 'the handler requests a capture toggle');
+  assert.ok(audio > -1, 'and starts Windows system audio');
+  assert.ok(toggle < audio, 'in that order');
+});
