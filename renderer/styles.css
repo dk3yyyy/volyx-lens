@@ -280,7 +280,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 #slide-tracking-indicator::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .transcript-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.transcript-actions button, .transcript-actions select, .diagnostics-foot button { border: 1px solid rgba(199,206,255,0.15); background: rgba(199,206,255,0.055); color: var(--tx-2); border-radius: 6px; padding: 4px 6px; font: 600 9px var(--font); cursor: pointer; }
+.transcript-actions button, .transcript-actions select, .diagnostics-foot button { border: 1px solid rgba(199,206,255,0.15); background: rgba(199,206,255,0.055); color: var(--tx-2); border-radius: 6px; padding: 4px 6px; font: 600 11px var(--font); cursor: pointer; }
 .transcript-actions button:hover, .diagnostics-foot button:hover { border-color: rgba(102,119,255,0.55); background: rgba(102,119,255,0.14); color: #fff; }
 .transcript-actions button:disabled { opacity: 0.38; cursor: default; }
 #transcript-export-format { outline: none; }
@@ -296,7 +296,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .transcript-turn.them .transcript-speaker { color: #7DE4F1; }
 .transcript-text { color: var(--tx-2); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; white-space: pre-wrap; }
 .transcript-time { color: var(--tx-mut); font-size: 10.5px; font-variant-numeric: tabular-nums; text-align: right; }
-.transcript-turn-copy { opacity: 0; border: none; background: transparent; color: var(--accent-soft); padding: 1px 0; font: 600 8px var(--font); cursor: pointer; transition: opacity 120ms ease; }
+.transcript-turn-copy { opacity: 0; border: none; background: transparent; color: var(--accent-soft); padding: 1px 0; font: 600 11px var(--font); cursor: pointer; transition: opacity 120ms ease; }
 .transcript-turn:hover .transcript-turn-copy, .transcript-turn-copy:focus { opacity: 1; }
 #transcript-empty { padding: 10px 2px 2px; color: var(--tx-mut); font-size: 10px; }
 #session-diagnostics { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(199,206,255,0.1); }
@@ -344,7 +344,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .slide-review-dialog-content p { margin: 0; color: var(--tx-2); font-size: 11px; line-height: 1.45; }
 #slide-review-preview { max-height: 48vh; overflow: auto; margin: 0; padding: 10px; border: 1px solid rgba(199,206,255,0.12); border-radius: 7px; color: var(--tx-2); background: rgba(0,0,0,0.18); font: 10px/1.45 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .slide-review-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.slide-review-actions button { border: 1px solid rgba(199,206,255,0.18); border-radius: 7px; padding: 7px 10px; color: var(--tx-2); background: rgba(199,206,255,0.06); font: 600 10px var(--font); cursor: pointer; }
+.slide-review-actions button { border: 1px solid rgba(199,206,255,0.18); border-radius: 7px; padding: 7px 10px; color: var(--tx-2); background: rgba(199,206,255,0.06); font: 600 11px var(--font); cursor: pointer; }
 .slide-review-actions #slide-review-confirm { border-color: rgba(66,207,232,0.4); color: #bdeeff; background: rgba(66,207,232,0.12); }
 .recovery-dialog-actions #meeting-recovery-restore { border-color: rgba(66,207,232,0.4); color: #bdeeff; background: rgba(66,207,232,0.12); }
 .slide-review-actions button:disabled { opacity: 0.45; cursor: default; }
@@ -371,7 +371,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .history-title strong { color: #7DE4F1; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; }
 #meeting-history-count { color: var(--tx-2); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .history-tools { display: flex; align-items: center; gap: 5px; }
-#meeting-history-search { border: 1px solid rgba(199,206,255,0.15); background: rgba(199,206,255,0.055); color: var(--tx-2); border-radius: 6px; padding: 4px 7px; font: 600 9px var(--font); width: 118px; outline: none; }
+#meeting-history-search { border: 1px solid rgba(199,206,255,0.15); background: rgba(199,206,255,0.055); color: var(--tx-2); border-radius: 6px; padding: 4px 7px; font: 600 11px var(--font); width: 118px; outline: none; }
 #meeting-history-search::placeholder { color: var(--tx-mut); }
 #meeting-history-panel button { border: 1px solid rgba(102,119,255,0.35); background: rgba(102,119,255,0.12); color: #D9DCFF; border-radius: 6px; padding: 5px 7px; font-size: 11px; white-space: nowrap; cursor: pointer; }
 #meeting-history-panel button:hover:not(:disabled) { border-color: rgba(102,119,255,0.65); background: rgba(102,119,255,0.2); color: #fff; }
@@ -397,7 +397,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .history-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 7px; flex-wrap: wrap; }
 .history-detail-head > span { color: var(--tx-mut); font-size: 10px; }
 .history-detail-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-#meeting-history-export-format { border: 1px solid rgba(199,206,255,0.15); background: rgba(199,206,255,0.055); color: var(--tx-2); border-radius: 6px; padding: 4px 6px; font: 600 9px var(--font); outline: none; }
+#meeting-history-export-format { border: 1px solid rgba(199,206,255,0.15); background: rgba(199,206,255,0.055); color: var(--tx-2); border-radius: 6px; padding: 4px 6px; font: 600 11px var(--font); outline: none; }
 .history-turns { display: grid; gap: 4px; max-height: 168px; overflow-y: auto; -webkit-user-select: text; user-select: text; }
 .history-turn { display: grid; grid-template-columns: 43px minmax(0,1fr) 51px; align-items: start; gap: 7px; padding: 6px 7px; border-radius: 7px; background: rgba(199,206,255,0.035); border-left: 2px solid transparent; }
 .history-turn.you { border-left-color: var(--accent); }
@@ -662,7 +662,7 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .shortcut-status-head > div { display: grid; gap: 2px; min-width: 0; }
 .shortcut-status-head strong { color: var(--tx-1); font-size: 12px; }
 .shortcut-status-head span { color: var(--tx-mut); font-size: 11px; line-height: 1.35; }
-#shortcuts-retry, .shortcut-status-row button { flex: 0 0 auto; border: 1px solid rgba(102,119,255,0.35); background: rgba(102,119,255,0.09); color: #C7CEFF; border-radius: 6px; padding: 5px 7px; font: 600 10.5px var(--font); cursor: pointer; }
+#shortcuts-retry, .shortcut-status-row button { flex: 0 0 auto; border: 1px solid rgba(102,119,255,0.35); background: rgba(102,119,255,0.09); color: #C7CEFF; border-radius: 6px; padding: 5px 7px; font: 600 11px var(--font); cursor: pointer; }
 #shortcuts-retry:hover:not(:disabled), .shortcut-status-row button:hover { border-color: rgba(102,119,255,0.65); background: rgba(102,119,255,0.17); color: #fff; }
 #shortcuts-retry:disabled { opacity: 0.5; cursor: wait; }
 #shortcut-status-list { display: grid; gap: 5px; }
@@ -678,7 +678,7 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .shortcut-status-actions { display: flex; gap: 6px; align-items: center; }
 .shortcut-row-actions { display: flex; gap: 5px; align-items: center; }
 .shortcut-rebind-hint { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 6px; background: rgba(102,119,255,0.12); border: 1px solid rgba(102,119,255,0.35); color: #C7CEFF; font-size: 11px; }
-.shortcut-rebind-hint button { border: 1px solid rgba(102,119,255,0.5); background: rgba(102,119,255,0.15); color: #fff; border-radius: 5px; padding: 3px 7px; font: 600 10px var(--font); cursor: pointer; }
+.shortcut-rebind-hint button { border: 1px solid rgba(102,119,255,0.5); background: rgba(102,119,255,0.15); color: #fff; border-radius: 5px; padding: 3px 7px; font: 600 11px var(--font); cursor: pointer; }
 .shortcut-rebind-hint button:hover { background: rgba(102,119,255,0.25); }
 .shortcut-rebind-active { border-color: rgba(102,119,255,0.6) !important; background: rgba(102,119,255,0.1) !important; }
 .shortcut-row-error { color: #FFB5B5; font-size: 10.5px; grid-column: 1 / -1; }
