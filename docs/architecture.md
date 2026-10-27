@@ -47,16 +47,21 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Session | `newSession` |
 | Task context | `taskContextGet`, `taskContextList`, `taskContextCapture`, `taskContextUndo`, `taskContextRemove`, `taskContextPin`, `taskContextClear` |
 | Transcript | `transcriptGet`, `recapPlan`, `transcriptCopy`, `transcriptCopyTurn`, `transcriptClear`, `transcriptExport` |
-| History | `historyList`, `historyGet`, `historyDelete`, `historyClear`, `historyExport`, `historyRecap` |
+| History | `historyList`, `historyLimits`, `historyGet`, `historyDelete`, `historyDeleteMany`, `historyUndoDelete`, `historyRestoreTrash`, `historyClear`, `historyExport`, `historyBackupAll`, `historyRestoreAll`, `historyRecap`, `historyClean`, `historyParticipant`, `historyDiscardCleaned` |
+| Recovery | `recoveryGet`, `recoveryRestore`, `recoveryDiscard` |
 | Diagnostics | `diagnosticsGet`, `diagnosticsCopy` |
-| Shortcuts | `shortcutsGet`, `shortcutsRetry` |
+| Shortcuts | `shortcutsGet`, `shortcutsRetry`, `shortcutsSet`, `shortcutsReset`, `shortcutsValidate` |
 | Updates | `updateGetState`, `updateCheck`, `updateDownload`, `updateInstall` |
-| Provider testing | `testResponseProvider`, `testRealtime`, `startLiveTranscriptionTest`, `finishLiveTranscriptionTest`, `liveTranscriptionPcm`, `retryRealtime` |
-| Permissions | `requestPermission`, `permissionStatus` |
+| Provider testing | `testResponseProvider`, `providerCapability`, `testRealtime`, `startLiveTranscriptionTest`, `finishLiveTranscriptionTest`, `liveTranscriptionPcm`, `retryRealtime` |
+| Permissions | `requestPermission`, `permissionStatus`, `openPermissionSettings` |
+| Slide tracking | `slideTrackingClear`, `slideTrackingReview` |
+| Context menu | `showContextMenu` |
 | Audio streaming | `micPcm`, `systemPcm` |
 | Window | `setIgnoreMouse`, `setWindowCollapsed`, `setModalState`, `openPane` |
 | Lifecycle | `rendererReady`, `quit`, `relaunch`, `log` |
-| Events | `on(channel, cb)` — filtered allowlist of 30 IPC channels |
+| Events | `on(channel, cb)`, a filtered allowlist of 29 IPC channels |
+
+The bridge exposes 83 members in total; the table groups them by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
 
 The `on()` listener uses a strict allowlist of event channels. Any channel not in the allowlist is silently ignored, preventing the renderer from subscribing to unintended IPC traffic.
 
@@ -74,7 +79,7 @@ createResponseRoute(settings)
 chooseInitialProvider(route, { requiresVision })
   ├── primary ready and compatible? → use primary
   ├── fallback ready and compatible? → use fallback, mark usedFallback
-  └── neither → return primary with empty reason (caller shows config error)
+  └── neither → return `{ llm: null, reason: 'No compatible provider is configured.' }`
 
 streamWithFallback({ llm, fallback, params, onFallback })
   ├── try primary.stream()
@@ -92,7 +97,7 @@ streamWithFallback({ llm, fallback, params, onFallback })
 | `anthropic` | Anthropic SDK | Messages API; no transcription |
 | `gemini` | `@google/genai` | Also handles batch transcription |
 | `azure` | OpenAI SDK (`api-key` header) | Azure Foundry; separate from Azure AI Speech |
-| `deepseek` | OpenAI SDK (`baseURL`) | No vision |
+| `deepseek` | OpenAI SDK (`baseURL`) | Vision on `deepseek-flash` only |
 | `groq` | OpenAI SDK (`baseURL`) | No vision |
 | `nvidia` | OpenAI SDK (`baseURL`) | `maxImagesPerRequest: 1` |
 | `openrouter` | OpenAI SDK (`baseURL`) | Vision-capable |
@@ -102,7 +107,7 @@ streamWithFallback({ llm, fallback, params, onFallback })
 
 ### Transcription routing (`src/realtime-stt.js`, `src/stt.js`)
 
-5 transcription providers:
+Realtime transcription runs on four providers. Batch transcription is a fallback chain plus optional local Whisper.
 
 | Key | Mode | Notes |
 |---|---|---|
@@ -110,9 +115,11 @@ streamWithFallback({ llm, fallback, params, onFallback })
 | `azure` | Realtime | Azure Realtime endpoint |
 | `deepgram` | Realtime | Nova-3 streaming |
 | `azureSpeech` | Realtime | Azure AI Speech (region-based, separate credentials) |
-| `local Whisper` | Offline batch | whisper.cpp model download; disabled by default |
+| `gemini` | Batch | Gemini batch transcription |
+| `groq` | Batch | Groq Whisper, enabled by a Groq key rather than a separate selector |
+| `local Whisper` | Offline batch | whisper.cpp server; disabled by default |
 
-`REALTIME_PROVIDERS` in `provider-config.js` lists the four realtime keys. Local Whisper is gated by `transcription.offlineEnabled` and uses either the sidecar path (`VOLYX_LENS_WHISPER_SIDECAR`) or the legacy CLI path (`VOLYX_LENS_WHISPER_CLI` + `VOLYX_LENS_WHISPER_MODEL`).
+`REALTIME_PROVIDERS` in `provider-config.js` lists the four realtime keys. The batch fallback order lives in `src/stt.js`. Local Whisper is gated by `transcription.offlineEnabled`, needs a `whisper-server` binary, and downloads a pinned model into a private cache when one is not present.
 
 ## Capture pipelines
 
@@ -123,8 +130,8 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 - **Trigger:** explicit user action (Assist, Solve, Add Task Context).
 - **macOS:** `desktopCapturer` + optional Apple Vision OCR (`volyx-lens-vision-ocr` native helper).
 - **Windows / Linux:** `desktopCapturer`; no local OCR (falls back to recency/pinned ranking).
-- **Format:** compressed JPEG/PNG data URL, SHA-256 deduplicated, bounded in-memory store (max 39 saved screens + current).
-- **Transport:** renderer → main process via `ask` IPC payload (imageDataUrl / imageDataUrls).
+- **Format:** compressed JPEG/PNG data URL, SHA-256 deduplicated, bounded in-memory store (max 39 images per request, including the current screen).
+- **Transport:** captured in the main process through `desktopCapturer`; the `ask` payload carries only mode, text, and confirmation flags. Main attaches the selected images after the user asks.
 
 ### Microphone (You channel)
 
@@ -144,20 +151,28 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 
 ### Capture exclusion
 
-- **macOS:** `win.setContentProtection(true)` maps to `NSWindowSharingNone`. The window is excluded from most screen-recording and screen-share tools.
-- **Windows:** no OS-level capture-exclusion API. `setContentProtection(true)` is a no-op on Windows; the overlay can appear in screen shares.
-- **Linux:** no capture-exclusion API.
+- **macOS:** `win.setContentProtection(true)` maps to `NSWindowSharingNone`. Many capture tools honor it; ScreenCaptureKit-based recorders may not.
+- **Windows:** the same call maps to `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`. Windows 10 2004 and later remove the window from capture; older builds capture a black window.
+- **Linux:** no capture-exclusion API. The overlay can appear in screen shares.
 
 ## Request lifecycle
 
 1. User triggers an action (shortcut, button, or `/command`).
-2. Renderer sends an `ask` IPC message with the selected context (screen images, transcript turns, personal context).
+2. Renderer sends an `ask` IPC message with mode, text, and confirmation flags. The main process captures the screen, selects transcript turns and personal-context excerpts, and applies the budgets.
 3. Main process runs local controls: permission checks, memory budgets, deduplication, image cap, confirmation for expensive requests.
 4. `createResponseRoute` builds primary + fallback LLM instances.
 5. `chooseInitialProvider` selects the best compatible provider.
 6. `streamWithFallback` streams tokens back to the renderer via `llm:token` IPC.
 7. Renderer displays the streaming answer. On completion, `llm:done` fires; on error, `llm:error` fires with a sanitized message.
 
+## On-device state
+
+- `src/meeting-store.js` keeps at most 200 records, writes atomically, and holds deleted records for 30 days before pruning. A restore that does not fit is refused rather than pruned.
+- `src/meeting-recovery.js` writes a 0600 checkpoint of an in-progress transcript and offers restore or discard after an unexpected exit.
+- `src/meeting-backup.js` exports one file per record plus an index; import validates each record and never overwrites an existing id.
+- `src/meeting-notes.js` and `src/transcript-cleanup.js` run one model job at a time over saved meetings, require confirmation for multi-request work, and store the source hash with generated notes.
+- `src/slide-tracking.js` samples the screen while listening and keeps at most 20 previews (8 MB) in memory; it never calls a provider.
+
 ## Update path
 
-`src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows, `latest-<arch>-linux.yml` for Linux, DMG/ZIP for macOS; the release workflow canonicalizes the Linux metadata name so the updater finds it). The macOS updater is published together with signed DMGs; Windows and Linux publish auto-update metadata with the installer/AppImages.
+`src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows, `latest-<arch>-linux.yml` for Linux; the release workflow canonicalizes the Linux metadata name so the updater finds it). Windows and Linux publish auto-update metadata with the installer/AppImages. macOS auto-update is only published for signed builds; the current unsigned DMGs ship without updater metadata.

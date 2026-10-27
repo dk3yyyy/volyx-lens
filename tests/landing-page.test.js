@@ -57,7 +57,8 @@ test('landing page presents the response providers the app actually supports', (
   for (const provider of expectedProviders) {
     assert.match(html, new RegExp(`>${provider.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}<`, 'i'));
   }
-  assert.match(html, /Eleven routes/i);
+  assert.match(html, /Nine providers/i, 'the heading counts the nine response providers');
+  assert.match(html, /Gemini, or Groq Whisper/i, 'and the transcription copy names the batch fallbacks');
   assert.doesNotMatch(html, /Azure OpenAI/i);
 });
 
