@@ -159,7 +159,13 @@ function sanitizeSettingsPatch(patch = {}) {
   if (typeof patch.smart === 'boolean') safe.smart = patch.smart;
   if (typeof patch.questionDetection === 'boolean') safe.questionDetection = patch.questionDetection;
   if (typeof patch.autoAnswer === 'boolean') safe.autoAnswer = patch.autoAnswer;
-  if (Object.hasOwn(patch, 'autoAnswerConfidence')) safe.autoAnswerConfidence = Math.max(0, Math.min(1, Number(patch.autoAnswerConfidence) || 0.5));
+  if (Object.hasOwn(patch, 'autoAnswerConfidence')) {
+    // 0 is a real value (never auto-answer on confidence), so `Number(value) || 0.5`
+    // silently replaced it with the default and made the slider's floor unreachable
+    // (VR-16).
+    const confidence = Number(patch.autoAnswerConfidence);
+    safe.autoAnswerConfidence = Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0.5;
+  }
   if (Object.hasOwn(patch, 'autoAnswerCooldownSec')) safe.autoAnswerCooldownSec = Math.max(5, Math.min(600, Number(patch.autoAnswerCooldownSec) || 60));
   if (typeof patch.onboarded === 'boolean') safe.onboarded = patch.onboarded;
   if (['both', 'screen', 'conversation'].includes(patch.assistContext)) safe.assistContext = patch.assistContext;
