@@ -1274,7 +1274,14 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   }
   if (result.saved) {
     invalidatePreviousMeetings();
-    send('history:changed', { saved: true, id: result.id, turnCount: result.turnCount });
+    send('history:changed', { saved: true, id: result.id, turnCount: result.turnCount, pruned: result.pruned });
+    // The record cap makes room by deleting the oldest saved meeting. Saying so
+    // is the difference between a documented limit and a transcript vanishing.
+    if (result.pruned > 0) {
+      send('status', {
+        message: `${result.pruned} older saved meeting${result.pruned === 1 ? ' was' : 's were'} removed because only ${meetingStore.maxRecords} are kept on this device. Export any you want to keep.`,
+      });
+    }
   }
   return result;
 }
@@ -2324,6 +2331,7 @@ handleTrusted('transcript:clear', () => {
 });
 handleTrusted('transcript:export', (_event, format) => exportTranscript(String(format || 'txt')));
 handleTrusted('history:list', () => meetingStore.list());
+handleTrusted('history:limits', () => ({ maxRecords: meetingStore.maxRecords }));
 handleTrusted('history:get', (_event, id) => meetingStore.get(String(id || '')));
 handleTrusted('history:delete', (_event, id) => {
   abortActiveHistoryJob();

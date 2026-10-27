@@ -232,7 +232,7 @@ Meeting detection is opt-in from Settings → Listening and runs locally in-sess
 - **Clean transcript** repairs speech-recognition damage in a saved session so it reads properly: misheard words that are obvious from context, punctuation, capitalisation, and accidental stutters. Every turn keeps its place and nothing is summarised. A turn the provider cannot repair cleanly keeps its original wording, the exact transcript is always kept and one click away, and multi-request cleanups ask for confirmation before any paid request is made.
 - **Generate meeting notes** turns a saved transcript into structured notes using your configured provider. Notes include a Summary, Key Points, Decisions, Action Items, and Follow-Up. Notes are saved alongside the meeting and load instantly when reopened. Long meetings need multiple model requests and require explicit confirmation before paid requests are made.
 
-History is stored on device and cleared with the Clear history action; it is never uploaded to a Volyx Lens-operated server.
+History is stored on device and cleared with the Clear history action; it is never uploaded to a Volyx Lens-operated server. Up to 200 saved meetings are kept: when the limit is reached the oldest record is removed to make room, and the history panel says how many were removed. Export any record you need to keep.
 
 ## Slide tracking
 

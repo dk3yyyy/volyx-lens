@@ -412,6 +412,9 @@
   let meetingDetail = null;
   let meetingNotesText = '';
   let meetingHistorySearchTimer = null;
+  // How many records the store keeps. Fetched rather than hardcoded so the
+  // sentence the pane shows cannot drift from the store's own cap.
+  let meetingHistoryMax = null;
   // Which copy of a saved transcript the pane shows: the cleaned one when the
   // user asked for it, otherwise exactly what was heard.
   let meetingViewMode = 'cleaned';
@@ -428,6 +431,40 @@
   function meetingDateLabel(ms) {
     try { return new Date(Number(ms)).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
     catch { return 'Unknown time'; }
+  }
+
+  function renderHistoryLimit() {
+    const line = $('#meeting-history-limit');
+    if (!line) return;
+    line.textContent = meetingHistoryMax
+      ? `Up to ${meetingHistoryMax} saved meetings are kept on this device; the oldest are removed first.`
+      : 'Saved meetings are kept on this device.';
+  }
+
+  async function loadHistoryLimit() {
+    if (meetingHistoryMax) return;
+    try {
+      const limits = await volyxLens.historyLimits();
+      const max = Number(limits && limits.maxRecords);
+      if (Number.isFinite(max) && max > 0) meetingHistoryMax = max;
+    } catch {
+      // The pane works without the sentence; a failure here needs no message.
+    }
+    renderHistoryLimit();
+  }
+
+  // A pruned record is a saved meeting the user can no longer open, so it gets
+  // a line in the pane instead of only a toast that scrolls away.
+  function showHistoryPruneNotice(count) {
+    const removed = Number(count);
+    if (!Number.isFinite(removed) || removed <= 0) return;
+    const notice = $('#meeting-history-prune-notice');
+    const text = $('#meeting-history-prune-text');
+    if (!notice || !text) return;
+    text.textContent = meetingHistoryMax
+      ? `${removed} older saved meeting${removed === 1 ? ' was' : 's were'} removed because only ${meetingHistoryMax} saved meetings are kept.`
+      : `${removed} older saved meeting${removed === 1 ? ' was' : 's were'} removed to stay within the meeting history limit.`;
+    notice.classList.remove('hidden');
   }
 
   function renderMeetingHistory() {
@@ -543,11 +580,18 @@
   function setMeetingHistoryOpen(open) {
     $('#meeting-history-panel').classList.toggle('hidden', !open);
     $('#meeting-history-toggle').setAttribute('aria-expanded', String(open));
-    if (open) loadMeetingHistory({ quiet: true });
+    if (open) {
+      loadHistoryLimit();
+      loadMeetingHistory({ quiet: true });
+    }
   }
 
   $('#meeting-history-toggle').addEventListener('click', () => {
     setMeetingHistoryOpen($('#meeting-history-toggle').getAttribute('aria-expanded') !== 'true');
+  });
+
+  $('#meeting-history-prune-dismiss').addEventListener('click', () => {
+    $('#meeting-history-prune-notice').classList.add('hidden');
   });
 
   function meetingEntryButtons() {
@@ -1784,6 +1828,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   volyxLens.on('history:changed', (event = {}) => {
     if (event.deleted && meetingDetail && event.id === meetingDetail.id) closeMeetingDetail();
     else if (event.cleared) closeMeetingDetail();
+    if (event.pruned > 0) showHistoryPruneNotice(event.pruned);
     loadMeetingHistory({ quiet: true });
   });
   volyxLens.on('history:recap-token', ({ id, text }) => {

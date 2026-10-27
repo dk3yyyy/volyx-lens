@@ -172,6 +172,34 @@ test('prune keeps at most MAX_RECORDS, oldest records removed first', () => {
   for (const id of firstIds) assert.equal(remaining.has(id), false);
 });
 
+test('finalize reports how many saved meetings the cap removed', () => {
+  const directory = temporaryDirectory();
+  const store = createMeetingStore({ dir: directory });
+  let last;
+  let firstId = null;
+  for (let i = 0; i < MAX_RECORDS; i += 1) {
+    last = store.finalize({
+      turns: [{ id: i + 1, channel: 'you', text: `Under the cap ${i + 1}`, ts: 1000 + i }],
+      enabled: true,
+      endedAt: 2000 + i,
+    });
+    assert.equal(last.saved, true);
+    if (i === 0) firstId = last.id;
+    // A save that fits removes nothing, so the caller never shows a notice.
+    assert.equal(last.pruned, 0);
+  }
+  const over = store.finalize({
+    turns: [{ id: 999, channel: 'you', text: 'One past the cap', ts: 9000 }],
+    enabled: true,
+    endedAt: 9000,
+  });
+  assert.equal(over.saved, true);
+  assert.equal(over.pruned, 1, 'the save that crosses the cap reports the record it removed');
+  assert.equal(store.list().length, MAX_RECORDS);
+  assert.equal(store.get(firstId), null, 'the oldest record is the one removed');
+  assert.ok(store.get(last.id), 'the newest record under the cap survives');
+});
+
 test('snapshotTurns normalizes channels, drops blank text, and caps turn count', () => {
   const normalized = snapshotTurns([
     { id: 1, channel: 'you', text: 'hello', ts: 1 },
@@ -226,9 +254,15 @@ test('main process wires the store, finalize points, and trusted IPC', () => {
     assert.match(main, new RegExp(`handleTrusted\\('${channel}'`));
   }
   assert.match(main, /send\('history:changed'/);
+  // The record cap removes a saved meeting, so the save reports how many it
+  // removed and the pane is told the cap rather than guessing it.
+  assert.match(main, /pruned: result\.pruned/);
+  assert.match(main, /handleTrusted\('history:limits', \(\) => \(\{ maxRecords: meetingStore\.maxRecords \}\)\)/);
+  assert.match(main, /only \$\{meetingStore\.maxRecords\} are kept on this device/);
   for (const method of ['historyList', 'historyGet', 'historyDelete', 'historyClear']) {
     assert.match(preload, new RegExp(`${method}: \\(.*ipcRenderer\\.invoke\\('history:`));
   }
+  assert.match(preload, /historyLimits: \(\) => ipcRenderer\.invoke\('history:limits'\)/);
   assert.match(preload, /'history:changed'/);
 });
 

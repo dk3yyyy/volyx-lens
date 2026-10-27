@@ -128,6 +128,7 @@ ipcMain.handle('capture:state', () => ({ active: false }));
 ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.7.3', status: 'unsupported', message: '', availableVersion: null, progress: null }));
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => listedRecords());
+ipcMain.handle('history:limits', () => ({ maxRecords: 200 }));
 ipcMain.handle('history:get', (_event, id) => {
   const found = records.find((record) => record.id === id);
   return found ? JSON.parse(JSON.stringify(found)) : null;
@@ -195,6 +196,23 @@ app.whenReady().then(async () => {
 
   const countText = await run(win, "document.querySelector('#meeting-history-count').textContent");
   assert.equal(countText, '2 meetings');
+
+  // The record cap is stated up front, and a prune is reported instead of the
+  // oldest meeting disappearing with no message.
+  await waitFor(win, "/200 saved meetings/.test(document.querySelector('#meeting-history-limit')?.textContent || '')", 'the record cap line');
+  const limitText = await run(win, "document.querySelector('#meeting-history-limit').textContent");
+  assert.match(limitText, /Up to 200 saved meetings are kept on this device/, 'the pane states the cap');
+
+  win.webContents.send('history:changed', { pruned: 1 });
+  await waitFor(win, "document.querySelector('#meeting-history-prune-notice')?.classList.contains('hidden') === false", 'the prune notice');
+  const pruneText = await run(win, "document.querySelector('#meeting-history-prune-text').textContent");
+  assert.match(pruneText, /1 older saved meeting was removed/, 'the notice says what was removed');
+  assert.match(pruneText, /200 saved meetings are kept/, 'the notice repeats the cap');
+
+  await run(win, "document.querySelector('#meeting-history-prune-dismiss').click()");
+  await waitFor(win, "document.querySelector('#meeting-history-prune-notice')?.classList.contains('hidden') === true", 'the notice dismissed');
+  const dismissedLabel = await run(win, "document.querySelector('#meeting-history-prune-dismiss').textContent");
+  assert.equal(dismissedLabel, 'Dismiss');
 
   // Search reaches the cleaned wording, not just the raw preview.
   await run(win, `(() => {
