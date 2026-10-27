@@ -44,6 +44,7 @@
   let shortcutStatus = [];
   let busy = false;
   let transcriptTurns = [];
+  let transcriptGaps = [];
   const partialTranscript = { you: null, them: null };
   let listeningActive = false;
   let meetingDetectedSince = null;
@@ -1729,7 +1730,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         rows.push({ ...partial, partial: true });
       }
     }
-    const visibleRows = rows.slice(-200);
+    // A realtime failure leaves audio that never became text. Keep the marker in
+    // time order so the transcript does not look continuous across the hole (VR-13).
+    const orderedRows = rows.concat(transcriptGaps.map((gap) => ({ gap: true, ts: gap.ts })))
+      .sort((a, b) => (Number(a.ts) || 0) - (Number(b.ts) || 0));
+    const visibleRows = orderedRows.slice(-200);
     const hideWorkspace = !listeningActive && visibleRows.length === 0;
     workspace.classList.toggle('hidden', hideWorkspace);
     if (hideWorkspace) {
@@ -1739,6 +1744,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     }
     list.replaceChildren();
     for (const turn of visibleRows) {
+      if (turn.gap) {
+        const row = document.createElement('div');
+        row.className = 'transcript-gap';
+        row.setAttribute('role', 'note');
+        row.textContent = 'Transcription gap while realtime recovered';
+        list.appendChild(row);
+        continue;
+      }
       const row = document.createElement('div');
       row.className = `transcript-turn ${turn.channel}${turn.partial ? ' partial' : ''}${turn.pendingText ? ' has-partial' : ''}`;
       // Right-click needs to name the turn it applies to.
@@ -1811,6 +1824,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   function clearTranscriptWorkspace() {
     transcriptTurns = [];
+    transcriptGaps = [];
     partialTranscript.you = null;
     partialTranscript.them = null;
     clearQuestionSuggestion();
@@ -2109,6 +2123,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   volyxLens.on('transcript:suppressed', clearSuppressedPartial);
   volyxLens.on('question:detected', showQuestionSuggestion);
   volyxLens.on('question:clear', clearQuestionSuggestion);
+  volyxLens.on('transcript:gap', (event) => {
+    const ts = Number(event && event.ts);
+    transcriptGaps.push({ ts: Number.isFinite(ts) ? ts : Date.now() });
+    transcriptGaps = transcriptGaps.slice(-50);
+    renderTranscriptWorkspace();
+  });
   volyxLens.on('transcript:cleared', () => {
     // An answer about a discarded transcript goes with it, and the busy state is
     // cleared here as well as on the terminal event so a missing event cannot
