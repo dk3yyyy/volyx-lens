@@ -114,15 +114,21 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
   }
 
+  /**
+   * Keep the newest MAX_RECORDS and remove the rest.
+   *
+   * Returns the number removed so the caller can say so: a record disappearing
+   * with no message reads as a bug, and the saved meeting was the only copy.
+   */
   function prune() {
     sweepTemporaryFiles();
     let entries;
     try {
       entries = fsImpl.readdirSync(dir).filter((name) => name.endsWith('.json'));
     } catch {
-      return;
+      return { removed: 0 };
     }
-    if (entries.length <= MAX_RECORDS) return;
+    if (entries.length <= MAX_RECORDS) return { removed: 0 };
     const timed = [];
     for (const name of entries) {
       try {
@@ -134,14 +140,17 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
     timed.sort((a, b) => b.mtimeMs - a.mtimeMs);
     const keep = new Set(timed.slice(0, MAX_RECORDS).map((entry) => entry.name));
+    let removed = 0;
     for (const name of entries) {
       if (keep.has(name)) continue;
       try {
         fsImpl.unlinkSync(path.join(dir, name));
+        removed += 1;
       } catch {
         // Best-effort pruning; the record is still readable elsewhere.
       }
     }
+    return { removed };
   }
 
   function finalize({ turns = [], enabled = false, reason = 'capture-stop', meeting = false, startedAt = null, endedAt = null } = {}) {
@@ -179,8 +188,8 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     lastWriteMs = writeStamp;
     try { fsImpl.utimesSync(target, writeStamp / 1000, writeStamp / 1000); } catch {}
     lastSavedFingerprint = fp;
-    prune();
-    return { saved: true, id, turnCount: normalized.length };
+    const { removed } = prune();
+    return { saved: true, id, turnCount: normalized.length, pruned: removed };
   }
 
   // Name the other speaker. Display and export only; the turns themselves keep
@@ -446,7 +455,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { updated: true, turnCount: texts.length };
   }
 
-  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, updateParticipant, clearCleaned, pruneOlderThan, recordPath, fingerprint };
+  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, updateParticipant, clearCleaned, pruneOlderThan, recordPath, fingerprint, maxRecords: MAX_RECORDS };
 }
 
 module.exports = { createMeetingStore, snapshotTurns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };

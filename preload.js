@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   transcriptClear: () => ipcRenderer.invoke('transcript:clear'),
   transcriptExport: (format) => ipcRenderer.invoke('transcript:export', format),
   historyList: () => ipcRenderer.invoke('history:list'),
+  historyLimits: () => ipcRenderer.invoke('history:limits'),
   historyGet: (id) => ipcRenderer.invoke('history:get', id),
   historyDelete: (id) => ipcRenderer.invoke('history:delete', id),
   historyDeleteMany: (ids) => ipcRenderer.invoke('history:delete-many', ids),
