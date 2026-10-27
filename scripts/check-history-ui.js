@@ -98,7 +98,7 @@ function recordB() {
 }
 
 let records = [recordA(), recordB()];
-const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [] };
+const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [] };
 
 function listedRecords() {
   return records.map((record) => ({
@@ -162,6 +162,14 @@ ipcMain.handle('history:delete', (_event, id) => {
 ipcMain.handle('history:clean', () => ({ ok: false, code: 'no_change', message: 'not used in this harness' }));
 ipcMain.handle('history:recap', () => ({ ok: false, code: 'error', message: 'not used in this harness' }));
 ipcMain.handle('history:export', () => ({ canceled: true }));
+ipcMain.handle('history:backup-all', () => {
+  calls.backup.push(true);
+  return { canceled: false, directory: '/tmp/vlx-backup', records: 2, unreadable: 0 };
+});
+ipcMain.handle('history:restore-all', () => {
+  calls.restore.push(true);
+  return { canceled: false, imported: 1, skipped: 0, pruned: 0 };
+});
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function waitFor(win, expression, message, timeoutMs = 3000) {
@@ -213,6 +221,19 @@ app.whenReady().then(async () => {
   await waitFor(win, "document.querySelector('#meeting-history-prune-notice')?.classList.contains('hidden') === true", 'the notice dismissed');
   const dismissedLabel = await run(win, "document.querySelector('#meeting-history-prune-dismiss').textContent");
   assert.equal(dismissedLabel, 'Dismiss');
+
+  // A backup says what it wrote, and a restore says what came back.
+  await waitFor(win, "document.querySelector('#meeting-history-backup-all') !== null", 'the backup control');
+  await run(win, "document.querySelector('#meeting-history-backup-all').click()");
+  await waitFor(win, "/Backed up 2 saved meetings/.test(document.querySelector('#meeting-history-backup-status').textContent)", 'the backup status');
+  assert.equal(calls.backup.length, 1, 'the pane asked the main process for a backup');
+  const backupText = await run(win, "document.querySelector('#meeting-history-backup-status').textContent");
+  assert.match(backupText, /\/tmp\/vlx-backup/, 'the status names the folder the records went to');
+
+  await waitFor(win, "document.querySelector('#meeting-history-restore-all') !== null", 'the restore control');
+  await run(win, "document.querySelector('#meeting-history-restore-all').click()");
+  await waitFor(win, "/Restored 1 saved meeting\\./.test(document.querySelector('#meeting-history-backup-status').textContent)", 'the restore status');
+  assert.equal(calls.restore.length, 1, 'the pane asked the main process to restore');
 
   // Search reaches the cleaned wording, not just the raw preview.
   await run(win, `(() => {
@@ -335,7 +356,7 @@ app.whenReady().then(async () => {
   assert.deepEqual(calls.deleteMany[0].sort(), ['meeting-a', 'meeting-b']);
   await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 0", 'list emptied');
 
-  console.log('History UI behavior passed: search, keyboard, cleaned/raw/changes views, speaker name, discard, and bulk delete.');
+  console.log('History UI behavior passed: search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, record cap notice, and backup/restore status.');
   app.exit(0);
 }).catch((error) => {
   console.error('History UI behavior failed:', error && error.message ? error.message : error);

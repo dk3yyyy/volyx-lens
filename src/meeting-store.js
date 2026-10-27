@@ -455,7 +455,115 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { updated: true, turnCount: texts.length };
   }
 
-  return { finalize, list, get, remove, clear, updateNotes, updateCleaned, updateParticipant, clearCleaned, pruneOlderThan, recordPath, fingerprint, maxRecords: MAX_RECORDS };
+  // Every saved record, in full. A backup has to be restorable, so this reads
+  // the same bytes list() and get() would give rather than a summary.
+  function readAll() {
+    const records = [];
+    const unreadable = [];
+    for (const entry of list()) {
+      const record = get(entry.id);
+      if (record) records.push(record);
+      else unreadable.push(entry.id);
+    }
+    return { records, unreadable };
+  }
+
+  /**
+   * Restore records read from a backup folder.
+   *
+   * Every record goes through the normalisation a captured meeting gets, so a
+   * restored file cannot introduce a shape the rest of the app does not expect.
+   * An empty transcript is skipped and named instead of imported as a shell, and
+   * a colliding id gets a fresh one, so a restore can never overwrite a meeting
+   * saved after the backup was taken.
+   */
+  function importRecords(records) {
+    const incoming = Array.isArray(records) ? records : [];
+    const ids = [];
+    const skipped = [];
+    for (const candidate of incoming) {
+      if (!candidate || typeof candidate !== 'object') {
+        skipped.push({ id: null, reason: 'not_a_record' });
+        continue;
+      }
+      const label = typeof candidate.id === 'string' && isSafeId(candidate.id) ? candidate.id : null;
+      const normalized = snapshotTurns(candidate.turns);
+      if (!normalized.length) {
+        skipped.push({ id: label, reason: 'empty_transcript' });
+        continue;
+      }
+      ensureDir();
+      let id = label;
+      if (id) {
+        let taken = false;
+        try { fsImpl.statSync(recordPath(id)); taken = true; } catch {}
+        if (taken) id = null;
+      }
+      if (!id) id = crypto.randomUUID();
+      const endedAt = Number.isFinite(candidate.endedAt) ? candidate.endedAt : now();
+      const record = {
+        id,
+        version: 1,
+        reason: typeof candidate.reason === 'string' && candidate.reason.trim()
+          ? candidate.reason.trim().slice(0, 60)
+          : 'restored',
+        meeting: candidate.meeting === true,
+        startedAt: Number.isFinite(candidate.startedAt) ? candidate.startedAt : null,
+        endedAt,
+        turnCount: normalized.length,
+        turns: normalized,
+        participant: null,
+        notes: null,
+        cleaned: null,
+      };
+      const target = recordPath(id);
+      try {
+        writeRecord(target, record);
+      } catch {
+        skipped.push({ id: label, reason: 'write_failed' });
+        continue;
+      }
+      // Ordering lives in mtime, so a restored meeting keeps its place in the
+      // list instead of jumping to the top as if it were just recorded.
+      try { fsImpl.utimesSync(target, endedAt / 1000, endedAt / 1000); } catch {}
+      if (typeof candidate.participant === 'string') updateParticipant(id, candidate.participant);
+      if (candidate.notes && typeof candidate.notes === 'object') updateNotes(id, candidate.notes);
+      if (candidate.cleaned && Array.isArray(candidate.cleaned.texts) && candidate.cleaned.texts.length === normalized.length) {
+        const cleaned = candidate.cleaned;
+        // sourceHash is recomputed from the stored turns; passing the backup's
+        // own hash would refuse the copy whenever normalisation changed a turn.
+        updateCleaned(id, {
+          version: 1,
+          at: cleaned.at,
+          model: cleaned.model,
+          provider: cleaned.provider,
+          stats: cleaned.stats,
+          texts: cleaned.texts,
+        });
+      }
+      ids.push(id);
+    }
+    const { removed } = prune();
+    return { imported: ids.length, ids, skipped, pruned: removed };
+  }
+
+  return {
+    finalize,
+    list,
+    get,
+    readAll,
+    importRecords,
+    remove,
+    clear,
+    updateNotes,
+    updateCleaned,
+    updateParticipant,
+    clearCleaned,
+    pruneOlderThan,
+    recordPath,
+    fingerprint,
+    maxRecords: MAX_RECORDS,
+  };
 }
 
 module.exports = { createMeetingStore, snapshotTurns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };

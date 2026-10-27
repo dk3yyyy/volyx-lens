@@ -594,6 +594,76 @@
     $('#meeting-history-prune-notice').classList.add('hidden');
   });
 
+  // Backing up is the safety net for a store that deletes permanently, so the
+  // outcome is reported in the pane with its counts, not only in a toast.
+  function setHistoryBackupStatus(message) {
+    const line = $('#meeting-history-backup-status');
+    if (!line) return;
+    line.textContent = message || '';
+    line.title = message || '';
+  }
+
+  function backupCountLabel(count) {
+    return `${count} saved meeting${count === 1 ? '' : 's'}`;
+  }
+
+  $('#meeting-history-backup-all').addEventListener('click', async () => {
+    const button = $('#meeting-history-backup-all');
+    if (button.disabled) return;
+    button.disabled = true;
+    setHistoryBackupStatus('Writing the backup…');
+    try {
+      const result = await volyxLens.historyBackupAll();
+      if (!result || result.canceled) {
+        setHistoryBackupStatus('');
+        return;
+      }
+      const count = Number(result.records) || 0;
+      const unreadable = Number(result.unreadable) || 0;
+      setHistoryBackupStatus(
+        `Backed up ${backupCountLabel(count)} to ${result.directory}.`
+        + (unreadable ? ` ${unreadable} record${unreadable === 1 ? '' : 's'} could not be read and ${unreadable === 1 ? 'is' : 'are'} not in the backup.` : ''),
+      );
+    } catch (error) {
+      setHistoryBackupStatus(error && error.message ? error.message : 'The backup could not be written.');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $('#meeting-history-restore-all').addEventListener('click', async () => {
+    const button = $('#meeting-history-restore-all');
+    if (button.disabled) return;
+    button.disabled = true;
+    setHistoryBackupStatus('Restoring…');
+    try {
+      const result = await volyxLens.historyRestoreAll();
+      if (!result || result.canceled) {
+        setHistoryBackupStatus('');
+        return;
+      }
+      if (!result.imported) {
+        setHistoryBackupStatus(
+          result.reason === 'no_records'
+            ? 'That folder has no saved meetings Volyx Lens can read.'
+            : 'Nothing was restored.',
+        );
+        return;
+      }
+      const skipped = Number(result.skipped) || 0;
+      const pruned = Number(result.pruned) || 0;
+      setHistoryBackupStatus(
+        `Restored ${backupCountLabel(result.imported)}.`
+        + (skipped ? ` ${skipped} file${skipped === 1 ? '' : 's'} could not be read.` : '')
+        + (pruned ? ` ${pruned} older meeting${pruned === 1 ? ' was' : 's were'} removed to stay within the limit.` : ''),
+      );
+    } catch (error) {
+      setHistoryBackupStatus(error && error.message ? error.message : 'The backup could not be restored.');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   function meetingEntryButtons() {
     return [...document.querySelectorAll('#meeting-history-list .history-entry-open')];
   }

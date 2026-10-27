@@ -346,6 +346,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .history-prune { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border: 1px solid rgba(255,215,154,0.35); border-radius: 6px; background: rgba(255,215,154,0.12); color: #FFE3B8; font-size: 8px; line-height: 1.4; }
 .history-prune span { min-width: 0; }
 .history-prune button { margin-left: auto; }
+.history-backup { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+#meeting-history-backup-status { flex: 1 1 100%; color: var(--tx-mut); font-size: 7.5px; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; }
 #meeting-history-detail { display: grid; gap: 7px; border-top: 1px solid rgba(199,206,255,0.1); padding-top: 7px; }
 .history-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 7px; flex-wrap: wrap; }
 .history-detail-head > span { color: var(--tx-mut); font-size: 8px; }
