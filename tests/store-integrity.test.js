@@ -20,6 +20,14 @@ function loadStore(userData, safeStorage = { isEncryptionAvailable: () => false 
 
 function temporaryUserData() { return fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-lens-store-test-')); }
 
+function workingSafeStorage() {
+  return {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(`sealed:${value}`, 'utf8'),
+    decryptString: (buffer) => Buffer.from(buffer).toString('utf8').replace(/^sealed:/, ''),
+  };
+}
+
 test('partial nested settings patches preserve omitted preferences', () => {
   const store = loadStore(temporaryUserData());
   store.setSettings({
@@ -55,7 +63,9 @@ test('partial nested settings patches preserve omitted preferences', () => {
 
 test('Deepgram realtime provider, model, and credential survive the atomic Settings save', () => {
   const userData = temporaryUserData();
-  const store = loadStore(userData);
+  // Keys only persist when secure storage works; without it they are session-only
+  // (VR-22), so this test supplies a working backend.
+  const store = loadStore(userData, workingSafeStorage());
   const updated = store.updateSettingsAndApiKeys({
     transcription: { realtimeProvider: 'deepgram', deepgramModel: 'nova-3' },
   }, { deepgram: 'saved-deepgram-key' });
@@ -65,7 +75,7 @@ test('Deepgram realtime provider, model, and credential survive the atomic Setti
   assert.equal(updated.apiKeys.deepgram, '');
   assert.doesNotMatch(JSON.stringify(updated), /saved-deepgram-key/);
 
-  const reloaded = loadStore(userData).getSettings();
+  const reloaded = loadStore(userData, workingSafeStorage()).getSettings();
   assert.equal(reloaded.transcription.realtimeProvider, 'deepgram');
   assert.equal(reloaded.transcription.deepgramModel, 'nova-3');
   assert.equal(reloaded.apiKeys.deepgram, 'saved-deepgram-key');
@@ -73,7 +83,7 @@ test('Deepgram realtime provider, model, and credential survive the atomic Setti
 
 test('per-tier API keys survive the atomic Settings save and reload', () => {
   const userData = temporaryUserData();
-  const store = loadStore(userData);
+  const store = loadStore(userData, workingSafeStorage());
   const updated = store.updateSettingsAndApiKeys({}, {
     nvidia: 'nvapi-shared-key',
     'nvidia.fast': 'nvapi-fast-key',
@@ -85,13 +95,13 @@ test('per-tier API keys survive the atomic Settings save and reload', () => {
   assert.doesNotMatch(JSON.stringify(updated), /nvapi-fast-key/);
   assert.doesNotMatch(JSON.stringify(updated), /nvapi-smart-key/);
 
-  const reloaded = loadStore(userData).getSettings();
+  const reloaded = loadStore(userData, workingSafeStorage()).getSettings();
   assert.equal(reloaded.apiKeys['nvidia.fast'], 'nvapi-fast-key');
   assert.equal(reloaded.apiKeys['nvidia.smart'], 'nvapi-smart-key');
 
-  const cleared = loadStore(userData).clearApiKey('nvidia.smart');
+  const cleared = loadStore(userData, workingSafeStorage()).clearApiKey('nvidia.smart');
   assert.equal(cleared.credentialStatus.present['nvidia.smart'], false);
-  assert.equal(loadStore(userData).getSettings().apiKeys['nvidia.smart'], '');
+  assert.equal(loadStore(userData, workingSafeStorage()).getSettings().apiKeys['nvidia.smart'], '');
 });
 
 test('per-tier endpoint overrides survive the atomic Settings save and reload', () => {
@@ -357,4 +367,31 @@ test('a swap of two real shortcuts persists both overrides', () => {
   });
   assert.equal(saved.shortcuts.assist, 'CommandOrControl+Shift+C', 'the first half of the swap persists');
   assert.equal(saved.shortcuts['task-context'], 'CommandOrControl+Return', 'the second half persists too');
+});
+
+test('without secure storage a saved key never reaches the file', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData); // insecure backend, the default fixture
+  const updated = store.updateApiKeys({ openai: 'fixture-key-not-a-real-secret' });
+  assert.equal(updated.credentialStatus.present.openai, true, 'the session can still use it');
+  assert.equal(updated.credentialStatus.persisted, false, 'and the UI is told it is session-only');
+
+  const onDisk = fs.readFileSync(path.join(userData, 'volyx-lens-data.json'), 'utf8');
+  assert.doesNotMatch(onDisk, /fixture-key-not-a-real-secret/, 'no key in the settings file');
+  assert.doesNotMatch(onDisk, /plaintext-fallback/, 'and no plaintext mode recorded');
+});
+
+test('a legacy plaintext record is read for the session then rewritten without its keys', () => {
+  const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+  fs.writeFileSync(file, JSON.stringify({
+    version: 1,
+    credentials: { version: 1, mode: 'plaintext-fallback', values: { openai: 'legacy-fixture-key' } },
+  }, null, 2), { mode: 0o600 });
+
+  const store = loadStore(userData);
+  assert.equal(store.getSettings().apiKeys.openai, 'legacy-fixture-key', 'the session still has the key');
+  const rewritten = fs.readFileSync(file, 'utf8');
+  assert.doesNotMatch(rewritten, /legacy-fixture-key/, 'the file no longer carries it');
+  assert.match(rewritten, /"mode": "memory-only"/);
 });

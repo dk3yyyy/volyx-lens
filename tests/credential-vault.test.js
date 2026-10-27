@@ -21,12 +21,25 @@ test('credential vault encrypts values and decrypts them without plaintext persi
   assert.equal(vault.isSecure(), true);
 });
 
-test('credential vault explicitly reports plaintext fallback when secure storage is unavailable', () => {
+test('credential vault keeps secrets out of the file when secure storage is unavailable', () => {
   const vault = createCredentialVault(fakeSafeStorage(false));
   const record = vault.seal({ azure: 'temporary-secret' });
-  assert.equal(record.mode, 'plaintext-fallback');
+  // It used to write the key in the clear "with restricted permissions", which any
+  // backup or support bundle then carried (VR-22).
+  assert.equal(record.mode, 'memory-only');
+  assert.deepEqual(record.values, {}, 'no secret reaches the record');
+  assert.equal(JSON.stringify(record).includes('temporary-secret'), false);
   assert.equal(vault.backend(), 'plaintext-fallback');
-  assert.deepEqual(vault.open(record), { azure: 'temporary-secret' });
+  assert.equal(vault.getSecurityStatus().persisted, false);
+  assert.match(vault.getSecurityStatus().warning, /kept for this session only/);
+});
+
+test('an older plaintext record is still readable so the session keeps working', () => {
+  const vault = createCredentialVault(fakeSafeStorage(false));
+  const legacy = { version: 1, mode: 'plaintext-fallback', values: { azure: 'old-secret' } };
+  const opened = vault.openWithStatus(legacy);
+  assert.deepEqual(opened.values, { azure: 'old-secret' });
+  assert.equal(opened.plaintext, true, 'the caller knows to rewrite it without values');
 });
 
 test('credential vault does not claim Linux basic_text as secure encryption', { skip: process.platform !== 'linux' }, () => {
@@ -34,7 +47,7 @@ test('credential vault does not claim Linux basic_text as secure encryption', { 
   storage.getSelectedStorageBackend = () => 'basic_text';
   const vault = createCredentialVault(storage);
   assert.equal(vault.isSecure(), false);
-  assert.equal(vault.seal({ azure: 'fallback-value' }).mode, 'plaintext-fallback');
+  assert.equal(vault.seal({ azure: 'fallback-value' }).mode, 'memory-only');
 });
 
 test('credential vault tolerates corrupt encrypted entries without exposing them', () => {

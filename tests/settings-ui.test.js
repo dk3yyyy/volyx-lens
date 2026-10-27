@@ -146,3 +146,13 @@ test('language field offers curated options and per-provider support disclosure'
   assert.match(html, /Local whisper\.cpp supports 50\+ languages/);
   assert.match(html, /OpenAI and Gemini batch fallbacks auto-detect and ignore this field/);
 });
+
+test('settings never promise a saved key that is only in memory', () => {
+  // Without a keyring the key is session-only (VR-22), so the field and the status
+  // line have to say that rather than "saved securely" / "plaintext fallback".
+  assert.match(renderer, /credentialStatus\.persisted === false \? 'Kept for this session — enter to replace'/);
+  assert.match(renderer, /keys not saved \(session only\)/);
+  assert.doesNotMatch(renderer, /: 'plaintext fallback'/);
+  assert.match(html, /API keys are not saved on this system/);
+  assert.doesNotMatch(html, /written to disk with restricted file permissions/);
+});
