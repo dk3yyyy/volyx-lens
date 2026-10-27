@@ -76,12 +76,14 @@ test('renderer has explicit four-edge layouts and inward panel ordering', () => 
   assert.match(styles, /#app\[data-dock="right"\][\s\S]*#toolbar[\s\S]*flex-direction:\s*column/);
 });
 
-test('the expanded panel uses a transparent scrollbar track instead of a bright native strip', () => {
-  assert.match(styles, /#panel\s*\{[^}]*scrollbar-width:\s*thin[^}]*scrollbar-color:\s*transparent transparent/);
-  assert.match(styles, /#panel:hover,\s*#panel:focus-within\s*\{[^}]*scrollbar-color:\s*rgba\(255,255,255,0\.22\) transparent/);
+test('the expanded panel keeps a transparent scrollbar track instead of a bright native strip', () => {
+  // The track staying transparent is what this test protects. The thumb used to be
+  // transparent at rest too, which read as a truncated answer on Windows (VR-35), so
+  // the thumb assertion now checks the resting and hover tokens instead.
+  assert.match(styles, /#panel\s*\{[^}]*scrollbar-width:\s*thin[^}]*scrollbar-color:\s*var\(--sb-thumb\) transparent/);
   assert.match(styles, /#panel::\-webkit-scrollbar-track\s*\{[^}]*background:\s*transparent/);
-  assert.match(styles, /#panel::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*transparent/);
-  assert.match(styles, /#panel:hover::\-webkit-scrollbar-thumb,\s*#panel:focus-within::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*rgba\(255,255,255,0\.22\)/);
+  assert.match(styles, /#panel::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*var\(--sb-thumb\)/);
+  assert.match(styles, /#panel:hover::\-webkit-scrollbar-thumb,\s*#panel:focus-within::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*var\(--sb-thumb-hover\)/);
 });
 
 test('the full toolbar remains the drag target while interactive controls stay no-drag', () => {

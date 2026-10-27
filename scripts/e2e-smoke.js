@@ -273,6 +273,24 @@ app.whenReady().then(async () => {
     assert.equal(afterProviderError.retry, false, 'no retry without a known request');
     assert.equal(afterProviderError.busy, false, 'the composer is usable again');
 
+    // 5d. Both scrollers must show a thumb at rest: on Windows a hidden thumb read
+    // as a truncated answer rather than a scrollable one (VR-35).
+    const scrollAffordance = await win.webContents.executeJavaScript(`(() => {
+      const read = (selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        const style = getComputedStyle(el);
+        return { color: style.scrollbarColor || '', gutter: style.scrollbarGutter || '', overflowY: style.overflowY };
+      };
+      return { panel: read('#panel'), messages: read('#messages') };
+    })()`);
+    for (const [name, value] of Object.entries(scrollAffordance)) {
+      assert.ok(value, `${name} exists`);
+      assert.doesNotMatch(value.color, /^transparent/i, `${name} must not hide its scrollbar at rest (got "${value.color}")`);
+      assert.equal(value.gutter, 'stable', `${name} must reserve its scrollbar gutter`);
+      assert.equal(value.overflowY, 'auto', `${name} scrolls`);
+    }
+
     // 6. No console errors during boot.
     if (consoleErrors.length > 0) {
       console.error('Console errors captured during E2E boot:');
