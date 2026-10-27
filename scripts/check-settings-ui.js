@@ -124,6 +124,51 @@ app.whenReady().then(async () => {
   })()`);
   assert.equal(reverseFromHeading, 'quit', 'Shift+Tab from heading should wrap to the final visible control');
 
+  // Every section switch must move aria-current with it and keep the button wired to
+  // the page it shows: a class-only "on" state told a screen reader nothing (VR-32).
+  for (const section of ['listening', 'context', 'shortcuts', 'providers']) {
+    await win.webContents.executeJavaScript(`document.querySelector('[data-settings-section="${section}"]').click()`);
+    await waitFor(win, `document.querySelector('[data-settings-page="${section}"]').classList.contains('on')`, `${section} page`);
+    const semantics = await win.webContents.executeJavaScript(`(() => {
+      const current = [...document.querySelectorAll('[data-settings-section][aria-current="page"]')];
+      const visible = [...document.querySelectorAll('[data-settings-page]')].filter((page) => !page.hidden);
+      const controlled = current.map((button) => button.getAttribute('aria-controls'));
+      return {
+        currentCount: current.length,
+        currentSection: current[0] ? current[0].dataset.settingsSection : null,
+        controlledIds: controlled,
+        visibleIds: visible.map((page) => page.id),
+        visibleLabelledBy: visible.map((page) => page.getAttribute('aria-labelledby')),
+        visibleTitleIds: visible.map((page) => { const h2 = page.querySelector('h2'); return h2 ? h2.id : null; }),
+      };
+    })()`);
+    assert.equal(semantics.currentCount, 1, `exactly one section is current for ${section}`);
+    assert.equal(semantics.currentSection, section);
+    assert.equal(semantics.visibleIds.length, 1, 'exactly one page is shown');
+    assert.equal(semantics.controlledIds[0], semantics.visibleIds[0], 'aria-controls points at the visible page');
+    assert.equal(semantics.visibleLabelledBy[0], semantics.visibleTitleIds[0], 'the page is named by its own heading');
+  }
+
+  // The provider tabs must report the same selection the panel shows.
+  const providerSemantics = await win.webContents.executeJavaScript(`(() => {
+    const tabs = [...document.querySelectorAll('#provider-seg [role="tab"]')];
+    const selected = tabs.filter((tab) => tab.getAttribute('aria-selected') === 'true');
+    const panel = document.querySelector('#provider-config-panel');
+    return {
+      total: tabs.length,
+      selected: selected.length,
+      selectedControlsPanel: selected[0] ? selected[0].getAttribute('aria-controls') === panel.id : false,
+      panelLabelledBy: panel.getAttribute('aria-labelledby'),
+      selectedId: selected[0] ? selected[0].id : null,
+      roving: tabs.filter((tab) => tab.tabIndex === 0).length,
+    };
+  })()`);
+  assert.equal(providerSemantics.total, 9, 'all providers are exposed as tabs');
+  assert.equal(providerSemantics.selected, 1, 'exactly one provider tab is selected');
+  assert.equal(providerSemantics.roving, 1, 'one tab is in the tab order');
+  assert.equal(providerSemantics.selectedControlsPanel, true, 'the selected tab controls the visible panel');
+  assert.equal(providerSemantics.panelLabelledBy, providerSemantics.selectedId, 'the panel is named by the selected tab');
+
   await win.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
   await waitFor(win, "document.querySelector('#settings-scrim').classList.contains('hidden') && document.activeElement && document.activeElement.id === 'more-btn'", 'Settings close and focus restoration');
   const closed = await win.webContents.executeJavaScript(`({ hidden: document.querySelector('#settings-scrim').classList.contains('hidden'), active: document.activeElement && document.activeElement.id })`);
