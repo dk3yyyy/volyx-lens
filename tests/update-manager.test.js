@@ -4,11 +4,13 @@ const { EventEmitter } = require('node:events');
 
 const { createUpdateManager, releaseChannel } = require('../src/update-manager');
 
-function fixture({ packaged = true, platform = 'darwin', releaseBuild = true } = {}) {
+function fixture({ packaged = true, platform = 'darwin', releaseBuild = true, checkResult = undefined } = {}) {
   const updater = new EventEmitter();
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = true;
-  updater.checkForUpdates = async () => ({ updateInfo: { version: '0.3.0' } });
+  updater.checkForUpdates = async () => (
+    checkResult === undefined ? { updateInfo: { version: '0.3.0' } } : checkResult
+  );
   updater.downloadUpdate = async () => ['/tmp/update.zip'];
   updater.quitAndInstall = () => { updater.installed = true; };
   const states = [];
@@ -149,4 +151,35 @@ test('development Windows builds explain that packaged builds are required', asy
     progress: null,
   });
   await assert.rejects(manager.check(), /official Windows release builds/);
+});
+
+test('a check that resolves without an event still reaches a terminal state', async () => {
+  // electron-updater can resolve without emitting update-available or
+  // update-not-available, which used to leave the panel on "Checking…" (VR-15).
+  for (const [checkResult, expected, availableVersion] of [
+    [null, 'current', null],
+    [{ updateInfo: { version: '0.2.0' } }, 'current', null],
+    [{ updateInfo: { version: '0.4.0' } }, 'available', '0.4.0'],
+    [{ updateInfo: {} }, 'current', null],
+  ]) {
+    const { manager, states } = fixture({ checkResult });
+    const state = await manager.check();
+    assert.notEqual(state.status, 'checking', 'the check must settle');
+    assert.equal(state.status, expected, `checkResult ${JSON.stringify(checkResult)}`);
+    assert.equal(state.availableVersion, availableVersion);
+    assert.equal(states[states.length - 1].status, expected, 'the final state is also emitted to the UI');
+  }
+});
+
+test('a check whose result is already new information keeps the event-driven message', async () => {
+  const { manager, updater, states } = fixture({ checkResult: { updateInfo: { version: '0.4.0' } } });
+  // The event fires first, as it does in practice; the result must not overwrite it.
+  updater.checkForUpdates = async () => {
+    updater.emit('update-available', { version: '0.4.0' });
+    return { updateInfo: { version: '0.4.0' } };
+  };
+  const state = await manager.check();
+  assert.equal(state.status, 'available');
+  assert.equal(state.message, 'Volyx Lens 0.4.0 is available.');
+  assert.equal(states.filter((entry) => entry.status === 'available').length, 1, 'one available state, not two');
 });

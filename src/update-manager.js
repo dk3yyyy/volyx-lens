@@ -96,6 +96,20 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
     const service = initialize();
     setState('checking', 'Checking for updates…', { availableVersion: null });
     activeCheck = Promise.resolve(service.checkForUpdates())
+      .then((result) => {
+        // checkForUpdates() can resolve without emitting either terminal event, and
+        // then the UI sat on "Checking for updates…" until something else happened
+        // (VR-15). If nothing has settled the state by now, settle it from the
+        // result: a newer version means an update, anything else means up to date.
+        if (state.status !== 'checking') return result;
+        const version = safeVersion(result && result.updateInfo);
+        if (version && version !== state.currentVersion) {
+          setState('available', `Volyx Lens ${version} is available.`, { availableVersion: version });
+        } else {
+          setState('current', 'Volyx Lens is up to date.', { availableVersion: null });
+        }
+        return result;
+      })
       .catch(() => setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null }))
       .finally(() => { activeCheck = null; });
     await activeCheck;
