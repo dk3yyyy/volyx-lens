@@ -116,7 +116,12 @@
           <div class="history-backup">
             <button id="meeting-history-backup-all" type="button">Back up all</button>
             <button id="meeting-history-restore-all" type="button">Restore</button>
+            <button id="meeting-history-restore-trash" type="button" class="hidden">Restore deleted</button>
             <span id="meeting-history-backup-status" role="status" aria-live="polite"></span>
+          </div>
+          <div class="history-undo hidden" id="meeting-history-undo-row" role="status">
+            <span id="meeting-history-undo-text"></span>
+            <button id="meeting-history-undo" type="button">Undo</button>
           </div>
           <div id="meeting-history-list" role="list" aria-label="Saved meetings"></div>
           <div id="meeting-history-detail" class="hidden">

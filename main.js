@@ -2433,7 +2433,11 @@ handleTrusted('transcript:clear', () => {
 });
 handleTrusted('transcript:export', (_event, format) => exportTranscript(String(format || 'txt')));
 handleTrusted('history:list', () => meetingStore.list());
-handleTrusted('history:limits', () => ({ maxRecords: meetingStore.maxRecords }));
+handleTrusted('history:limits', () => ({
+  maxRecords: meetingStore.maxRecords,
+  trashRetentionDays: meetingStore.trashRetentionDays,
+  trashCount: meetingStore.trashIds().length,
+}));
 handleTrusted('history:get', (_event, id) => meetingStore.get(String(id || '')));
 handleTrusted('history:delete', (_event, id) => {
   abortActiveHistoryJob();
@@ -2446,18 +2450,42 @@ handleTrusted('history:delete', (_event, id) => {
 });
 handleTrusted('history:delete-many', (_event, ids) => {
   const list = (Array.isArray(ids) ? ids : []).map((id) => String(id || '')).filter((id) => id).slice(0, 500);
-  if (!list.length) return { removed: 0 };
+  if (!list.length) return { removed: 0, ids: [] };
   abortActiveHistoryJob();
-  let removed = 0;
+  const removed = [];
   for (const id of list) {
     const result = meetingStore.remove(id);
-    if (result.removed) removed += 1;
+    if (result.removed) removed.push(id);
   }
-  if (removed) {
+  if (removed.length) {
     invalidatePreviousMeetings();
-    send('history:changed', { deletedMany: removed });
+    send('history:changed', { deletedMany: removed.length });
   }
-  return { removed };
+  return { removed: removed.length, ids: removed };
+});
+// Restore everything still inside the undo window. The pane offers this after a
+// relaunch, when the in-session undo row is gone but the copies are not.
+handleTrusted('history:restore-trash', () => {
+  const ids = meetingStore.trashIds().slice(0, 500);
+  if (!ids.length) return { restored: 0, missing: [], blocked: 0 };
+  const result = meetingStore.restoreDeleted(ids);
+  if (result.restored) {
+    invalidatePreviousMeetings();
+    send('history:changed', { restored: result.restored });
+  }
+  return result;
+});
+// Undo for both delete paths. It takes the ids back, not "the last thing", so a
+// stale pane cannot restore something the user did not just delete.
+handleTrusted('history:undo-delete', (_event, ids) => {
+  const list = (Array.isArray(ids) ? ids : []).map((id) => String(id || '')).filter((id) => id).slice(0, 500);
+  if (!list.length) return { restored: 0, missing: [], blocked: 0 };
+  const result = meetingStore.restoreDeleted(list);
+  if (result.restored) {
+    invalidatePreviousMeetings();
+    send('history:changed', { restored: result.restored });
+  }
+  return result;
 });
 handleTrusted('history:clear', () => {
   abortActiveHistoryJob();
@@ -2703,6 +2731,9 @@ function resetShortcuts() {
 app.whenReady().then(() => {
   if (!primaryInstance) return;
   enforceHistoryRetention();
+  // Undo has a lifetime: purge copies deleted more than TRASH_RETENTION_DAYS ago
+  // at startup, so the window is a promise and not an approximation.
+  try { meetingStore.purgeTrash(); } catch {}
   if (process.platform === 'darwin') {
     if (app.dock) app.dock.hide();
     app.setActivationPolicy('accessory');

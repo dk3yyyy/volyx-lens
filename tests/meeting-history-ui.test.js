@@ -62,11 +62,11 @@ test('renderer opens a detail view, exports, deletes, clears, and closes back to
 });
 
 test('renderer confirms every destructive history action before deleting', () => {
-  assert.match(renderer, /if \(!window\.confirm\('Delete this saved meeting\? This cannot be undone\.'\)\) return;/);
-  assert.match(renderer, /if \(!window\.confirm\('Delete ALL saved meetings\? This cannot be undone\.'\)\) return;/);
+  assert.match(renderer, /if \(!window\.confirm\('Delete this saved meeting\? You can undo this right after\.'\)\) return;/);
+  assert.match(renderer, /if \(!window\.confirm\('Delete ALL saved meetings\? This cannot be undone, and it permanently removes the undo copies of earlier deletes\.'\)\) return;/);
   const rowDelete = renderer.match(/history-entry-delete[\s\S]*?historyDelete\(record\.id\)/);
   assert.ok(rowDelete, 'list-row delete handler exists');
-  assert.match(rowDelete[0], /window\.confirm\('Delete this saved meeting\? This cannot be undone\.'\)/);
+  assert.match(rowDelete[0], /window\.confirm\('Delete this saved meeting\? You can undo this right after\.'\)/);
 });
 
 test('notes generation confirms long recaps and streams recap tokens into the panel', () => {
