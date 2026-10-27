@@ -527,6 +527,27 @@ app.whenReady().then(async () => {
   assert.equal(calls.restoreTrash, 1, 'the pane asked to restore everything still in the trash');
   await waitFor(win, "document.querySelector('#meeting-history-restore-trash')?.classList.contains('hidden') === true", 'the restore-deleted control hides once the trash is empty');
 
+  // Notes come from a model reading a transcript, so a hostile string must render
+  // as text in the real pane rather than as an element.
+  records[0].notes = {
+    summary: '<img src=x onerror=alert(1)>',
+    keyPoints: ['<script>alert(2)</script>'],
+    decisions: [],
+    actionItems: [],
+    followUp: [],
+    source: 'raw',
+  };
+  await run(win, "document.querySelector('#meeting-history-toggle').click()");
+  await run(win, "document.querySelector('#meeting-history-list .history-entry-open').click()");
+  await waitFor(win, "document.querySelector('#meeting-notes-output')?.textContent.includes('Meeting Summary')", 'the notes pane');
+  const notesPwn = await run(win, `(() => {
+    const out = document.querySelector('#meeting-notes-output');
+    return { imgs: out.querySelectorAll('img').length, scripts: out.querySelectorAll('script').length, text: out.textContent };
+  })()`);
+  assert.equal(notesPwn.imgs, 0, 'a markup-shaped note is rendered as text, not as an image');
+  assert.equal(notesPwn.scripts, 0, 'a script-shaped note is rendered as text');
+  assert.match(notesPwn.text, /<img src=x onerror=alert\(1\)>/, 'the payload is visible as the text it is');
+
   console.log('History UI behavior passed: inactive window state, context menus, accessibility preferences, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
   app.exit(0);
 }).catch((error) => {

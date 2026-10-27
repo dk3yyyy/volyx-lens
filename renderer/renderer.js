@@ -1,6 +1,7 @@
 /* Volyx Lens renderer — UI state, mic capture, IPC, streaming render. */
 (function () {
   const { icon } = window.ICONS;
+  const { renderNotesHtml } = window.volyxLensNotesMarkup;
   const volyxLens = window.volyxLens; // exposed by preload
   const $ = (s) => document.querySelector(s);
 
@@ -972,7 +973,7 @@
       renderMeetingTurns();
       if (record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length)) {
         const out = $('#meeting-notes-output');
-        out.innerHTML = renderStructuredNotes(record.notes, '');
+        out.innerHTML = renderNotesHtml(record.notes, '');
         const source = document.createElement('p');
         source.className = 'notes-source';
         if (record.notes.source === 'cleaned') source.textContent = 'These notes were generated from the cleaned transcript.';
@@ -1051,47 +1052,6 @@
   });
 
   
-function renderStructuredNotes(notes, rawText) {
-  if (!notes) {
-    const pre = document.createElement('pre');
-    pre.className = 'notes-raw';
-    pre.textContent = rawText || '';
-    const wrap = document.createElement('div');
-    wrap.appendChild(pre);
-    return wrap.innerHTML;
-  }
-
-  const sections = [
-    { key: 'summary', title: 'Meeting Summary', icon: '📋' },
-    { key: 'keyPoints', title: 'Key Points', icon: '💡' },
-    { key: 'decisions', title: 'Decisions', icon: '✅' },
-    { key: 'actionItems', title: 'Action Items', icon: '🎯' },
-    { key: 'followUp', title: 'Follow-Up', icon: '🔄' }
-  ];
-
-  let html = '<div class="notes-structured">';
-  for (const section of sections) {
-    const value = notes[section.key];
-    const items = Array.isArray(value) ? value : (value ? [value] : []);
-    if (items.length === 0) continue;
-
-    html += '<section class="notes-section">';
-    html += '<h4>' + section.icon + ' ' + section.title + '</h4>';
-    if (section.key === 'summary') {
-      html += '<p>' + items[0] + '</p>';
-    } else {
-      html += '<ul>';
-      for (const item of items) {
-        html += '<li>' + item + '</li>';
-      }
-      html += '</ul>';
-    }
-    html += '</section>';
-  }
-  html += '</div>';
-  return html;
-}
-
 $('#meeting-notes-generate').addEventListener('click', async () => {
     if (!meetingDetail) return;
     const button = $('#meeting-notes-generate');
@@ -1108,7 +1068,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         const result = await volyxLens.historyRecap(meetingDetail.id, confirmed);
         if (result && result.ok) {
           meetingNotesText = result.text || '';
-          out.innerHTML = renderStructuredNotes(result.notes || null, meetingNotesText);
+          out.innerHTML = renderNotesHtml(result.notes || null, meetingNotesText);
           out.classList.remove('hidden');
           showStatus('Meeting notes ready.');
           break;
