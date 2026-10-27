@@ -50,6 +50,7 @@
   let slideTracking = { enabled: false, active: false, slides: [], total: 0 };
   let diagnosticsTimer = null;
   let activeRequestMode = null;
+  let lastRequest = null; // the last request sent, so a failed answer can be retried
   let aiEl = null;       // current streaming <div class="ai-text">
   let caretEl = null;
 
@@ -1288,6 +1289,29 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     aiEl.insertBefore(span, caretEl);
   }
 
+  function appendAnswerError(message) {
+    const block = document.createElement('div');
+    block.className = 'ai-error';
+    const text = document.createElement('p');
+    text.textContent = message && String(message).trim() ? String(message) : 'The response could not be completed.';
+    block.appendChild(text);
+    if (lastRequest) {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'ai-retry';
+      retry.textContent = 'Retry';
+      retry.addEventListener('click', () => {
+        block.remove();
+        setBusy(true, lastRequest.mode);
+        volyxLens.ask({ ...lastRequest });
+      });
+      block.appendChild(retry);
+    }
+    messages.appendChild(block);
+    messages.scrollTop = messages.scrollHeight;
+    return block;
+  }
+
   function finalizeAi(announcement = 'Response ready.') {
     if (!aiEl) return;
     const raw = aiEl.dataset.raw || '';
@@ -1335,7 +1359,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if (busy) return;
     if (mode === 'assist') mode = selectedAssistMode();
     setBusy(true, mode);
-    volyxLens.ask({ mode, text: text || '', confirmedLongRecap: options.confirmedLongRecap === true });
+    lastRequest = { mode, text: text || '', confirmedLongRecap: options.confirmedLongRecap === true };
+    volyxLens.ask({ ...lastRequest });
   }
 
   document.querySelectorAll('.act[data-mode]').forEach((btn) => {
@@ -2023,8 +2048,21 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     volyxLens.ask({ mode: event.mode, text: event.text || '', confirmedLongRecap: event.confirmedLongRecap === true, confirmedTaskContext: true });
   });
   volyxLens.on('llm:error', ({ message }) => {
-    if (!aiEl) startAi(true);
-    aiEl.dataset.raw = message; finalizeAi('Response failed.'); setBusy(false);
+    const streamed = Boolean(aiEl && (aiEl.dataset.raw || '').trim());
+    if (streamed) {
+      // Tokens already reached the pane. Replacing them with the error string threw
+      // away what the user was reading, so keep the answer and mark the failure
+      // next to it (VR-11).
+      finalizeAi('Response interrupted.');
+      appendAnswerError(message);
+      setBusy(false);
+      return;
+    }
+    if (aiEl) { aiEl.remove(); aiEl = null; caretEl = null; }
+    startAi(true);
+    aiEl.dataset.raw = message;
+    finalizeAi('Response failed.');
+    setBusy(false);
   });
   let statusTimer = null;
   function showStatus(message) {
