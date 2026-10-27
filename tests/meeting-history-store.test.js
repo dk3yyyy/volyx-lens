@@ -123,12 +123,14 @@ test('remove and clear delete records', () => {
   const directory = temporaryDirectory();
   const store = createMeetingStore({ dir: directory });
   const first = store.finalize({ turns: sampleTurns(2), enabled: true });
-  const second = store.finalize({ turns: sampleTurns(4), enabled: true });
-  assert.deepEqual(store.remove(first.id), { removed: true });
+  store.finalize({ turns: sampleTurns(4), enabled: true });
+  // Delete is a move to the undo folder, so the meeting stays restorable.
+  assert.deepEqual(store.remove(first.id), { removed: true, trashed: true });
   assert.deepEqual(store.remove(first.id), { removed: false });
   assert.equal(store.get(first.id), null);
   assert.equal(store.list().length, 1);
-  assert.deepEqual(store.clear(), { cleared: 1 });
+  // Clear all is the permanent path and takes the undo copies with it.
+  assert.deepEqual(store.clear(), { cleared: 1, trashCleared: 1 });
   assert.deepEqual(store.list(), []);
 });
 
@@ -257,7 +259,10 @@ test('main process wires the store, finalize points, and trusted IPC', () => {
   // The record cap removes a saved meeting, so the save reports how many it
   // removed and the pane is told the cap rather than guessing it.
   assert.match(main, /pruned: result\.pruned/);
-  assert.match(main, /handleTrusted\('history:limits', \(\) => \(\{ maxRecords: meetingStore\.maxRecords \}\)\)/);
+  assert.match(main, /handleTrusted\('history:limits'/);
+  assert.match(main, /maxRecords: meetingStore\.maxRecords/);
+  assert.match(main, /trashRetentionDays: meetingStore\.trashRetentionDays/);
+  assert.match(main, /trashCount: meetingStore\.trashIds\(\)\.length/);
   assert.match(main, /only \$\{meetingStore\.maxRecords\} are kept on this device/);
   for (const method of ['historyList', 'historyGet', 'historyDelete', 'historyClear']) {
     assert.match(preload, new RegExp(`${method}: \\(.*ipcRenderer\\.invoke\\('history:`));

@@ -71,7 +71,7 @@ test('history can be kept tidy without opening dialogs one by one', () => {
   assert.ok(start > 0, 'the bulk delete button is wired');
   const body = renderer.slice(start, start + 700);
   assert.match(body, /historyDeleteMany/);
-  assert.match(body, /cannot be undone/);
+  assert.match(body, /You can undo this right after/);
 });
 
 test('the retention window is a setting, applied at startup and on change', () => {

@@ -6,6 +6,15 @@ const crypto = require('node:crypto');
 
 const MAX_RECORDS = 200;
 const MAX_RECORD_TURNS = 5000;
+// Deleting a saved meeting moves it here, so a mistake costs nothing for a
+// month. Clear all is the exception: it is the privacy action and removes the
+// undo copies too.
+const TRASH_RETENTION_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Trash entries are named <deletedAt>-<originalMtime>-<id>.json. Both stamps
+// travel with the file so a restore lands in its old place in the list without
+// a sidecar to keep in sync.
+const TRASH_FILE_PATTERN = /^(\d{1,16})-(\d{1,16})-([a-zA-Z0-9._-]{1,100})\.json$/;
 const ID_PATTERN = /^[a-zA-Z0-9._-]+$/;
 
 function isSafeId(id) {
@@ -58,6 +67,12 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
 
   function ensureDir() {
     fsImpl.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+
+  const trashDir = `${dir}-trash`;
+
+  function ensureTrashDir() {
+    fsImpl.mkdirSync(trashDir, { recursive: true, mode: 0o700 });
   }
 
   function recordPath(id) {
@@ -315,12 +330,129 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         }
       }
     } catch {}
+    // The record moves to the trash rather than being unlinked, so a confirm
+    // clicked by mistake is recoverable for TRASH_RETENTION_DAYS. Both stamps
+    // ride in the filename: when it was deleted, and the mtime it had, so a
+    // restore keeps its place in the list instead of jumping to the top.
+    let originalMtime = now();
+    try { originalMtime = fsImpl.statSync(target).mtimeMs; } catch {}
     try {
-      fsImpl.unlinkSync(target);
-      return { removed: true };
+      ensureTrashDir();
+      const name = `${Math.round(now())}-${Math.round(originalMtime)}-${id}.json`;
+      fsImpl.renameSync(target, path.join(trashDir, name));
+      lastSavedFingerprint = null;
+      return { removed: true, trashed: true };
     } catch {
       return { removed: false };
     }
+  }
+
+  function parseTrashName(name) {
+    const match = String(name || '').match(TRASH_FILE_PATTERN);
+    if (!match) return null;
+    const id = match[3];
+    if (!isSafeId(id)) return null;
+    return { id, deletedAt: Number(match[1]), mtimeMs: Number(match[2]) };
+  }
+
+  // Newest entry per id, so a record deleted twice restores the latest copy.
+  function trashIndex() {
+    const index = new Map();
+    let names = [];
+    try {
+      names = fsImpl.readdirSync(trashDir);
+    } catch {
+      return index;
+    }
+    for (const name of names) {
+      const parsed = parseTrashName(name);
+      if (!parsed) continue;
+      const seen = index.get(parsed.id);
+      if (!seen || parsed.deletedAt > seen.deletedAt) index.set(parsed.id, { ...parsed, name });
+    }
+    return index;
+  }
+
+  /**
+   * Put deleted meetings back.
+   *
+   * A full history refuses instead of restoring and immediately pruning: the
+   * record would vanish again in the same breath, and "restored" would be a lie.
+   * The copy stays in the trash so the user can make room and try again.
+   */
+  function restoreDeleted(ids) {
+    const requested = [];
+    for (const id of Array.isArray(ids) ? ids : []) {
+      if (isSafeId(id) && !requested.includes(id)) requested.push(id);
+    }
+    const index = trashIndex();
+    const available = Math.max(0, MAX_RECORDS - list().length);
+    const missing = [];
+    let restored = 0;
+    let blocked = 0;
+    for (const id of requested) {
+      const entry = index.get(id);
+      if (!entry) {
+        missing.push(id);
+        continue;
+      }
+      if (restored >= available) {
+        blocked += 1;
+        continue;
+      }
+      const target = recordPath(id);
+      let taken = false;
+      try { fsImpl.statSync(target); taken = true; } catch {}
+      if (taken) {
+        missing.push(id);
+        continue;
+      }
+      try {
+        fsImpl.renameSync(path.join(trashDir, entry.name), target);
+      } catch {
+        missing.push(id);
+        continue;
+      }
+      try { fsImpl.utimesSync(target, entry.mtimeMs / 1000, entry.mtimeMs / 1000); } catch {}
+      lastSavedFingerprint = null;
+      restored += 1;
+    }
+    return { restored, missing, blocked };
+  }
+
+  // Ids currently in the undo folder, newest first. The pane uses this to offer
+  // a restore on the next launch, so the window is not limited to the session
+  // that did the deleting.
+  function trashIds() {
+    return [...trashIndex().values()]
+      .sort((a, b) => b.deletedAt - a.deletedAt)
+      .map((entry) => entry.id);
+  }
+
+  // Undo is a convenience with a lifetime. Anything older than the window is
+  // gone for good, which is what makes the week-long window a real promise.
+  function purgeTrash({ keepMs = TRASH_RETENTION_DAYS * DAY_MS, at = null } = {}) {
+    const reference = Number.isFinite(at) ? at : now();
+    const keepWindow = Number.isFinite(keepMs) && keepMs > 0 ? keepMs : 0;
+    let names = [];
+    try {
+      names = fsImpl.readdirSync(trashDir);
+    } catch {
+      return { removed: 0 };
+    }
+    let removed = 0;
+    for (const name of names) {
+      const parsed = parseTrashName(name);
+      if (!parsed) continue;
+      if (reference - parsed.deletedAt < keepWindow) continue;
+      try {
+        fsImpl.unlinkSync(path.join(trashDir, name));
+        removed += 1;
+      } catch {
+        // Best effort; the next pass tries again.
+      }
+    }
+    return { removed };
   }
 
   function clear() {
@@ -342,7 +474,10 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       }
     }
     lastSavedFingerprint = null;
-    return { cleared };
+    // Clear all is the privacy action: it removes the undo copies too, so the
+    // records do not survive in a folder the user was told was empty.
+    const trashCleared = purgeTrash({ keepMs: 0 }).removed;
+    return { cleared, trashCleared };
   }
 
   // Delete records that ended before the retention window. Zero, a negative
@@ -554,6 +689,9 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     readAll,
     importRecords,
     remove,
+    restoreDeleted,
+    trashIds,
+    purgeTrash,
     clear,
     updateNotes,
     updateCleaned,
@@ -563,6 +701,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     recordPath,
     fingerprint,
     maxRecords: MAX_RECORDS,
+    trashRetentionDays: TRASH_RETENTION_DAYS,
   };
 }
 

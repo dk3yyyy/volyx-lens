@@ -412,9 +412,15 @@
   let meetingDetail = null;
   let meetingNotesText = '';
   let meetingHistorySearchTimer = null;
-  // How many records the store keeps. Fetched rather than hardcoded so the
-  // sentence the pane shows cannot drift from the store's own cap.
+  // How many records the store keeps, and how long a deleted one stays
+  // recoverable. Both are fetched rather than hardcoded so the sentences the
+  // pane shows cannot drift from the store's own limits.
   let meetingHistoryMax = null;
+  let meetingTrashDays = null;
+  let meetingTrashCount = 0;
+  // Ids from the delete that just happened, so Undo restores exactly those and
+  // nothing else. Cleared once used or superseded.
+  let meetingLastDeleted = [];
   // Which copy of a saved transcript the pane shows: the cleaned one when the
   // user asked for it, otherwise exactly what was heard.
   let meetingViewMode = 'cleaned';
@@ -441,16 +447,30 @@
       : 'Saved meetings are kept on this device.';
   }
 
-  async function loadHistoryLimit() {
-    if (meetingHistoryMax) return;
+  function renderRestoreDeleted() {
+    const button = $('#meeting-history-restore-trash');
+    if (!button) return;
+    const has = meetingTrashCount > 0;
+    button.classList.toggle('hidden', !has);
+    button.textContent = has ? `Restore deleted (${meetingTrashCount})` : 'Restore deleted';
+  }
+
+  // Re-read the store's limits instead of caching them: the trash count changes
+  // with every delete, undo and clear, and the pane has to keep up.
+  async function refreshHistoryLimits() {
     try {
       const limits = await volyxLens.historyLimits();
       const max = Number(limits && limits.maxRecords);
       if (Number.isFinite(max) && max > 0) meetingHistoryMax = max;
+      const trashDays = Number(limits && limits.trashRetentionDays);
+      if (Number.isFinite(trashDays) && trashDays > 0) meetingTrashDays = trashDays;
+      const trashCount = Number(limits && limits.trashCount);
+      meetingTrashCount = Number.isFinite(trashCount) && trashCount > 0 ? trashCount : 0;
     } catch {
-      // The pane works without the sentence; a failure here needs no message.
+      // The pane works without the sentences; a failure here needs no message.
     }
     renderHistoryLimit();
+    renderRestoreDeleted();
   }
 
   // A pruned record is a saved meeting the user can no longer open, so it gets
@@ -550,11 +570,13 @@
       remove.title = 'Delete this meeting';
       remove.setAttribute('aria-label', 'Delete meeting');
       remove.addEventListener('click', async () => {
-        if (!window.confirm('Delete this saved meeting? This cannot be undone.')) return;
+        if (!window.confirm('Delete this saved meeting? You can undo this right after.')) return;
         try {
           const result = await volyxLens.historyDelete(record.id);
           meetingSelected.delete(record.id);
-          showStatus(result && result.removed ? 'Meeting deleted.' : 'That meeting is no longer available.');
+          setHistoryUndo(result && result.removed ? [record.id] : []);
+          showStatus(result && result.removed ? 'Meeting deleted. Undo is in the history pane.' : 'That meeting is no longer available.');
+          await refreshHistoryLimits();
           await loadMeetingHistory();
         } catch (error) { showStatus(error && error.message ? error.message : 'The meeting could not be deleted.'); }
       });
@@ -581,7 +603,7 @@
     $('#meeting-history-panel').classList.toggle('hidden', !open);
     $('#meeting-history-toggle').setAttribute('aria-expanded', String(open));
     if (open) {
-      loadHistoryLimit();
+      refreshHistoryLimits();
       loadMeetingHistory({ quiet: true });
     }
   }
@@ -592,6 +614,47 @@
 
   $('#meeting-history-prune-dismiss').addEventListener('click', () => {
     $('#meeting-history-prune-notice').classList.add('hidden');
+  });
+
+  // A delete is recoverable for a while, so the pane says so and offers the one
+  // action that matters. The button carries the ids, not a "last action".
+  function setHistoryUndo(ids) {
+    meetingLastDeleted = Array.isArray(ids) ? ids.slice() : [];
+    const row = $('#meeting-history-undo-row');
+    if (!row) return;
+    row.classList.toggle('hidden', meetingLastDeleted.length === 0);
+    const text = $('#meeting-history-undo-text');
+    if (!text) return;
+    const count = meetingLastDeleted.length;
+    text.textContent = count
+      ? `Deleted ${count} saved meeting${count === 1 ? '' : 's'}. Undo keeps ${count === 1 ? 'it' : 'them'} recoverable for ${meetingTrashDays || 30} days.`
+      : '';
+  }
+
+  $('#meeting-history-undo').addEventListener('click', async () => {
+    const button = $('#meeting-history-undo');
+    if (!meetingLastDeleted.length || button.disabled) return;
+    const ids = meetingLastDeleted.slice();
+    button.disabled = true;
+    try {
+      const result = await volyxLens.historyUndoDelete(ids);
+      const restored = Number(result && result.restored) || 0;
+      const blocked = Number(result && result.blocked) || 0;
+      const missing = Array.isArray(result && result.missing) ? result.missing.length : 0;
+      const parts = [restored
+        ? `Restored ${restored} saved meeting${restored === 1 ? '' : 's'}.`
+        : 'Nothing was restored.'];
+      if (blocked) parts.push(`${blocked} could not come back because only ${meetingHistoryMax || 'the limit'} saved meetings are kept. Delete one and undo again.`);
+      if (missing) parts.push(`${missing} ${missing === 1 ? 'copy is' : 'copies are'} no longer in the undo folder.`);
+      showStatus(parts.join(' '));
+      if (!blocked && !missing) setHistoryUndo([]);
+      await refreshHistoryLimits();
+      await loadMeetingHistory({ quiet: true });
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'Those meetings could not be restored.');
+    } finally {
+      button.disabled = false;
+    }
   });
 
   // Backing up is the safety net for a store that deletes permanently, so the
@@ -606,6 +669,27 @@
   function backupCountLabel(count) {
     return `${count} saved meeting${count === 1 ? '' : 's'}`;
   }
+
+  $('#meeting-history-restore-trash').addEventListener('click', async () => {
+    const button = $('#meeting-history-restore-trash');
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      const result = await volyxLens.historyRestoreTrash();
+      const restored = Number(result && result.restored) || 0;
+      const blocked = Number(result && result.blocked) || 0;
+      showStatus(restored
+        ? `Restored ${restored} deleted meeting${restored === 1 ? '' : 's'}.${blocked ? ` ${blocked} could not come back because only ${meetingHistoryMax || 'the limit'} saved meetings are kept.` : ''}`
+        : 'There is nothing to restore.');
+      setHistoryUndo([]);
+      await refreshHistoryLimits();
+      await loadMeetingHistory({ quiet: true });
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'The deleted meetings could not be restored.');
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   $('#meeting-history-backup-all').addEventListener('click', async () => {
     const button = $('#meeting-history-backup-all');
@@ -711,14 +795,16 @@
   $('#meeting-history-delete-selected').addEventListener('click', async () => {
     const ids = [...meetingSelected];
     if (!ids.length) return;
-    if (!window.confirm(`Delete ${ids.length} saved meeting${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete ${ids.length} saved meeting${ids.length === 1 ? '' : 's'}? You can undo this right after.`)) return;
     try {
       const result = await volyxLens.historyDeleteMany(ids);
       meetingSelected.clear();
       meetingSelectMode = false;
+      setHistoryUndo(result && result.removed ? (Array.isArray(result.ids) ? result.ids : ids) : []);
       showStatus(result && result.removed
-        ? `Deleted ${result.removed} saved meeting${result.removed === 1 ? '' : 's'}.`
+        ? `Deleted ${result.removed} saved meeting${result.removed === 1 ? '' : 's'}. Undo is in the history pane.`
         : 'Nothing was deleted.');
+      await refreshHistoryLimits();
       await loadMeetingHistory();
       updateMeetingSelectionUi();
     } catch (error) { showStatus(error && error.message ? error.message : 'Those meetings could not be deleted.'); }
@@ -918,9 +1004,12 @@
 
   $('#meeting-history-delete').addEventListener('click', async () => {
     if (!meetingDetail) return;
-    if (!window.confirm('Delete this saved meeting? This cannot be undone.')) return;
+    if (!window.confirm('Delete this saved meeting? You can undo this right after.')) return;
+    const deletedId = meetingDetail.id;
     try {
       const result = await volyxLens.historyDelete(meetingDetail.id);
+      setHistoryUndo(result && result.removed ? [deletedId] : []);
+      await refreshHistoryLimits();
       closeMeetingDetail();
       await loadMeetingHistory();
       showStatus(result && result.removed ? 'Meeting deleted.' : 'That meeting is no longer available.');
@@ -929,9 +1018,11 @@
 
   $('#meeting-history-clear').addEventListener('click', async () => {
     if (!meetingHistoryRecords.length) return;
-    if (!window.confirm('Delete ALL saved meetings? This cannot be undone.')) return;
+    if (!window.confirm('Delete ALL saved meetings? This cannot be undone, and it permanently removes the undo copies of earlier deletes.')) return;
     try {
       const result = await volyxLens.historyClear();
+      setHistoryUndo([]);
+      await refreshHistoryLimits();
       closeMeetingDetail();
       await loadMeetingHistory();
       const recoveredNotice = result.recoverySuppressed

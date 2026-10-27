@@ -98,7 +98,8 @@ function recordB() {
 }
 
 let records = [recordA(), recordB()];
-const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [] };
+const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0 };
+let deletedRecords = [];
 
 function listedRecords() {
   return records.map((record) => ({
@@ -128,7 +129,7 @@ ipcMain.handle('capture:state', () => ({ active: false }));
 ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.7.3', status: 'unsupported', message: '', availableVersion: null, progress: null }));
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => listedRecords());
-ipcMain.handle('history:limits', () => ({ maxRecords: 200 }));
+ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: deletedRecords.length }));
 ipcMain.handle('history:get', (_event, id) => {
   const found = records.find((record) => record.id === id);
   return found ? JSON.parse(JSON.stringify(found)) : null;
@@ -151,13 +152,31 @@ ipcMain.handle('history:discard-cleaned', (_event, id) => {
 ipcMain.handle('history:delete-many', (_event, ids) => {
   calls.deleteMany.push(ids);
   const remove = new Set(ids);
+  deletedRecords = deletedRecords.concat(records.filter((record) => remove.has(record.id)));
   records = records.filter((record) => !remove.has(record.id));
-  return { removed: ids.length };
+  return { removed: ids.length, ids };
 });
 ipcMain.handle('history:delete', (_event, id) => {
   calls.deleteOne.push(id);
+  const found = records.find((record) => record.id === id);
+  if (found) deletedRecords.push(found);
   records = records.filter((record) => record.id !== id);
-  return { removed: true };
+  return { removed: Boolean(found), trashed: Boolean(found) };
+});
+ipcMain.handle('history:restore-trash', () => {
+  calls.restoreTrash += 1;
+  const back = deletedRecords;
+  deletedRecords = [];
+  records = records.concat(back);
+  return { restored: back.length, missing: [], blocked: 0 };
+});
+ipcMain.handle('history:undo-delete', (_event, ids) => {
+  calls.undo.push(ids);
+  const wanted = new Set(Array.isArray(ids) ? ids : []);
+  const back = deletedRecords.filter((record) => wanted.has(record.id));
+  deletedRecords = deletedRecords.filter((record) => !wanted.has(record.id));
+  records = records.concat(back);
+  return { restored: back.length, missing: [], blocked: 0 };
 });
 ipcMain.handle('history:clean', () => ({ ok: false, code: 'no_change', message: 'not used in this harness' }));
 ipcMain.handle('history:recap', () => ({ ok: false, code: 'error', message: 'not used in this harness' }));
@@ -356,7 +375,35 @@ app.whenReady().then(async () => {
   assert.deepEqual(calls.deleteMany[0].sort(), ['meeting-a', 'meeting-b']);
   await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 0", 'list emptied');
 
-  console.log('History UI behavior passed: search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, record cap notice, and backup/restore status.');
+  // Deleting is recoverable: the pane offers Undo and puts the meetings back.
+  await waitFor(win, "document.querySelector('#meeting-history-undo-row')?.classList.contains('hidden') === false", 'the undo row after a bulk delete');
+  const bulkUndoText = await run(win, "document.querySelector('#meeting-history-undo-text').textContent");
+  assert.match(bulkUndoText, /Deleted 2 saved meetings\. Undo keeps them recoverable for 30 days\./);
+  await run(win, "document.querySelector('#meeting-history-undo').click()");
+  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 2", 'both meetings came back');
+  assert.equal(calls.undo.length, 1, 'undo asked the main process to restore the deleted ids');
+  assert.deepEqual(calls.undo[0].slice().sort(), ['meeting-a', 'meeting-b']);
+  await waitFor(win, "document.querySelector('#meeting-history-undo-row')?.classList.contains('hidden') === true", 'the undo row cleared after a full restore');
+
+  // The single delete goes through the same affordance.
+  await run(win, "document.querySelector('#meeting-history-list .history-entry .history-entry-delete').click()");
+  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 1", 'one row left after a single delete');
+  await waitFor(win, "/Deleted 1 saved meeting/.test(document.querySelector('#meeting-history-undo-text').textContent)", 'the single undo row');
+  await run(win, "document.querySelector('#meeting-history-undo').click()");
+  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 2", 'the single meeting came back');
+  assert.equal(calls.undo.length, 2);
+
+  // After a relaunch the undo row is gone but the copies are not: the pane
+  // reports how many are still restorable and restores them in one action.
+  await run(win, "document.querySelector('#meeting-history-list .history-entry .history-entry-delete').click()");
+  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 1", 'one row left before the relaunch case');
+  await waitFor(win, "/Restore deleted \\(1\\)/.test(document.querySelector('#meeting-history-restore-trash').textContent)", 'the restore-deleted count');
+  await run(win, "document.querySelector('#meeting-history-restore-trash').click()");
+  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 2", 'the copy came back after the relaunch case');
+  assert.equal(calls.restoreTrash, 1, 'the pane asked to restore everything still in the trash');
+  await waitFor(win, "document.querySelector('#meeting-history-restore-trash')?.classList.contains('hidden') === true", 'the restore-deleted control hides once the trash is empty');
+
+  console.log('History UI behavior passed: search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
   app.exit(0);
 }).catch((error) => {
   console.error('History UI behavior failed:', error && error.message ? error.message : error);

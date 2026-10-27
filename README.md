@@ -235,6 +235,8 @@ Meeting detection is opt-in from Settings → Listening and runs locally in-sess
 
 History is stored on device and cleared with the Clear history action; it is never uploaded to a Volyx Lens-operated server. Up to 200 saved meetings are kept: when the limit is reached the oldest record is removed to make room, and the history panel says how many were removed. Export any record you need to keep.
 
+Deleting one meeting or a selection is recoverable: the record moves to a delete undo folder for 30 days, the history panel offers Undo right after, and Restore deleted brings back anything still inside that window, including after a relaunch. Clear all is permanent, because it is the action someone takes when they want the transcripts gone, so it removes the saved records and the undo copies with them. The retention window and the 200 meeting limit also remove records permanently, and the panel reports each removal.
+
 ## Slide tracking
 
 Slide tracking is off by default. When enabled in **Settings → Listening → Track presentation slides**, Volyx Lens samples the display containing its window about every three seconds while Listening is active. Frame comparison happens locally; a preview is retained only after a stable visual change, with up to four nearby finalized transcript turns when available. The in-memory history is limited to 20 previews and 8 MB total.
