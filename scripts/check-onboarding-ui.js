@@ -21,6 +21,10 @@ ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch)
 ipcMain.handle('personal-context:get', () => ({ documents: {}, secure: true, locked: false }));
 ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyContext);
+// The renderer fetches history and its limits on boot. Stub them so the run has
+// no "No handler registered" noise masking a real error.
+ipcMain.handle('history:list', () => []);
+ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: 0 }));
 ipcMain.handle('recovery:get', () => null);
 ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false, transitioning: false }));
@@ -206,7 +210,9 @@ app.whenReady().then(async () => {
   settings.onboarded = false;
   await win.webContents.executeJavaScript("document.querySelector('#logo-btn').click(); document.querySelector('#ob-next').click()");
   win.setSize(500, 480);
-  await wait(100);
+  // The dialog animates in over 260ms, so a fixed wait measures mid-flight and
+  // the footer height assertion flickers. Wait for the geometry to settle.
+  await waitForStableDialogHeight(win);
   const compact = await win.webContents.executeJavaScript(`(() => {
     const footer = document.querySelector('.ob-footer').getBoundingClientRect();
     const dialog = document.querySelector('#onboard').getBoundingClientRect();

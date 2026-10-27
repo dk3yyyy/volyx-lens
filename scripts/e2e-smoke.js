@@ -92,6 +92,7 @@ ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offs
 ipcMain.handle('capture:state', () => ({ active: false, transitioning: false }));
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => []);
+ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: 0 }));
 ipcMain.handle('permissions:status', (_event, kind) => ({ kind, status: 'not-determined', granted: false }));
 ipcMain.handle('permissions:request', (_event, kind) => (
   kind === 'screen'

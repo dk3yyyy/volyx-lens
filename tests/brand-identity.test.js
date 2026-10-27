@@ -5,7 +5,10 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const textExtensions = new Set(['.js', '.json', '.md', '.html', '.css', '.yml', '.yaml', '.plist', '.swift']);
-const ignoredDirectories = new Set(['.git', 'node_modules', 'dist', '__MACOSX']);
+// Generated trees are not source. `coverage` in particular contains a bundled
+// prettify.js with the retired identifier inside another word, so scanning it
+// turned "run coverage, then npm test" into a false red (VR-43).
+const ignoredDirectories = new Set(['.git', 'node_modules', 'dist', 'coverage', '.nyc_output', '__MACOSX']);
 const ignoredFiles = new Set(['package-lock.json']);
 const retiredIdentifier = String.fromCharCode(99, 117, 101);
 
