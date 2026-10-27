@@ -183,5 +183,10 @@ test('Gemini smart tier keeps full reasoning and reserves more headroom', async 
 test('a fallback provider failure names the provider that actually failed', () => {
   const main = read('main.js');
 
-  assert.match(main, /onFallback: \(\{ from, to \}\) => \{\s*responseProviderLabel = to\.label/);
+  // The label still moves to the provider that actually answered, and the notice now
+  // carries the reason so a rejected key is not a silent swap (VR-12).
+  assert.match(main, /onFallback: \(\{ from, to, reason \}\) => \{\s*responseProviderLabel = to\.label/);
+  assert.match(main, /function fallbackNotice\(from, to, reason, job = ''\)/);
+  assert.match(main, /reason === 'auth'/);
+  assert.match(main, /Check that key in Settings/);
 });

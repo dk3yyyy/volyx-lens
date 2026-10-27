@@ -72,3 +72,146 @@ test('text-only fallback is not used for a multi-image task-context request', as
   await assert.rejects(() => streamWithFallback({ llm: primary, fallback, params: { imageDataUrls: ['data:image/png;base64,AA=='], onToken() {} } }), /image request failed/);
   assert.equal(fallbackCalls, 0);
 });
+
+function hangingStream({ onAbort } = {}) {
+  return ({ signal }) => new Promise((resolve, reject) => {
+    if (onAbort) onAbort();
+    signal.addEventListener('abort', () => {
+      const error = new Error('The operation was aborted');
+      error.name = 'AbortError';
+      reject(error);
+    }, { once: true });
+  });
+}
+
+test('a primary that outlives its deadline hands over to the fallback', async () => {
+  const notices = [];
+  const primary = { label: 'OpenAI', ready: true, stream: hangingStream() };
+  const fallback = {
+    label: 'Gemini',
+    ready: true,
+    supportsVision: true,
+    stream: async ({ onToken }) => { onToken('Fallback answer'); return 'Fallback answer'; },
+  };
+  const result = await streamWithFallback({
+    llm: primary,
+    fallback,
+    params: { imageDataUrl: null, onToken: () => {} },
+    onFallback: (event) => notices.push(event),
+    perAttemptTimeoutMs: 20,
+  });
+  assert.equal(result, 'Fallback answer', 'the answer comes from the fallback');
+  assert.equal(notices.length, 1, 'the handover is reported once');
+  assert.equal(notices[0].reason, 'timeout', 'and it is reported as a timeout, not a cancel');
+});
+
+test('a user cancel is not retried on the fallback', async () => {
+  const outer = new AbortController();
+  let fallbackCalls = 0;
+  const primary = { label: 'OpenAI', ready: true, stream: hangingStream() };
+  const fallback = { label: 'Gemini', ready: true, supportsVision: true, stream: async () => { fallbackCalls += 1; return 'nope'; } };
+  const run = streamWithFallback({
+    llm: primary,
+    fallback,
+    params: { imageDataUrl: null, signal: outer.signal, onToken: () => {} },
+    perAttemptTimeoutMs: 5000,
+  });
+  setTimeout(() => outer.abort(), 10);
+  await assert.rejects(run, /aborted/i);
+  assert.equal(fallbackCalls, 0, 'a cancel stays a cancel');
+});
+
+test('a rejected key is reported as an auth reason before the fallback runs', async () => {
+  const notices = [];
+  const primary = {
+    label: 'DeepSeek',
+    ready: true,
+    stream: async () => { const error = new Error('Incorrect API key provided'); error.status = 401; throw error; },
+  };
+  const fallback = { label: 'Gemini', ready: true, supportsVision: true, stream: async () => 'Fallback answer' };
+  const result = await streamWithFallback({
+    llm: primary,
+    fallback,
+    params: { imageDataUrl: null, onToken: () => {} },
+    onFallback: (event) => notices.push(event),
+  });
+  assert.equal(result, 'Fallback answer');
+  assert.equal(notices[0].reason, 'auth', 'the caller can tell the user their key was rejected');
+});
+
+test('when both attempts time out the error says so', async () => {
+  const primary = { label: 'OpenAI', ready: true, stream: hangingStream() };
+  const fallback = { label: 'Gemini', ready: true, supportsVision: true, stream: hangingStream() };
+  await assert.rejects(
+    streamWithFallback({
+      llm: primary,
+      fallback,
+      params: { imageDataUrl: null, onToken: () => {} },
+      perAttemptTimeoutMs: 20,
+    }),
+    (error) => {
+      assert.equal(error.timedOut, true, 'the caller can distinguish a timeout from a cancel');
+      return true;
+    },
+  );
+});
+
+test('the fallback is given a live signal, not the expired one', async () => {
+  let received = null;
+  const primary = { label: 'OpenAI', ready: true, stream: hangingStream() };
+  const fallback = {
+    label: 'Gemini',
+    ready: true,
+    supportsVision: true,
+    stream: async ({ signal }) => { received = signal; return 'ok'; },
+  };
+  await streamWithFallback({
+    llm: primary,
+    fallback,
+    params: { imageDataUrl: null, onToken: () => {} },
+    perAttemptTimeoutMs: 20,
+  });
+  assert.ok(received instanceof AbortSignal);
+  assert.equal(received.aborted, false, 'the fallback starts uncancelled');
+});
+
+test('an expired outer deadline also hands over, for callers still using one', async () => {
+  const outer = new AbortController();
+  const primary = { label: 'OpenAI', ready: true, stream: hangingStream() };
+  const fallback = { label: 'Gemini', ready: true, supportsVision: true, stream: async () => 'Fallback answer' };
+  const run = streamWithFallback({
+    llm: primary,
+    fallback,
+    params: { imageDataUrl: null, signal: outer.signal, onToken: () => {} },
+  });
+  setTimeout(() => outer.abort('timeout'), 10);
+  assert.equal(await run, 'Fallback answer', 'a deadline is not a cancel');
+});
+
+test('sequential attempts each get their own budget instead of sharing one', async () => {
+  // The shape of a chunked recap: twelve parts, each slower than the old shared
+  // budget would allow in aggregate but well inside its own deadline (VR-07).
+  let calls = 0;
+  const llm = {
+    label: 'OpenAI',
+    ready: true,
+    stream: async ({ onToken }) => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      onToken(`part ${calls}`);
+      return `part ${calls}`;
+    },
+  };
+  const results = [];
+  for (let index = 0; index < 6; index += 1) {
+    results.push(await streamWithFallback({
+      llm,
+      fallback: null,
+      params: { imageDataUrl: null, onToken: () => {} },
+      perAttemptTimeoutMs: 40,
+    }));
+  }
+  assert.deepEqual(results, ['part 1', 'part 2', 'part 3', 'part 4', 'part 5', 'part 6'],
+    'every part completes on its own clock');
+  assert.equal(calls, 6);
+});
