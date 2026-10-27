@@ -695,8 +695,11 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 @media (max-width: 560px) {
   #settings { height: calc(100vh - 24px); }
   .s-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); }
-  .s-nav { padding: 7px 9px; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
-  .s-nav button { min-width: 88px; min-height: 38px; text-align: center; }
+  /* Six tabs in one row need 561px inside a 470px strip, so the strip scrolled and
+     the last tabs sat outside the nav's box (VR-31). Wrapping keeps every section
+     visible and reachable without a horizontal scroll. */
+  .s-nav { padding: 7px 9px; flex-direction: row; flex-wrap: wrap; overflow-x: visible; gap: 4px; border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .s-nav button { flex: 1 1 calc(33.333% - 4px); min-width: 0; min-height: 36px; text-align: center; }
   .s-nav span { display: none; }
   .s-pages { padding: 18px; }
   .provider-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }

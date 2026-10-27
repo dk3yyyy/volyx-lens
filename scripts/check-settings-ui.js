@@ -136,10 +136,28 @@ app.whenReady().then(async () => {
   await waitFor(win, 'innerWidth === 500', 'compact viewport');
   const compact = await win.webContents.executeJavaScript(`(() => {
     const dialog = document.querySelector('#settings').getBoundingClientRect();
-    return { overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth, dialogRight: dialog.right, width: innerWidth };
+    const nav = document.querySelector('.s-nav');
+    const navRect = nav.getBoundingClientRect();
+    const tabs = [...nav.querySelectorAll('button')];
+    return {
+      overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      dialogRight: dialog.right,
+      width: innerWidth,
+      navOverflow: nav.scrollWidth - nav.clientWidth,
+      // A tab that sits outside the nav's own box is unreachable in the strip even
+      // though the document itself never overflows (VR-46).
+      clippedTabs: tabs.filter((tab) => {
+        const rect = tab.getBoundingClientRect();
+        return rect.left < navRect.left - 0.5 || rect.right > navRect.right + 0.5;
+      }).length,
+      tabs: tabs.length,
+    };
   })()`);
   assert.equal(compact.overflowX, false, 'compact Settings must not overflow horizontally');
   assert.ok(compact.dialogRight <= compact.width, 'compact Settings dialog must fit');
+  assert.equal(compact.tabs, 6, 'all six settings sections are present at the minimum width');
+  assert.equal(compact.navOverflow, 0, `the settings nav must not scroll horizontally at 500px (overflowed by ${compact.navOverflow}px)`);
+  assert.equal(compact.clippedTabs, 0, 'every settings tab must sit fully inside the nav at 500px');
   await capture(win, 'compact');
 
   recoveryDraft = { turnCount: 500, totalTurns: 620, truncated: 120, clippedTurns: 2, startedAt: Date.now() - 60000, updatedAt: Date.now() };
