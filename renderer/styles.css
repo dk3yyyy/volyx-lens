@@ -983,3 +983,76 @@ html[data-theme='light'] .history-cleaned-badge {
 
 /* Notes provenance line */
 .notes-source { margin: 0 0 6px; font-size: 9px; line-height: 1.4; color: var(--tx-mut); }
+
+/* ==================== System accessibility preferences ==================== */
+/* The panel is glass over a transparent window, which is exactly the surface
+   these two settings exist to change. Both blocks sit last in the file so they
+   win over the component rules above without editing each one.
+
+   Reduce Transparency: every blurred or see-through surface becomes solid. The
+   window stays transparent, so what is behind it is still visible around the
+   panel, but the panel itself no longer samples or blurs it. */
+@media (prefers-reduced-transparency: reduce) {
+  #toolbar {
+    background: #0B1020;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .glass {
+    background: #0D1324;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  #settings { background: #0C1122; }
+  #onboard { background: #0C1122; }
+  #meeting-history-panel { background: #101728; }
+  #slide-review-dialog::backdrop,
+  #meeting-recovery-dialog::backdrop {
+    background: rgba(4,8,16,0.94);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Increase Contrast: borders carry the structure instead of colour, and the
+   muted text tokens step up so nothing sits at the edge of legibility. The
+   inactive palette is named here too, because body.window-inactive would
+   otherwise outrank a :root override and quietly undo this. */
+@media (prefers-contrast: more) {
+  :root {
+    --tx-1: #FFFFFF;
+    --tx-2: #F2F5FF;
+    --tx-mut: #C9D1E4;
+    --ic: #F5F7FF;
+    --bd-hair: rgba(220,226,255,0.42);
+    --bd-strong: rgba(220,226,255,0.62);
+    --fill-1: rgba(216,224,255,0.10);
+    --fill-2: rgba(216,224,255,0.16);
+  }
+  body.window-inactive {
+    --tx-1: #EDF0FA;
+    --tx-2: #DDE3F2;
+    --tx-mut: #BAC3D6;
+    --ic: #DDE3F2;
+  }
+  #toolbar,
+  .glass,
+  #settings,
+  #onboard,
+  #meeting-history-panel {
+    border-color: var(--bd-strong);
+  }
+  #toolbar {
+    border-width: 1px;
+    border-color: rgba(226,231,255,0.55);
+  }
+  .act,
+  #toolbar button,
+  #meeting-history-panel button {
+    outline-offset: 2px;
+  }
+  :focus-visible {
+    outline: 2px solid #FFFFFF;
+    outline-offset: 2px;
+  }
+}
