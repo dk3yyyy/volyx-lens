@@ -367,6 +367,8 @@ npm audit --audit-level=low
 npm run release:check
 ```
 
+`npm run coverage` and the c8 threshold check measure `src/`. `main.js`, `preload.js` and `renderer/` are exercised by the Electron harnesses (`check:settings-ui`, `check:onboarding-ui`, `check:history-ui`, `check:e2e-smoke`) rather than by that percentage, so treat the coverage number as a `src/` figure, not a whole-app one.
+
 Create an unpacked local app:
 
 ```bash
