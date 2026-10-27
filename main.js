@@ -13,7 +13,7 @@ const { captureScreenshot, MAX_LONG_EDGE_PX, REQUEST_JPEG_QUALITY } = require('.
 const { createSTT, resetSidecar } = require('./src/stt');
 const { cancelOfflineTranscriptions } = require('./src/offline-stt');
 const { MODES, formatTranscript: formatPromptTranscript } = require('./src/prompts');
-const { createResponseRoute, chooseInitialProvider, streamWithFallback } = require('./src/response-router');
+const { createResponseRoute, chooseInitialProvider, streamWithFallback, classifyProviderError } = require('./src/response-router');
 const { rms16 } = require('./src/wav');
 const { planScreenInput } = require('./src/capabilities');
 const { mediaPermissionStatus, requestMediaPermission, PRIVACY_PANES } = require('./src/permissions');
@@ -1733,32 +1733,76 @@ async function importPersonalContextDocument(kind) {
 const TRUNCATED_FINISH_REASON = /length|max_tokens/i;
 
 // -------- feature runner --------
-async function summarizeMeetingChunks({ plan, llm, fallback, isCurrent, signal }) {
+// A silent swap hid a misconfigured key: the answer arrived, so nothing looked
+// wrong, and the user kept paying for a provider that was rejecting every request
+// (VR-12).
+function fallbackNotice(from, to, reason, job = '') {
+  const subject = job ? ` for ${job}` : '';
+  const why = reason === 'auth'
+    ? 'rejected the API key or model access. Check that key in Settings'
+    : reason === 'rate-limit'
+      ? 'is rate-limiting requests'
+      : reason === 'timeout'
+        ? 'timed out'
+        : reason === 'invalid-request'
+          ? 'rejected the request'
+          : 'failed before producing text';
+  const fromLabel = (from && from.label) || 'The default provider';
+  const toLabel = (to && to.label) || 'the fallback provider';
+  return `${fromLabel} ${why}${subject}. Using fallback ${toLabel}.`;
+}
+
+async function summarizeMeetingChunks({ plan, llm, fallback, isCurrent, signal, perAttemptTimeoutMs = FEATURE_REQUEST_TIMEOUT_MS }) {
   const summaries = [];
+  const missingParts = [];
+  let lastError = null;
   for (let index = 0; index < plan.chunks.length; index += 1) {
     if (!isCurrent()) return null;
     send('status', { message: `Summarizing meeting part ${index + 1} of ${plan.chunks.length}…` });
     let summary = '';
-    await streamWithFallback({
-      llm,
-      fallback,
-      params: {
-        system: `Summarize this sequential meeting-transcript part. Preserve concrete facts, questions, decisions, disagreements, names, and action items. Return concise factual bullets only. ${SOURCE_UNCERTAINTY_RULE} ${UNTRUSTED_INPUT_RULE}`,
-        turns: [{ role: 'user', text: `Meeting part ${index + 1} of ${plan.chunks.length}:\n${plan.chunks[index]}` }],
-        imageDataUrl: null,
-        signal,
-        onToken: (token) => { summary += token; },
-      },
-      onFallback: ({ from, to }) => {
-        if (!isCurrent()) return;
-        send('status', { message: `${from.label} failed before producing text. Using fallback ${to.label} for meeting summarization.` });
-        send('llm:provider', { label: to.label, fallback: true });
-      },
-    });
+    try {
+      await streamWithFallback({
+        llm,
+        fallback,
+        perAttemptTimeoutMs,
+        params: {
+          system: `Summarize this sequential meeting-transcript part. Preserve concrete facts, questions, decisions, disagreements, names, and action items. Return concise factual bullets only. ${SOURCE_UNCERTAINTY_RULE} ${UNTRUSTED_INPUT_RULE}`,
+          turns: [{ role: 'user', text: `Meeting part ${index + 1} of ${plan.chunks.length}:\n${plan.chunks[index]}` }],
+          imageDataUrl: null,
+          signal,
+          onToken: (token) => { summary += token; },
+        },
+        onFallback: ({ from, to, reason }) => {
+          if (!isCurrent()) return;
+          send('status', { message: fallbackNotice(from, to, reason, 'meeting summarization') });
+          send('llm:provider', { label: to.label, fallback: true });
+        },
+      });
+    } catch (error) {
+      lastError = error;
+      const kind = classifyProviderError(error);
+      // A rejected key or a refused request will fail every remaining part the same
+      // way, so stop rather than spending the budget on guaranteed failures.
+      if (kind === 'auth' || kind === 'invalid-request') throw error;
+      // One bad part must not throw away the parts that already succeeded (VR-07).
+      missingParts.push(index + 1);
+      if (isCurrent()) {
+        send('status', {
+          message: `Meeting part ${index + 1} of ${plan.chunks.length} could not be summarized; continuing with the rest.`,
+        });
+      }
+      continue;
+    }
     summaries.push(summary.trim().slice(0, 4000));
   }
+
+  if (!summaries.length) throw lastError || new Error('None of the meeting parts could be summarized.');
+
   const samplingNote = plan.sampled ? '\nSome source intervals were evenly sampled because this session exceeded the 12-part safety limit.' : '';
-  return `Sequential meeting-part summaries:\n${summaries.map((summary, index) => `\n[Part ${index + 1}]\n${summary}`).join('\n')}${samplingNote}\n\nCreate the final meeting recap with key points, decisions, unresolved questions, and action items.`;
+  const missingNote = missingParts.length
+    ? `\nParts ${missingParts.join(', ')} of ${plan.chunks.length} could not be summarized and are not represented above. Say so briefly in the recap instead of guessing their content.`
+    : '';
+  return `Sequential meeting-part summaries:\n${summaries.map((summary, index) => `\n[Part ${index + 1}]\n${summary}`).join('\n')}${samplingNote}${missingNote}\n\nCreate the final meeting recap with key points, decisions, unresolved questions, and action items.`;
 }
 
 async function runFeature(mode, userText, {
@@ -1784,7 +1828,6 @@ async function runFeature(mode, userText, {
   const runId = ++featureRunId;
   const isCurrent = () => generation === sessionGeneration && runId === featureRunId;
   let featureRequest = null;
-  let requestTimeout = null;
   let responseProviderLabel = '';
   try {
     const orderedTranscript = (Array.isArray(slideReviewTranscript) ? slideReviewTranscript : [...transcript]).sort((a, b) => a.ts - b.ts);
@@ -1835,17 +1878,12 @@ async function runFeature(mode, userText, {
       });
       return;
     }
+    // The request controller now only carries user cancellation. Each provider
+    // attempt arms and clears its own deadline inside streamWithFallback, so a
+    // chunked job cannot spend the whole budget on one part and a deadline is not
+    // mistaken for a cancel (VR-06, VR-07).
     featureRequest = { controller: new AbortController(), reason: null };
     activeFeatureRequest = featureRequest;
-    let featureCompleted = false;
-    requestTimeout = setTimeout(() => {
-      if (featureCompleted) return;
-      if (activeFeatureRequest !== featureRequest || featureRequest.controller.signal.aborted) return;
-      clearTimeout(requestTimeout);
-      requestTimeout = null;
-      featureRequest.reason = 'timeout';
-      featureRequest.controller.abort();
-    }, FEATURE_REQUEST_TIMEOUT_MS);
     if (isCurrent()) send('llm:start', { userBubble, small: !!def.small, contextSources: personalContext.sources, taskContextCount: availableTaskContextCount, taskContextTotalCount, responseProvider: llm.label || settings.provider });
     if (selection.usedFallback && isCurrent()) {
       send('status', { message: `${selection.reason || 'The default provider is unavailable'} Using fallback ${llm.label}.` });
@@ -1925,7 +1963,14 @@ async function runFeature(mode, userText, {
     const recapPlan = mode === 'recap' ? planMeetingRecap(orderedTranscript) : null;
     if (recapPlan && recapPlan.requiresChunking) {
       if (!confirmedLongRecap) throw new Error(`Long meeting recap requires confirmation for ${recapPlan.requestCount} model requests.`);
-      built = await summarizeMeetingChunks({ plan: recapPlan, llm, fallback: selection.fallback, isCurrent, signal: featureRequest.controller.signal });
+      built = await summarizeMeetingChunks({
+        plan: recapPlan,
+        llm,
+        fallback: selection.fallback,
+        isCurrent,
+        signal: featureRequest.controller.signal,
+        perAttemptTimeoutMs: FEATURE_REQUEST_TIMEOUT_MS,
+      });
       if (!built || !isCurrent()) return;
     } else {
       built = def.build({ transcript: orderedTranscript, userText: userText || '', slideContext });
@@ -1961,6 +2006,7 @@ async function runFeature(mode, userText, {
     const fullAnswer = await streamWithFallback({
       llm,
       fallback: mode === 'slide-review' ? null : selection.fallback,
+      perAttemptTimeoutMs: FEATURE_REQUEST_TIMEOUT_MS,
       params: {
         system,
         turns,
@@ -1970,10 +2016,10 @@ async function runFeature(mode, userText, {
         onToken: (t) => { if (isCurrent()) send('llm:token', { text: t }); },
         onFinish: ({ reason }) => { if (TRUNCATED_FINISH_REASON.test(String(reason || ''))) answerTruncated = true; }
       },
-      onFallback: ({ from, to }) => {
+      onFallback: ({ from, to, reason }) => {
         responseProviderLabel = to.label || responseProviderLabel;
         if (!isCurrent()) return;
-        send('status', { message: `${from.label} failed before producing text. Using fallback ${to.label}.` });
+        send('status', { message: fallbackNotice(from, to, reason) });
         send('llm:provider', { label: to.label, fallback: true });
       }
     });
@@ -1986,9 +2032,11 @@ async function runFeature(mode, userText, {
     }
     featureCompleted = true;
   } catch (e) {
-    if (isCurrent()) send('llm:error', { message: sanitizeProviderError(e, { timedOut: featureRequest && featureRequest.reason === 'timeout', providerLabel: responseProviderLabel }) });
+    if (isCurrent()) send('llm:error', { message: sanitizeProviderError(e, {
+      timedOut: Boolean(e && e.timedOut) || Boolean(featureRequest && featureRequest.reason === 'timeout'),
+      providerLabel: responseProviderLabel,
+    }) });
   } finally {
-    if (requestTimeout) clearTimeout(requestTimeout);
     if (activeFeatureRequest === featureRequest) activeFeatureRequest = null;
     if (runId === featureRunId) state.busy = false;
   }
@@ -2074,6 +2122,7 @@ async function recapMeetingRecord(id, options = {}) {
     const fullAnswer = await streamWithFallback({
       llm,
       fallback: selection.fallback,
+      perAttemptTimeoutMs: FEATURE_REQUEST_TIMEOUT_MS,
       params: {
         system,
         turns: [{ role: 'user', text: built }],
@@ -2084,9 +2133,9 @@ async function recapMeetingRecord(id, options = {}) {
           send('history:recap-token', { id: record.id, text: token });
         },
       },
-      onFallback: ({ from, to }) => {
+      onFallback: ({ from, to, reason }) => {
         if (!isCurrent()) return;
-        send('status', { message: `${from.label} failed before producing text. Using fallback ${to.label} for meeting notes.` });
+        send('status', { message: fallbackNotice(from, to, reason, 'meeting notes') });
         send('llm:provider', { label: to.label, fallback: true });
       },
     });
