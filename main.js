@@ -53,6 +53,7 @@ const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { createMeetingStore } = require('./src/meeting-store');
 const { contextMenuTemplate } = require('./src/context-menu');
+const { createWindowState } = require('./src/window-state');
 const { buildBackupPlan, readBackupFolder, MAX_BACKUP_FILES, MAX_BACKUP_FILE_BYTES } = require('./src/meeting-backup');
 const { buildPreviousMeetingsBlock, PREVIOUS_MEETINGS_NOTE } = require('./src/meeting-memory');
 const { createMeetingRecovery, countUnsavedTurns } = require('./src/meeting-recovery');
@@ -67,6 +68,16 @@ const {
 
 const chatHistory = createChatHistory();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
+// The user's expanded window size, remembered across launches. Position is not
+// stored: the dock controller owns it, and a remembered anchor would fight it.
+const windowState = createWindowState({ file: path.join(currentUserDataPath, 'window-state.json') });
+let savedWindowSize = windowState.load();
+
+function dockSizes() {
+  return savedWindowSize
+    ? { ...DEFAULT_DOCK_SIZES, expanded: savedWindowSize }
+    : DEFAULT_DOCK_SIZES;
+}
 // Modes that benefit from "what did we agree last time" context. Slide review
 // has its own supplied material, and recap covers the live session only.
 const PREVIOUS_MEETINGS_MODES = new Set(['assist', 'assist-conversation', 'say', 'auto-assist', 'ask']);
@@ -909,9 +920,10 @@ function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collap
   if (!win || win.isDestroyed()) return;
   windowAutoFit?.cancel();
   const currentBounds = win.getBounds();
-  const resolvedAnchor = anchor || railCenter(currentBounds, windowDock.side, DEFAULT_DOCK_SIZES);
+  const sizes = dockSizes();
+  const resolvedAnchor = anchor || railCenter(currentBounds, windowDock.side, sizes);
   const display = targetDisplay || screen.getDisplayNearestPoint(resolvedAnchor);
-  const nextBounds = dockBounds({ workArea: display.workArea, side, anchor: resolvedAnchor, collapsed });
+  const nextBounds = dockBounds({ workArea: display.workArea, side, anchor: resolvedAnchor, collapsed, sizes });
   windowDock = { side, collapsed, anchor: resolvedAnchor };
   if (collapsed) win.setMinimumSize(1, 1);
   if (!sameBounds(currentBounds, nextBounds)) win.setBounds(nextBounds, false);
@@ -940,7 +952,7 @@ else app.on('second-instance', () => {
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  const { width: W, height: H } = DEFAULT_DOCK_SIZES.expanded;
+  const { width: W, height: H } = dockSizes().expanded;
   let rendererHasLoaded = false;
   win = new BrowserWindow({
     width: W,
@@ -978,7 +990,24 @@ function createWindow() {
   win.on('moved', () => {
     windowAutoFit?.recordMove(screen.getCursorScreenPoint());
   });
+  // Remember the size the user settles on. A collapsed window is a 260pt rail,
+  // so saving that would restore a sliver; only an expanded window is recorded.
+  let windowSizeTimer = null;
+  const rememberWindowSize = () => {
+    if (!win || win.isDestroyed() || windowDock.collapsed) return;
+    const { width, height } = win.getBounds();
+    const saved = windowState.save({ width, height });
+    if (saved) savedWindowSize = saved;
+  };
+  win.on('resized', () => {
+    if (windowDock.collapsed) return;
+    clearTimeout(windowSizeTimer);
+    windowSizeTimer = setTimeout(rememberWindowSize, 400);
+  });
   win.on('close', () => {
+    clearTimeout(windowSizeTimer);
+    windowSizeTimer = null;
+    rememberWindowSize();
     windowAutoFit?.cancel();
   });
   win.on('closed', () => {
@@ -2682,7 +2711,7 @@ onTrusted('ui:modal-state', (_e, open) => {
     }
   } else if (!nextOpen && (!modalStateWasKnown || uiModalOpen)) {
     if (modalRestoreCollapsed === true && win && !win.isDestroyed()) {
-      const anchor = railCenter(win.getBounds(), windowDock.side, DEFAULT_DOCK_SIZES);
+      const anchor = railCenter(win.getBounds(), windowDock.side, dockSizes());
       applyDockBounds({ collapsed: true, anchor });
     }
     modalRestoreCollapsed = null;
