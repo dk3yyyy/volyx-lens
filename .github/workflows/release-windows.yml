@@ -50,7 +50,6 @@ jobs:
       - run: npm run security:secrets
       - run: npm audit --audit-level=low
       - name: Pin the update publisher to the signing certificate
-        if: ${{ secrets.WINDOWS_CSC_LINK != '' }}
         shell: pwsh
         env:
           CSC_LINK_VALUE: ${{ secrets.WINDOWS_CSC_LINK }}
@@ -59,6 +58,12 @@ jobs:
           # electron-updater on Windows only verifies an update's signer when
           # publisherName is set, so it is taken from the certificate that signs this
           # build rather than typed by hand (VR-25).
+          #
+          # A secret cannot be read from an `if:` expression, so the guard lives here.
+          if (-not $env:CSC_LINK_VALUE) {
+            Write-Host 'No signing certificate configured; the publisher name stays unset.'
+            exit 0
+          }
           $source = $env:CSC_LINK_VALUE
           $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
           if ($source -match '^https?://') {
@@ -92,13 +97,13 @@ jobs:
       - name: Verify the installer signature
         shell: pwsh
         env:
-          SIGNING_CONFIGURED: ${{ secrets.WINDOWS_CSC_LINK != '' }}
+          CSC_LINK_VALUE: ${{ secrets.WINDOWS_CSC_LINK }}
         run: |
           $installer = Get-ChildItem -Path "dist" -Filter "*.exe" | Select-Object -First 1
           if (-not $installer) { throw "No installer to verify" }
           $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
           Write-Host "Signature: $($signature.Status) $($signature.SignerCertificate.Subject)"
-          if ($env:SIGNING_CONFIGURED -eq 'true') {
+          if ($env:CSC_LINK_VALUE) {
             # Updates are only trusted through TLS and the checksum in latest.yml when
             # the installer is unsigned, so a configured certificate has to produce a
             # valid signature or this release does not ship (VR-25).
