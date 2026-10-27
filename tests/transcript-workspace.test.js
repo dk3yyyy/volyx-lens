@@ -89,3 +89,12 @@ test('sanitized diagnostics omit credentials, endpoints, transcript text, audio,
   assert.doesNotMatch(diagnosticFunction, /apiKeys|endpoint|\btext\s*:|buffers|imageDataUrl|personalContext/);
   assert.match(html, /no API keys, endpoints, raw audio, screen images, or transcript text/i);
 });
+
+test('clearing the transcript ends an in-flight answer and frees the composer', () => {
+  // The renderer owns the busy state, so a main-process invalidation has to say
+  // so out loud; silence left every action disabled with an orphaned answer.
+  assert.match(main, /cancelActiveFeature\('transcript-clear', \{ notify: true, invalidate: true \}\)/);
+  assert.match(renderer, /volyxLens\.on\('transcript:cleared', \(\) => \{/);
+  assert.match(renderer, /document\.querySelectorAll\('#messages \.ai-text'\)\.forEach\(\(node\) => node\.remove\(\)\)/);
+  assert.match(renderer, /setBusy\(false\);\s*\n\s*clearTranscriptWorkspace\(\);/);
+});

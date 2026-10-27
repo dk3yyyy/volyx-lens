@@ -2481,7 +2481,9 @@ handleTrusted('transcript:copy-turn', (_event, id) => {
   return { copied: true, id: turn.id, characters: text.length };
 });
 handleTrusted('transcript:clear', () => {
-  cancelActiveFeature('transcript-clear', { notify: false, invalidate: true });
+  // The renderer owns the busy state, so it must hear that the run ended. A
+  // silent invalidation left the composer disabled with an orphaned answer.
+  cancelActiveFeature('transcript-clear', { notify: true, invalidate: true });
   clearSlideTrackingData();
   const cleared = transcript.length;
   transcriptEpoch += 1;

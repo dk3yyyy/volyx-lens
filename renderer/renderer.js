@@ -2105,7 +2105,17 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   volyxLens.on('transcript:suppressed', clearSuppressedPartial);
   volyxLens.on('question:detected', showQuestionSuggestion);
   volyxLens.on('question:clear', clearQuestionSuggestion);
-  volyxLens.on('transcript:cleared', clearTranscriptWorkspace);
+  volyxLens.on('transcript:cleared', () => {
+    // An answer about a discarded transcript goes with it, and the busy state is
+    // cleared here as well as on the terminal event so a missing event cannot
+    // leave the controls disabled. finalizeAi() detaches aiEl while leaving the
+    // finished node in the DOM, so the node is what has to be removed.
+    document.querySelectorAll('#messages .ai-text').forEach((node) => node.remove());
+    aiEl = null;
+    caretEl = null;
+    setBusy(false);
+    clearTranscriptWorkspace();
+  });
   volyxLens.on('update:state', renderUpdateState);
   volyxLens.on('transcription:state', (event) => {
     if (event.status === 'source' && event.channel === 'them') {
