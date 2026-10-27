@@ -3266,14 +3266,24 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     setIgnore(false);
     requestAnimationFrame(() => {
       const title = $('#ob-title');
+      // Focus the heading so a keyboard or screen-reader user starts inside the
+      // dialog. A cold first paint can swallow the call, and a window that is
+      // not yet key clears activeElement again, so retry on later frames until
+      // it holds. The loop stops as soon as anything else has focus, so it can
+      // never fight the user for the keyboard, and it is bounded so it cannot
+      // spin if the window is never focused.
+      let focusAttempts = 0;
       const focusTitle = () => {
         if (obScrim.classList.contains('hidden')) return;
-        if (document.activeElement !== title) title.focus();
+        if (document.activeElement === title) return;
+        const current = document.activeElement;
+        if (current && current !== document.body && current !== obScrim) return;
+        title.focus();
+        if (document.activeElement === title) return;
+        focusAttempts += 1;
+        if (focusAttempts < 30) setTimeout(focusTitle, 50);
       };
-      focusTitle();
-      // Cold starts (first paint on a shared runner) can swallow the initial
-      // focus call, so retry briefly instead of leaving focus on the body.
-      [0, 120, 400].forEach((delay) => setTimeout(focusTitle, delay));
+      requestAnimationFrame(focusTitle);
     });
     void refreshPermissionStates();
   }
