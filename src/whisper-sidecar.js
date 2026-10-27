@@ -15,6 +15,7 @@ const os = require('os');
 const crypto = require('crypto');
 const fetch = require('node-fetch').default;
 const { normalizeWhisperLanguage } = require('./whisper-language');
+const { fileFor, unavailableReason, downloadUrl } = require('./whisper-models');
 
 // Model specifications (~30 models)
 const MODEL_SPECS = {
@@ -41,11 +42,13 @@ const MODEL_SPECS = {
 // Cache directory for downloaded models
 const MODELS_DIR = path.join(os.homedir(), '.volyx-lens', 'whisper-models');
 
-// Ensure the cache directory exists
+// Ensure the cache directory exists. The model files are 40 MB to 3 GB of the user's
+// own downloads, so the directory is private to them (VR-23).
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
+  try { fs.chmodSync(dir, 0o700); } catch { /* best effort on filesystems without modes */ }
 }
 
 // Get the cache path for a model
@@ -58,63 +61,102 @@ function modelIndexPath(modelId) {
   return path.join(MODELS_DIR, `${modelId}.idx`);
 }
 
-// Compute SHA-256 hash of a file
+// Compute SHA-256 hash of a file without loading it into memory: the largest model is
+// over 3 GB (VR-23).
 function sha256File(filePath) {
   if (!fs.existsSync(filePath)) return null;
-  const data = fs.readFileSync(filePath);
-  return crypto.createHash('sha256').update(data).digest('hex');
+  const hash = crypto.createHash('sha256');
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let read = 0;
+    while ((read = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+      hash.update(buffer.subarray(0, read));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('hex');
 }
 
-// Download a model from Hugging Face with progress and verification
-async function downloadModel(modelId, onProgress) {
+// Download a model from Hugging Face with progress and verification.
+//
+// The bytes are hashed as they arrive, streamed to a private temp file, capped at the
+// size the manifest expects, and only moved into place when the digest matches the
+// published one. A mirror or a TLS-terminating proxy cannot substitute a different
+// model, and peak memory stays at one chunk instead of the whole file (VR-23).
+async function downloadModel(modelId, onProgress, { fetchImpl = fetch, dir = MODELS_DIR, base, manifest = null } = {}) {
   const spec = MODEL_SPECS[modelId.toLowerCase()];
   if (!spec) throw new Error(`Unknown model: ${modelId}. Available: ${Object.keys(MODEL_SPECS).join(', ')}`);
-
-  ensureDir(MODELS_DIR);
-  const cachePath = modelCachePath(modelId);
-  const indexPath = modelIndexPath(modelId);
-
-  // Check if model already exists and is verified
-  if (fs.existsSync(cachePath) && fs.existsSync(indexPath)) {
-    const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-    if (sha256File(cachePath) === index.sha256) {
-      // Model is verified and up-to-date
-      return { path: cachePath, spec, sha256: index.sha256 };
-    }
-    // Verification failed, redownload
-    fs.unlinkSync(cachePath);
-    fs.unlinkSync(indexPath);
+  // `manifest` is a test seam for a fixture with a reproducible digest; in the app it
+  // is always the pinned table.
+  const entry = manifest || fileFor(modelId);
+  if (!entry) {
+    const reason = unavailableReason(modelId) || 'No published model file matches this name.';
+    throw new Error(`Model ${modelId} cannot be downloaded: ${reason}`);
   }
 
-  // Download the model
-  const url = `${process.env.WHISPER_DOWNLOAD_BASE || 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main'}/models/whisper.cpp/${modelId}.bin`;
+  ensureDir(dir);
+  const cachePath = path.join(dir, `${modelId}.bin`);
+  const indexPath = path.join(dir, `${modelId}.idx`);
+  const partialPath = `${cachePath}.part`;
+
+  // Check if model already exists and matches the pinned digest.
+  if (fs.existsSync(cachePath)) {
+    if (sha256File(cachePath) === entry.sha256) {
+      return { path: cachePath, spec, sha256: entry.sha256 };
+    }
+    // Wrong bytes on disk: it is not the published model, so it does not stay.
+    try { fs.unlinkSync(cachePath); } catch {}
+    try { fs.unlinkSync(indexPath); } catch {}
+  }
+  try { fs.unlinkSync(partialPath); } catch {}
+
+  const url = downloadUrl(modelId, base);
+  const hash = crypto.createHash('sha256');
+  let received = 0;
+  let fd = null;
 
   try {
-    const res = await fetch(url);
+    const res = await fetchImpl(url);
     if (!res.ok) throw new Error(`Failed to download model: ${res.status} ${res.statusText}`);
+    const total = Number(res.headers.get('content-length') || '0') || entry.bytes;
 
-    const total = Number(res.headers.get('content-length') || '0');
-    let downloaded = 0;
-    const chunks = [];
-
+    fd = fs.openSync(partialPath, 'w', 0o600);
     for await (const chunk of res.body) {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      chunks.push(buf);
-      downloaded += buf.length;
-      if (onProgress) onProgress(downloaded / total);
+      received += buf.length;
+      if (received > entry.bytes) {
+        throw new Error(`Download for ${modelId} exceeded its expected size of ${entry.bytes} bytes`);
+      }
+      hash.update(buf);
+      fs.writeSync(fd, buf);
+      if (onProgress && total > 0) onProgress(Math.min(received / total, 1));
+    }
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
+
+    if (received !== entry.bytes) {
+      throw new Error(`Download for ${modelId} was ${received} bytes, expected ${entry.bytes}`);
+    }
+    const digest = hash.digest('hex');
+    if (digest !== entry.sha256) {
+      throw new Error(`Download for ${modelId} did not match its published SHA-256`);
     }
 
-    await fs.promises.writeFile(cachePath, Buffer.concat(chunks));
-
-    // Verify SHA-256
-    const hash = sha256File(cachePath);
-    await fs.promises.writeFile(indexPath, JSON.stringify({ sha256: hash, model: modelId, sizeMB: spec.sizeMB }));
-
-    return { path: cachePath, spec, sha256: hash };
+    fs.renameSync(partialPath, cachePath);
+    try { fs.chmodSync(cachePath, 0o600); } catch {}
+    await fs.promises.writeFile(
+      indexPath,
+      JSON.stringify({ sha256: entry.sha256, model: modelId, file: entry.file, bytes: entry.bytes }),
+      { mode: 0o600 },
+    );
+    return { path: cachePath, spec, sha256: entry.sha256 };
   } catch (error) {
-    // Clean up partial download
-    if (fs.existsSync(cachePath)) fs.unlinkSync(cachePath);
-    if (fs.existsSync(indexPath)) fs.unlinkSync(indexPath);
+    if (fd !== null) try { fs.closeSync(fd); } catch {}
+    try { fs.unlinkSync(partialPath); } catch {}
+    try { fs.unlinkSync(indexPath); } catch {}
     throw new Error(`Failed to download model ${modelId}: ${error.message}`);
   }
 }
