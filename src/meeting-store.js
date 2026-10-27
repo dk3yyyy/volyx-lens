@@ -174,13 +174,58 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { removed };
   }
 
-  function finalize({ turns = [], enabled = false, reason = 'capture-stop', meeting = false, startedAt = null, endedAt = null } = {}) {
+  // Stopping and starting Listening inside one meeting used to write a second
+  // record, so each row held half the conversation and recap or notes worked on a
+  // fragment (VR-08). `recordId` says which record the new turns belong to.
+  function appendToRecord(id, turns, { endedAt = null, meeting = false } = {}) {
+    if (!isSafeId(id)) return null;
+    const target = recordPath(id);
+    let existing = null;
+    let stat = null;
+    try {
+      stat = fsImpl.statSync(target);
+      existing = JSON.parse(fsImpl.readFileSync(target, 'utf8'));
+    } catch {
+      return null;
+    }
+    if (!isRecordShape(existing)) return null;
+    // Turn ids restart with each capture, so the same words at the same moment on
+    // the same channel are the only reliable sign of an already-saved turn.
+    const seen = new Set(existing.turns.map((turn) => `${turn.ts}:${turn.channel}:${turn.text}`));
+    const additions = turns.filter((turn) => !seen.has(`${turn.ts}:${turn.channel}:${turn.text}`));
+    if (!additions.length) return { saved: false, reason: 'no_new_content', id };
+    const existingEnd = Number(existing.endedAt);
+    const merged = {
+      ...existing,
+      endedAt: Number.isFinite(endedAt) ? Math.max(Number.isFinite(existingEnd) ? existingEnd : 0, endedAt) : existing.endedAt,
+      meeting: existing.meeting === true || meeting === true,
+      turnCount: existing.turns.length + additions.length,
+      turns: [...existing.turns, ...additions],
+    };
+    writeRecord(target, merged, stat);
+    return { saved: true, id, turnCount: merged.turnCount, pruned: 0, appended: true };
+  }
+
+  function finalize({ turns = [], enabled = false, reason = 'capture-stop', meeting = false, startedAt = null, endedAt = null, recordId = null } = {}) {
     if (!enabled) return { saved: false, reason: 'disabled' };
     const normalized = snapshotTurns(turns);
     if (!normalized.length) return { saved: false, reason: 'empty' };
     const fp = fingerprint(normalized);
     if (lastSavedFingerprint && fp && fp.contentHash === lastSavedFingerprint.contentHash) {
       return { saved: false, reason: 'no_new_content' };
+    }
+    if (recordId) {
+      try {
+        const appended = appendToRecord(recordId, normalized, { endedAt, meeting });
+        if (appended) {
+          if (appended.saved) lastSavedFingerprint = fp;
+          return appended;
+        }
+      } catch (error) {
+        // Falling through to a new record keeps the turns; a failed append must not
+        // lose the stop half of the meeting.
+        console.error('[meeting-store] append failed', String(error && error.message || 'unknown').slice(0, 160));
+      }
     }
     ensureDir();
     const id = crypto.randomUUID();

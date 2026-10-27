@@ -233,6 +233,10 @@ let transcriptSequence = 0;
 let transcriptDroppedTurns = 0;
 let transcriptClippedTurns = 0;
 let finalizedSegmentWatermark = 0;
+// The record this listening session is writing into. Stop/start reuses it so one
+// meeting stays one row; an explicit new session, a cleared transcript or a delete
+// lets go of it (VR-08).
+let activeMeetingRecordId = null;
 let captureStartedAt = null;
 let lastCaptureStartedAt = null;
 let pendingRestoredStartedAt = null;
@@ -1430,7 +1434,13 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
     meeting: meetingDetector.snapshot().meeting,
     startedAt,
     endedAt,
+    // Append to the record this session already opened, so stopping and starting
+    // Listening inside one meeting cannot split it in two (VR-08).
+    recordId: activeMeetingRecordId,
   });
+  if (result.saved && result.id) activeMeetingRecordId = result.id;
+  // A new session means the next stop belongs to a fresh record.
+  if (reason === 'new-session') activeMeetingRecordId = null;
   advanceFinalizeWatermark();
   // Anything dropped before this boundary can no longer be recovered, and the
   // draft is rebuilt from the new boundary, so the loss counter starts over.
@@ -2542,6 +2552,9 @@ handleTrusted('transcript:clear', () => {
   transcriptEpoch += 1;
   resetTranscriptData();
   chatHistory.clear();
+  // A cleared transcript is a new meeting; later turns must not be appended to the
+  // record that was just cleared out of the view (VR-08).
+  activeMeetingRecordId = null;
   cancelMeetingRecoverySave();
   meetingRecovery.clearBestEffort();
   pendingRestoredStartedAt = null;
