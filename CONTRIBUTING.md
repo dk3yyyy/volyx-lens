@@ -1,6 +1,6 @@
 # Contributing to Volyx Lens
 
-Thanks for wanting to contribute. Volyx Lens is a privacy-first macOS context assistant, and outside contributions are what make it a real open-source project.
+Thanks for wanting to contribute. Volyx Lens is a privacy-first cross-platform context assistant, and outside contributions are what make it a real open-source project.
 
 ## Getting started
 

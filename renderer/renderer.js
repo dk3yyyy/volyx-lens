@@ -249,7 +249,7 @@
     actionCount.classList.toggle('hidden', count === 0);
     const selectionNote = pinned ? ` ${pinned} pinned ${pinned === 1 ? 'screen is' : 'screens are'} protected from ordinary eviction and prioritized for requests.` : '';
     $('#task-context-request-note').textContent = count > 39
-      ? `A request attaches at most 39 saved screens using local OCR relevance, pins, and context priority; ${count - 39} remain local.${selectionNote}`
+      ? `A request attaches at most 39 images in total, including the current screen, using local OCR relevance, pins, and context priority; ${count - 39} saved screens remain local.${selectionNote}`
       : `A single request uses a bounded visual window.${selectionNote || ' Volyx Lens discloses if saved screens are omitted.'}`;
 
     const eviction = $('#task-context-eviction');

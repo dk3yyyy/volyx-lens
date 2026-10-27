@@ -44,7 +44,7 @@
     <span class="release-dot" aria-hidden="true"></span>
     <span>Release <strong>v0.7.3</strong></span>
     <span class="release-divider" aria-hidden="true"></span>
-    <span>Windows · Linux live · macOS build pending</span>
+    <span>Windows · Linux · macOS (unsigned) live in v0.7.3</span>
   </div>
 
   <header class="site-header" data-header>
@@ -205,10 +205,10 @@
         <h2 id="privacy-heading">Your context takes the short path.</h2>
         <p>Volyx Lens sends selected context directly from the app to the AI provider you configure. There is no Volyx Lens-operated intermediary server in that request path.</p>
         <ul class="plain-list">
-          <li><span>01</span>Provider credentials use Electron secure storage backed by the operating system (macOS Keychain, Windows DPAPI, Linux libsecret) when available. If secure storage is unavailable, the app falls back to a local 0600 plaintext credential record and shows a warning in Settings.</li>
+          <li><span>01</span>Provider credentials use Electron secure storage backed by the operating system (macOS Keychain, Windows DPAPI, Linux libsecret) when available. If secure storage is unavailable, keys are kept in memory for the session only and are never written to disk; Settings says so.</li>
           <li><span>02</span>The app has no analytics or advertising SDK.</li>
           <li><span>03</span>You can switch providers without changing the workflow.</li>
-          <li><span>04</span>Active transcript and Task Context state stays memory-only and memory-bounded for the current session, then is cleared when the session ends.</li>
+          <li><span>04</span>Active transcript and Task Context state stays memory-only and memory-bounded for the current session, then is cleared when the session ends. If you enable saved meeting history or crash recovery, transcript text is written to this device only; both are off by default.</li>
         </ul>
         <p class="privacy-caveat">Your chosen AI provider still receives the context you send and applies its own retention and privacy terms. Review those terms before sharing sensitive material.</p>
       </div>
@@ -295,9 +295,9 @@
     <section class="provider-section" aria-labelledby="provider-heading">
       <div class="provider-copy">
         <p class="eyebrow">Bring your own model access</p>
-        <h2 id="provider-heading">Eleven routes.<br><em>No forced provider.</em></h2>
+        <h2 id="provider-heading">Nine providers.<br><em>No forced route.</em></h2>
         <p>Configure the response and transcription providers that fit your work. Model availability and charges come from those providers, not Volyx Lens.</p>
-        <p>Realtime and batch transcription routes: OpenAI · Azure Foundry · Deepgram · Azure AI Speech · optional local Whisper. Pick a transcription language or let it auto-detect.</p>
+        <p>Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech. Batch transcription falls back to OpenAI, Gemini, or Groq Whisper, with optional local Whisper. Pick a transcription language or let it auto-detect.</p>
       </div>
       <ul class="provider-list" aria-label="Supported AI providers">
         <li><span class="provider-glyph glyph-openai">O</span><strong>OpenAI</strong></li>
@@ -391,7 +391,7 @@
         </details>
         <details>
           <summary>Can Volyx Lens detect and save meetings?<span aria-hidden="true"></span></summary>
-          <p>Yes, opt-in. While listening, meeting detection looks for a sustained two-sided conversation between the Mic and System channels, then tags the session locally with a "Meeting in progress" indicator. With meeting history enabled, saved meetings get a meeting badge and stay searchable; you can export records, transcripts, or generated meeting notes. Detection and history are local and in-session only.</p>
+          <p>Yes, opt-in. While listening, meeting detection looks for a sustained two-sided conversation between the Mic and System channels, then tags the session locally with a "Meeting in progress" indicator. With meeting history enabled, saved meetings get a meeting badge and stay searchable; you can export records, transcripts, or generated meeting notes. Detection runs in-session; saved history stays on this device and is never uploaded by Volyx Lens.</p>
         </details>
         <details>
           <summary>Can I choose the transcription language?<span aria-hidden="true"></span></summary>

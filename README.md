@@ -13,7 +13,7 @@ Use your screen, voice, meeting audio, and saved Task Context with the AI provid
 <br />
 
 <a href="https://volyxlens.pages.dev/">
-  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing the privacy-first macOS and Windows AI assistant that hides from screen shares, its separate screen, voice, and meeting-audio inputs, and direct provider routing" />
+  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing the privacy-first macOS and Windows AI assistant that reduces its exposure in supported screen shares, its separate screen, voice, and meeting-audio inputs, and direct provider routing" />
 </a>
 
 <sub>Live product site: <a href="https://volyxlens.pages.dev/">volyxlens.pages.dev</a></sub>
@@ -44,12 +44,12 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Meeting history and recovery:** when enabled, finalized meetings and an in-progress transcript checkpoint are saved on device. After an unexpected exit, choose whether to restore or discard the draft.
 - **Meeting notes:** generate structured notes (Summary, Key Points, Decisions, Action Items, Follow-Up) for saved records using your configured provider, with long-meeting confirmation before paid requests. Notes persist in meeting history.
 - **Slide tracking:** optional local slide-change detection while listening, with bounded in-memory previews and nearby transcript context; no automatic provider requests.
-- **Provider choice:** 9 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server) and 6 transcription providers (OpenAI, Azure, Deepgram, Azure AI Speech, Groq Whisper, or optional local Whisper). OpenAI and Azure support both roles.
+- **Provider choice:** 9 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server). Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech; batch transcription falls back to OpenAI, Gemini, or Groq Whisper, with optional local Whisper. OpenAI and Azure support both roles.
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
 - **Native macOS and Windows behavior:** compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.
-- **Overlay privacy:** on macOS, the overlay uses the protected-window mechanism to reduce accidental exposure in supported capture tools. This is not guaranteed and is not intended to conceal use. Windows and Linux provide no equivalent capture-exclusion API; see [Platform support](#platform-support).
+- **Overlay privacy:** the overlay asks the operating system to keep itself out of supported capture tools: `NSWindowSharingNone` on macOS and `WDA_EXCLUDEFROMCAPTURE` on Windows 10 2004 and later. Support varies by tool, older Windows versions capture a black window, and Linux has no equivalent API. This is not guaranteed and is not intended to conceal use; see [Platform support](#platform-support).
 
 ## Product tour
 
@@ -123,7 +123,7 @@ open "/Applications/Volyx Lens.app"
 The current DMGs are unsigned, so a bare double-click is refused and macOS may call the app damaged. Right-click → **Open** also works on most versions, but the `xattr` command is the reliable fix. Signed and notarized builds will skip this step once credentials are configured.
 4. Grant Microphone and Screen & System Audio Recording access when prompted.
 
-Ad-hoc test builds remain available under their own pre-release tags for early validation.
+Ad-hoc verification builds are produced as workflow artifacts from the Actions tab; they are not published as releases.
 
 ## Platform support
 
@@ -134,13 +134,13 @@ Ad-hoc test builds remain available under their own pre-release tags for early v
 | Screen + coding help | ✅ | ✅ | ✅ |
 | Meeting audio (Them channel) | ✅ ScreenCaptureKit helper | ✅ system-audio loopback | ⚠️ best-effort via PulseAudio/PipeWire monitor |
 | Local OCR for Task Context ranking | ✅ Apple Vision | ❌ falls back to recency/pinned | ❌ falls back to recency/pinned |
-| Capture exclusion from screen shares | ⚠️ best-effort | ❌ no OS capture-exclusion API | ❌ no OS capture-exclusion API |
+| Capture exclusion from screen shares | ⚠️ best-effort | ⚠️ best-effort (`WDA_EXCLUDEFROMCAPTURE`, Windows 10 2004+) | ❌ no OS capture-exclusion API |
 
 Notes:
 
 - Meeting audio on Windows is captured through the OS system-audio loopback (no permission beyond the microphone grant). It is implemented and exercised in CI but has not yet been validated on a wide range of real Windows machines and audio setups.
 - Meeting audio on Linux requires `pactl` and `parec` (provided by `pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink. Linux is experimental; the Them channel fails gracefully with a status message when the tools or a monitor source are unavailable.
-- Capture exclusion only exists where the operating system provides it: macOS (`NSWindowSharingNone`). Windows and Linux provide no capture-exclusion API, so the overlay can appear in screen shares there.
+- Capture exclusion only exists where the operating system provides it: macOS (`NSWindowSharingNone`) and Windows 10 2004 or later (`WDA_EXCLUDEFROMCAPTURE`). Older Windows builds capture the window as black rather than removing it. Linux has no capture-exclusion API, so the overlay can appear in screen shares there. ScreenCaptureKit-based recorders and a physical camera can still capture the window on any platform.
 
 ## What it can do
 
@@ -205,7 +205,7 @@ Keys stay in the Electron main process and are protected with `safeStorage` / ma
 
 ### 3. Understand screen-share behavior
 
-Capture behavior depends on your operating system and the app being used to share or record. On macOS, some tools can respect Volyx Lens's protected-window flag; others may not. Windows and Linux have no OS-level capture-exclusion API. Assume the overlay may be visible, and do not rely on capture protection to conceal recording or AI assistance.
+Capture behavior depends on your operating system and the app being used to share or record. On macOS, some tools honor Volyx Lens's protected-window flag and ScreenCaptureKit-based tools may not. On Windows 10 2004 or later the window is removed from capture through `WDA_EXCLUDEFROMCAPTURE`; older Windows versions capture it as a black window. Linux has no OS-level capture exclusion. Assume the overlay may be visible, and do not rely on capture protection to conceal recording or AI assistance.
 
 ## Task Context
 
@@ -216,7 +216,7 @@ Task Context is for work revealed across multiple screens, for example a problem
 - Optional Apple Vision OCR runs locally and is used for overlap detection and relevance ranking; recognized text is not sent as a separate provider payload.
 - Pinning protects important screens from ordinary eviction and prioritizes them for later requests.
 - Remove, Undo last, Clear, and New Session provide explicit lifecycle control.
-- A screen request attaches at most **39 saved screens plus the current screen**, or the selected provider's per-request image cap when that is lower (NVIDIA caps at one image). Before eight or more saved screens are uploaded, Volyx Lens shows the selected provider and image count and requires confirmation.
+- A screen request attaches at most **39 images in total, including the current screen**, or the selected provider's per-request image cap when that is lower (NVIDIA caps at one image). Before eight or more saved screens are uploaded, Volyx Lens shows the selected provider and image count and requires confirmation.
 - Screens that are not selected remain local and are not presented as processed.
 
 Task Context cannot read files or code that never appeared on screen. Use it only when external assistance is permitted.
@@ -344,7 +344,7 @@ Prefer `base.en` or an int8-quantized model in Settings → Listening. The model
 
 Requirements:
 
-- macOS 12+, Windows 10/11, or a recent Linux distribution
+- macOS 13+, Windows 10/11, or a recent Linux distribution
 - [Node.js](https://nodejs.org) 20+ installed
 - npm (bundled with Node.js)
 - macOS only: Xcode Command Line Tools (`xcode-select --install`) for native OCR and system-audio helpers
@@ -379,7 +379,7 @@ Local builds are unsigned unless a valid signing identity is installed. Rebuildi
 
 The ad-hoc test workflow builds Apple Silicon and Intel artifacts on native GitHub-hosted macOS runners. Before uploading artifacts, it runs tests, syntax and secret checks, release-readiness checks, native-helper self-tests, ad-hoc signature verification, executable architecture checks, renderer smoke tests, DMG verification/mounting, and SHA-256 generation.
 
-The trusted production path (tag-triggered) builds all three platforms. Windows and Linux jobs run tests and release-readiness checks, then publish the installer/AppImages with per-file SHA-256 checksums, CycloneDX SBOMs, and architecture-specific update metadata; Linux additionally verifies AppImage architecture before upload. The macOS job fails closed unless Developer ID signing and Apple notarization credentials are available, and verifies signatures, notarization staples, Gatekeeper assessment, and updater metadata before publication.
+The trusted production path (tag-triggered) builds all three platforms. Windows and Linux jobs run the test, syntax, secret, and audit checks, then publish the installer/AppImages with per-file SHA-256 checksums, CycloneDX SBOMs, and architecture-specific update metadata. The Windows job verifies the installer's Authenticode signature when a signing certificate is configured. Linux publishes architecture-specific update metadata; its launch smoke test is advisory. The macOS job fails closed unless Developer ID signing and Apple notarization credentials are available, and verifies signatures, notarization staples, Gatekeeper assessment, and updater metadata before publication.
 
 ## License
 
