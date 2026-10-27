@@ -94,3 +94,62 @@ test('the brighter palette survives the inactive window state', () => {
   assert.match(more, /body\.window-inactive\s*\{/, 'body.window-inactive would otherwise outrank the :root override');
   assert.match(more, /body\.window-inactive\s*\{[^}]*--tx-mut:/);
 });
+
+function channelLuminance(hex) {
+  return luminance(hex);
+}
+
+function compositeOver(hex, alpha, background) {
+  const fg = hex.replace('#', '').match(/../g).map((pair) => parseInt(pair, 16));
+  const bg = background.replace('#', '').match(/../g).map((pair) => parseInt(pair, 16));
+  const mixed = fg.map((value, index) => Math.round(value * alpha + bg[index] * (1 - alpha)));
+  return `#${mixed.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function glassSurface() {
+  const rule = styles.match(/\.glass\s*\{([\s\S]*?)\}/);
+  assert.ok(rule, 'the glass surface is defined');
+  const match = rule[1].match(/background:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)/);
+  assert.ok(match, 'the glass surface declares a translucent background');
+  const [red, green, blue, alpha] = [match[1], match[2], match[3], Number(match[4])];
+  const base = `#${[red, green, blue].map((value) => Number(value).toString(16).padStart(2, '0')).join('')}`;
+  return { base, alpha };
+}
+
+test('the panel keeps its alpha high enough to hold text over bright content', () => {
+  const { alpha } = glassSurface();
+  assert.ok(alpha >= 0.85, `the glass panel must stay opaque enough over a white slide (got ${alpha})`);
+});
+
+test('secondary text and danger text clear 4.5:1 over a bright slide', () => {
+  const { base, alpha } = glassSurface();
+  // A white slide is the worst case this overlay sits on: a light deck, a doc, a
+  // bright IDE. Composite the panel over it and measure the text on top.
+  const surface = compositeOver(base, alpha, '#FFFFFF');
+  for (const tokenName of ['tx-mut', 'tx-2', 'danger']) {
+    const value = token(tokenName);
+    assert.ok(value, `${tokenName} is defined`);
+    const ratio = contrast(value, surface);
+    assert.ok(ratio >= 4.5, `${tokenName} clears 4.5:1 over bright content (got ${ratio.toFixed(2)}:1 on ${surface})`);
+  }
+  assert.ok(channelLuminance(surface) > 0, 'the composite is a real colour');
+});
+
+test('the inactive palette clears the non-text and text floors', () => {
+  const inactive = styles.match(/body\.window-inactive\s*\{([\s\S]*?)\}/)[1];
+  const surface0 = token('surface-0');
+  const surface1 = token('surface-1');
+  const accent = inactive.match(/--accent:\s*(#[0-9A-Fa-f]{6})/)[1];
+  const accentHi = inactive.match(/--accent-hi:\s*(#[0-9A-Fa-f]{6})/)[1];
+  for (const [name, value] of [['accent', accent], ['accent-hi', accentHi]]) {
+    const onPanel = contrast(value, surface0);
+    const onRaised = contrast(value, surface1);
+    assert.ok(onPanel >= 4.5, `inactive ${name} clears 4.5:1 on the panel (got ${onPanel.toFixed(2)}:1)`);
+    assert.ok(onRaised >= 3, `inactive ${name} clears the 3:1 non-text floor (got ${onRaised.toFixed(2)}:1)`);
+  }
+  for (const name of ['danger', 'live']) {
+    const value = inactive.match(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`))[1];
+    const ratio = contrast(value, surface1);
+    assert.ok(ratio >= 4.5, `inactive ${name} clears 4.5:1 when the window is unfocused (got ${ratio.toFixed(2)}:1)`);
+  }
+});

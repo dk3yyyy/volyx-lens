@@ -16,7 +16,9 @@ test('electric-indigo theme replaces the generic blue identity with accessible s
   assert.match(styles, /--cyan:\s*#42CFE8/i);
   assert.match(styles, /--live:\s*#4FD19B/i);
   assert.match(styles, /--warning:\s*#F3B84B/i);
-  assert.match(styles, /--danger:\s*#FF6678/i);
+  // Raised from #FF6678 so danger text clears 4.5:1 over a bright slide as well
+  // as on the dark panel.
+  assert.match(styles, /--danger:\s*#FF7C8C/i);
   assert.match(styles, /--surface-0:\s*#0B1020/i);
   assert.doesNotMatch(styles, /#3C83F5|rgba\(60,131,245/);
 });
