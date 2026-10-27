@@ -76,7 +76,7 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.7.3
+### Current release: v0.7.4
 
 What changed in this release:
 
@@ -87,27 +87,27 @@ What changed in this release:
 - Realtime transcription is seeded with the names and product terms in your personal context documents, which is where recognisers usually go wrong.
 - The history pane works from the keyboard, and the app now runs as a single instance.
 
-v0.7.3 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux; the macOS updater is published together with the DMGs.
+v0.7.4 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux. macOS auto-update is not offered while builds are unsigned.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.3 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.3/volyx-lens-0.7.3-mac-arm64-unsigned.dmg) · right-click Open |
-| **Intel** | [v0.7.3 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.3/volyx-lens-0.7.3-mac-x64-unsigned.dmg) · right-click Open |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.4 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.4/volyx-lens-0.7.4-mac-arm64-unsigned.dmg) · right-click Open |
+| **Intel** | [v0.7.4 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.4/volyx-lens-0.7.4-mac-x64-unsigned.dmg) · right-click Open |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.7.3-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.7.3-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.7.3-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.7.4-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.7.4-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.7.4-linux-arm64.AppImage` |
 
-**[Open the v0.7.3 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.3)**
+**[Open the v0.7.4 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.4)**
 
 The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.7.2 release page was consolidated: installers, macOS DMGs and update manifests only, with every SHA-256 checksum in the release notes instead of as separate files. Later tag-triggered releases publish per-file checksum and SBOM files alongside the installers. Signed and notarized builds will replace them once release signing credentials are configured.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.7.3-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.3-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.7.4-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.4-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 

@@ -1,0 +1,104 @@
+name: Unsigned Windows build
+
+# Builds the NSIS installer without a code-signing certificate, so Windows and
+# Linux users can get the current fixes before a certificate is purchased. The
+# installer is unsigned and SmartScreen will warn. No latest.yml is published:
+# an unsigned build should not drive auto-update.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the artifacts to. Leave blank to keep them as workflow artifacts only.
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Build unsigned Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:syntax
+      - run: npm run security:secrets
+      - run: npm audit --audit-level=low
+
+      - name: Build the NSIS installer without signing
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          npm pkg set "build.publish[0].channel=latest"
+          npx electron-builder --win nsis --x64 --publish never
+          # No updater metadata for an unsigned build.
+          rm -f dist/latest.yml dist/*.blockmap
+          test ! -f dist/latest.yml
+
+      - name: Verify the installer and write its checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE="$(find dist -maxdepth 1 -name '*.exe' -print -quit)"
+          test -n "$EXE"
+          EXE="$EXE" node -e "
+            const fs = require('fs');
+            const size = fs.statSync(process.env.EXE).size;
+            if (size < 1000000) throw new Error('installer is too small: ' + size);
+          "
+          EXE="$EXE" node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const path = require('path');
+            const file = process.env.EXE;
+            const hash = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+            fs.writeFileSync(file + '.sha256', hash + '  ' + path.basename(file) + '\n');
+          "
+          npm sbom --sbom-format cyclonedx > "dist/volyx-lens-windows.cdx.json"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/volyx-lens-*-win-x64.exe
+            dist/volyx-lens-windows.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: volyx-lens-windows-x64-unsigned
+          path: |
+            dist/volyx-lens-*-win-x64.exe
+            dist/volyx-lens-*-win-x64.exe.sha256
+            dist/volyx-lens-windows.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach the artifacts to a release
+        if: ${{ inputs.tag != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$TAG"
+          gh release view "$TAG" >/dev/null
+          gh release upload "$TAG" \
+            dist/volyx-lens-*-win-x64.exe \
+            dist/volyx-lens-*-win-x64.exe.sha256 \
+            dist/volyx-lens-windows.cdx.json \
+            --clobber
