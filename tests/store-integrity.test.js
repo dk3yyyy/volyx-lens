@@ -295,3 +295,31 @@ test('partially decryptable credentials from an incompatible app identity remain
   assert.throws(() => store.updateApiKeys({ deepseek: 'must-not-reseal' }), /locked by the operating system/i);
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, lockedRecord);
 });
+
+test('resetting shortcuts replaces the stored overrides instead of merging an empty set', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  const withOverride = store.setSettings({ shortcuts: { assist: 'CommandOrControl+Shift+A' } });
+  assert.equal(withOverride.shortcuts.assist, 'CommandOrControl+Shift+A', 'the override is stored');
+
+  // The reset path sends { shortcuts: {} } and relies on the store to treat the
+  // override set as a whole value. Merging {} left the old override alive and it
+  // came back on the next launch (VR-09).
+  const cleared = store.setSettings({ shortcuts: {} });
+  assert.deepEqual(cleared.shortcuts, {}, 'an empty set replaces the stored overrides');
+  const onDisk = JSON.parse(fs.readFileSync(path.join(userData, 'volyx-lens-data.json'), 'utf8'));
+  assert.deepEqual(onDisk.shortcuts || {}, {}, 'the file no longer carries the override');
+
+  // A fresh load of the same data agrees.
+  const reloaded = loadStore(userData);
+  assert.equal(reloaded.getSettings().shortcuts.assist, undefined);
+});
+
+test('a partial shortcut patch still merges normally', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  store.setSettings({ shortcuts: { assist: 'CommandOrControl+Shift+A', solve: 'CommandOrControl+Shift+S' } });
+  const afterPartial = store.setSettings({ shortcuts: { assist: 'CommandOrControl+Shift+D' } });
+  assert.equal(afterPartial.shortcuts.solve, 'CommandOrControl+Shift+S', 'the untouched override survives a partial patch');
+  assert.equal(afterPartial.shortcuts.assist, 'CommandOrControl+Shift+D');
+});
