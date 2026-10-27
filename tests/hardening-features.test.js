@@ -71,6 +71,15 @@ test('CI checkouts do not persist repository credentials', () => {
   assert.equal((release.match(/persist-credentials: false/g) || []).length, 1);
 });
 
+test('the macOS entitlements grant JIT and nothing broader', () => {
+  const plist = fs.readFileSync(path.join(root, 'build', 'entitlements.mac.plist'), 'utf8');
+  assert.match(plist, /com\.apple\.security\.cs\.allow-jit/);
+  // These two widen the Hardened Runtime for any library loaded into the signed
+  // bundle. Electron does not need them, so the release must not ship them (VR-24).
+  assert.doesNotMatch(plist, /allow-unsigned-executable-memory/);
+  assert.doesNotMatch(plist, /disable-library-validation/);
+});
+
 test('Electron runtime and packaging enable sandbox, ASAR, hardened runtime, and navigation restrictions', () => {
   assert.match(main, /sandbox: true/);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
