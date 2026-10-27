@@ -49,6 +49,12 @@ function fingerprint(turns) {
   return { count: normalized.length, lastId: last.id, lastTs: last.ts, contentHash: digest.digest('hex') };
 }
 
+// The shape every read path agrees on: an object (never an array) carrying a
+// turns array. Import and recovery already enforced this; list() and get() did not.
+function isRecordShape(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.turns);
+}
+
 function previewText(turns) {
   for (const turn of Array.isArray(turns) ? turns : []) {
     const text = String((turn && turn.text) || '').trim();
@@ -268,7 +274,9 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       if (!isSafeId(id)) continue;
       try {
         const record = JSON.parse(fsImpl.readFileSync(path.join(dir, name), 'utf8'));
-        if (!record || typeof record !== 'object') continue;
+        // A record is an object with a turns array. An array parses as an object
+        // and used to surface as a phantom row with every field undefined (VR-18).
+        if (!isRecordShape(record)) continue;
         records.push({
           id,
           participant: record.participant || null,
@@ -306,7 +314,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     } catch {
       return null;
     }
-    if (!record || typeof record !== 'object') return null;
+    if (!isRecordShape(record)) return null;
     const turns = snapshotTurns(record.turns);
     // A cleaned copy is only surfaced when it still describes these exact turns.
     const stored = record.cleaned;

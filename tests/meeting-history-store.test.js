@@ -134,6 +134,20 @@ test('remove and clear delete records', () => {
   assert.deepEqual(store.list(), []);
 });
 
+test('a JSON array is not a meeting record', () => {
+  const directory = temporaryDirectory();
+  const store = createMeetingStore({ dir: directory });
+  fs.writeFileSync(path.join(directory, 'array.json'), JSON.stringify([{ text: 'not a record' }]));
+  fs.writeFileSync(path.join(directory, 'no-turns.json'), JSON.stringify({ version: 1, reason: 'capture-stop' }));
+  fs.writeFileSync(path.join(directory, 'real.json'), JSON.stringify({
+    id: 'real', version: 1, turns: [{ id: 1, channel: 'you', text: 'a real meeting', ts: 1 }], endedAt: 1000,
+  }));
+  assert.deepEqual(store.list().map((record) => record.id), ['real'], 'only records with turns are listed');
+  assert.equal(store.get('array'), null, 'an array is not readable as a record');
+  assert.equal(store.get('no-turns'), null, 'a record with no turns array is not readable');
+  assert.ok(store.get('real'), 'a real record still reads');
+});
+
 test('unsafe ids are rejected and cannot traverse outside the directory', () => {
   const directory = temporaryDirectory();
   const store = createMeetingStore({ dir: directory });
