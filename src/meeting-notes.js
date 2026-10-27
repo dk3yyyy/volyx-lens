@@ -2,9 +2,14 @@
 
 const { escapeSubtitle } = require('./transcript-tools');
 
+// Turn labels are local, like the header. They used to be UTC while localStamp
+// was local, so one exported document could show 14:05 in its header and 18:05 on
+// its first turn (VR-10).
 function timeLabel(ts) {
   if (!Number.isFinite(ts)) return '';
-  return new Date(ts).toISOString().slice(11, 19);
+  const date = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function localStamp(ms) {
