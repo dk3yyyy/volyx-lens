@@ -250,6 +250,39 @@ app.whenReady().then(async () => {
   await run(win, "window.dispatchEvent(new Event('focus'))");
   await waitFor(win, "!document.body.classList.contains('window-inactive')", 'the focused window state');
   assert.equal(await run(win, "getComputedStyle(document.body).getPropertyValue('--accent').trim()"), focusedLook.accent, 'focus restores the live accent');
+  // System accessibility settings have to reach the real window, not just exist
+  // in the stylesheet. Emulate them through the debugger and read what the
+  // window actually computes.
+  win.webContents.debugger.attach('1.3');
+  const readToolbarSurface = () => run(win, `(() => {
+    const style = getComputedStyle(document.querySelector('#toolbar'));
+    return {
+      blur: style.backdropFilter || style.webkitBackdropFilter || '',
+      background: style.backgroundColor,
+      muted: getComputedStyle(document.documentElement).getPropertyValue('--tx-mut').trim(),
+    };
+  })()`);
+  const normalSurface = await readToolbarSurface();
+  assert.match(normalSurface.blur, /blur/, 'the default panel is glass');
+
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
+  });
+  const solidSurface = await readToolbarSurface();
+  assert.equal(solidSurface.blur, 'none', 'reduce transparency removes the blur');
+  assert.equal(solidSurface.background, 'rgb(11, 16, 32)', 'reduce transparency paints an opaque surface');
+
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-contrast', value: 'more' }],
+  });
+  const strongSurface = await readToolbarSurface();
+  assert.notEqual(strongSurface.muted, normalSurface.muted, 'increase contrast raises the muted text token');
+  assert.match(strongSurface.blur, /blur/, 'the glass returns when only contrast is raised');
+
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+  win.webContents.debugger.detach();
+  const restoredSurface = await readToolbarSurface();
+  assert.equal(restoredSurface.muted, normalSurface.muted, 'the palette returns to its default');
 
   await run(win, "document.querySelector('#meeting-history-toggle').click()");
   await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 2", 'two history rows');
@@ -456,7 +489,7 @@ app.whenReady().then(async () => {
   assert.equal(calls.restoreTrash, 1, 'the pane asked to restore everything still in the trash');
   await waitFor(win, "document.querySelector('#meeting-history-restore-trash')?.classList.contains('hidden') === true", 'the restore-deleted control hides once the trash is empty');
 
-  console.log('History UI behavior passed: inactive window state, context menus, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
+  console.log('History UI behavior passed: inactive window state, context menus, accessibility preferences, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
   app.exit(0);
 }).catch((error) => {
   console.error('History UI behavior failed:', error && error.message ? error.message : error);
