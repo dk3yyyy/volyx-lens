@@ -4,6 +4,18 @@
   const volyxLens = window.volyxLens; // exposed by preload
   const $ = (s) => document.querySelector(s);
 
+  // ---- inactive window state ---------------------------------------------
+  // The overlay spends most of its life unfocused, sitting over whatever the
+  // user is actually working in. It has to read as inactive without vanishing:
+  // the accent loses its charge and the glass stops competing for attention.
+  // Styles hang off body.window-inactive, so this is the only wiring needed.
+  function applyWindowFocusState(focused) {
+    document.body.classList.toggle('window-inactive', !focused);
+  }
+  window.addEventListener('focus', () => applyWindowFocusState(true));
+  window.addEventListener('blur', () => applyWindowFocusState(false));
+  applyWindowFocusState(document.hasFocus());
+
   // ---- paint icons -------------------------------------------------------
   const brandLogo = (className = '') => `<img class="volyx-brand-logo ${className}" src="assets/volyx-lens-logo.svg" alt="">`;
   $('#logo-btn').innerHTML = brandLogo('toolbar-brand-logo');
