@@ -387,7 +387,10 @@ app.whenReady().then(async () => {
     box.value = 'mango';
     box.dispatchEvent(new Event('input', { bubbles: true }));
   })()`);
-  await wait(200);
+  // The search is debounced, so wait for the list to narrow instead of sleeping:
+  // a fixed wait measures whatever the timer has done by then, which is how this
+  // assertion failed once under load while passing on the next run.
+  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 1", 'the cleaned-copy search to narrow the list');
   const mangoRows = await run(win, "document.querySelectorAll('#meeting-history-list .history-entry').length");
   assert.equal(mangoRows, 1, 'a phrase only the cleaned copy and the notes contain still finds the meeting');
   const mangoId = await run(win, "document.querySelector('#meeting-history-list .history-entry').dataset.meetingId");
@@ -398,7 +401,7 @@ app.whenReady().then(async () => {
     box.value = '';
     box.dispatchEvent(new Event('input', { bubbles: true }));
   })()`);
-  await wait(200);
+  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 2", 'the cleared search to show both meetings');
 
   // Keyboard: arrow keys move between meetings.
   await run(win, "document.querySelector('#meeting-history-list .history-entry-open').focus()");
