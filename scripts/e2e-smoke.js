@@ -225,6 +225,28 @@ app.whenReady().then(async () => {
       assert.ok(bootState.panelChildren >= 3, 'Panel should render its children');
     }
 
+    // 5b. Clearing the transcript mid-stream must not wedge the composer. The
+    // main process owns the run, the renderer owns the busy state, and a silent
+    // invalidation used to leave the buttons disabled with an orphaned answer.
+    win.webContents.send('llm:start', { mode: 'assist' });
+    win.webContents.send('llm:token', { text: 'Half an answer' });
+    await waitFor(win, "document.querySelector('.ai-text') && !document.querySelector('#cancel-response').classList.contains('hidden')", 'streaming state');
+    win.webContents.send('llm:canceled', { reason: 'transcript-clear' });
+    win.webContents.send('transcript:cleared', {});
+    await waitFor(win, "!document.querySelector('.ai-text')", 'the orphaned answer is gone');
+    const afterClear = await win.webContents.executeJavaScript(`(() => {
+      const cancel = document.querySelector('#cancel-response');
+      const actions = [...document.querySelectorAll('.act[data-mode]')];
+      return {
+        cancelHidden: cancel.classList.contains('hidden'),
+        anyDisabled: actions.some((button) => button.disabled),
+        answers: document.querySelectorAll('.ai-text').length,
+      };
+    })()`);
+    assert.equal(afterClear.cancelHidden, true, 'Cancel should hide once the run ends');
+    assert.equal(afterClear.anyDisabled, false, 'Action buttons should be usable again');
+    assert.equal(afterClear.answers, 0, 'The answer about a cleared transcript should be removed');
+
     // 6. No console errors during boot.
     if (consoleErrors.length > 0) {
       console.error('Console errors captured during E2E boot:');
