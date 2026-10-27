@@ -63,7 +63,9 @@ test('onboarding dialog declares and implements keyboard focus containment and r
   assert.match(renderer, /if \(document\.activeElement === title\) return;/, 'focus stops once it lands on the heading');
   assert.match(renderer, /if \(focusAttempts < 30\) setTimeout\(focusTitle, 50\);/, 'a swallowed focus call is retried on later frames');
   assert.match(renderer, /obPreviousFocus && obPreviousFocus\.isConnected/);
-  assert.match(styles, /button:focus-visible[\s\S]*outline:\s*2px solid var\(--cyan\)/);
+  // The ring moved from cyan to the accent family so a focused control and the
+  // live-capture indicator are not the same colour (VR-36).
+  assert.match(styles, /button:focus-visible[\s\S]*outline:\s*2px solid var\(--accent-soft\)/);
   assert.doesNotMatch(styles, /button:focus\s*\{\s*outline:\s*none/);
   assert.match(onboardingHarness, /Shift\+Tab from the heading should wrap to the last visible control/);
   assert.match(onboardingHarness, /global Settings shortcut must be suppressed while onboarding is open/);

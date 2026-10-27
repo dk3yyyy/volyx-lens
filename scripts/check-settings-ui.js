@@ -149,6 +149,29 @@ app.whenReady().then(async () => {
     assert.equal(semantics.visibleLabelledBy[0], semantics.visibleTitleIds[0], 'the page is named by its own heading');
   }
 
+  // Focus must not read as the live-capture state (VR-36). Read the rule from the
+  // live CSSOM so this is the stylesheet the window is actually using.
+  const focusOutline = await win.webContents.executeJavaScript(`(() => {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      try { rules.push(...sheet.cssRules); } catch { /* cross-origin sheet */ }
+    }
+    // Skip the rule that *removes* the ring for pointer focus: its selector also
+    // contains ":focus-visible" inside :not(, and its outline is "none".
+    const focusRule = rules.find((item) => item.selectorText
+      && item.selectorText.includes(':focus-visible')
+      && !item.selectorText.includes(':not(')
+      && item.style && item.style.outline);
+    const root = getComputedStyle(document.documentElement);
+    return {
+      outline: focusRule ? focusRule.style.outline : '',
+      accentSoft: root.getPropertyValue('--accent-soft').trim(),
+      cyan: root.getPropertyValue('--cyan').trim(),
+    };
+  })()`);
+  assert.match(focusOutline.outline, /--accent-soft/, 'the focus ring must use the accent token');
+  assert.notEqual(focusOutline.accentSoft, focusOutline.cyan, 'focus must not use the live-state cyan');
+
   // The provider tabs must report the same selection the panel shows.
   const providerSemantics = await win.webContents.executeJavaScript(`(() => {
     const tabs = [...document.querySelectorAll('#provider-seg [role="tab"]')];
