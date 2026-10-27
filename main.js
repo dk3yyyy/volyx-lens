@@ -916,6 +916,10 @@ function publishDockState() {
   win.webContents.send('window:dock-state', { side: windowDock.side, collapsed: windowDock.collapsed });
 }
 
+// Set by createWindow. The quit path runs outside that closure, and it has to be
+// able to save the size before the app exits.
+let saveWindowSizeNow = () => {};
+
 function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collapsed, anchor = windowDock.anchor, targetDisplay = null } = {}) {
   if (!win || win.isDestroyed()) return;
   windowAutoFit?.cancel();
@@ -999,11 +1003,17 @@ function createWindow() {
     const saved = windowState.save({ width, height });
     if (saved) savedWindowSize = saved;
   };
-  win.on('resized', () => {
+  const scheduleWindowSizeSave = () => {
     if (windowDock.collapsed) return;
     clearTimeout(windowSizeTimer);
     windowSizeTimer = setTimeout(rememberWindowSize, 400);
-  });
+  };
+  // 'resize' fires for every resize including a programmatic one; 'resized' only
+  // fires when a user finishes dragging an edge. Listening to one of them is a
+  // feature that silently never saves.
+  win.on('resize', scheduleWindowSizeSave);
+  win.on('resized', scheduleWindowSizeSave);
+  saveWindowSizeNow = rememberWindowSize;
   win.on('close', () => {
     clearTimeout(windowSizeTimer);
     windowSizeTimer = null;
@@ -1013,6 +1023,7 @@ function createWindow() {
   win.on('closed', () => {
     windowAutoFit?.cancel();
     windowAutoFit = null;
+    saveWindowSizeNow = () => {};
   });
 
   win.loadURL(APP_ENTRY_URL);
@@ -2853,6 +2864,9 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', (event) => {
+  // Quitting calls app.exit(0) after the awaited cleanup, which destroys the
+  // window without a 'close' event, so this is the last chance to persist size.
+  try { saveWindowSizeNow(); } catch {}
   relaunchRequested = false; // any quit supersedes a pending relaunch (incl. window-all-closed / native menu)
   if (shutdownPromise) return; // cleanup already ran (or is in progress)
   event.preventDefault();

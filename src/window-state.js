@@ -56,7 +56,8 @@ function createWindowState({ file, fsImpl = nodeFs } = {}) {
       fsImpl.writeFileSync(tmp, JSON.stringify(clean), { mode: 0o600 });
       fsImpl.renameSync(tmp, file);
       return clean;
-    } catch {
+    } catch (error) {
+      console.error('[window-state] save failed', String(error && error.message || error));
       try { fsImpl.unlinkSync(tmp); } catch {}
       return null;
     }
