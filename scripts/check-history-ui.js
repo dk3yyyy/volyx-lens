@@ -98,7 +98,7 @@ function recordB() {
 }
 
 let records = [recordA(), recordB()];
-const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0 };
+const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [] };
 let deletedRecords = [];
 
 function listedRecords() {
@@ -130,6 +130,11 @@ ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => listedRecords());
 ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: deletedRecords.length }));
+let nextMenuAction = null;
+ipcMain.handle('context-menu:show', (_event, payload) => {
+  calls.menu.push(payload && payload.kind);
+  return { action: nextMenuAction };
+});
 ipcMain.handle('history:get', (_event, id) => {
   const found = records.find((record) => record.id === id);
   return found ? JSON.parse(JSON.stringify(found)) : null;
@@ -268,6 +273,26 @@ app.whenReady().then(async () => {
   await waitFor(win, "document.querySelector('#meeting-history-prune-notice')?.classList.contains('hidden') === true", 'the notice dismissed');
   const dismissedLabel = await run(win, "document.querySelector('#meeting-history-prune-dismiss').textContent");
   assert.equal(dismissedLabel, 'Dismiss');
+
+  // Right-click reaches the same actions as the buttons: a history row opens,
+  // and a text field asks for the platform editing menu.
+  nextMenuAction = 'open';
+  await run(win, `(() => {
+    const row = document.querySelector('#meeting-history-list .history-entry');
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  })()`);
+  await waitFor(win, "document.querySelector('#meeting-history-detail')?.classList.contains('hidden') === false", 'the row context menu opened the meeting');
+  assert.deepEqual(calls.menu.slice(-1), ['history-row'], 'the row asked for the row menu');
+  await run(win, "document.querySelector('#meeting-history-back').click()");
+  await waitFor(win, "document.querySelector('#meeting-history-detail')?.classList.contains('hidden') === true", 'back to the list');
+
+  nextMenuAction = null;
+  await run(win, `(() => {
+    const box = document.querySelector('#meeting-history-search');
+    box.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  })()`);
+  await waitFor(win, "true", 'the field menu resolved');
+  assert.deepEqual(calls.menu.slice(-1), ['editable'], 'a text field asks for the editing roles');
 
   // A backup says what it wrote, and a restore says what came back.
   await waitFor(win, "document.querySelector('#meeting-history-backup-all') !== null", 'the backup control');
@@ -431,7 +456,7 @@ app.whenReady().then(async () => {
   assert.equal(calls.restoreTrash, 1, 'the pane asked to restore everything still in the trash');
   await waitFor(win, "document.querySelector('#meeting-history-restore-trash')?.classList.contains('hidden') === true", 'the restore-deleted control hides once the trash is empty');
 
-  console.log('History UI behavior passed: inactive window state, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
+  console.log('History UI behavior passed: inactive window state, context menus, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
   app.exit(0);
 }).catch((error) => {
   console.error('History UI behavior failed:', error && error.message ? error.message : error);

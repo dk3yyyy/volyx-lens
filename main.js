@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, systemPreferences, powerMonitor, dialog, safeStorage, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, systemPreferences, powerMonitor, dialog, safeStorage, clipboard, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -52,6 +52,7 @@ const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, rail
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { createMeetingStore } = require('./src/meeting-store');
+const { contextMenuTemplate } = require('./src/context-menu');
 const { buildBackupPlan, readBackupFolder, MAX_BACKUP_FILES, MAX_BACKUP_FILE_BYTES } = require('./src/meeting-backup');
 const { buildPreviousMeetingsBlock, PREVIOUS_MEETINGS_NOTE } = require('./src/meeting-memory');
 const { createMeetingRecovery, countUnsavedTurns } = require('./src/meeting-recovery');
@@ -2486,6 +2487,34 @@ handleTrusted('history:undo-delete', (_event, ids) => {
     send('history:changed', { restored: result.restored });
   }
   return result;
+});
+// Context menus are built in the main process, because that is where a Menu
+// lives, and their shape comes from a pure template so every case stays testable
+// without a window. The chosen id comes back to the renderer, which owns the
+// action: the main process never reaches into the DOM it cannot see.
+handleTrusted('context-menu:show', (_event, payload) => {
+  const kind = String((payload && payload.kind) || '');
+  const options = payload && typeof payload === 'object' ? payload : {};
+  const items = contextMenuTemplate(kind, options);
+  if (!items.length || !win || win.isDestroyed()) return { action: null };
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (action) => {
+      if (settled) return;
+      settled = true;
+      resolve({ action: action || null });
+    };
+    const template = items.map((item) => {
+      if (item.type === 'separator' || item.role) return { ...item };
+      return {
+        label: item.label,
+        enabled: item.enabled !== false,
+        click: () => settle(item.id),
+      };
+    });
+    const menu = Menu.buildFromTemplate(template);
+    menu.popup({ window: win, callback: () => settle(null) });
+  });
 });
 handleTrusted('history:clear', () => {
   abortActiveHistoryJob();
