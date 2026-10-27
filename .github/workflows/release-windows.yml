@@ -49,6 +49,28 @@ jobs:
       - run: npm run check:syntax
       - run: npm run security:secrets
       - run: npm audit --audit-level=low
+      - name: Pin the update publisher to the signing certificate
+        if: ${{ secrets.WINDOWS_CSC_LINK != '' }}
+        shell: pwsh
+        env:
+          CSC_LINK_VALUE: ${{ secrets.WINDOWS_CSC_LINK }}
+        run: |
+          # electron-updater on Windows only verifies an update's signer when
+          # publisherName is set, so it is taken from the certificate that signs this
+          # build rather than typed by hand (VR-25).
+          $source = $env:CSC_LINK_VALUE
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          if ($source -match '^https?://') {
+            Invoke-WebRequest -Uri $source -OutFile $pfx
+          } else {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($source))
+          }
+          $cert = Get-PfxCertificate -FilePath $pfx
+          if (-not $cert) { throw 'The signing secret did not contain a certificate' }
+          Write-Host "Signing as $($cert.Subject)"
+          npm pkg set "build.win.publisherName=$($cert.Subject)"
+          Remove-Item $pfx -Force
+
       - name: Build NSIS installer
         shell: bash
         run: |
@@ -58,6 +80,30 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+      - name: Verify the installer signature
+        shell: pwsh
+        env:
+          SIGNING_CONFIGURED: ${{ secrets.WINDOWS_CSC_LINK != '' }}
+        run: |
+          $installer = Get-ChildItem -Path "dist" -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "No installer to verify" }
+          $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
+          Write-Host "Signature: $($signature.Status) $($signature.SignerCertificate.Subject)"
+          if ($env:SIGNING_CONFIGURED -eq 'true') {
+            # Updates are only trusted through TLS and the checksum in latest.yml when
+            # the installer is unsigned, so a configured certificate has to produce a
+            # valid signature or this release does not ship (VR-25).
+            if ($signature.Status -ne 'Valid') {
+              throw "Installer signature is $($signature.Status); a signing certificate is configured, so this build must be signed"
+            }
+            # electron-updater compares the update's signer to this value, so record
+            # the subject of the certificate that actually signed the build.
+            $subject = $signature.SignerCertificate.Subject
+            "WINDOWS_PUBLISHER_NAME=$subject" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          } else {
+            Write-Warning "No signing certificate configured: the installer is unsigned and Windows updates rest on TLS plus the SHA-512 in latest.yml."
+          }
+
       - name: Smoke launch packaged application
         shell: pwsh
         run: |
