@@ -47,6 +47,28 @@ html, body {
   user-select: none;
 }
 
+/* An unfocused window is visibly subdued. The accent keeps its hue but loses
+   its charge, text dims a step, and the glass stops throwing a shadow that
+   competes with the window the user just clicked into. Scoping the palette
+   variables here means every control that uses them follows, instead of every
+   component needing its own inactive rule. */
+body.window-inactive {
+  --accent: #55618F;
+  --accent-hi: #6A75A3;
+  --accent-soft: #A9B1CC;
+  --cyan: #3E8A99;
+  --live: #3F8F73;
+  --warning: #A98A4B;
+  --danger: #B4646F;
+  --ic: #AEB5C7;
+  --tx-1: #D7DCEA;
+  --tx-2: #C2C8DB;
+}
+body.window-inactive #toolbar {
+  border-color: rgba(255,255,255,0.09);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
 /* ============================ Layout ============================ */
 /* Transparent window: no in-page background. You see your real screen behind the panel.
    Empty areas are made click-through from the renderer so they don't block your screen. */

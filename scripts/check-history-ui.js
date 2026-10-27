@@ -218,6 +218,34 @@ app.whenReady().then(async () => {
   // Confirmations are part of the flow under test; accept them.
   await run(win, 'void (window.confirm = () => true);');
 
+  // An unfocused window dims its accent without moving anything. The geometry
+  // check is the guard against a restyle that quietly resizes the pill.
+  const focusedLook = await run(win, `(() => {
+    const toolbar = document.querySelector('#toolbar').getBoundingClientRect();
+    return {
+      inactive: document.body.classList.contains('window-inactive'),
+      accent: getComputedStyle(document.body).getPropertyValue('--accent').trim(),
+      width: toolbar.width,
+      height: toolbar.height,
+    };
+  })()`);
+  await run(win, "window.dispatchEvent(new Event('blur'))");
+  await waitFor(win, "document.body.classList.contains('window-inactive')", 'the inactive window state');
+  const blurredLook = await run(win, `(() => {
+    const toolbar = document.querySelector('#toolbar').getBoundingClientRect();
+    return {
+      accent: getComputedStyle(document.body).getPropertyValue('--accent').trim(),
+      width: toolbar.width,
+      height: toolbar.height,
+    };
+  })()`);
+  assert.notEqual(blurredLook.accent, focusedLook.accent, 'an inactive window uses a subdued accent');
+  assert.equal(Math.round(blurredLook.width), Math.round(focusedLook.width), 'the inactive state does not resize the toolbar');
+  assert.equal(Math.round(blurredLook.height), Math.round(focusedLook.height), 'the inactive state does not resize the toolbar');
+  await run(win, "window.dispatchEvent(new Event('focus'))");
+  await waitFor(win, "!document.body.classList.contains('window-inactive')", 'the focused window state');
+  assert.equal(await run(win, "getComputedStyle(document.body).getPropertyValue('--accent').trim()"), focusedLook.accent, 'focus restores the live accent');
+
   await run(win, "document.querySelector('#meeting-history-toggle').click()");
   await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 2", 'two history rows');
 
@@ -403,7 +431,7 @@ app.whenReady().then(async () => {
   assert.equal(calls.restoreTrash, 1, 'the pane asked to restore everything still in the trash');
   await waitFor(win, "document.querySelector('#meeting-history-restore-trash')?.classList.contains('hidden') === true", 'the restore-deleted control hides once the trash is empty');
 
-  console.log('History UI behavior passed: search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
+  console.log('History UI behavior passed: inactive window state, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
   app.exit(0);
 }).catch((error) => {
   console.error('History UI behavior failed:', error && error.message ? error.message : error);
