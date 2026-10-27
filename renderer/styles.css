@@ -292,6 +292,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .transcript-turn.them { border-left-color: var(--cyan); }
 .transcript-turn.partial { opacity: 0.64; border-left-style: dashed; }
 .transcript-turn.has-partial { border-left-style: dashed; }
+.transcript-gap { display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: 7px; border: 1px dashed rgba(255,255,255,0.18); color: var(--tx-mut); font-size: 10.5px; }
+.transcript-gap::before { content: '…'; color: var(--cyan); }
 .transcript-pending { color: var(--tx-mut); font-style: italic; }
 .transcript-speaker { font-size: 10px; font-weight: 750; }
 .transcript-turn.you .transcript-speaker { color: #B5BEFF; }

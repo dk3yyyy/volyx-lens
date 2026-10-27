@@ -1222,6 +1222,10 @@ function activateBatchTranscription(reason) {
   startFlushLoop();
   updateTranscriptionDiagnostics({ status: 'fallback' });
   send('transcription:state', { mode: 'batch', status: 'active' });
+  // Audio between the last confirmed turn and the batch restart is never
+  // transcribed. Mark the gap instead of letting the transcript read as
+  // continuous speech (VR-13).
+  send('transcript:gap', { ts: Date.now(), reason: reason || 'realtime-failed' });
   if (reason) send('status', { message: `Realtime transcription unavailable (${reason}). Using batch transcription for this listening session.` });
 }
 
