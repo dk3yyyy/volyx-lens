@@ -558,6 +558,10 @@ class RealtimeTranscriptionManager {
     const shouldFlushFallback = flushFallback == null ? graceMs > 0 : !!flushFallback;
     for (const channel of Object.keys(this.channels)) {
       if (this.provider === 'deepgram') {
+        // Mark the stop before the finalize, not after it: stopping while the socket
+        // is still connecting used to throw on sendFinalize and report a fatal
+        // realtime error for a session the user was closing (VR-14).
+        if (typeof this.channels[channel].beginStop === 'function') this.channels[channel].beginStop();
         this.channels[channel].commit();
       } else if (this.provider === 'azure') {
         const stream = this.azureStreams[channel];

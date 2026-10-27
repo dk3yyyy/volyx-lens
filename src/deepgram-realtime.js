@@ -74,6 +74,7 @@ class DeepgramRealtimeChannel {
     this.onLatency = onLatency;
     this.connection = null;
     this.opened = false;
+    this.stopping = false;
     this.client = null;
     this.connectPromise = null;
     this.cancelConnect = null;
@@ -236,7 +237,11 @@ class DeepgramRealtimeChannel {
   }
 
   commit() {
-    if (!this.connection || this.intentionalClose) return;
+    // Before the socket is open there is nothing to finalise, and sendFinalize on a
+    // connecting socket throws into the fatal error path (VR-14). A throw from an
+    // open socket during a requested stop is suppressed by `stopping`, not skipped
+    // here, so an ordinary stop still finalises the last utterance.
+    if (!this.connection || !this.opened || this.intentionalClose) return;
     try { this.connection.sendFinalize({ type: 'Finalize' }); }
     catch (error) { this._reportError(sanitizeDeepgramError(error, this.channel)); }
   }
@@ -317,13 +322,19 @@ class DeepgramRealtimeChannel {
     if (typeof this.keepAliveTimer.unref === 'function') this.keepAliveTimer.unref();
   }
 
+  // Called before the session asks for a final transcript on the way out, so
+  // nothing that happens between the finalize and the close is treated as a fault.
+  beginStop() {
+    this.stopping = true;
+  }
+
   _clearKeepAlive() {
     if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
     this.keepAliveTimer = null;
   }
 
   _reportError(error) {
-    if (this.failureReported || this.intentionalClose) return;
+    if (this.failureReported || this.intentionalClose || this.stopping) return;
     this.failureReported = true;
     this.onError(error);
   }
