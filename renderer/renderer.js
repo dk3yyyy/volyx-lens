@@ -1475,8 +1475,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       // Windows captures meeting audio through the Chromium loopback track;
       // macOS and Linux use a main-process source (ScreenCaptureKit helper or
       // PulseAudio monitor), so only Windows needs the renderer-side start.
+      //
+      // The start request goes out before the display intent: the main process
+      // only honours an intent once it knows a capture is starting (VR-26), and
+      // both messages travel the same IPC channel in order. The click's user
+      // gesture is still fresh when getDisplayMedia runs.
+      const toggle = volyxLens.captureToggle();
       if (turningOn && systemEnabled() && volyxLens.platform === 'win32') startSystemAudio();
-      await volyxLens.captureToggle();
+      await toggle;
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Listening state could not be changed.');
     } finally {
