@@ -1747,6 +1747,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     for (const turn of visibleRows) {
       const row = document.createElement('div');
       row.className = `transcript-turn ${turn.channel}${turn.partial ? ' partial' : ''}${turn.pendingText ? ' has-partial' : ''}`;
+      // Right-click needs to name the turn it applies to.
+      if (turn.id !== null && turn.id !== undefined) row.dataset.turnId = String(turn.id);
       const speaker = document.createElement('span'); speaker.className = 'transcript-speaker'; speaker.textContent = turn.channel === 'you' ? 'You' : 'Them';
       const text = document.createElement('span'); text.className = 'transcript-text'; text.textContent = turn.text;
       if (turn.pendingText) {
@@ -1868,6 +1870,59 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       $('#diag-cross-talk').textContent = `${suppressed} transcript · ${acoustic} acoustic removed · ${delayDropped} mic queue dropped · peak ${correlation.toFixed(2)} · ${browserProcessing}`;
     } catch (error) { showStatus(error && error.message ? error.message : 'Diagnostics are unavailable.'); }
   }
+
+  // ---- context menus ------------------------------------------------------
+  // One delegated listener, because the rows are rebuilt constantly. A text
+  // field gets the platform editing roles (the app has no application menu, so
+  // that menu is the only place Cut/Copy/Paste and Undo are offered), a history
+  // row gets its own actions, and a transcript turn gets copy and export.
+  document.addEventListener('contextmenu', async (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const editable = target.closest('input, textarea, [contenteditable="true"]');
+    if (editable && !editable.disabled && !editable.readOnly) {
+      event.preventDefault();
+      await volyxLens.showContextMenu({ kind: 'editable' });
+      return;
+    }
+    const meetingRow = target.closest('#meeting-history-list .history-entry');
+    if (meetingRow && meetingRow.dataset.meetingId) {
+      event.preventDefault();
+      const id = meetingRow.dataset.meetingId;
+      const choice = await volyxLens.showContextMenu({ kind: 'history-row', canExport: true });
+      const action = choice && choice.action;
+      if (action === 'open') openMeetingDetail(id);
+      else if (action === 'export-md') {
+        try {
+          const result = await volyxLens.historyExport(id, 'md');
+          if (result && !result.canceled) showStatus(`Exported ${result.turns} ${result.turns === 1 ? 'turn' : 'turns'} to ${result.filename}.`);
+        } catch (error) { showStatus(error && error.message ? error.message : 'That meeting could not be exported.'); }
+      } else if (action === 'backup-all') {
+        $('#meeting-history-backup-all').click();
+      }
+      return;
+    }
+    const turnRow = target.closest('#transcript-list .transcript-turn');
+    if (turnRow) {
+      event.preventDefault();
+      const turnId = turnRow.dataset.turnId;
+      const choice = await volyxLens.showContextMenu({
+        kind: 'transcript-turn',
+        hasTurn: Boolean(turnId),
+        hasConversation: transcriptTurns.length > 0,
+      });
+      const action = choice && choice.action;
+      if (action === 'copy-turn' && turnId) {
+        try { await volyxLens.transcriptCopyTurn(Number(turnId)); showStatus('Transcript turn copied.'); }
+        catch (error) { showStatus(error && error.message ? error.message : 'Transcript turn could not be copied.'); }
+      } else if (action === 'copy-conversation') {
+        try { const result = await volyxLens.transcriptCopy(); showStatus(`Copied ${result.turns} transcript ${result.turns === 1 ? 'turn' : 'turns'}.`); }
+        catch (error) { showStatus(error && error.message ? error.message : 'Transcript could not be copied.'); }
+      } else if (action === 'export-transcript') {
+        $('#transcript-export').click();
+      }
+    }
+  });
 
   $('#transcript-copy').addEventListener('click', async () => {
     try { const result = await volyxLens.transcriptCopy(); showStatus(`Copied ${result.turns} transcript ${result.turns === 1 ? 'turn' : 'turns'}.`); }
