@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   historyList: () => ipcRenderer.invoke('history:list'),
   historyLimits: () => ipcRenderer.invoke('history:limits'),
   showContextMenu: (payload) => ipcRenderer.invoke('context-menu:show', payload),
+  copyText: (text) => ipcRenderer.invoke('text:copy', text),
   historyGet: (id) => ipcRenderer.invoke('history:get', id),
   historyDelete: (id) => ipcRenderer.invoke('history:delete', id),
   historyUndoDelete: (ids) => ipcRenderer.invoke('history:undo-delete', ids),

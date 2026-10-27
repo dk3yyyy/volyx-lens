@@ -2555,6 +2555,14 @@ handleTrusted('history:undo-delete', (_event, ids) => {
 // lives, and their shape comes from a pure template so every case stays testable
 // without a window. The chosen id comes back to the renderer, which owns the
 // action: the main process never reaches into the DOM it cannot see.
+// Copying text the user selected or right-clicked. Capped, because the renderer
+// is the side that decides what to hand over.
+handleTrusted('text:copy', (_event, text) => {
+  const value = String(text == null ? '' : text).slice(0, 200_000);
+  if (!value.trim()) return { copied: false, characters: 0 };
+  clipboard.writeText(value);
+  return { copied: true, characters: value.length };
+});
 handleTrusted('context-menu:show', (_event, payload) => {
   const kind = String((payload && payload.kind) || '');
   const options = payload && typeof payload === 'object' ? payload : {};

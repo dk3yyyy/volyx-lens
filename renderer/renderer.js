@@ -1888,6 +1888,35 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       await volyxLens.showContextMenu({ kind: 'editable' });
       return;
     }
+    const answer = target.closest('#messages .ai-text');
+    if (answer) {
+      event.preventDefault();
+      const text = String(answer.dataset.raw || answer.textContent || '').trim();
+      // The question that produced this answer is the nearest user bubble above
+      // it, which is how the conversation is laid out.
+      let question = '';
+      let previous = answer.previousElementSibling;
+      while (previous && !question) {
+        if (previous.classList.contains('user-bubble')) question = String(previous.textContent || '').trim();
+        previous = previous.previousElementSibling;
+      }
+      const choice = await volyxLens.showContextMenu({
+        kind: 'answer',
+        hasAnswer: Boolean(text),
+        hasQuestion: Boolean(question),
+      });
+      const action = choice && choice.action;
+      if (action === 'copy-answer' && text) {
+        try { await volyxLens.copyText(text); showStatus('Answer copied.'); }
+        catch (error) { showStatus(error && error.message ? error.message : 'The answer could not be copied.'); }
+      } else if (action === 'copy-answer-and-question' && text) {
+        try {
+          await volyxLens.copyText(question ? `${question}\n\n${text}` : text);
+          showStatus(question ? 'Question and answer copied.' : 'Answer copied.');
+        } catch (error) { showStatus(error && error.message ? error.message : 'The answer could not be copied.'); }
+      }
+      return;
+    }
     const meetingRow = target.closest('#meeting-history-list .history-entry');
     if (meetingRow && meetingRow.dataset.meetingId) {
       event.preventDefault();

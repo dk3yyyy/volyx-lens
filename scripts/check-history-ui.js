@@ -98,7 +98,7 @@ function recordB() {
 }
 
 let records = [recordA(), recordB()];
-const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [] };
+const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [] };
 let deletedRecords = [];
 
 function listedRecords() {
@@ -131,6 +131,10 @@ ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => listedRecords());
 ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: deletedRecords.length }));
 let nextMenuAction = null;
+ipcMain.handle('text:copy', (_event, text) => {
+  calls.clipboard.push(text);
+  return { copied: true, characters: String(text || '').length };
+});
 ipcMain.handle('context-menu:show', (_event, payload) => {
   calls.menu.push(payload && payload.kind);
   return { action: nextMenuAction };
@@ -327,6 +331,30 @@ app.whenReady().then(async () => {
   })()`);
   await waitFor(win, "true", 'the field menu resolved');
   assert.deepEqual(calls.menu.slice(-1), ['editable'], 'a text field asks for the editing roles');
+
+  // The answer is selectable, and right-clicking it offers a copy that actually
+  // reaches the clipboard bridge.
+  nextMenuAction = 'copy-answer';
+  const answerState = await run(win, `(() => {
+    const messages = document.querySelector('#messages');
+    const bubble = document.createElement('div');
+    bubble.className = 'user-bubble';
+    bubble.textContent = 'What changed in the deck?';
+    const answer = document.createElement('div');
+    answer.className = 'ai-text';
+    answer.dataset.raw = 'Three slides were reordered.';
+    answer.textContent = 'Three slides were reordered.';
+    messages.append(bubble, answer);
+    const selectable = getComputedStyle(answer).userSelect || getComputedStyle(answer).webkitUserSelect;
+    answer.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    return selectable;
+  })()`);
+  assert.equal(answerState, 'text', 'the answer can be selected like any other content');
+  await waitFor(win, "true", 'the answer menu resolved');
+  await waitFor(win, "true", 'the copy resolved');
+  assert.deepEqual(calls.menu.slice(-1), ['answer'], 'the answer asked for the answer menu');
+  assert.deepEqual(calls.clipboard.slice(-1), ['Three slides were reordered.'], 'the answer reached the clipboard bridge');
+  nextMenuAction = null;
 
   // A backup says what it wrote, and a restore says what came back.
   await waitFor(win, "document.querySelector('#meeting-history-backup-all') !== null", 'the backup control');
