@@ -31,6 +31,13 @@ test('every artifact carries a checksum, an SBOM and a provenance attestation', 
   assert.match(workflow, /id-token: write/);
 });
 
+test('the packaged smoke check treats renderer readiness as the signal', () => {
+  // The x64 build runs under Rosetta on the arm64 runner and can take longer than
+  // a short fixed window to paint, so a timeout must not be read as a crash.
+  assert.match(workflow, /TimeoutExpired/);
+  assert.match(workflow, /VOLYX_LENS_RENDERER_READY/);
+});
+
 test('an unsigned build does not publish updater metadata', () => {
   assert.match(workflow, /test ! -f dist\/latest-mac\.yml/);
 });

@@ -102,9 +102,20 @@ jobs:
           file "$APP_PATH/Contents/MacOS/Volyx Lens" | grep -q "$EXPECTED_ARCH"
           python3 - "$APP_PATH/Contents/MacOS/Volyx Lens" <<'PY'
           import subprocess, sys
-          result = subprocess.run([sys.argv[1], '--smoke-test'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
-          print(result.stdout)
-          if result.returncode != 0 or 'VOLYX_LENS_RENDERER_READY' not in result.stdout:
+          # Renderer readiness is the signal, not a clean exit: under Rosetta the
+          # x64 build can take longer than a hard 15 second window to paint, and the
+          # app is allowed to keep running after it reports ready.
+          try:
+              result = subprocess.run([sys.argv[1], '--smoke-test'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=90)
+              output = result.stdout or ''
+              ready = result.returncode == 0 and 'VOLYX_LENS_RENDERER_READY' in output
+          except subprocess.TimeoutExpired as exc:
+              output = exc.stdout or ''
+              if isinstance(output, bytes):
+                  output = output.decode('utf-8', 'replace')
+              ready = 'VOLYX_LENS_RENDERER_READY' in output
+          print(output)
+          if not ready:
               raise SystemExit('Unsigned application did not report renderer readiness.')
           PY
 
