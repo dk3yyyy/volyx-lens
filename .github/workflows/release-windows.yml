@@ -54,6 +54,7 @@ jobs:
         shell: pwsh
         env:
           CSC_LINK_VALUE: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD_VALUE: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: |
           # electron-updater on Windows only verifies an update's signer when
           # publisherName is set, so it is taken from the certificate that signs this
@@ -65,7 +66,15 @@ jobs:
           } else {
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($source))
           }
-          $cert = Get-PfxCertificate -FilePath $pfx
+          # A release PFX is normally password protected. Without the password
+          # Get-PfxCertificate would prompt, which ends the non-interactive job.
+          $password = $env:CSC_KEY_PASSWORD_VALUE
+          if ($password) {
+            $secure = ConvertTo-SecureString $password -AsPlainText -Force
+            $cert = Get-PfxCertificate -FilePath $pfx -Password $secure -NoPromptForPassword
+          } else {
+            $cert = Get-PfxCertificate -FilePath $pfx -NoPromptForPassword
+          }
           if (-not $cert) { throw 'The signing secret did not contain a certificate' }
           Write-Host "Signing as $($cert.Subject)"
           npm pkg set "build.win.publisherName=$($cert.Subject)"

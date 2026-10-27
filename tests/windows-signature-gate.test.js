@@ -18,6 +18,15 @@ test('the Windows release records who signs the build', () => {
   assert.match(workflow, /if: \$\{\{ secrets\.WINDOWS_CSC_LINK != '' \}\}/);
 });
 
+test('the signing certificate is opened with the configured password', () => {
+  // A release PFX is password protected; without -Password the cmdlet prompts
+  // and a non-interactive job fails before it can read the subject.
+  assert.match(workflow, /CSC_KEY_PASSWORD_VALUE: \$\{\{ secrets\.WINDOWS_CSC_KEY_PASSWORD \}\}/);
+  assert.match(workflow, /ConvertTo-SecureString \$password -AsPlainText -Force/);
+  assert.match(workflow, /Get-PfxCertificate -FilePath \$pfx -Password \$secure -NoPromptForPassword/);
+  assert.match(workflow, /Get-PfxCertificate -FilePath \$pfx -NoPromptForPassword/);
+});
+
 test('a configured certificate has to produce a valid signature', () => {
   assert.match(workflow, /name: Verify the installer signature/);
   assert.match(workflow, /Get-AuthenticodeSignature/);
