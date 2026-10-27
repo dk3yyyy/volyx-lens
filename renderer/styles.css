@@ -1061,3 +1061,31 @@ html[data-theme='light'] .history-cleaned-badge {
     outline-offset: 2px;
   }
 }
+
+/* A failed answer is marked next to what already arrived, never instead of it. */
+.ai-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd-strong, rgba(226, 231, 255, 0.28));
+  border-radius: 10px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  color: var(--tx, #eabfb9);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ai-error p { margin: 0; flex: 1 1 16ch; }
+.ai-retry {
+  font: inherit;
+  color: var(--accent, #7181C4);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.ai-retry:hover { background: rgba(113, 129, 196, 0.12); }
+.ai-retry:focus-visible { outline: 2px solid var(--accent, #7181C4); outline-offset: 2px; }

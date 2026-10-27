@@ -247,6 +247,32 @@ app.whenReady().then(async () => {
     assert.equal(afterClear.anyDisabled, false, 'Action buttons should be usable again');
     assert.equal(afterClear.answers, 0, 'The answer about a cleared transcript should be removed');
 
+    // 5c. A provider error after tokens have arrived keeps the answer instead of
+    // overwriting it with the error string (VR-11).
+    win.webContents.send('llm:start', { mode: 'assist' });
+    win.webContents.send('llm:token', { text: 'The answer that already arrived' });
+    await waitFor(win, "document.querySelector('.ai-text') && document.querySelector('.ai-text').textContent.includes('already arrived')", 'the streamed answer');
+    win.webContents.send('llm:error', { message: 'The provider dropped the connection.' });
+    await waitFor(win, "document.querySelector('.ai-error')", 'the error block');
+    const afterProviderError = await win.webContents.executeJavaScript(`(() => {
+      const answers = [...document.querySelectorAll('.ai-text')];
+      const block = document.querySelector('.ai-error');
+      return {
+        answers: answers.length,
+        answerText: answers.map((node) => node.textContent).join(' '),
+        errorText: block ? block.textContent : '',
+        retry: !!document.querySelector('.ai-error .ai-retry'),
+        busy: document.querySelector('#send-btn').classList.contains('busy'),
+      };
+    })()`);
+    assert.equal(afterProviderError.answers, 1, 'the partial answer is still there');
+    assert.match(afterProviderError.answerText, /already arrived/, 'the streamed text was not overwritten');
+    assert.match(afterProviderError.errorText, /dropped the connection/, 'the failure is shown separately');
+    // No request was dispatched in this scenario, so there is nothing to retry and
+    // the button is correctly absent; the retry path is pinned by a unit test.
+    assert.equal(afterProviderError.retry, false, 'no retry without a known request');
+    assert.equal(afterProviderError.busy, false, 'the composer is usable again');
+
     // 6. No console errors during boot.
     if (consoleErrors.length > 0) {
       console.error('Console errors captured during E2E boot:');
