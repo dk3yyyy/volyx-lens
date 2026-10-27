@@ -60,6 +60,23 @@ function speakerName(turn, record = {}) {
   return named || 'Them';
 }
 
+// A transcript line is text, not markdown. A continuation line beginning with a
+// block marker would end the turn and start its own bullet, heading or rule in the
+// exported document, letting a speaker add structure the export never meant to
+// have (VR-19). The marker is escaped, so the line still reads as written.
+// Runs first: `---`, `***`, `___` and `===` are rules and setext headings even
+// though their first character looks like a bullet.
+const BLOCK_MARKER = /^(\s*)(-{3,}|\*{3,}|_{3,}|={2,}|[-*+_#>|]|\d+[.)])(?=\s|$)/;
+
+function escapeBlockMarker(line) {
+  return line.replace(BLOCK_MARKER, (match, indent, marker) => `${indent}\\${marker}`);
+}
+
+function markdownTurnBody(text) {
+  const lines = String(text == null ? '' : text).split('\n');
+  return [lines[0], ...lines.slice(1).map((line) => `  ${escapeBlockMarker(line)}`)].join('\n');
+}
+
 function meetingHeader(record = {}, { cleaned = false } = {}) {
   const turns = Array.isArray(record.turns) ? record.turns : [];
   const lines = [`# Volyx Lens ${record.meeting === true ? 'meeting' : 'session'}`];
@@ -160,7 +177,7 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
   const isMarkdown = format === 'md';
   const body = turns.map((turn) => {
     const speaker = speakerName(turn, record);
-    if (isMarkdown) return `- **${timeLabel(turn.ts)} · ${speaker}:** ${turn.text.replace(/\n/g, '\n  ')}`;
+    if (isMarkdown) return `- **${timeLabel(turn.ts)} · ${speaker}:** ${markdownTurnBody(turn.text)}`;
     return `[${timeLabel(turn.ts)}] ${speaker}: ${turn.text}`;
   }).join(isMarkdown ? '\n\n' : '\n');
   return `${meetingHeader(record, { cleaned })}\n\n${body}${body ? '\n' : ''}`;
