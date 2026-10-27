@@ -220,8 +220,8 @@
           <section class="s-page on" id="settings-page-providers" data-settings-page="providers" aria-labelledby="settings-providers-title">
             <div class="s-page-head"><h2 tabindex="-1" id="settings-providers-title">AI Providers</h2><p>Choose where Volyx Lens sends requests and which models it uses.</p></div>
         <div id="s-storage-warning" class="s-warn hidden" role="alert">
-          <strong>API keys are stored in plaintext</strong>
-          <span>Secure storage (macOS Keychain / safeStorage) is unavailable on this system, so saved API keys are written to disk with restricted file permissions instead of being encrypted. Fix secure storage before adding keys.</span>
+          <strong>API keys are not saved on this system</strong>
+          <span>Secure storage (macOS Keychain / safeStorage) is unavailable, so keys you enter are kept in memory for this session only and are never written to disk. They are gone after a restart. Fix secure storage to save them.</span>
         </div>
         <label class="s-label">Response providers <span class="s-hint">choose a provider to configure</span></label>
         <div class="s-seg provider-tabs" id="provider-seg" role="tablist" aria-label="Provider configuration">

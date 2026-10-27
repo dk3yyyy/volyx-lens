@@ -11,7 +11,10 @@ function createCredentialVault(safeStorage) {
   }
 
   function seal(values = {}) {
-    if (!secureAvailable()) return { version: 1, mode: 'plaintext-fallback', values: { ...values } };
+    // Without a secure backend there is no safe way to write a provider key: any copy
+    // of userData, backup or support bundle would carry it. The key stays in memory
+    // for this session and the record says so (VR-22).
+    if (!secureAvailable()) return { version: 1, mode: 'memory-only', values: {} };
     const encrypted = {};
     for (const [name, value] of Object.entries(values)) {
       if (!value) continue;
@@ -21,8 +24,12 @@ function createCredentialVault(safeStorage) {
   }
 
   function openWithStatus(record = {}) {
-    if (!record || typeof record !== 'object') return { values: {}, failedNames: [] };
-    if (record.mode === 'plaintext-fallback') return { values: { ...(record.values || {}) }, failedNames: [] };
+    if (!record || typeof record !== 'object') return { values: {}, failedNames: [], plaintext: false };
+    if (record.mode === 'plaintext-fallback') {
+      // Reading an older plaintext record is still allowed so the session keeps
+      // working; the caller rewrites it without values on the next save.
+      return { values: { ...(record.values || {}) }, failedNames: [], plaintext: true };
+    }
     const encodedValues = record.values && typeof record.values === 'object' ? record.values : {};
     if (record.mode !== 'safeStorage') return { values: {}, failedNames: [] };
     if (!secureAvailable()) return { values: {}, failedNames: Object.keys(encodedValues) };
@@ -41,7 +48,8 @@ function createCredentialVault(safeStorage) {
     const secure = secureAvailable();
     return {
       secure,
-      warning: secure ? '' : 'Credentials stored in plaintext. Enable a keyring for encryption.',
+      persisted: secure,
+      warning: secure ? '' : 'Secure storage is unavailable, so API keys are kept for this session only and are not written to disk. They will be gone after a restart.',
     };
   }
 

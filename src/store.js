@@ -77,7 +77,14 @@ function load() {
   for (const name of KEY_NAMES) {
     if (legacyKeys[name]) data.apiKeys[name] = String(legacyKeys[name]);
   }
-  if (Object.values(legacyKeys).some(Boolean) || migratedModelDefaults) save();
+  // An older build wrote provider keys in the clear when secure storage was missing.
+  // They are read into memory so the session keeps working, then the record is
+  // rewritten without them, so the file stops carrying live keys (VR-22).
+  const scrubPlaintextCredentials = openedCredentials.plaintext === true && !vault.isSecure();
+  if (scrubPlaintextCredentials) {
+    console.log('[store] rewriting a legacy plaintext credential record without its values');
+  }
+  if (Object.values(legacyKeys).some(Boolean) || migratedModelDefaults || scrubPlaintextCredentials) save();
   return data;
 }
 
@@ -122,6 +129,8 @@ function publicSettings() {
   result.credentialStatus = {
     present: Object.fromEntries(KEY_NAMES.map((name) => [name, !!full.apiKeys[name] || !!persistedNames[name]])),
     secure: vault.isSecure() && !credentialRecordLocked,
+    // Whether the keys survive a restart. False means they are session-only.
+    persisted: securityStatus.persisted === true && !credentialRecordLocked,
     backend: credentialRecordLocked ? 'locked-safeStorage' : vault.backend(),
     warning: securityStatus.warning,
   };

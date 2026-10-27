@@ -2602,7 +2602,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     for (const provider of Object.keys(keyPlaceholders)) {
       const input = $(`#key-${provider}`);
       input.value = '';
-      input.placeholder = credentialStatus.present[provider] ? 'Saved securely — enter to replace' : keyPlaceholders[provider];
+      input.placeholder = credentialStatus.present[provider]
+        ? (credentialStatus.persisted === false ? 'Kept for this session — enter to replace' : 'Saved securely — enter to replace')
+        : keyPlaceholders[provider];
       const clear = document.querySelector(`.key-clear[data-key="${provider}"]`);
       if (clear) clear.disabled = !credentialStatus.present[provider];
     }
@@ -2660,7 +2662,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     else if (transcription.realtimeProvider === 'azureSpeech') stt = present.azureSpeech ? 'Azure AI Speech Realtime' : 'Azure AI Speech Realtime (key missing)';
     else stt = present.openai ? 'OpenAI Realtime' : 'OpenAI Realtime (key missing)';
     const backend = settings.credentialStatus && settings.credentialStatus.backend;
-    const storage = settings.credentialStatus && settings.credentialStatus.secure ? 'secure storage' : (backend === 'locked-safeStorage' ? 'secure storage locked' : 'plaintext fallback');
+    const storage = settings.credentialStatus && settings.credentialStatus.secure
+      ? 'secure storage'
+      : (backend === 'locked-safeStorage' ? 'secure storage locked' : 'keys not saved (session only)');
     const defaultLabel = PROVIDER_LABELS[settings.provider] || settings.provider;
     const fallbackLabel = settings.fallbackProvider ? (PROVIDER_LABELS[settings.fallbackProvider] || settings.fallbackProvider) : 'none';
     return `${defaultLabel} default · ${fallbackLabel} fallback · ${stt} · ${storage}`;
