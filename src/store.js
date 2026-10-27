@@ -249,7 +249,18 @@ function setSettings(patch) {
   const previous = data;
   data = clone(data);
   try {
-    data = deepMerge(data, sanitizeSettingsPatch(patch));
+    const safe = sanitizeSettingsPatch(patch);
+    data = deepMerge(data, safe);
+    // An empty shortcut patch is an explicit "none", so it replaces the stored
+    // set; merging `{}` left the old overrides alive after a reset and they came
+    // back on the next launch (VR-09). A partial patch still merges, because the
+    // rebind flow sends one override at a time.
+    if (Object.hasOwn(safe, 'shortcuts')) {
+      const incoming = safe.shortcuts || {};
+      data.shortcuts = Object.keys(incoming).length === 0
+        ? {}
+        : { ...(data.shortcuts || {}), ...incoming };
+    }
     if (data.fallbackProvider === data.provider) data.fallbackProvider = '';
     if (!data.audio.micEnabled && !data.audio.systemEnabled) data.audio.micEnabled = true;
     save();
