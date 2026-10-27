@@ -37,9 +37,10 @@ ipcMain.handle('permissions:status', (_event, kind) => ({ kind, status: 'not-det
 ipcMain.on('mouse:ignore', () => {});
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function waitFor(win, expression, message, timeoutMs = 2500) {
+async function waitFor(win, expression, message, timeoutMs = 2500, onAttempt = null) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
+    if (onAttempt) await onAttempt();
     if (await win.webContents.executeJavaScript(`Boolean(${expression})`)) return;
     await wait(25);
   }
@@ -77,8 +78,17 @@ app.whenReady().then(async () => {
   win.show();
   win.focus();
   win.webContents.focus();
-  // Cold Electron startup can exceed the normal interaction timeout on shared CI runners.
-  await waitFor(win, "document.activeElement && document.activeElement.id === 'ob-title'", 'initial onboarding heading focus', 10000);
+  // Cold Electron startup can exceed the normal interaction timeout on shared CI
+  // runners, and a runner without a window manager does not hand the window
+  // focus on its own. Re-ask on every attempt so the assertion is about the
+  // app focusing its heading, not about the runner's window manager.
+  await waitFor(
+    win,
+    "document.activeElement && document.activeElement.id === 'ob-title'",
+    'initial onboarding heading focus',
+    10000,
+    () => { win.show(); win.focus(); win.webContents.focus(); },
+  );
 
   const names = ['welcome', 'permissions', 'provider', 'sharing', 'ready'];
   const heights = [];
