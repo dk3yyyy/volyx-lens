@@ -52,6 +52,7 @@ const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, rail
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { createMeetingStore } = require('./src/meeting-store');
+const { buildBackupPlan, readBackupFolder, MAX_BACKUP_FILES, MAX_BACKUP_FILE_BYTES } = require('./src/meeting-backup');
 const { buildPreviousMeetingsBlock, PREVIOUS_MEETINGS_NOTE } = require('./src/meeting-memory');
 const { createMeetingRecovery, countUnsavedTurns } = require('./src/meeting-recovery');
 const { createMeetingDetector } = require('./src/meeting-detect');
@@ -780,6 +781,107 @@ async function writePrivateExport(filePath, content) {
     await fs.promises.unlink(tmpPath).catch(() => {});
     throw error;
   }
+}
+
+// -------- meeting backup --------
+// A backup is the safety net for a store that keeps the newest 200 meetings and
+// deletes permanently. It writes every record, unchanged, into a folder the user
+// picks, plus an index naming what is in it. Restore reads that folder back
+// through the store's own validators, which is what makes it a backup rather
+// than a pile of files.
+
+async function backupAllMeetings() {
+  const { records, unreadable } = meetingStore.readAll();
+  if (!records.length) throw new Error('There are no saved meetings to back up.');
+  const picked = await dialog.showOpenDialog(win, {
+    title: 'Choose a folder for the meeting backup',
+    buttonLabel: 'Back up here',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (picked.canceled || !picked.filePaths.length) return { canceled: true };
+  const directory = picked.filePaths[0];
+  const plan = buildBackupPlan(records, { appVersion: app.getVersion() });
+  for (const file of plan.files) {
+    await writePrivateExport(path.join(directory, file.name), file.content);
+  }
+  await writePrivateExport(path.join(directory, plan.index.name), plan.index.content);
+  return {
+    canceled: false,
+    directory,
+    records: plan.count,
+    unreadable: unreadable.length,
+  };
+}
+
+async function restoreAllMeetings() {
+  const settings = store.getSettings();
+  const historyEnabled = Boolean(settings.transcription && settings.transcription.historyEnabled);
+  if (!historyEnabled) {
+    throw new Error('Turn on Save meeting history in Settings before restoring a backup.');
+  }
+  const picked = await dialog.showOpenDialog(win, {
+    title: 'Choose the meeting backup folder',
+    buttonLabel: 'Restore from here',
+    properties: ['openDirectory'],
+  });
+  if (picked.canceled || !picked.filePaths.length) return { canceled: true };
+  const directory = picked.filePaths[0];
+  let names = [];
+  try {
+    names = (await fs.promises.readdir(directory)).filter((name) => /\.json$/i.test(name)).slice(0, MAX_BACKUP_FILES);
+  } catch {
+    throw new Error('That folder could not be read.');
+  }
+  const entries = [];
+  for (const name of names) {
+    const filePath = path.join(directory, name);
+    const stat = await fs.promises.stat(filePath).catch(() => null);
+    if (!stat || !stat.isFile()) continue;
+    if (stat.size > MAX_BACKUP_FILE_BYTES) {
+      entries.push({ name, tooLarge: true });
+      continue;
+    }
+    const text = await fs.promises.readFile(filePath, 'utf8').catch(() => '');
+    entries.push({ name, text });
+  }
+  const parsed = readBackupFolder(entries);
+  if (!parsed.records.length) {
+    return {
+      canceled: false,
+      imported: 0,
+      skipped: parsed.skipped.length,
+      pruned: 0,
+      reason: 'no_records',
+    };
+  }
+  const existing = meetingStore.list().length;
+  const wouldRemove = Math.max(0, existing + parsed.records.length - meetingStore.maxRecords);
+  const confirm = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['Restore', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    message: `Restore ${parsed.records.length} saved meeting${parsed.records.length === 1 ? '' : 's'} from this folder?`,
+    detail: wouldRemove
+      ? `Only ${meetingStore.maxRecords} saved meetings are kept on this device, so the ${wouldRemove} oldest ${wouldRemove === 1 ? 'meeting' : 'meetings'} will be removed to make room. Nothing already saved is overwritten.`
+      : 'Nothing already saved is overwritten.',
+  });
+  if (confirm.response !== 0) return { canceled: true };
+  const result = meetingStore.importRecords(parsed.records);
+  invalidatePreviousMeetings();
+  send('history:changed', { restored: result.imported, pruned: result.pruned });
+  if (result.pruned > 0) {
+    send('status', {
+      message: `${result.pruned} older saved meeting${result.pruned === 1 ? ' was' : 's were'} removed because only ${meetingStore.maxRecords} are kept on this device.`,
+    });
+  }
+  return {
+    canceled: false,
+    directory,
+    imported: result.imported,
+    skipped: parsed.skipped.length + result.skipped.length,
+    pruned: result.pruned,
+  };
 }
 
 // -------- window --------
@@ -2375,6 +2477,8 @@ handleTrusted('history:clear', () => {
   return { ...result, recoverySuppressed: meetingRecovery.isSuppressed(), recoveryDraftCleared };
 });
 handleTrusted('history:export', (_event, payload) => exportMeetingRecord(payload && payload.id, payload && payload.format, payload && payload.source));
+handleTrusted('history:backup-all', () => backupAllMeetings());
+handleTrusted('history:restore-all', () => restoreAllMeetings());
 handleTrusted('history:recap', (_event, payload) => recapMeetingRecord(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));
 handleTrusted('history:clean', (_event, payload) => cleanMeetingTranscript(payload && payload.id, { confirmed: Boolean(payload && payload.confirmed) }));
 handleTrusted('history:participant', (_event, payload) => {
