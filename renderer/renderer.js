@@ -739,10 +739,13 @@
         return;
       }
       if (!result.imported) {
+        const blocked = Number(result.blocked) || 0;
         setHistoryBackupStatus(
-          result.reason === 'no_records'
-            ? 'That folder has no saved meetings Volyx Lens can read.'
-            : 'Nothing was restored.',
+          result.reason === 'no_room' && blocked
+            ? `Not enough room: ${blocked} saved meeting${blocked === 1 ? '' : 's'} would not fit beside the ${meetingHistoryMax || 200} already kept. Nothing was restored.`
+            : result.reason === 'no_records'
+              ? 'That folder has no saved meetings Volyx Lens can read.'
+              : 'Nothing was restored.',
         );
         return;
       }

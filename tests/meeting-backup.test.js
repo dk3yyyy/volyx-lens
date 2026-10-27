@@ -17,6 +17,7 @@ const { createMeetingStore } = require('../src/meeting-store');
 const root = path.join(__dirname, '..');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
+const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
 
 function temporaryDirectory() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-lens-backup-'));
@@ -161,22 +162,79 @@ test('importRecords skips an empty transcript and never overwrites a newer meeti
   assert.equal(store.list().length, 2);
 });
 
-test('importRecords reports the records the cap removed', () => {
+test('a restore that does not fit is refused instead of destroying what it restored', () => {
   const directory = temporaryDirectory();
   const store = createMeetingStore({ dir: directory });
-  const incoming = [];
-  for (let i = 0; i < store.maxRecords + 2; i += 1) {
-    incoming.push({
-      id: `restored-${i}`,
-      version: 1,
-      turns: [{ id: 1, channel: 'you', text: `Restored meeting ${i}`, ts: 1000 + i }],
-      endedAt: 1_600_000_000_000 + i * 1000,
+  const now = 1_700_000_000_000;
+  for (let i = 0; i < store.maxRecords; i += 1) {
+    store.finalize({
+      turns: [{ id: 1, channel: 'you', text: `filler ${i}`, ts: now }],
+      enabled: true,
+      endedAt: now - (i * 1000),
     });
   }
-  const result = store.importRecords(incoming);
-  assert.equal(result.imported, store.maxRecords + 2);
-  assert.equal(result.pruned, 2, 'a restore past the cap says what it removed');
-  assert.equal(store.list().length, store.maxRecords);
+  const before = store.list().map((record) => record.id).sort();
+  const older = Array.from({ length: 10 }, (_, i) => ({
+    id: `old-meeting-${i}`,
+    version: 1,
+    turns: [{ id: 1, channel: 'you', text: `old meeting ${i}`, ts: now }],
+    endedAt: now - (365 * 24 * 60 * 60 * 1000) - i,
+  }));
+  const result = store.importRecords(older);
+  assert.equal(result.imported, 0, 'nothing is reported as restored');
+  assert.equal(result.blocked, 10, 'the refusal is reported so the pane can explain it');
+  assert.equal(result.capacity, 0);
+  assert.deepEqual(store.list().map((record) => record.id).sort(), before, 'the store is untouched');
+  for (const record of older) assert.equal(store.get(record.id), null, `${record.id} was not written`);
+});
+
+test('a restore that fits fills the free slots and every restored record survives', () => {
+  const directory = temporaryDirectory();
+  const store = createMeetingStore({ dir: directory });
+  const now = 1_700_000_000_000;
+  for (let i = 0; i < store.maxRecords - 5; i += 1) {
+    store.finalize({
+      turns: [{ id: 1, channel: 'you', text: `filler ${i}`, ts: now }],
+      enabled: true,
+      endedAt: now - (i * 1000),
+    });
+  }
+  const older = Array.from({ length: 5 }, (_, i) => ({
+    id: `old-meeting-${i}`,
+    version: 1,
+    turns: [{ id: 1, channel: 'you', text: `old meeting ${i}`, ts: now }],
+    endedAt: now - (365 * 24 * 60 * 60 * 1000) - i,
+  }));
+  const result = store.importRecords(older);
+  assert.equal(result.imported, 5);
+  assert.equal(result.pruned, 0);
+  const listed = new Set(store.list().map((record) => record.id));
+  for (const record of older) assert.ok(listed.has(record.id), `${record.id} survived the restore`);
+  assert.equal(
+    result.imported,
+    older.filter((record) => listed.has(record.id)).length,
+    'the reported count is what is actually in the store, not how many were attempted',
+  );
+});
+
+test('a backup with unreadable entries still fits when the readable ones do', () => {
+  const directory = temporaryDirectory();
+  const store = createMeetingStore({ dir: directory });
+  for (let i = 0; i < store.maxRecords - 2; i += 1) {
+    store.finalize({
+      turns: [{ id: 1, channel: 'you', text: `filler ${i}`, ts: 1000 }],
+      enabled: true,
+      endedAt: 1000 + i,
+    });
+  }
+  const result = store.importRecords([
+    { id: 'good-1', version: 1, turns: [{ id: 1, channel: 'you', text: 'kept', ts: 1 }], endedAt: 5 },
+    { id: 'good-2', version: 1, turns: [{ id: 1, channel: 'you', text: 'kept too', ts: 1 }], endedAt: 6 },
+    { id: 'empty', version: 1, turns: [] },
+  ]);
+  assert.equal(result.imported, 2, 'the two readable records fit in the two free slots');
+  assert.deepEqual(result.skipped.map((entry) => entry.reason), ['empty_transcript']);
+  assert.equal(result.blocked, 0);
 });
 
 test('backup and restore are wired through the app, not only the module', () => {
@@ -190,6 +248,11 @@ test('backup and restore are wired through the app, not only the module', () => 
   // The counts are known only after the folder is read, so the confirmation
   // happens in the main process with the real numbers in it.
   assert.match(main, /dialog\.showMessageBox\(/);
+  // The capacity check runs before the confirm dialog, and a refusal is named.
+  assert.match(main, /const capacity = Math\.max\(0, meetingStore\.maxRecords - existing\)/);
+  assert.match(main, /if \(parsed\.records\.length > capacity\)/);
+  assert.match(main, /Not enough room to restore \$\{parsed\.records\.length\} saved meetings\./);
+  assert.match(renderer, /Not enough room: \$\{blocked\}/);
   assert.match(preload, /historyBackupAll: \(\) => ipcRenderer\.invoke\('history:backup-all'\)/);
   assert.match(preload, /historyRestoreAll: \(\) => ipcRenderer\.invoke\('history:restore-all'\)/);
 });

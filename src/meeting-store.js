@@ -614,8 +614,8 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
    */
   function importRecords(records) {
     const incoming = Array.isArray(records) ? records : [];
-    const ids = [];
     const skipped = [];
+    const prepared = [];
     for (const candidate of incoming) {
       if (!candidate || typeof candidate !== 'object') {
         skipped.push({ id: null, reason: 'not_a_record' });
@@ -627,6 +627,27 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         skipped.push({ id: label, reason: 'empty_transcript' });
         continue;
       }
+      prepared.push({ label, normalized, candidate });
+    }
+
+    // Refuse before writing anything when the restore cannot fit. Writing first
+    // and pruning afterwards is how a restore of older meetings used to delete
+    // every record it had just restored, then report success.
+    const capacity = Math.max(0, MAX_RECORDS - list().length);
+    if (prepared.length > capacity) {
+      return {
+        imported: 0,
+        ids: [],
+        skipped,
+        blocked: prepared.length,
+        capacity,
+        pruned: 0,
+        reason: 'no_room',
+      };
+    }
+
+    const written = [];
+    for (const { label, normalized, candidate } of prepared) {
       ensureDir();
       let id = label;
       if (id) {
@@ -676,10 +697,15 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
           texts: cleaned.texts,
         });
       }
-      ids.push(id);
+      written.push(id);
     }
+
     const { removed } = prune();
-    return { imported: ids.length, ids, skipped, pruned: removed };
+    // Report what is in the store, not what was attempted: if anything above
+    // behaved unexpectedly the count must fall, never overstate.
+    const listed = new Set(list().map((record) => record.id));
+    const ids = written.filter((id) => listed.has(id));
+    return { imported: ids.length, ids, skipped, blocked: 0, capacity, pruned: removed };
   }
 
   return {

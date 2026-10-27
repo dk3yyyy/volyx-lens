@@ -866,17 +866,36 @@ async function restoreAllMeetings() {
       reason: 'no_records',
     };
   }
+  // Refuse before offering the restore when it cannot fit. An import that is
+  // written and then pruned deletes the very records it just restored, which is
+  // what this used to do while reporting success.
   const existing = meetingStore.list().length;
-  const wouldRemove = Math.max(0, existing + parsed.records.length - meetingStore.maxRecords);
+  const capacity = Math.max(0, meetingStore.maxRecords - existing);
+  if (parsed.records.length > capacity) {
+    await dialog.showMessageBox(win, {
+      type: 'info',
+      buttons: ['OK'],
+      defaultId: 0,
+      message: `Not enough room to restore ${parsed.records.length} saved meetings.`,
+      detail: `${existing} of ${meetingStore.maxRecords} saved meetings are already on this device, so ${capacity} would fit. Nothing was restored. Delete some meetings first, or back up and clear history, then try again.`,
+    });
+    return {
+      canceled: false,
+      imported: 0,
+      skipped: parsed.skipped.length,
+      pruned: 0,
+      blocked: parsed.records.length,
+      capacity,
+      reason: 'no_room',
+    };
+  }
   const confirm = await dialog.showMessageBox(win, {
-    type: 'warning',
+    type: 'question',
     buttons: ['Restore', 'Cancel'],
     defaultId: 1,
     cancelId: 1,
     message: `Restore ${parsed.records.length} saved meeting${parsed.records.length === 1 ? '' : 's'} from this folder?`,
-    detail: wouldRemove
-      ? `Only ${meetingStore.maxRecords} saved meetings are kept on this device, so the ${wouldRemove} oldest ${wouldRemove === 1 ? 'meeting' : 'meetings'} will be removed to make room. Nothing already saved is overwritten.`
-      : 'Nothing already saved is overwritten.',
+    detail: 'Nothing already saved is overwritten.',
   });
   if (confirm.response !== 0) return { canceled: true };
   const result = meetingStore.importRecords(parsed.records);
@@ -893,6 +912,10 @@ async function restoreAllMeetings() {
     imported: result.imported,
     skipped: parsed.skipped.length + result.skipped.length,
     pruned: result.pruned,
+    // A store that filled between the capacity check and the write refuses at
+    // the store instead; report that as a refusal rather than as a restore.
+    blocked: result.blocked || 0,
+    ...(result.blocked ? { reason: 'no_room' } : {}),
   };
 }
 

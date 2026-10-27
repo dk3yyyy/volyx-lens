@@ -190,9 +190,10 @@ ipcMain.handle('history:backup-all', () => {
   calls.backup.push(true);
   return { canceled: false, directory: '/tmp/vlx-backup', records: 2, unreadable: 0 };
 });
+let nextRestoreResult = { canceled: false, imported: 1, skipped: 0, pruned: 0 };
 ipcMain.handle('history:restore-all', () => {
   calls.restore.push(true);
-  return { canceled: false, imported: 1, skipped: 0, pruned: 0 };
+  return nextRestoreResult;
 });
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -339,6 +340,12 @@ app.whenReady().then(async () => {
   await run(win, "document.querySelector('#meeting-history-restore-all').click()");
   await waitFor(win, "/Restored 1 saved meeting\\./.test(document.querySelector('#meeting-history-backup-status').textContent)", 'the restore status');
   assert.equal(calls.restore.length, 1, 'the pane asked the main process to restore');
+
+  // A restore that cannot fit is reported as a refusal, not as a success.
+  nextRestoreResult = { canceled: false, imported: 0, skipped: 0, pruned: 0, blocked: 4, capacity: 0, reason: 'no_room' };
+  await run(win, "document.querySelector('#meeting-history-restore-all').click()");
+  await waitFor(win, "/Not enough room: 4 saved meetings would not fit/.test(document.querySelector('#meeting-history-backup-status').textContent)", 'the no-room status');
+  nextRestoreResult = { canceled: false, imported: 1, skipped: 0, pruned: 0 };
 
   // Search reaches the cleaned wording, not just the raw preview.
   await run(win, `(() => {
