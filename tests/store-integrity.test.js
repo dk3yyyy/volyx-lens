@@ -323,3 +323,26 @@ test('a partial shortcut patch still merges normally', () => {
   assert.equal(afterPartial.shortcuts.solve, 'CommandOrControl+Shift+S', 'the untouched override survives a partial patch');
   assert.equal(afterPartial.shortcuts.assist, 'CommandOrControl+Shift+D');
 });
+
+test('a confidence of zero is stored as zero, not as the default', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  const saved = store.setSettings({ autoAnswerConfidence: 0 });
+  assert.equal(saved.autoAnswerConfidence, 0, 'zero means never auto-answer and must survive');
+  const reloaded = loadStore(userData);
+  assert.equal(reloaded.getSettings().autoAnswerConfidence, 0, 'and it survives a reload');
+  // Nonsense still falls back to the default rather than pinning the slider.
+  const fallback = store.setSettings({ autoAnswerConfidence: 'not a number' });
+  assert.equal(fallback.autoAnswerConfidence, 0.5);
+  // The slider's floor and ceiling still clamp.
+  assert.equal(store.setSettings({ autoAnswerConfidence: -3 }).autoAnswerConfidence, 0);
+  assert.equal(store.setSettings({ autoAnswerConfidence: 9 }).autoAnswerConfidence, 1);
+});
+
+test('the confidence control does not treat zero as "unset" either', () => {
+  const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
+  // Both the display and the save path used `Number(x) || default`, which turned a
+  // stored 0 back into 50% on screen and 0.5 on save.
+  assert.match(renderer, /const confidencePercent = Number\(settings\.autoAnswerConfidence\);\s*\n\s*\$\('#auto-answer-confidence'\)\.value = String\(Number\.isFinite\(confidencePercent\)/);
+  assert.match(renderer, /const savedPercent = Number\(\$\('#auto-answer-confidence'\)\.value\);\s*\n\s*settings\.autoAnswerConfidence = Number\.isFinite\(savedPercent\)/);
+});

@@ -2597,7 +2597,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#question-detection-enabled').checked = settings.questionDetection !== false;
     $('#auto-answer-enabled').checked = settings.autoAnswer === true;
     $('#auto-answer-enabled').disabled = settings.questionDetection === false;
-    $('#auto-answer-confidence').value = String(Math.round((Number(settings.autoAnswerConfidence) || 0.5) * 100));
+    const confidencePercent = Number(settings.autoAnswerConfidence);
+    $('#auto-answer-confidence').value = String(Number.isFinite(confidencePercent) ? Math.round(confidencePercent * 100) : 50);
     $('#auto-answer-cooldown').value = String(Number(settings.autoAnswerCooldownSec) || 60);
     $('#auto-answer-confidence').disabled = settings.autoAnswer !== true;
     $('#auto-answer-cooldown').disabled = settings.autoAnswer !== true;
@@ -2743,7 +2744,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     settings.endpoints.azureRealtime = $('#endpoint-azure-realtime').value.trim();
     settings.questionDetection = $('#question-detection-enabled').checked;
     settings.autoAnswer = $('#auto-answer-enabled').checked;
-    settings.autoAnswerConfidence = Math.max(0, Math.min(1, (Number($('#auto-answer-confidence').value) || 50) / 100));
+    const savedPercent = Number($('#auto-answer-confidence').value);
+    settings.autoAnswerConfidence = Number.isFinite(savedPercent)
+      ? Math.max(0, Math.min(1, savedPercent / 100))
+      : 0.5;
     settings.autoAnswerCooldownSec = Math.max(10, Math.min(600, Number($('#auto-answer-cooldown').value) || 60));
     $('#auto-answer-enabled').disabled = settings.questionDetection === false;
     $('#auto-answer-confidence').disabled = settings.autoAnswer !== true;
