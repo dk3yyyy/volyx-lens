@@ -48,6 +48,7 @@ const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
+const { createRendererLogForwarder } = require('./src/renderer-log');
 const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
@@ -208,7 +209,12 @@ let slideOcrJobSequence = 0;
 const slideOcrJobs = new Map();
 let pendingSlideReview = null;
 let desiredCapturing = false;
-let pendingDisplayCapture = false; // true only while the app's own getDisplayMedia flow is in flight
+// True only while the app's own getDisplayMedia flow is in flight or just about to
+// start. The renderer may ask for it, but only during a capture start it did not
+// control (VR-26).
+let pendingDisplayCapture = false;
+let displayIntentTimer = null;
+const DISPLAY_INTENT_TTL_MS = 15000;
 let captureTransition = Promise.resolve(false);
 let pendingStopImmediate = false;
 let pendingStopReason = null;
@@ -2499,7 +2505,23 @@ handleTrusted('personal-context:set-enabled', (_e, kind, enabled) => personalCon
 handleTrusted('capture:toggle', () => setCapturing(!desiredCapturing));
 handleTrusted('capture:stop', () => setCapturing(false));
 handleTrusted('capture:state', () => ({ active: state.capturing, transitioning: state.capturing !== desiredCapturing }));
-onTrusted('capture:display-intent', (_e, active) => { pendingDisplayCapture = active === true; });
+onTrusted('capture:display-intent', (_e, active) => {
+  if (displayIntentTimer) { clearTimeout(displayIntentTimer); displayIntentTimer = null; }
+  // Only a capture that the main process is already starting or running can be
+  // widened by the renderer. Outside that there is no session to join, and honouring
+  // it would let the renderer queue an intent that fires on some later capture.
+  if (active !== true || desiredCapturing !== true) {
+    pendingDisplayCapture = false;
+    return;
+  }
+  pendingDisplayCapture = true;
+  // A granted intent expires, so a stale one cannot outlive the request it was for.
+  displayIntentTimer = setTimeout(() => {
+    pendingDisplayCapture = false;
+    displayIntentTimer = null;
+  }, DISPLAY_INTENT_TTL_MS);
+  if (typeof displayIntentTimer.unref === 'function') displayIntentTimer.unref();
+});
 handleTrusted('session:new', () => startNewSession());
 handleTrusted('recovery:get', () => {
   const settings = store.getSettings();
@@ -2800,7 +2822,12 @@ onTrusted('open-pane', (_e, value) => {
     if (url.protocol === 'https:') shell.openExternal(url.toString()).catch(() => {});
   } catch {}
 });
-onTrusted('log', (_e, msg) => console.log('[renderer]', msg));
+// The renderer decides the content and the rate, so the main process caps both:
+// control characters forge log lines and an unbounded payload fills the disk (VR-26).
+const rendererLog = createRendererLogForwarder({
+  write: (line) => console.log(line),
+});
+onTrusted('log', (_e, msg) => rendererLog.forward(msg));
 onTrusted('ui:modal-state', (_e, open) => {
   const nextOpen = open === true;
   const modalStateWasKnown = rendererModalStateReported;
