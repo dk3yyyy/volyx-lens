@@ -346,3 +346,15 @@ test('the confidence control does not treat zero as "unset" either', () => {
   assert.match(renderer, /const confidencePercent = Number\(settings\.autoAnswerConfidence\);\s*\n\s*\$\('#auto-answer-confidence'\)\.value = String\(Number\.isFinite\(confidencePercent\)/);
   assert.match(renderer, /const savedPercent = Number\(\$\('#auto-answer-confidence'\)\.value\);\s*\n\s*settings\.autoAnswerConfidence = Number\.isFinite\(savedPercent\)/);
 });
+
+test('a swap of two real shortcuts persists both overrides', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  // assist defaults to Command+Return, task-context to Command+Shift+C; neither key
+  // is reserved on macOS, so a user may legitimately swap them.
+  const saved = store.setSettings({
+    shortcuts: { assist: 'CommandOrControl+Shift+C', 'task-context': 'CommandOrControl+Return' },
+  });
+  assert.equal(saved.shortcuts.assist, 'CommandOrControl+Shift+C', 'the first half of the swap persists');
+  assert.equal(saved.shortcuts['task-context'], 'CommandOrControl+Return', 'the second half persists too');
+});
