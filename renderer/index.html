@@ -209,15 +209,15 @@
       </div>
       <div class="s-layout">
         <nav class="s-nav" aria-label="Settings sections">
-          <button type="button" class="on" data-settings-section="providers"><strong>Providers</strong><span>Models and keys</span></button>
-          <button type="button" data-settings-section="listening"><strong>Listening</strong><span>Audio and transcript</span></button>
-          <button type="button" data-settings-section="context"><strong>Context</strong><span>Resume and role</span></button>
-          <button type="button" data-settings-section="shortcuts"><strong>Shortcuts</strong><span>Keyboard status</span></button>
-          <button type="button" data-settings-section="updates"><strong>Updates</strong><span>Version and releases</span></button>
-          <button type="button" data-settings-section="help"><strong>Help</strong><span>Guide and support</span></button>
+          <button type="button" class="on" data-settings-section="providers" aria-controls="settings-page-providers"><strong>Providers</strong><span>Models and keys</span></button>
+          <button type="button" data-settings-section="listening" aria-controls="settings-page-listening"><strong>Listening</strong><span>Audio and transcript</span></button>
+          <button type="button" data-settings-section="context" aria-controls="settings-page-context"><strong>Context</strong><span>Resume and role</span></button>
+          <button type="button" data-settings-section="shortcuts" aria-controls="settings-page-shortcuts"><strong>Shortcuts</strong><span>Keyboard status</span></button>
+          <button type="button" data-settings-section="updates" aria-controls="settings-page-updates"><strong>Updates</strong><span>Version and releases</span></button>
+          <button type="button" data-settings-section="help" aria-controls="settings-page-help"><strong>Help</strong><span>Guide and support</span></button>
         </nav>
         <div class="s-pages">
-          <section class="s-page on" data-settings-page="providers" aria-labelledby="settings-providers-title">
+          <section class="s-page on" id="settings-page-providers" data-settings-page="providers" aria-labelledby="settings-providers-title">
             <div class="s-page-head"><h2 tabindex="-1" id="settings-providers-title">AI Providers</h2><p>Choose where Volyx Lens sends requests and which models it uses.</p></div>
         <div id="s-storage-warning" class="s-warn hidden" role="alert">
           <strong>API keys are stored in plaintext</strong>
@@ -286,7 +286,7 @@
         </div>
           </section>
 
-          <section class="s-page" data-settings-page="context" aria-labelledby="settings-context-title" hidden>
+          <section class="s-page" id="settings-page-context" data-settings-page="context" aria-labelledby="settings-context-title" hidden>
             <div class="s-page-head"><h2 tabindex="-1" id="settings-context-title">Personal Context</h2><p>Optional local documents that help tailor answers to your work.</p></div>
         <label class="s-label">Personal context <span class="s-hint">local resume and job description</span></label>
         <div class="context-document" data-kind="resume">
@@ -304,7 +304,7 @@
         <div id="context-storage-status" class="s-note">PDF, DOCX, TXT, or Markdown · 5 MB maximum. Extracted text is stored locally and protected by safeStorage/Keychain where available. Relevant excerpts are sent only when you request an answer.</div>
           </section>
 
-          <section class="s-page" data-settings-page="listening" aria-labelledby="settings-listening-title" hidden>
+          <section class="s-page" id="settings-page-listening" data-settings-page="listening" aria-labelledby="settings-listening-title" hidden>
             <div class="s-page-head"><h2 tabindex="-1" id="settings-listening-title">Listening</h2><p>Control transcription, audio sources, privacy fallbacks, and session limits.</p></div>
         <label class="s-label">Transcription <span class="s-hint">OpenAI, Azure, or Deepgram Realtime with batch fallback</span></label>
         <div class="s-field"><label for="stt-mode">Mode</label><select id="stt-mode"><option value="realtime">Realtime</option><option value="batch">Batch</option></select></div>
@@ -425,7 +425,7 @@
         <div class="s-note">Connection test opens one short no-audio session. Live Mic records and streams five seconds, requires an actual transcript, reports sanitized audio telemetry, and immediately discards the audio. Provider session billing may apply. Credentials remain in the main process.</div>
           </section>
 
-          <section class="s-page" data-settings-page="shortcuts" aria-labelledby="settings-shortcuts-title" hidden>
+          <section class="s-page" id="settings-page-shortcuts" data-settings-page="shortcuts" aria-labelledby="settings-shortcuts-title" hidden>
             <div class="s-page-head"><h2 tabindex="-1" id="settings-shortcuts-title">Keyboard Shortcuts</h2><p>Check global shortcut availability, rebind keys, or reset to defaults.</p></div>
         <div class="shortcut-status-card">
           <div class="shortcut-status-head"><div><strong>Keyboard shortcuts</strong><span>Global registration is checked at launch. Unavailable features remain accessible through these buttons.</span></div><div class="shortcut-status-actions"><button id="shortcuts-reset" type="button">Reset to defaults</button><button id="shortcuts-retry" type="button">Retry unavailable</button></div></div>
@@ -439,7 +439,7 @@
         </div>
           </section>
 
-          <section class="s-page" data-settings-page="updates" aria-labelledby="settings-updates-title" hidden>
+          <section class="s-page" id="settings-page-updates" data-settings-page="updates" aria-labelledby="settings-updates-title" hidden>
             <div class="s-page-head"><h2 tabindex="-1" id="settings-updates-title">App Updates</h2><p>Check GitHub Releases for a signed Volyx Lens update.</p></div>
             <div class="update-card">
               <div class="update-version"><span>Installed version</span><strong id="update-current-version">Loading…</strong></div>
@@ -454,7 +454,7 @@
             <div class="s-note">Updates are manual: Volyx Lens does not check or download in the background. Installation is available only in signed packaged macOS builds published by VolyxAI.</div>
           </section>
 
-          <section class="s-page" data-settings-page="help" aria-labelledby="settings-help-title" hidden>
+          <section class="s-page" id="settings-page-help" data-settings-page="help" aria-labelledby="settings-help-title" hidden>
             <div class="s-page-head"><h2 tabindex="-1" id="settings-help-title">Help</h2><p>Reopen the interactive guide or get oriented with the key controls.</p></div>
             <div class="help-card">
               <div class="help-card-head"><div><strong>Interactive guide</strong><span>A step-by-step walkthrough of permissions, listening channels, context, and transcription choices.</span></div></div>
