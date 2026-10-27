@@ -6,6 +6,9 @@ const DEFAULT_DOCK_SIZES = Object.freeze({
   collapsedHorizontal: Object.freeze({ width: 260, height: 52 }),
   collapsedVertical: Object.freeze({ width: 52, height: 220 }),
   edgeInset: 6,
+  // The window's own floor. Docking below it made Electron clamp the window back
+  // up over the work area it was supposed to fit into (VR-20).
+  minimum: Object.freeze({ width: 500, height: 480 }),
 });
 const DEFAULT_SIDE_ZONE_RATIO = 0.22;
 
@@ -25,21 +28,41 @@ function sameBounds(first, second) {
     && first.height === second.height);
 }
 
+function usableWorkArea(workArea, sizes) {
+  return {
+    width: Math.max(1, workArea.width - (sizes.edgeInset * 2)),
+    height: Math.max(1, workArea.height - (sizes.edgeInset * 2)),
+  };
+}
+
+function dockMinimum(sizes) {
+  return sizes.minimum || DEFAULT_DOCK_SIZES.minimum;
+}
+
 function sizeFor(workArea, side, collapsed, sizes = DEFAULT_DOCK_SIZES) {
   const vertical = side === 'left' || side === 'right';
   const requested = collapsed
     ? (vertical ? sizes.collapsedVertical : sizes.collapsedHorizontal)
     : sizes.expanded;
+  const usable = usableWorkArea(workArea, sizes);
+  const minimum = collapsed ? { width: 1, height: 1 } : dockMinimum(sizes);
   return {
-    width: Math.min(requested.width, Math.max(1, workArea.width - (sizes.edgeInset * 2))),
-    height: Math.min(requested.height, Math.max(1, workArea.height - (sizes.edgeInset * 2))),
+    width: Math.min(Math.max(requested.width, Math.min(minimum.width, usable.width)), usable.width),
+    height: Math.min(Math.max(requested.height, Math.min(minimum.height, usable.height)), usable.height),
   };
 }
 
 function dockBounds({ workArea, side, anchor, collapsed = false, sizes = DEFAULT_DOCK_SIZES }) {
   const dockSide = validSide(side);
   const inset = sizes.edgeInset;
-  const size = sizeFor(workArea, dockSide, collapsed, sizes);
+  // When the work area cannot hold the app's minimum window, an expanded dock is
+  // impossible: Electron would clamp the window back up and it would hang over the
+  // work area. The rail form fits, so ask for it and say so.
+  const usable = usableWorkArea(workArea, sizes);
+  const minimum = dockMinimum(sizes);
+  const fitsExpanded = usable.width >= minimum.width && usable.height >= minimum.height;
+  const effectiveCollapsed = collapsed || !fitsExpanded;
+  const size = sizeFor(workArea, dockSide, effectiveCollapsed, sizes);
   const safeAnchor = anchor || {
     x: workArea.x + (workArea.width / 2),
     y: workArea.y + (workArea.height / 2),
@@ -56,7 +79,7 @@ function dockBounds({ workArea, side, anchor, collapsed = false, sizes = DEFAULT
   if (dockSide === 'left') x = minX;
   if (dockSide === 'right') x = maxX;
 
-  return { x, y, width: size.width, height: size.height };
+  return { x, y, width: size.width, height: size.height, collapsed: effectiveCollapsed };
 }
 
 function edgeDistances(point, workArea) {

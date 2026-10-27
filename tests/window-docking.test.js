@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   DEFAULT_DOCK_SIZES,
   dockBounds,
@@ -28,7 +30,14 @@ test('expanded dock bounds stay in the work area and use the selected edge', () 
     right: { x: 834, y: 190, width: 700, height: 600 },
   };
   for (const side of Object.keys(expected)) {
-    assert.deepEqual(dockBounds({ workArea, side, anchor, collapsed: false }), expected[side]);
+    const bounds = dockBounds({ workArea, side, anchor, collapsed: false });
+    // Geometry only: the bounds also report whether the dock had to fall back to
+    // the rail form, which this test is not about.
+    assert.deepEqual(
+      { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+      expected[side],
+      `side ${side}`,
+    );
   }
 });
 
@@ -101,4 +110,48 @@ test('dock geometry supports secondary displays with negative origins and differ
       assert.equal(nearestDockSide({ point: railCenter(bounds, side), workArea: area, previousSide: side }), side);
     }
   }
+});
+
+test('an expanded dock never asks for a window below the app minimum', () => {
+  const bounds = dockBounds({ workArea: { x: 0, y: 0, width: 1920, height: 1080 }, side: 'top' });
+  assert.equal(bounds.collapsed, false);
+  assert.ok(bounds.width >= 500 && bounds.height >= 480, `got ${bounds.width}x${bounds.height}`);
+});
+
+test('a work area too small for the minimum falls back to the rail form inside it', () => {
+  for (const [width, height] of [[320, 240], [480, 400], [500, 480]]) {
+    const workArea = { x: 0, y: 0, width, height };
+    const bounds = dockBounds({ workArea, side: 'top', collapsed: false });
+    assert.equal(bounds.collapsed, true, `${width}x${height} cannot hold a 500x480 window`);
+    assert.ok(bounds.width <= width - 12, `rail width ${bounds.width} fits in ${width}`);
+    assert.ok(bounds.height <= height - 12, `rail height ${bounds.height} fits in ${height}`);
+    assert.ok(bounds.x >= workArea.x && bounds.y >= workArea.y, 'the window starts inside the work area');
+    assert.ok(bounds.x + bounds.width <= width && bounds.y + bounds.height <= height, 'and ends inside it');
+  }
+});
+
+test('a work area that can hold the minimum gets a minimum-sized window, not a rail', () => {
+  const workArea = { x: 0, y: 0, width: 520, height: 500 };
+  const bounds = dockBounds({ workArea, side: 'top', collapsed: false });
+  assert.equal(bounds.collapsed, false);
+  assert.ok(bounds.width >= 500, `width ${bounds.width} clears the minimum`);
+  assert.ok(bounds.height >= 480, `height ${bounds.height} clears the minimum`);
+  assert.ok(bounds.width <= 508 && bounds.height <= 488, 'and still fits the usable area');
+});
+
+test('a saved smaller window is lifted to the minimum, not left below it', () => {
+  const sizes = { ...DEFAULT_DOCK_SIZES, expanded: { width: 380, height: 300 } };
+  const bounds = dockBounds({ workArea: { x: 0, y: 0, width: 1920, height: 1080 }, side: 'left', sizes });
+  assert.equal(bounds.collapsed, false);
+  assert.ok(bounds.width >= 500 && bounds.height >= 480, 'the floor wins over a bad stored size');
+});
+
+test('the dock path adopts a forced collapse instead of fighting the minimum size', () => {
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  // Without this, the window is sized to the rail and then given the 500x480
+  // minimum a line later, which pushes it back over the work area.
+  assert.match(mainSource, /const effectiveCollapsed = nextBounds\.collapsed === true;/);
+  assert.match(mainSource, /windowDock = \{ side, collapsed: effectiveCollapsed, anchor: resolvedAnchor \};/);
+  assert.match(mainSource, /if \(effectiveCollapsed\) win\.setMinimumSize\(1, 1\);/);
+  assert.match(mainSource, /if \(!effectiveCollapsed\) win\.setMinimumSize\(500, 480\);/);
 });
