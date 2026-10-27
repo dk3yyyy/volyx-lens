@@ -86,8 +86,13 @@ test('the window is created, docked and saved with the remembered size', () => {
   assert.match(main, /railCenter\(currentBounds, windowDock\.side, sizes\)/);
   // A collapsed window is a 260pt rail, so remembering that would restore a
   // sliver: both the resize handler and the save itself refuse while collapsed.
-  assert.match(main, /win\.on\('resized',[\s\S]{0,80}if \(windowDock\.collapsed\) return;/);
+  assert.match(main, /const scheduleWindowSizeSave = \(\) => \{[\s\S]{0,100}windowDock\.collapsed\) return;/);
   assert.match(main, /rememberWindowSize[\s\S]{0,140}windowDock\.collapsed/);
   assert.match(main, /windowState\.save\(/);
-  assert.match(main, /win\.on\('close',[\s\S]{0,200}rememberWindowSize\(\)/);
+  // 'resized' only fires for a user-driven resize, and the quit path exits via
+  // app.exit(0) which destroys the window without a 'close' event, so both have
+  // to be covered or the size is read at launch and never written.
+  assert.match(main, /win\.on\('resize', scheduleWindowSizeSave\)/);
+  assert.match(main, /win\.on\('resized', scheduleWindowSizeSave\)/);
+  assert.match(main, /app\.on\('before-quit',[\s\S]{0,240}saveWindowSizeNow\(\)/);
 });
