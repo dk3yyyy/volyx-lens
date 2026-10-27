@@ -14,8 +14,9 @@ test('the Windows release records who signs the build', () => {
   assert.match(workflow, /name: Pin the update publisher to the signing certificate/);
   assert.match(workflow, /Get-PfxCertificate/);
   assert.match(workflow, /npm pkg set "build\.win\.publisherName=\$\(\$cert\.Subject\)"/);
-  // Only when a certificate exists, so repositories without the secret are unaffected.
-  assert.match(workflow, /if: \$\{\{ secrets\.WINDOWS_CSC_LINK != '' \}\}/);
+  // Secrets cannot be read from an if expression, so the step guards in the script.
+  assert.match(workflow, /if \(-not \$env:CSC_LINK_VALUE\) \{/);
+  assert.doesNotMatch(workflow, /if:\s*\$\{\{\s*secrets\./, 'a secret in an if expression makes the workflow file invalid');
 });
 
 test('the signing certificate is opened with the configured password', () => {
