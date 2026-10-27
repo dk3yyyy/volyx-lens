@@ -171,30 +171,58 @@ function validateRemap({ id, accelerator, definitions, platform = 'darwin' }) {
   return { ok: true, accelerator: normalized, conflicts: [] };
 }
 
-// Sanitizes a shortcuts patch: keeps only valid, non-conflicting overrides
-// against the default definitions. Returns { valid: {id: accelerator}, invalid: [{id, error}] }.
+// Sanitizes a shortcuts patch. Returns { valid: {id: accelerator}, invalid: [{id, error}] }.
+//
+// The proposed set is validated as a whole. Checking one entry against the others'
+// defaults rejected a straight swap, because each new key still collided with the
+// value the other shortcut was about to give up (VR-17).
 function sanitizeShortcutsPatch({ patch = {}, defaultDefinitions = [], platform = 'darwin' }) {
-  const valid = {};
   const invalid = [];
-  const workingDefs = defaultDefinitions.map((def) => ({ ...def }));
+  const active = {};
 
   for (const [id, rawAccelerator] of Object.entries(patch)) {
-    const defExists = defaultDefinitions.some((def) => def.id === id);
-    if (!defExists) {
+    if (!defaultDefinitions.some((def) => def.id === id)) {
       invalid.push({ id, error: `Unknown shortcut "${id}".` });
       continue;
     }
-    const result = validateRemap({ id, accelerator: rawAccelerator, definitions: workingDefs, platform });
-    if (!result.ok) {
-      invalid.push({ id, error: result.error });
+    const normalized = normalizeAccelerator(rawAccelerator);
+    if (!normalized) {
+      invalid.push({ id, error: 'Not a valid key combination.' });
       continue;
     }
-    valid[id] = result.accelerator;
-    const idx = workingDefs.findIndex((def) => def.id === id);
-    if (idx !== -1) workingDefs[idx] = { ...workingDefs[idx], accelerator: result.accelerator };
+    if (!isValidAccelerator(normalized)) {
+      invalid.push({ id, error: 'That key is not allowed as a shortcut.' });
+      continue;
+    }
+    if (isReservedAccelerator(normalized, platform)) {
+      invalid.push({ id, error: 'That shortcut is reserved by the operating system.' });
+      continue;
+    }
+    active[id] = normalized;
   }
 
-  return { valid, invalid };
+  // Re-check after every rejection: dropping one override puts its default back,
+  // which can clear or create a conflict for another entry. Bounded by the number
+  // of entries, so this always settles.
+  for (let pass = 0; pass <= Object.keys(active).length; pass += 1) {
+    const simulated = applyShortcuts({ defaultDefinitions, overrides: active });
+    const offenders = new Map();
+    for (const conflict of findConflicts(simulated, platform)) {
+      for (const id of conflict.ids) {
+        if (Object.hasOwn(active, id) && !offenders.has(id)) offenders.set(id, conflict.kind);
+      }
+    }
+    if (offenders.size === 0) break;
+    for (const [id, kind] of offenders) {
+      invalid.push({
+        id,
+        error: kind === 'duplicate' ? 'That shortcut is already in use.' : 'That shortcut is reserved by the operating system.',
+      });
+      delete active[id];
+    }
+  }
+
+  return { valid: active, invalid };
 }
 
 // Merges custom shortcut overrides onto default definitions.

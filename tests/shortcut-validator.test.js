@@ -118,3 +118,76 @@ test('applyShortcuts merges overrides onto defaults', () => {
   assert.equal(result[1].accelerator, 'CommandOrControl+H');
   assert.equal(result[0].mac, '⌘↵');
 });
+
+test('two shortcuts can be swapped in one patch', () => {
+  // Non-reserved keys, because macOS reserves Command+H and the UI is right to
+  // refuse that half of the swap regardless of ordering.
+  const defaults = [
+    { id: 'first', accelerator: 'CommandOrControl+J' },
+    { id: 'second', accelerator: 'CommandOrControl+K' },
+  ];
+  const { valid, invalid } = sanitizeShortcutsPatch({
+    patch: { first: 'CommandOrControl+K', second: 'CommandOrControl+J' },
+    defaultDefinitions: defaults,
+    platform: 'darwin',
+  });
+  assert.deepEqual(invalid, [], 'neither move collides with a default the other is giving up');
+  assert.deepEqual(valid, { first: 'CommandOrControl+K', second: 'CommandOrControl+J' }, 'both swaps persist');
+});
+
+test('a swap onto a key the system owns is still refused, with the right reason', () => {
+  const defaults = [
+    { id: 'assist', accelerator: 'CommandOrControl+Return' },
+    { id: 'solve', accelerator: 'CommandOrControl+J' },
+  ];
+  const { valid, invalid } = sanitizeShortcutsPatch({
+    patch: { assist: 'CommandOrControl+H', solve: 'CommandOrControl+Return' },
+    defaultDefinitions: defaults,
+    platform: 'darwin',
+  });
+  // Command+H is Hide on macOS, so assist cannot take it. assist then keeps its
+  // default Command+Return, which is exactly what solve asked for, so solve is a
+  // genuine duplicate and stays refused, each with its own reason.
+  assert.deepEqual(valid, {});
+  assert.equal(invalid.length, 2);
+  assert.match(invalid.find((entry) => entry.id === 'assist').error, /reserved by the operating system/);
+  assert.match(invalid.find((entry) => entry.id === 'solve').error, /already in use/);
+});
+
+test('a genuine duplicate is still rejected, from either direction', () => {
+  const defaults = [
+    { id: 'assist', accelerator: 'CommandOrControl+Return' },
+    { id: 'solve', accelerator: 'CommandOrControl+H' },
+  ];
+  const forward = sanitizeShortcutsPatch({
+    patch: { assist: 'CommandOrControl+J', solve: 'CommandOrControl+J' },
+    defaultDefinitions: defaults,
+    platform: 'darwin',
+  });
+  assert.deepEqual(forward.valid, {}, 'two shortcuts cannot share one key');
+  assert.equal(forward.invalid.length, 2, 'both entries are reported so the UI can explain it');
+
+  // The same collision declared in the other order behaves the same way.
+  const backward = sanitizeShortcutsPatch({
+    patch: { solve: 'CommandOrControl+J', assist: 'CommandOrControl+J' },
+    defaultDefinitions: defaults,
+    platform: 'darwin',
+  });
+  assert.deepEqual(backward.valid, {});
+});
+
+test('a swap still rejects the entry that collides with an untouched shortcut', () => {
+  const defaults = [
+    { id: 'assist', accelerator: 'CommandOrControl+Return' },
+    { id: 'solve', accelerator: 'CommandOrControl+H' },
+    { id: 'quit', accelerator: 'CommandOrControl+Shift+X' },
+  ];
+  const { valid, invalid } = sanitizeShortcutsPatch({
+    patch: { assist: 'CommandOrControl+Shift+X' },
+    defaultDefinitions: defaults,
+    platform: 'darwin',
+  });
+  assert.deepEqual(valid, {}, 'quit keeps its key');
+  assert.equal(invalid[0].id, 'assist');
+  assert.match(invalid[0].error, /already in use/);
+});
