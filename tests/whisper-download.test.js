@@ -97,7 +97,10 @@ test('a matching download lands with private permissions and a digest index', as
   });
   assert.equal(result.sha256, pinned.sha256);
   assert.equal(fs.readFileSync(path.join(dir, 'tiny.bin')).toString(), good.toString());
-  assert.equal(fs.statSync(path.join(dir, 'tiny.bin')).mode & 0o777, 0o600, 'the model is private to the user');
+  if (process.platform !== 'win32') {
+    // Windows ignores POSIX modes; the mode is asserted where it exists.
+    assert.equal(fs.statSync(path.join(dir, 'tiny.bin')).mode & 0o777, 0o600, 'the model is private to the user');
+  }
   const index = JSON.parse(fs.readFileSync(path.join(dir, 'tiny.idx'), 'utf8'));
   assert.equal(index.sha256, pinned.sha256);
   assert.equal(progress[progress.length - 1], 1, 'progress finishes at one');
@@ -113,7 +116,7 @@ test('a matching download lands with private permissions and a digest index', as
   assert.equal(again.path, path.join(dir, 'tiny.bin'));
 });
 
-test('the model directory is private to the user', () => {
+test('the model directory is private to the user', { skip: process.platform === 'win32' ? 'POSIX modes are not enforced on Windows' : false }, () => {
   const dir = temporaryDir();
   const nested = path.join(dir, 'whisper-models');
   const { ensureDir } = require('../src/whisper-sidecar');
