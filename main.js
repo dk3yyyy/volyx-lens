@@ -951,10 +951,14 @@ function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collap
   const resolvedAnchor = anchor || railCenter(currentBounds, windowDock.side, sizes);
   const display = targetDisplay || screen.getDisplayNearestPoint(resolvedAnchor);
   const nextBounds = dockBounds({ workArea: display.workArea, side, anchor: resolvedAnchor, collapsed, sizes });
-  windowDock = { side, collapsed, anchor: resolvedAnchor };
-  if (collapsed) win.setMinimumSize(1, 1);
+  // Docking can come back collapsed even when the caller asked for expanded, when
+  // the display is too small to hold the minimum window. Adopting that here keeps
+  // the minimum size from clamping the window back over the work area (VR-20).
+  const effectiveCollapsed = nextBounds.collapsed === true;
+  windowDock = { side, collapsed: effectiveCollapsed, anchor: resolvedAnchor };
+  if (effectiveCollapsed) win.setMinimumSize(1, 1);
   if (!sameBounds(currentBounds, nextBounds)) win.setBounds(nextBounds, false);
-  if (!collapsed) win.setMinimumSize(500, 480);
+  if (!effectiveCollapsed) win.setMinimumSize(500, 480);
   publishDockState();
 }
 
