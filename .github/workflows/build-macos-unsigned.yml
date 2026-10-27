@@ -1,0 +1,164 @@
+name: Unsigned macOS build
+
+# Produces the macOS artifacts the download page points at when no Developer ID
+# is configured: an ad-hoc signed DMG and ZIP per architecture, with a checksum,
+# an SBOM and a build-provenance attestation. It never writes latest-mac.yml,
+# because an unsigned build cannot honestly offer auto-update.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the artifacts to. Leave blank to keep them as workflow artifacts only.
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }} unsigned macOS artifacts
+    runs-on: macos-14
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+          - arch: x64
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:syntax
+      - run: npm run security:secrets
+      - run: npm audit --audit-level=low
+      - run: npm run release:check
+
+      - name: Build unpacked macOS application
+        run: >-
+          npx electron-builder --mac dir --${{ matrix.arch }} --publish never
+          --config.mac.notarize=false
+          --config.mac.identity=null
+
+      - name: Ad-hoc sign, package, and verify the artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          ARCH="${{ matrix.arch }}"
+          BUILT_APP="$(find dist -maxdepth 2 -type d -name 'Volyx Lens.app' -print -quit)"
+          test -n "$BUILT_APP"
+
+          xattr -cr "$BUILT_APP"
+          codesign --force --deep --sign - --timestamp=none "$BUILT_APP"
+          codesign --verify --deep --strict --verbose=4 "$BUILT_APP"
+          codesign -dv --verbose=4 "$BUILT_APP" 2>&1 | grep -q 'Signature=adhoc'
+
+          ZIP_OUTPUT="dist/volyx-lens-${VERSION}-mac-${ARCH}-unsigned.zip"
+          DMG_OUTPUT="dist/volyx-lens-${VERSION}-mac-${ARCH}-unsigned.dmg"
+          ditto -c -k --sequesterRsrc --keepParent "$BUILT_APP" "$ZIP_OUTPUT"
+
+          DMG_STAGE="$(mktemp -d)"
+          DMG_MOUNT="$(mktemp -d)"
+          VERIFY_DIR="$(mktemp -d)"
+          DMG_ATTACHED=0
+          cleanup() {
+            if [ "$DMG_ATTACHED" = 1 ]; then hdiutil detach "$DMG_MOUNT" -quiet || true; fi
+            rm -rf "$DMG_STAGE" "$DMG_MOUNT" "$VERIFY_DIR"
+          }
+          trap cleanup EXIT
+
+          ditto "$BUILT_APP" "$DMG_STAGE/Volyx Lens.app"
+          ln -s /Applications "$DMG_STAGE/Applications"
+          hdiutil create -volname "Volyx Lens" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_OUTPUT"
+          hdiutil verify "$DMG_OUTPUT"
+
+          ditto -x -k "$ZIP_OUTPUT" "$VERIFY_DIR"
+          APP_PATH="$(find "$VERIFY_DIR" -type d -name 'Volyx Lens.app' -print -quit)"
+          test -n "$APP_PATH"
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -q 'Signature=adhoc'
+          test "$(defaults read "$APP_PATH/Contents/Info" CFBundleIdentifier)" = "ai.volyx.lens"
+
+          VISION_HELPER="$APP_PATH/Contents/Resources/native/volyx-lens-vision-ocr"
+          SYSTEM_AUDIO_HELPER="$APP_PATH/Contents/Resources/native/volyx-lens-system-audio"
+          test -x "$VISION_HELPER"
+          test -x "$SYSTEM_AUDIO_HELPER"
+          "$VISION_HELPER" --self-test | grep -q '"ok":true'
+          "$SYSTEM_AUDIO_HELPER" --self-test | grep -q '"ok":true'
+
+          EXPECTED_ARCH="x86_64"
+          test "$ARCH" = "arm64" && EXPECTED_ARCH="arm64"
+          file "$APP_PATH/Contents/MacOS/Volyx Lens" | grep -q "$EXPECTED_ARCH"
+          python3 - "$APP_PATH/Contents/MacOS/Volyx Lens" <<'PY'
+          import subprocess, sys
+          result = subprocess.run([sys.argv[1], '--smoke-test'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
+          print(result.stdout)
+          if result.returncode != 0 or 'VOLYX_LENS_RENDERER_READY' not in result.stdout:
+              raise SystemExit('Unsigned application did not report renderer readiness.')
+          PY
+
+          hdiutil attach -readonly -nobrowse -mountpoint "$DMG_MOUNT" "$DMG_OUTPUT"
+          DMG_ATTACHED=1
+          DMG_APP="$DMG_MOUNT/Volyx Lens.app"
+          test -d "$DMG_APP"
+          codesign --verify --deep --strict --verbose=4 "$DMG_APP"
+          codesign -dv --verbose=4 "$DMG_APP" 2>&1 | grep -q 'Signature=adhoc'
+          hdiutil detach "$DMG_MOUNT" -quiet
+          DMG_ATTACHED=0
+
+          # An unsigned build must not ship updater metadata. The download page
+          # serves the DMG; auto-update waits for a signed build.
+          test ! -f dist/latest-mac.yml
+
+          (cd dist && shasum -a 256 "$(basename "$DMG_OUTPUT")" > "$(basename "$DMG_OUTPUT").sha256")
+          (cd dist && shasum -a 256 "$(basename "$ZIP_OUTPUT")" > "$(basename "$ZIP_OUTPUT").sha256")
+          npm sbom --sbom-format cyclonedx > "dist/volyx-lens-mac-${ARCH}.cdx.json"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.dmg
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.zip
+            dist/volyx-lens-mac-${{ matrix.arch }}.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: volyx-lens-macos-${{ matrix.arch }}-unsigned
+          path: |
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.dmg
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.dmg.sha256
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.zip
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.zip.sha256
+            dist/volyx-lens-mac-${{ matrix.arch }}.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach the artifacts to a release
+        if: ${{ inputs.tag != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$TAG"
+          gh release view "$TAG" >/dev/null
+          gh release upload "$TAG" \
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.dmg \
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.dmg.sha256 \
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.zip \
+            dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.zip.sha256 \
+            dist/volyx-lens-mac-${{ matrix.arch }}.cdx.json \
+            --clobber

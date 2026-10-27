@@ -381,6 +381,8 @@ Local builds are unsigned unless a valid signing identity is installed. Rebuildi
 
 The ad-hoc test workflow builds Apple Silicon and Intel artifacts on native GitHub-hosted macOS runners. Before uploading artifacts, it runs tests, syntax and secret checks, release-readiness checks, native-helper self-tests, ad-hoc signature verification, executable architecture checks, renderer smoke tests, DMG verification/mounting, and SHA-256 generation.
 
+Unsigned macOS releases are built by `.github/workflows/build-macos-unsigned.yml` on GitHub's macOS runners. It produces a DMG and ZIP per architecture with a `.sha256`, a CycloneDX SBOM and a build-provenance attestation, and deliberately writes no `latest-mac.yml` because auto-update is only offered for signed builds.
+
 The trusted production path (tag-triggered) builds all three platforms. Windows and Linux jobs run the test, syntax, secret, and audit checks, then publish the installer/AppImages with per-file SHA-256 checksums, CycloneDX SBOMs, and architecture-specific update metadata. The Windows job verifies the installer's Authenticode signature when a signing certificate is configured. Linux publishes architecture-specific update metadata; its launch smoke test is advisory. The macOS job fails closed unless Developer ID signing and Apple notarization credentials are available, and verifies signatures, notarization staples, Gatekeeper assessment, and updater metadata before publication.
 
 ## License
