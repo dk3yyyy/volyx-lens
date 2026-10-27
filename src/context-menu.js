@@ -19,7 +19,7 @@ const EDITABLE_ITEMS = [
   { role: 'selectAll', label: 'Select All' },
 ];
 
-const KINDS = new Set(['editable', 'transcript-turn', 'history-row']);
+const KINDS = new Set(['editable', 'transcript-turn', 'history-row', 'answer']);
 
 function contextMenuTemplate(kind, options = {}) {
   if (!KINDS.has(kind)) return [];
@@ -32,6 +32,13 @@ function contextMenuTemplate(kind, options = {}) {
       { id: 'copy-conversation', label: 'Copy Conversation', enabled: hasConversation },
       { type: 'separator' },
       { id: 'export-transcript', label: 'Export Transcript…', enabled: hasConversation },
+    ];
+  }
+  if (kind === 'answer') {
+    const hasAnswer = options.hasAnswer !== false;
+    return [
+      { id: 'copy-answer', label: 'Copy Answer', enabled: hasAnswer },
+      { id: 'copy-answer-and-question', label: 'Copy Answer with Question', enabled: hasAnswer && options.hasQuestion !== false },
     ];
   }
   return [

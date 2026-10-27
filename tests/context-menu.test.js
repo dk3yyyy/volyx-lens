@@ -40,7 +40,7 @@ test('an unknown target gets no menu instead of a wrong one', () => {
   assert.deepEqual(contextMenuTemplate('something-else'), []);
   assert.deepEqual(contextMenuTemplate(''), []);
   assert.deepEqual(contextMenuTemplate(undefined), []);
-  assert.equal(KINDS.size, 3);
+  assert.equal(KINDS.size, 4);
 });
 
 test('menu ids are unique within a menu, so a click cannot be ambiguous', () => {
@@ -48,6 +48,29 @@ test('menu ids are unique within a menu, so a click cannot be ambiguous', () => 
     const ids = contextMenuTemplate(kind).filter((item) => item.id).map((item) => item.id);
     assert.equal(new Set(ids).size, ids.length, `${kind} has unique ids`);
   }
+});
+
+test('an answer offers copy, and disables what has nothing to copy', () => {
+  const template = contextMenuTemplate('answer');
+  const ids = template.filter((item) => item.id).map((item) => item.id);
+  assert.deepEqual(ids, ['copy-answer', 'copy-answer-and-question']);
+  const disabled = Object.fromEntries(contextMenuTemplate('answer', { hasAnswer: false, hasQuestion: false }).filter((item) => item.id).map((item) => [item.id, item.enabled]));
+  assert.equal(disabled['copy-answer'], false);
+  assert.equal(disabled['copy-answer-and-question'], false);
+  const noQuestion = Object.fromEntries(contextMenuTemplate('answer', { hasQuestion: false }).filter((item) => item.id).map((item) => [item.id, item.enabled]));
+  assert.equal(noQuestion['copy-answer'], true, 'an answer with no question above it is still copyable');
+  assert.equal(noQuestion['copy-answer-and-question'], false);
+});
+
+test('the answer is selectable and copyable through the app, not only in the menu', () => {
+  const styles = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
+  // Every other content surface already re-enabled selection; the answer did not.
+  assert.match(styles, /#messages \.ai-text \{[^}]*-webkit-user-select: text; user-select: text;/);
+  assert.match(main, /handleTrusted\('text:copy'/);
+  assert.match(main, /String\(text == null \? '' : text\)\.slice\(0, 200_000\)/, 'the copy is capped');
+  assert.match(preload, /copyText: \(text\) => ipcRenderer\.invoke\('text:copy', text\)/);
+  assert.match(renderer, /kind: 'answer'/);
+  assert.match(renderer, /volyxLens\.copyText\(text\)/);
 });
 
 test('the menu is wired through the bridge and the main process', () => {

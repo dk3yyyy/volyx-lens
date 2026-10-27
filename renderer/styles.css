@@ -200,6 +200,11 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 
 /* ============================ Messages ============================ */
 #messages { display: flex; flex-direction: column; gap: 10px; min-height: 86px; overflow-y: auto; max-height: 50vh; }
+/* The answer is the one thing the user most often wants to quote. Every other
+   content surface already re-enables selection; this one did not, and a custom
+   context menu is the Mac way to offer it. */
+#messages .ai-text { -webkit-user-select: text; user-select: text; }
+#messages .user-bubble { -webkit-user-select: text; user-select: text; }
 
 #audio-health { margin: 8px 0 2px; padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.09); display: grid; gap: 6px; }
 #audio-health.hidden { display: none; }
