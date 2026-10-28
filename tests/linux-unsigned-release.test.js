@@ -29,6 +29,13 @@ test('the AppImage is smoke launched, hashed, attested and shipped with an SBOM'
   assert.match(workflow, /attestations: write/);
 });
 
+test('the launch check only runs an AppImage on a matching runner', () => {
+  // The hosted x64 runner cannot execute an arm64 AppImage, so the build must not
+  // be failed by an Exec format error after packaging succeeded.
+  assert.match(workflow, /RUNNER_ARCH="\$\(uname -m\)"/);
+  assert.match(workflow, /Skipping launch check/);
+});
+
 test('the workflow never reads a secret in an if expression', () => {
   assert.doesNotMatch(workflow, /if:\s*\$\{\{\s*secrets\./);
 });
