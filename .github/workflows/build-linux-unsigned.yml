@@ -57,6 +57,17 @@ jobs:
           APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
           test -n "$APPIMAGE_PATH"
           chmod +x "$APPIMAGE_PATH"
+          RUNNER_ARCH="$(uname -m)"
+          case "$RUNNER_ARCH" in
+            x86_64) RUNNER_ARCH=x64 ;;
+            aarch64) RUNNER_ARCH=arm64 ;;
+          esac
+          if [ "$RUNNER_ARCH" != "${{ matrix.arch }}" ]; then
+            # An arm64 AppImage cannot execute on the x64 hosted runner. The build
+            # and packaging still ran; only the launch check is skipped.
+            echo "Skipping launch check: ${{ matrix.arch }} AppImage cannot run on $RUNNER_ARCH"
+            exit 0
+          fi
           timeout 120 xvfb-run -a "$APPIMAGE_PATH" --appimage-extract-and-run --no-sandbox --smoke-test > /tmp/smoke.log 2>&1 || true
           cat /tmp/smoke.log
           grep -q 'VOLYX_LENS_RENDERER_READY' /tmp/smoke.log
