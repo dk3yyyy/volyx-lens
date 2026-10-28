@@ -1,7 +1,7 @@
 :root {
   --ink: #f4f1ff;
   --muted: #aaa7be;
-  --dim: #747187;
+  --dim: #7d7a8d;
   --night: #080711;
   --night-2: #0e0c1d;
   --panel: #121022;
@@ -22,7 +22,7 @@
 html[data-theme='light'] {
   --ink: #17142a;
   --muted: #5d5870;
-  --dim: #7a7590;
+  --dim: #6a6580;
   --night: #f5f2ff;
   --night-2: #ece8fa;
   --panel: #ffffff;
@@ -121,7 +121,7 @@ h1 em, h2 em { color: var(--violet); font-family: var(--serif); font-weight: 400
 .button-star { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1a1305; border-color: #f59e0b; }
 .button-star:hover { background: linear-gradient(135deg, #fcd34d, #fbbf24); border-color: #fcd34d; }
 .button-star svg { fill: currentColor; }
-.hero-note { color: var(--dim); font-family: var(--mono); font-size: .68rem; }
+.hero-note { color: var(--dim); font-family: var(--mono); font-size: .74rem; }
 
 .aperture-wrap { padding-top: 10px; }
 .aperture-card { position: relative; max-width: 650px; min-height: 580px; margin-inline: auto; padding: 1.25rem; border: 1px solid var(--line); border-radius: 2rem; background: linear-gradient(150deg, rgba(26,22,49,.94), rgba(10,9,19,.96)); box-shadow: 0 40px 100px rgba(0,0,0,.35); }
@@ -297,14 +297,29 @@ html[data-theme='light'] .use-input {
 html[data-theme='light'] .product-window-section {
   background: radial-gradient(circle at 80% 50%, rgba(92, 63, 227, .14), transparent 34%);
 }
+html[data-theme='light'] .eyebrow { color: #086a80; }
+/* The indigo release section keeps ink on purple. */
+html[data-theme='light'] .release-section .eyebrow { color: #080711; }
 html[data-theme='light'] .release-ribbon {
-  background: var(--lime);
-  color: var(--night);
+  background: #3e6b12;
+  color: #f5f2ff;
 }
 html[data-theme='light'] .release-dot {
   background: #3a4a05;
   box-shadow: 0 0 0 4px rgba(58, 74, 5, .14);
 }
+@media (max-width: 560px) {
+  .release-ribbon {
+    flex-wrap: wrap;
+    white-space: normal;
+    overflow: visible;
+    row-gap: .15rem;
+    padding: .45rem 1rem;
+    font-size: .62rem;
+  }
+  .release-divider { display: none; }
+}
+
 html[data-theme='light'] .site-footer {
   background: var(--night-2);
 }
@@ -499,7 +514,7 @@ html[data-theme='light'] .text-link {
   }
 }
 
-.dl-note{margin:.6rem auto 0;max-width:660px;font-size:.78rem;color:rgba(14,12,24,.66)}.dl-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:.7rem;margin:1.35rem 0 .3rem}.dl-card{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;min-width:10.5rem;max-width:14rem;padding:.85rem 1rem;border:1px solid rgba(14,12,24,.32);border-radius:14px;color:#0e0c18;background:rgba(255,255,255,.14);text-align:left;text-decoration:none;transition:border-color .15s ease,transform .15s ease}.dl-card:hover{border-color:#0e0c18;transform:translateY(-1px)}.dl-card strong{font-size:.95rem;line-height:1.25}.dl-card span{font-size:.76rem;line-height:1.35;color:rgba(14,12,24,.72)}.dl-card .dl-tag{display:none;margin-top:.35rem;font:.6rem var(--mono);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0e0c18;background:rgba(255,255,255,.85);border-radius:99px;padding:.2rem .55rem}.dl-card.is-recommended{border-color:#0e0c18;box-shadow:0 0 0 1px #0e0c18 inset}.dl-card.is-recommended .dl-tag{display:inline-block}@media(max-width:760px){.dl-grid{flex-direction:column;align-items:stretch}.dl-card{max-width:none}}
+.dl-note{margin:.6rem auto 0;max-width:660px;font-size:.82rem;color:rgba(14,12,24,.78)}.dl-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:.7rem;margin:1.35rem 0 .3rem}.dl-card{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;min-width:10.5rem;max-width:14rem;padding:.85rem 1rem;border:1px solid rgba(14,12,24,.32);border-radius:14px;color:#0e0c18;background:rgba(255,255,255,.14);text-align:left;text-decoration:none;transition:border-color .15s ease,transform .15s ease}.dl-card:hover{border-color:#0e0c18;transform:translateY(-1px)}.dl-card strong{font-size:.95rem;line-height:1.25}.dl-card span{font-size:.76rem;line-height:1.35;color:rgba(14,12,24,.72)}.dl-card .dl-tag{display:none;margin-top:.35rem;font:.6rem var(--mono);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0e0c18;background:rgba(255,255,255,.85);border-radius:99px;padding:.2rem .55rem}.dl-card.is-recommended{border-color:#0e0c18;box-shadow:0 0 0 1px #0e0c18 inset}.dl-card.is-recommended .dl-tag{display:inline-block}@media(max-width:760px){.dl-grid{flex-direction:column;align-items:stretch}.dl-card{max-width:none}}
 
 /* What's new block in the release section */
 .whats-new {
@@ -517,9 +532,10 @@ html[data-theme='light'] .text-link {
 .whats-new ul {
   margin: 0;
   padding-left: 1.1rem;
-  color: var(--dim);
-  font-size: .82rem;
+  color: #0e0c18;
+  font-size: .86rem;
   line-height: 1.55;
+  text-align: left;
 }
-.whats-new li { margin-bottom: .3rem; }
+.whats-new li { margin-bottom: .3rem; text-align: left; }
 .whats-new li:last-child { margin-bottom: 0; }
