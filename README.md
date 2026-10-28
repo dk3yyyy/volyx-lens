@@ -80,12 +80,13 @@ These captures come from the current Electron UI test harness. Provider values s
 
 What changed in this release:
 
-- A saved meeting can be cleaned up after the call. The transcript is repaired turn by turn for readability, the wording that was heard is kept beside it, a Changes view shows only the turns whose words moved, and cleanup can be discarded with one action.
-- The other speaker can be named. The name appears in the transcript, the Markdown, TXT and JSON exports, the SRT and VTT subtitles, and the notes.
-- Notes record which transcript they were generated from and prompt a regenerate when they predate a cleanup.
-- History can be kept tidy: a retention window in Settings, and a Select mode for deleting several meetings behind one confirmation.
-- Realtime transcription is seeded with the names and product terms in your personal context documents, which is where recognisers usually go wrong.
-- The history pane works from the keyboard, and the app now runs as a single instance.
+- Clearing the transcript mid-answer no longer leaves the composer stuck, and a failed stream keeps the text you already received.
+- A stalled provider request falls through to your fallback instead of surfacing a timeout, and long meeting recaps keep the parts they finished.
+- Restoring a meeting backup into a full history is refused rather than reporting success after deleting the restored records.
+- Exported transcripts use the same clock as their header, and restoring default shortcuts now survives a restart.
+- Secondary text clears 4.5:1 over bright slides, readable text stays at 10px or more, and answers are selectable and copyable.
+- Provider keys are never written to disk without a working keyring; on a machine without one they last for the session only.
+- Local Whisper stays off unless a whisper-server binary is present, instead of offering an engine that cannot start.
 
 v0.7.4 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux. macOS auto-update is not offered while builds are unsigned.
 

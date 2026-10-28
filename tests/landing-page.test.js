@@ -26,10 +26,10 @@ test('landing page ships a semantic, truthful static entry point', () => {
   const version = require('../package.json').version;
   const v = version.replace(/\./g, '\\.');
   assert.match(html, new RegExp(`Release[\\s\\S]*?v${v}`, 'i'));
-  assert.match(html, new RegExp(`Windows and Linux installers are live in v${v}`, 'i'));
-  assert.match(html, new RegExp(`v${v} macOS build will be signed and notarized once release signing credentials are configured`, 'i'));
+  assert.match(html, new RegExp(`Windows and Linux builds are live in v${v}`, 'i'));
+  assert.match(html, new RegExp(`macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured`, 'i'));
   assert.match(html, /<a[^>]*>unsigned macOS DMGs<\/a> are attached to the release/i);
-  assert.match(html, /Windows and Linux installers ship unsigned; every file has a \.sha256 checksum and a CycloneDX SBOM attached to the release/i);
+  assert.match(html, /Windows and Linux builds ship unsigned; every file has a \.sha256 checksum, a CycloneDX SBOM is attached per platform and architecture/i);
   assert.doesNotMatch(html, /current signed Mac release is v0\.4\.0|Get the signed v0\.4\.0|Download v0\.4\.0/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /there is no Volyx Lens-operated intermediary server/i);
@@ -57,7 +57,7 @@ test('landing page presents the response providers the app actually supports', (
   for (const provider of expectedProviders) {
     assert.match(html, new RegExp(`>${provider.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}<`, 'i'));
   }
-  assert.match(html, /Nine providers/i, 'the heading counts the nine response providers');
+  assert.match(html, /Nine response providers/i, 'the heading counts the nine response providers');
   assert.match(html, /Gemini, or Groq Whisper/i, 'and the transcription copy names the batch fallbacks');
   assert.doesNotMatch(html, /Azure OpenAI/i);
 });
@@ -104,7 +104,7 @@ test('landing page explains the implemented context, meeting, coding, and offlin
   assert.match(html, /multiple (?:selected )?screens/i);
   assert.match(html, /bounded visual window/i);
   assert.match(html, /discloses omitted screens/i);
-  assert.match(html, /memory-bounded/i);
+  assert.match(html, /within fixed size limits/i);
   assert.match(html, /memory-only/i);
   assert.match(html, /cleared when the session ends/i);
   assert.match(html, /You\/Them/i);
@@ -116,7 +116,7 @@ test('landing page explains the implemented context, meeting, coding, and offlin
   assert.match(html, /Local Whisper/i);
   assert.match(html, /cloud fallback remains off by default/i);
   assert.match(html, /keys are kept in memory for the session only/i);
-  assert.match(html, /Contact \/ licensing/i);
+  assert.match(html, /Report an issue/i);
 });
 
 test('landing page publishes complete canonical and social metadata with a strict CSP', () => {
@@ -177,11 +177,14 @@ test('reduced motion avoids an unfocusable scroll region and callouts meet contr
   assert.match(css, /\.responsibility-copy a\s*\{[^}]*min-height:\s*44px/i);
 });
 
-test('download OS detection maps desktop platforms and ignores Android', () => {
+test('download OS detection maps desktop platforms, architecture and ignores Android', async () => {
   const script = read('script.js');
-  const match = script.match(/function detectOS\(\) \{[\s\S]*?\n\}/);
-  assert.ok(match, 'detectOS function present in script.js');
-  const makeDetect = new Function('navigator', `${match[0]}; return detectOS;`);
+  const macStart = script.indexOf('async function macArchitecture()');
+  const detectStart = script.indexOf('async function detectOS()');
+  const detectEnd = script.indexOf('initDownloads();');
+  assert.ok(macStart > 0 && detectStart > macStart && detectEnd > detectStart, 'detection functions present in script.js');
+  const source = script.slice(macStart, detectEnd);
+  const makeDetect = new Function('navigator', `${source}; return detectOS;`);
 
   const cases = [
     ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36', 'win'],
@@ -195,6 +198,33 @@ test('download OS detection maps desktop platforms and ignores Android', () => {
 
   for (const [ua, expected] of cases) {
     const detect = makeDetect({ userAgent: ua });
-    assert.equal(detect(), expected, `UA: ${ua}`);
+    assert.equal(await detect(), expected, `UA: ${ua}`);
   }
+
+  const macUa = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126.0 Safari/537.36';
+  const arm = makeDetect({ userAgent: macUa, userAgentData: { getHighEntropyValues: async () => ({ architecture: 'arm' }) } });
+  const intel = makeDetect({ userAgent: macUa, userAgentData: { getHighEntropyValues: async () => ({ architecture: 'x86' }) } });
+  assert.equal(await arm(), 'mac-arm64');
+  assert.equal(await intel(), 'mac-x64');
+});
+
+
+test('landing page keeps focus, announcements and OS recommendations reachable', () => {
+  const html = read('index.html');
+  const css = read('styles.css');
+  const script = read('script.js');
+  const theme = read('theme.js');
+
+  assert.match(html, /<main id="main" tabindex="-1">/);
+  assert.match(html, /id="dl-note"[^>]*aria-live="polite"/);
+  assert.match(html, /class="aperture-wrap" role="group"/);
+  assert.match(html, /class="route-map" role="img"/);
+  const toggleTag = html.match(/<button[^>]*data-theme-toggle[^>]*>/)[0];
+  assert.doesNotMatch(toggleTag, /aria-pressed/, 'the theme toggle names the action, not a contradictory pressed state');
+  assert.match(css, /:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--focus\)/);
+  assert.match(css, /\.release-section :focus-visible\s*\{[^}]*outline-color:\s*#0e0c18/);
+  assert.match(script, /getHighEntropyValues/);
+  assert.match(script, /className = 'dl-tag'/);
+  assert.match(script, /document\.body\.style\.overflow = open \? 'hidden' : ''/);
+  assert.match(theme, /meta\[name="theme-color"\]/);
 });
