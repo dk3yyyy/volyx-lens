@@ -1,0 +1,109 @@
+name: Unsigned Linux build
+
+# Builds the two published AppImages without signing (Linux AppImages are not
+# signed anyway) and without update metadata, so the download page can point at
+# the same version as the unsigned macOS and Windows builds.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the artifacts to. Leave blank to keep them as workflow artifacts only.
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }} AppImage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+          - arch: arm64
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:syntax
+      - run: npm run security:secrets
+      - run: npm audit --audit-level=low
+
+      - name: Build the AppImage
+        run: |
+          set -euo pipefail
+          npm pkg set "build.publish[0].channel=latest-${{ matrix.arch }}"
+          npx electron-builder --linux AppImage --${{ matrix.arch }} --publish never
+          # No updater metadata for this channel.
+          rm -f dist/latest*.yml
+          test -z "$(ls dist/latest*.yml 2>/dev/null || true)"
+
+      - name: Smoke launch the packaged AppImage
+        run: |
+          set -euo pipefail
+          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$APPIMAGE_PATH"
+          chmod +x "$APPIMAGE_PATH"
+          timeout 120 xvfb-run -a "$APPIMAGE_PATH" --appimage-extract-and-run --no-sandbox --smoke-test > /tmp/smoke.log 2>&1 || true
+          cat /tmp/smoke.log
+          grep -q 'VOLYX_LENS_RENDERER_READY' /tmp/smoke.log
+
+      - name: Write the checksum and SBOM
+        run: |
+          set -euo pipefail
+          APPIMAGE_PATH="$(find dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$APPIMAGE_PATH"
+          APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
+          APPIMAGE_NAME="$APPIMAGE_NAME" node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const name = process.env.APPIMAGE_NAME;
+            const file = 'dist/' + name;
+            fs.writeFileSync(file + '.sha256', crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') + '  ' + name + '\n');
+          "
+          npm sbom --sbom-format cyclonedx > "dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.AppImage
+            dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: volyx-lens-linux-${{ matrix.arch }}-unsigned
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.sha256
+            dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach the artifacts to a release
+        if: ${{ inputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$TAG"
+          gh release view "$TAG" >/dev/null
+          gh release upload "$TAG" \
+            dist/*.AppImage \
+            dist/*.AppImage.sha256 \
+            dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json \
+            --clobber
