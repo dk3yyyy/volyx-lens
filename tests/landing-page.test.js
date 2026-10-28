@@ -228,3 +228,14 @@ test('landing page keeps focus, announcements and OS recommendations reachable',
   assert.match(script, /document\.body\.style\.overflow = open \? 'hidden' : ''/);
   assert.match(theme, /meta\[name="theme-color"\]/);
 });
+
+test('landing page declares the settings screenshot at its intrinsic size', () => {
+  const html = read('index.html');
+  const match = html.match(/assets\/volyx-lens-settings\.png"\s+width="(\d+)"\s+height="(\d+)"/);
+  assert.ok(match, 'settings screenshot carries width and height');
+
+  const png = fs.readFileSync(path.join(website, 'assets', 'volyx-lens-settings.png'));
+  assert.equal(png.subarray(1, 4).toString('ascii'), 'PNG');
+  assert.equal(Number(match[1]), png.readUInt32BE(16), 'declared width matches the file');
+  assert.equal(Number(match[2]), png.readUInt32BE(20), 'declared height matches the file');
+});
