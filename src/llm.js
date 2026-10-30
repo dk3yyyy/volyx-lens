@@ -1,4 +1,4 @@
-// LLM factory — OpenAI / Anthropic / Gemini / Azure Foundry / OpenAI-compatible providers (DeepSeek, Groq, OpenRouter, ...).
+// LLM factory — OpenAI / Anthropic / Gemini / Azure Foundry / OpenAI-compatible providers (DeepSeek, Groq, OpenRouter, Ollama, Opencode, Custom, ...).
 // stream({ system, turns:[{role,text}], imageDataUrl?, imageDataUrls?, maxTokens, onToken }) -> Promise<fullText>
 const { resolveProvider } = require('./provider-config');
 
