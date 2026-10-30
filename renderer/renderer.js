@@ -2510,7 +2510,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   $('#audio-mic-enabled').addEventListener('change', enforceAudioChannelSelection);
   $('#audio-system-enabled').addEventListener('change', enforceAudioChannelSelection);
 
-  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama', opencode: 'Opencode', custom: 'Custom' });
+  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama', opencode: 'Opencode', custom: 'Custom (OpenAI-compatible)' });
   function clearProviderTestResult() {
     const result = $('#provider-test-result');
     result.className = 'provider-test-result hidden';

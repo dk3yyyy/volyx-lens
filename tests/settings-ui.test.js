@@ -54,7 +54,7 @@ test('settings and onboarding use compact click-through liquid-glass surfaces wi
 });
 
 test('settings UI exposes clean provider tabs with one provider configuration at a time', () => {
-  for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'ollama']) {
+  for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'ollama', 'opencode', 'custom']) {
     assert.match(html, new RegExp(`data-provider="${provider}"`));
     assert.match(html, new RegExp(`data-provider-config="${provider}"`));
   }
@@ -67,7 +67,7 @@ test('settings UI exposes clean provider tabs with one provider configuration at
   assert.match(html, /id="endpoint-smart"/);
   assert.match(html, /id="key-fast"/);
   assert.match(html, /id="key-smart"/);
-  assert.match(html, /data-tier-key-config="azure deepseek groq nvidia openrouter"/);
+  assert.match(html, /data-tier-key-config="azure deepseek groq nvidia openrouter opencode custom"/);
   assert.match(renderer, /row\.dataset\.providerConfig !== providerView/);
   assert.match(renderer, /data-endpoint-config/);
   assert.match(renderer, /data-tier-key-config/);
