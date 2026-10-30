@@ -34,6 +34,7 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 
 # Check platform
 if [[ "$(uname)" != "Darwin" ]]; then
+    echo "SKIP: native Swift tests require macOS"
     log_warn "Native Swift tests can only run on macOS. Skipping on $(uname)."
     exit 0
 fi

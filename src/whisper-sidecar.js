@@ -226,9 +226,19 @@ function resolveWhisperBinary({
 
 function isExecutableFile(candidate, platform = process.platform, fsImpl = fs) {
   try {
-    const stat = fsImpl.statSync(candidate);
+    if (typeof candidate !== 'string' || !candidate) return false;
+    // Mirror src/offline-stt.js validateOfflineConfig: resolve symlinks, require a
+    // regular file, require the exec bit, and reject world-writable targets.
+    // The check runs against the resolved path; the spawn uses shell:false.
+    const resolved = fsImpl.realpathSync(candidate);
+    const stat = fsImpl.statSync(resolved);
     if (!stat.isFile()) return false;
-    if (platform !== 'win32') fsImpl.accessSync(candidate, fsImpl.constants.X_OK);
+    // POSIX mode bits and the exec bit are meaningless on Windows: files there
+    // are protected by ACLs. Skip the world-writable and X_OK checks on win32.
+    if (platform !== 'win32') {
+      fsImpl.accessSync(resolved, fsImpl.constants.X_OK);
+      if ((stat.mode & 0o002) !== 0) return false;
+    }
     return true;
   } catch {
     return false;

@@ -4,7 +4,7 @@
 # The native modules (macos-system-audio.swift, macos-vision-ocr.swift) are compiled
 # via swiftc during the Electron build, but can also be built and tested independently.
 
-.PHONY: all native native-test native-test-verbose native-clean help
+.PHONY: all native native-test native-test-verbose native-test-coverage native-clean help
 
 # Default target
 all: native

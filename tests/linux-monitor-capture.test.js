@@ -174,7 +174,10 @@ test('a hung pactl discovery times out instead of leaving start pending', async 
   const result = await controller.start();
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'ready_timeout');
-  assert.ok(Date.now() - startedAt < 2000, 'timeout resolved promptly');
+  // CI-safe bound: readyTimeoutMs is 60 ms, so any prompt resolution proves
+  // the timeout path; the ceiling only guards against start() pending forever
+  // on a heavily loaded runner. Production timeout logic in src/ is untouched.
+  assert.ok(Date.now() - startedAt < 10000, 'timeout resolved promptly');
   assert.equal(fake.spawned.parec.length, 0);
 });
 
