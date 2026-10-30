@@ -234,10 +234,15 @@ function isExecutableFile(candidate, platform = process.platform, fsImpl = fs) {
     const stat = fsImpl.statSync(resolved);
     if (!stat.isFile()) return false;
     // POSIX mode bits and the exec bit are meaningless on Windows: files there
-    // are protected by ACLs. Skip the world-writable and X_OK checks on win32.
+    // are protected by ACLs, and Node reports emulated modes (typically 0o666,
+    // which looks world-writable). Skip the checks when targeting win32, and
+    // skip the world-writable rejection whenever the host OS itself is win32
+    // (a darwin-targeted test running on a Windows runner must not read the
+    // emulated mode bits as real permissions).
     if (platform !== 'win32') {
       fsImpl.accessSync(resolved, fsImpl.constants.X_OK);
-      if ((stat.mode & 0o002) !== 0) return false;
+      const hostIsWindows = typeof process !== 'undefined' && process.platform === 'win32';
+      if (!hostIsWindows && (stat.mode & 0o002) !== 0) return false;
     }
     return true;
   } catch {
