@@ -52,12 +52,12 @@ test('landing page offers per-platform downloads with direct release assets', ()
 
 test('landing page presents the response providers the app actually supports', () => {
   const html = read('index.html');
-  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'NVIDIA', 'Ollama', 'Deepgram', 'Azure AI Speech'];
+  const expectedProviders = ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'NVIDIA', 'Ollama', 'Opencode', 'Custom (OpenAI-compatible)', 'Deepgram', 'Azure AI Speech'];
 
   for (const provider of expectedProviders) {
     assert.match(html, new RegExp(`>${provider.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}<`, 'i'));
   }
-  assert.match(html, /Nine response providers/i, 'the heading counts the nine response providers');
+  assert.match(html, /Eleven response providers/i, 'the heading counts the eleven response providers');
   assert.match(html, /Gemini, or Groq Whisper/i, 'and the transcription copy names the batch fallbacks');
   assert.doesNotMatch(html, /Azure OpenAI/i);
 });
