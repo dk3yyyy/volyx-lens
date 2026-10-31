@@ -58,6 +58,25 @@ const PROVIDERS = Object.freeze({
     requiresKey: false,
     baseURL: 'http://localhost:11434/v1',
   },
+  opencode: {
+    label: 'Opencode',
+    models: { fast: '', smart: '' },
+    supportsVision: true,
+    // Keyless local endpoint: resolveProvider allows HTTP loopback without a
+    // key, but a pasted key is still sent (see llm.js clientOptions). Default
+    // matches `opencode serve` (override per-tier in Settings when yours differs).
+    requiresKey: false,
+    baseURL: 'http://127.0.0.1:4096/v1',
+  },
+  custom: {
+    label: 'Custom (OpenAI-compatible)',
+    models: { fast: '', smart: '' },
+    supportsVision: true,
+    // Generic OpenAI-compatible server (LM Studio, vLLM, OpenRouter-compatible
+    // gateways, self-hosted proxies...). No default baseURL: set per-tier
+    // endpoint overrides in Settings. Key optional so plain HTTP loopback works.
+    requiresKey: false,
+  },
 });
 
 // Single source of truth for speech-to-text model defaults shared by the
@@ -77,8 +96,9 @@ const REALTIME_PROVIDERS = Object.freeze(['openai', 'azure', 'deepgram', 'azureS
 
 // OpenAI-compatible providers where the fast and smart tiers may use different
 // APIs. These get optional per-tier API key slots (provider.fast / provider.smart)
-// and per-tier endpoint overrides in Settings.
-const TIER_KEY_PROVIDERS = Object.freeze(['azure', 'deepseek', 'groq', 'nvidia', 'openrouter']);
+// and per-tier endpoint overrides in Settings. `opencode` and `custom` are here
+// so any OpenAI-compatible server can be pointed at per tier.
+const TIER_KEY_PROVIDERS = Object.freeze(['azure', 'deepseek', 'groq', 'nvidia', 'openrouter', 'opencode', 'custom']);
 
 function getDefaultSettings() {
   const apiKeys = {};
@@ -296,6 +316,7 @@ function resolveProvider(settings) {
 
   if (requiresKey && !apiKey) configurationError = `${definition.label} API key is required.`;
   else if (!model) configurationError = `${definition.label} ${tier} model or deployment name is required.`;
+  else if (!configurationError && !baseURL && provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini' && provider !== 'azure') configurationError = `${definition.label} ${tier} endpoint URL is required.`;
 
   return {
     provider,

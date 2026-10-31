@@ -31,6 +31,7 @@ test('every provider defines a label, fast/smart model slots, and vision capabil
 test('every provider has a routing path in llm.js (baseURL or explicit SDK branch)', () => {
   for (const [id, provider] of Object.entries(PROVIDERS)) {
     if (provider.baseURL) continue; // OpenAI-compatible branch in llm.js
+    if (provider.requiresKey === false) continue; // User-supplied endpoint (e.g. custom): served by the generic baseURL branch once configured
     assert.ok(llmJs.includes(`resolved.provider === '${id}'`), `${id} has no baseURL and no llm.js routing branch`);
     assert.ok(NATIVE_SDK_PROVIDERS.has(id), `${id} uses a native SDK branch but is not in NATIVE_SDK_PROVIDERS`);
   }

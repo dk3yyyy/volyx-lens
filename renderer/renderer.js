@@ -2510,7 +2510,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   $('#audio-mic-enabled').addEventListener('change', enforceAudioChannelSelection);
   $('#audio-system-enabled').addEventListener('change', enforceAudioChannelSelection);
 
-  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama' });
+  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama', opencode: 'Opencode', custom: 'Custom (OpenAI-compatible)' });
   function clearProviderTestResult() {
     const result = $('#provider-test-result');
     result.className = 'provider-test-result hidden';
@@ -2555,15 +2555,16 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     });
     $('#provider-view-title').textContent = label;
     const isDefault = providerView === settings.provider;
-    const keyless = providerView === 'ollama';
-    if (keyless) {
-      $('#provider-view-state').textContent = isDefault ? 'Default response provider · local' : 'Local · no API key required';
+    const isOllama = providerView === 'ollama';
+    const optionalKey = isOllama || providerView === 'opencode' || providerView === 'custom';
+    if (optionalKey) {
+      $('#provider-view-state').textContent = isDefault ? 'Default response provider · key optional' : (isOllama ? 'Local · no API key required' : 'Key optional · endpoint required for Custom');
     } else {
       $('#provider-view-state').textContent = isDefault ? 'Default response provider' : (present[providerView] ? 'API key saved' : 'Not configured');
     }
     $('#provider-default-btn').disabled = isDefault;
     $('#provider-default-btn').textContent = isDefault ? 'Current default' : 'Use as default';
-    $('#provider-key-label').classList.toggle('hidden', keyless);
+    $('#provider-key-label').classList.toggle('hidden', isOllama);
     $('#provider-key-label').childNodes[0].nodeValue = `${label} API key `;
     $('#provider-model-hint').textContent = providerView === 'azure' ? 'exact Azure deployment names' : `used by ${label}`;
     const capability = (settings.providerCapabilities || {})[providerView] || {};

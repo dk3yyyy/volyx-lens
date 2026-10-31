@@ -44,7 +44,7 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Meeting history and recovery:** when enabled, finalized meetings and an in-progress transcript checkpoint are saved on device. After an unexpected exit, choose whether to restore or discard the draft.
 - **Meeting notes:** generate structured notes (Summary, Key Points, Decisions, Action Items, Follow-Up) for saved records using your configured provider, with long-meeting confirmation before paid requests. Notes persist in meeting history.
 - **Slide tracking:** optional local slide-change detection while listening, with bounded in-memory previews and nearby transcript context; no automatic provider requests.
-- **Provider choice:** 9 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, or a local Ollama server). Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech; batch transcription falls back to OpenAI, Gemini, or Groq Whisper, with optional local Whisper. OpenAI and Azure support both roles.
+- **Provider choice:** 11 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, a local Ollama server, Opencode, or any Custom OpenAI-compatible server). Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech; batch transcription falls back to OpenAI, Gemini, or Groq Whisper, with optional local Whisper. OpenAI and Azure support both roles.
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
@@ -183,7 +183,7 @@ If access was previously denied, enable Volyx Lens in System Settings, then full
 
 Open Settings with `⌘` `,` or the `…` button. Choose a response provider, enter its key and model/deployment names, then select **Use as default**. An optional fallback provider is used only when it is capable of the request and the default fails before producing answer text.
 
-Each provider stores separate **Fast** and **Smart** model/deployment names, so the Smart toggle switches tiers without extra configuration. If your fast and smart models live on different APIs, the per-provider **Tier API keys** fields (Fast key / Smart key) let each tier use its own key, and the **Endpoint overrides** fields (Fast URL / Smart URL) route each tier to its own OpenAI-compatible base URL; leaving either blank uses the shared provider key / default endpoint. Tier keys apply to Azure, DeepSeek, Groq, NVIDIA, and OpenRouter. Azure endpoint overrides still pass through official-endpoint validation.
+Each provider stores separate **Fast** and **Smart** model/deployment names, so the Smart toggle switches tiers without extra configuration. If your fast and smart models live on different APIs, the per-provider **Tier API keys** fields (Fast key / Smart key) let each tier use its own key, and the **Endpoint overrides** fields (Fast URL / Smart URL) route each tier to its own OpenAI-compatible base URL; leaving either blank uses the shared provider key / default endpoint. Tier keys apply to Azure, DeepSeek, Groq, NVIDIA, OpenRouter, Opencode, and Custom. Azure endpoint overrides still pass through official-endpoint validation.
 
 | Provider | Role | Configuration notes |
 |---|---|---|
@@ -196,6 +196,8 @@ Each provider stores separate **Fast** and **Smart** model/deployment names, so 
 | **OpenRouter** | responses | API key; routes to many hosted models with one key |
 | **NVIDIA** | responses | API key from build.nvidia.com; OpenAI-compatible Nemotron and hosted open models (`https://integrate.api.nvidia.com/v1`); vision requires a VLM model (e.g. `meta/llama-3.2-11b-vision-instruct`) |
 | **Ollama** | local responses | no key; local server with the OpenAI-compatible API (`http://localhost:11434/v1`); pull a model first |
+| **Opencode** | local responses | no key required; OpenAI-compatible server such as `opencode serve` (default `http://127.0.0.1:4096/v1`); set the model IDs your server serves |
+| **Custom (OpenAI-compatible)** | responses | any OpenAI-compatible base URL (LM Studio, vLLM, gateways, self-hosted proxies); endpoint URL required, key optional |
 | **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
 | **Azure AI Speech** | realtime transcription | Speech resource key and region (bare region name, e.g. `eastus`); no model name required |
 | **Local Whisper** | optional offline batch transcription | requires a `whisper-server` binary and a downloaded whisper.cpp model; audio transcribed in memory; disabled by default. The published build does not include the binary, so the toggle stays off unless `VOLYX_LENS_WHISPER_SIDECAR_BIN` points at one. |
