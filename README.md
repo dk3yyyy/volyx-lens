@@ -62,7 +62,7 @@ These captures come from the current Electron UI test harness. Provider values s
         <img src="docs/onboarding-welcome-eye.png" alt="Volyx Lens welcome screen introducing screen, voice, and assistance features" />
       </a>
       <br />
-      <sub><strong>Guided onboarding</strong>: five focused steps for permissions, providers, sharing, and readiness.</sub>
+      <sub><strong>Guided onboarding</strong>: five steps on first run — ten when reopened from Settings — for permissions, providers, sharing, and readiness.</sub>
     </td>
     <td width="50%" align="center">
       <a href="docs/settings-providers.png">
@@ -88,7 +88,7 @@ What changed in this release:
 - Provider keys are never written to disk without a working keyring; on a machine without one they last for the session only.
 - Local Whisper stays off unless a whisper-server binary is present, instead of offering an engine that cannot start.
 
-v0.7.4 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux. macOS auto-update is not offered while builds are unsigned.
+v0.7.4 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux (consumed only by signed release builds); the macOS updater is published together with the signed DMGs.
 
 | Mac | Installer |
 |---|---|
@@ -231,7 +231,7 @@ Meeting detection is opt-in from Settings → Listening and runs locally in-sess
 - **Detect meetings** looks for a sustained two-sided conversation between the Mic and System channels while listening, then shows a subtle "Meeting in progress" indicator and tags the session as a meeting. Detection runs only on finalized in-memory transcript turns: no background audio watcher, no disk writes, and no AI requests.
 - **Save meeting history** keeps the session record on device when listening stops (capture stop, new session, or app quit). Saved records are searchable in the history browser and show a meeting badge when the session was detected as a meeting.
 - While **Save meeting history** is enabled, the in-progress transcript is atomically checkpointed to a restricted-permission local file so it can be restored after an unexpected exit. On next launch, choose **Restore transcript** or **Discard draft**. No raw audio is saved; turning history off or clearing history removes the recovery draft.
-- **Export** a saved record as Markdown, TXT, or structured JSON through a native save dialog.
+- **Export** a saved record as Markdown, TXT, structured JSON, or SRT/VTT subtitles through a native save dialog.
 - **Back up all** writes every saved meeting into a folder you choose, one file per record plus an index. **Restore** reads that folder back through the same validation a captured meeting goes through, reports how many records it can read and how many older ones the 200 meeting limit will remove, and asks before writing anything. Restoring is refused while Save meeting history is off, because restoring writes saved meetings.
 - **Clean transcript** repairs speech-recognition damage in a saved session so it reads properly: misheard words that are obvious from context, punctuation, capitalisation, and accidental stutters. Every turn keeps its place and nothing is summarised. A turn the provider cannot repair cleanly keeps its original wording, the exact transcript is always kept and one click away, and multi-request cleanups ask for confirmation before any paid request is made.
 - **Generate meeting notes** turns a saved transcript into structured notes using your configured provider. Notes include a Summary, Key Points, Decisions, Action Items, and Follow-Up. Notes are saved alongside the meeting and load instantly when reopened. Long meetings need multiple model requests and require explicit confirmation before paid requests are made.
@@ -281,7 +281,7 @@ For a deeper dive into the process split, preload bridge surface, provider routi
 While listening, confirmed provider chunks are grouped into timestamped **You** and **Them** turns. Partial text remains visually distinct and is replaced by confirmed text. The workspace can:
 
 - copy one turn or the complete confirmed transcript;
-- export TXT, Markdown, or structured JSON through a native save dialog;
+- export TXT, Markdown, structured JSON, or SRT/VTT subtitles through a native save dialog;
 - clear the session with confirmation;
 - show sanitized diagnostics without keys, endpoints, raw audio, images, personal-context text, or transcript content.
 
@@ -341,6 +341,30 @@ Your API key is restricted. An OpenAI project key that only allows chat returns 
 <summary><strong>Local Whisper is slow or runs out of memory</strong></summary>
 
 Prefer `base.en` or an int8-quantized model in Settings → Listening. The model label (e.g. 139M params) is a parameter count, not a runtime memory requirement; larger models need substantially more memory and CPU/GPU time.
+</details>
+
+<details>
+<summary><strong>Realtime transcription reports a rate limit, auth failure, or transport error</strong></summary>
+
+Match the code to the cause: `realtime_rate_limited` means back off and retry, `realtime_authentication_failed` means the key, endpoint, or deployment name is wrong, and `realtime_transport_failed` / `realtime_audio_failed` point at the network or the selected input device. Azure needs the official resource endpoint and exact deployment name; Azure AI Speech needs a bare region (e.g. `eastus`), not a URL. Use **Test Live Mic** after each change.
+</details>
+
+<details>
+<summary><strong>Gemini or Groq transcription has no realtime option</strong></summary>
+
+That is by design: Gemini and Groq serve batch transcription only. Pick OpenAI, Azure Foundry, Deepgram, or Azure AI Speech as the realtime provider; Gemini or Groq Whisper remains available as the batch fallback.
+</details>
+
+<details>
+<summary><strong>Personal context import rejects a PDF</strong></summary>
+
+Scanned PDFs are images, not text, and are not supported — export or OCR the document first. Password-protected PDFs are rejected, as are binaries detected as non-text and `.docx` files that trip the zip-bomb guards. Supported types are `.pdf`, `.docx`, `.txt`, and `.md` (5 MB / 50k chars / 50 PDF pages).
+</details>
+
+<details>
+<summary><strong>Opencode or Custom provider reports a configuration error</strong></summary>
+
+`endpoint URL is required` means the per-tier Fast/Smart URL is empty — set the OpenAI-compatible base URL in Settings (e.g. `http://127.0.0.1:4096/v1` for `opencode serve`). `must be a valid HTTPS URL` means a keyed custom endpoint must use HTTPS unless it is HTTP on localhost. A key is optional; when set it is sent as Bearer.
 </details>
 
 ## Build from source
