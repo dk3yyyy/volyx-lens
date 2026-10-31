@@ -186,7 +186,7 @@ app.whenReady().then(async () => {
       roving: tabs.filter((tab) => tab.tabIndex === 0).length,
     };
   })()`);
-  assert.equal(providerSemantics.total, 9, 'all providers are exposed as tabs');
+  assert.equal(providerSemantics.total, 11, 'all providers are exposed as tabs');
   assert.equal(providerSemantics.selected, 1, 'exactly one provider tab is selected');
   assert.equal(providerSemantics.roving, 1, 'one tab is in the tab order');
   assert.equal(providerSemantics.selectedControlsPanel, true, 'the selected tab controls the visible panel');
