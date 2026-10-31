@@ -2811,7 +2811,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   async function saveSettings() {
     const apiKeyUpdates = {};
-    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'nvidia', 'ollama', 'opencode', 'custom', 'deepgram', 'azureRealtime', 'azureSpeech']) {
+    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'nvidia', 'deepgram', 'azureRealtime', 'azureSpeech']) {
       const value = $(`#key-${provider}`).value.trim();
       if (value) apiKeyUpdates[provider] = value;
     }
