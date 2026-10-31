@@ -237,14 +237,17 @@ test('snapshotTurns normalizes channels, drops blank text, and caps turn count',
   assert.notEqual(fp.contentHash, fingerprint([{ id: 7, channel: 'you', text: 'y', ts: 9 }]).contentHash, 'text must affect the fingerprint');
 });
 
-test('history is opt-in by default and sanitized only as a boolean', () => {
-  assert.equal(getDefaultSettings().transcription.historyEnabled, false);
+test('history defaults on for new installs and is sanitized only as a boolean', () => {
+  assert.equal(getDefaultSettings().transcription.historyEnabled, true);
   assert.match(storeSrc, /historyEnabled'\) && typeof value\.historyEnabled === 'boolean'/);
+  assert.match(storeSrc, /resolveHistoryEnabled\(\{/);
+  assert.match(storeSrc, /storedValue: storedHistoryValue/);
+  assert.match(storeSrc, /hadSettingsFile: fs\.existsSync\(FILE\)/);
 });
 
 test('settings UI exposes the history toggle and persists it', () => {
   assert.match(html, /id="stt-history-enabled"[^>]*type="checkbox"/);
-  assert.match(html, /Off by default\. When enabled, finalized sessions are saved.*in-progress transcript is checkpointed locally for recovery/);
+  assert.match(html, /On by default for new installs; profiles created earlier keep their current setting\. Finalized sessions are saved.*in-progress transcript is checkpointed locally for recovery/);
   assert.match(renderer, /\$\('#stt-history-enabled'\)\.checked = transcription\.historyEnabled === true/);
   assert.match(renderer, /historyEnabled: \$\('#stt-history-enabled'\)\.checked/);
 });

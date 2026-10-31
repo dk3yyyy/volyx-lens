@@ -76,7 +76,7 @@ OpenAI-compatible response routes: DeepSeek, Groq, OpenRouter, NVIDIA (`https://
 
 Status: implemented (Phases 3a/3b/3c).
 
-- Implemented: opt-in `transcription.historyEnabled` setting (off by default) exposed as "Save meeting history" in Settings > Listening, with a privacy disclosure.
+- Implemented: `transcription.historyEnabled` setting exposed as "Save meeting history" in Settings > Listening, with a privacy disclosure. On by default for new installs; profiles created before that default changed keep history off until it is enabled.
 - Implemented: a finalized session (listening stopped, new session started, or app quit) persists only the final transcript turns to `<userData>/meetings/*.json` with 0600 permissions and atomic writes; raw audio is never stored.
 - Implemented: bounded retention (200 records, 5000 turns each), traversal-safe record ids, skip-when-unchanged dedupe, and list/get/delete/clear IPC surfaced through the preload bridge.
 - Implemented: structured notes for a saved record via the recap pipeline (`history:recap`), streamed through `history:recap-token`; long meetings require explicit confirmation before multi-request chunking so notes cannot create surprise usage charges.
@@ -99,7 +99,7 @@ Status: implemented (Phases 4a/4b).
 - No audio capture before the user explicitly starts listening.
 - No background meeting watcher in the initial implementation.
 - No automatic reconnect or retry loop that can create surprise usage charges.
-- No audio persistence; transcript history is written to disk only when the opt-in "Save meeting history" setting is enabled, and records contain final text turns only.
+- No audio persistence; transcript history is written to disk only when the "Save meeting history" setting is enabled, and records contain final text turns only.
 - No secrets in URLs, renderer events, logs, error messages, tests, or repository files.
 - Emergency quit stops capture, clears in-memory session data, and closes sockets immediately.
 

@@ -210,7 +210,7 @@
           <li><span>01</span>Provider credentials use Electron secure storage backed by the operating system (macOS Keychain, Windows DPAPI, Linux libsecret) when available. If secure storage is unavailable, keys are kept in memory for the session only and are never written to disk; Settings says so.</li>
           <li><span>02</span>The app has no analytics or advertising SDK.</li>
           <li><span>03</span>You can switch providers without changing the workflow.</li>
-          <li><span>04</span>The active transcript and Task Context stay memory-only, within fixed size limits, for the current session, and are cleared when the session ends. If you enable saved meeting history or crash recovery, transcript text is written to this device only; both are off by default.</li>
+          <li><span>04</span>The active transcript and Task Context stay memory-only, within fixed size limits, for the current session, and are cleared when the session ends. Saved meeting history and crash recovery are on by default for new installs; transcript text is written to this device only, and you can turn both off at any time.</li>
         </ul>
         <p class="privacy-caveat">Your chosen AI provider still receives the context you send and applies its own retention and privacy terms. Review those terms before sharing sensitive material.</p>
       </div>
@@ -287,7 +287,7 @@
           <div class="use-marker"><span>04</span><i></i></div>
           <div>
             <h3>Detect and save the meetings you own</h3>
-            <p>Opt-in meeting detection looks for a sustained two-sided conversation and tags the session locally. Save meeting history with a meeting badge, search saved meetings, and export records, transcripts, or generated meeting notes.</p>
+            <p>Opt-in meeting detection looks for a sustained two-sided conversation and tags the session locally. Meeting history is on by default for new installs: saved meetings get a meeting badge, stay searchable, and export as records, transcripts, or generated meeting notes.</p>
           </div>
           <div class="use-input">Meeting <span>→</span> History</div>
         </article>
@@ -403,7 +403,7 @@
         </details>
         <details>
           <summary>Can Volyx Lens detect and save meetings?<span aria-hidden="true"></span></summary>
-          <p>Yes, opt-in. While listening, meeting detection looks for a sustained two-sided conversation between the Mic and System channels, then tags the session locally with a "Meeting in progress" indicator. With meeting history enabled, saved meetings get a meeting badge and stay searchable; you can export records, transcripts, or generated meeting notes. Detection runs in-session. Saved history stays on this device and Volyx Lens never uploads it; generating notes or cleaning a saved transcript does send that transcript to the provider you configured.</p>
+          <p>Yes. Meeting detection is opt-in; meeting history is on by default for new installs. While listening, meeting detection looks for a sustained two-sided conversation between the Mic and System channels, then tags the session locally with a "Meeting in progress" indicator. With meeting history on, saved meetings get a meeting badge and stay searchable; you can export records, transcripts, or generated meeting notes. Detection runs in-session. Saved history stays on this device and Volyx Lens never uploads it; generating notes or cleaning a saved transcript does send that transcript to the provider you configured.</p>
         </details>
         <details>
           <summary>Can I choose the transcription language?<span aria-hidden="true"></span></summary>
