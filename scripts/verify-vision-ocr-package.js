@@ -16,7 +16,7 @@ function findHelper(directory, name) {
 }
 
 if (process.platform !== 'darwin') {
-  console.log('macOS native helper package verification skipped on non-macOS.');
+  console.warn('Skipping macOS native helper package verification on non-macOS (native helpers validate on macOS only).');
   process.exit(0);
 }
 

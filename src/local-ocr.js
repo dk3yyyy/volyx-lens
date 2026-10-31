@@ -22,9 +22,25 @@ function resolveVisionHelper({ app = null, resourcesPath = process.resourcesPath
     : path.join(projectDir, 'native-bin', 'volyx-lens-vision-ocr');
 }
 
+function hasUnsafeHelperSymlink(helperPath) {
+  try {
+    if (fs.lstatSync(helperPath).isSymbolicLink()) return true;
+    if (fs.lstatSync(path.dirname(path.resolve(helperPath))).isSymbolicLink()) return true;
+    return fs.lstatSync(fs.realpathSync(helperPath)).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 function validateVisionHelper(helperPath, platform = process.platform) {
   if (platform !== 'darwin') return { ready: false, reason: 'unsupported_platform' };
   try {
+    // Reject when the helper itself or its containing dir (e.g. native-bin) is
+    // a symlink, so a swapped link cannot redirect the privileged helper. This
+    // is scoped to the helper + parent dir: a root-anchored walk such as
+    // identity-migration's hasSymlinkComponent would also flag benign system
+    // links like /var -> private/var on macOS.
+    if (hasUnsafeHelperSymlink(helperPath)) return { ready: false, reason: 'unsafe_helper' };
     const resolved = fs.realpathSync(helperPath);
     const stat = fs.statSync(resolved);
     if (!stat.isFile()) return { ready: false, reason: 'unsafe_helper' };

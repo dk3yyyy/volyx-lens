@@ -1021,6 +1021,9 @@ function createWindow() {
 
   // Best-effort overlay metadata and capture protection. This does not make the process undiscoverable.
   win.setTitle(WINDOW_TITLE);
+  if (process.env.VOLYX_LENS_NO_PROTECT) {
+    console.warn('[security] VOLYX_LENS_NO_PROTECT=1 disables overlay capture protection');
+  }
   win.setContentProtection(!process.env.VOLYX_LENS_NO_PROTECT);
   win.setAlwaysOnTop(true, 'screen-saver', 1);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });

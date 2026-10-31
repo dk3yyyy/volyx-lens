@@ -267,12 +267,19 @@ test('a reset during pending sidecar startup invalidates and stops the stale wor
   resetSidecar();
   let created = 0;
   let stopped = 0;
+  // Deterministic gate instead of a real-timer race: the startup stays in
+  // flight until the test releases it, and reset lands while it is pending.
+  let releaseStart;
+  const startGate = new Promise((resolve) => { releaseStart = resolve; });
+  let markStartEntered;
+  const startEntered = new Promise((resolve) => { markStartEntered = resolve; });
   const factory = () => {
     created += 1;
     return {
       running: false,
       async start() {
-        await new Promise((resolve) => setTimeout(resolve, 30)); // pending startup
+        markStartEntered();
+        await startGate; // pending startup: released explicitly below
       },
       async stop() { stopped += 1; },
       async queueYou() { return { text: `stale-${created}`, channel: 'you', timestamp: 1 }; },
@@ -281,11 +288,16 @@ test('a reset during pending sidecar startup invalidates and stops the stale wor
   try {
     const stt = createSTT({ transcription: { offlineEnabled: true, whisperModel: 'base.en' } }, { env: {}, sidecarFactory: factory });
     const pending = stt.transcribe(Buffer.alloc(4000, 1));
-    setTimeout(() => resetSidecar(), 5); // reset while startup is in flight
+    await startEntered; // startup is in flight; reset now, deterministically
+    resetSidecar();
+    releaseStart();
     const result = await pending;
     assert.equal(result.text, '');
     assert.match(result.error && result.error.message, /reset during startup/);
-    await new Promise((resolve) => setTimeout(resolve, 40)); // let stale start resolve
+    // The stale worker's stop() runs synchronously on the generation mismatch
+    // before the startup promise rejects; flush one macrotask so the
+    // fire-and-forget stop() settles before asserting.
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(stopped, 1, 'the stale worker is stopped, never published');
     assert.equal(created, 1, 'no replacement worker was created for the stale request');
   } finally {
