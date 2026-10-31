@@ -259,6 +259,9 @@ async function initDownloads() {
 
   const card = document.querySelector(`.dl-card[data-os="${detected}"]`);
   if (!card) return;
+  // The markup ships one static tag (Windows card, as a no-JS fallback).
+  // Clear it first so exactly one card is marked when JS runs.
+  document.querySelectorAll('.dl-card .dl-tag').forEach((tag) => tag.remove());
   card.classList.add('is-recommended');
   card.setAttribute('aria-current', 'true');
   // The tag is injected so cards cannot drift out of sync with the markup.
