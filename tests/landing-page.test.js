@@ -17,6 +17,12 @@ function sha256(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+// A version is interpolated into RegExp source below; escape every metacharacter,
+// not just the dots, so a prerelease or build suffix cannot change the pattern.
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('landing page ships a semantic, truthful static entry point', () => {
   const html = read('index.html');
 
@@ -24,7 +30,7 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.equal((html.match(/<h1\b/gi) || []).length, 1);
   assert.match(html, /A private assistant for your desktop/i);
   const version = require('../package.json').version;
-  const v = version.replace(/\./g, '\\.');
+  const v = escapeRegExp(version);
   assert.match(html, new RegExp(`Release[\\s\\S]*?v${v}`, 'i'));
   assert.match(html, new RegExp(`Windows and Linux builds are live in v${v}`, 'i'));
   assert.match(html, new RegExp(`macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured`, 'i'));
@@ -41,7 +47,7 @@ test('landing page offers per-platform downloads with direct release assets', ()
   const html = read('index.html');
 
   assert.equal((html.match(/class="dl-card"/g) || []).length, 6);
-  const version = require('../package.json').version.replace(/\./g, '\\.');
+  const version = escapeRegExp(require('../package.json').version);
   assert.match(html, new RegExp(`data-os="win"[^>]*volyx-lens-${version}-win-x64\\.exe`, 'i'));
   assert.match(html, new RegExp(`data-os="linux-x64"[^>]*volyx-lens-${version}-linux-x86_64\\.AppImage`, 'i'));
   assert.match(html, new RegExp(`data-os="linux-arm64"[^>]*volyx-lens-${version}-linux-arm64\\.AppImage`, 'i'));

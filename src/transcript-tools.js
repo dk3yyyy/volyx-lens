@@ -67,7 +67,9 @@ function vttTimecode(ms) {
 }
 
 function escapeSubtitle(text) {
-  return String(text || '').replace(/-->/g, '--\\>').replace(/\r?\n/g, ' ');
+  // The arrow separates subtitle blocks; it is text, not markup, so it is
+  // replaced literally rather than through a tag-filtering regex.
+  return String(text || '').split('-->').join('--\\>').replace(/\r?\n/g, ' ');
 }
 
 function formatTranscriptSrt(turns) {
