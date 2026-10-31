@@ -156,7 +156,7 @@ Notes:
 | **Auto-assist** | opt-in Setting (off by default): auto-drafts replies to confidently detected questions; cooldown and confidence are configurable | conversation transcript |
 | **Recap** | action button | bounded meeting transcript |
 | **Detect meetings** | opt-in Setting (off by default): tags a sustained two-sided conversation while listening, with a "Meeting in progress" indicator | finalized transcript turns only, in memory |
-| **Save meeting history** | opt-in Setting (off by default): keeps the session record on device when listening stops | transcript + meeting flag |
+| **Save meeting history** | Setting (on by default for new installs): keeps the session record on device when listening stops | transcript + meeting flag |
 | **Search meetings** | history browser | on-device meeting history |
 | **Generate meeting notes** | button on a saved meeting | saved transcript through your provider |
 | **Clean transcript** | button on a saved meeting | the whole saved transcript through your provider, in one or more requests |
@@ -226,7 +226,7 @@ Task Context cannot read files or code that never appeared on screen. Use it onl
 
 ## Meetings
 
-Meeting detection is opt-in from Settings → Listening and runs locally in-session. Meeting history and crash recovery are also opt-in there and persist transcript text on device.
+Meeting detection is opt-in from Settings → Listening and runs locally in-session. Meeting history and crash recovery live in the same section: both are on by default for new installs, persist transcript text on device only, and can be turned off at any time. Profiles created before that default changed keep history off until you enable it.
 
 - **Detect meetings** looks for a sustained two-sided conversation between the Mic and System channels while listening, then shows a subtle "Meeting in progress" indicator and tags the session as a meeting. Detection runs only on finalized in-memory transcript turns: no background audio watcher, no disk writes, and no AI requests.
 - **Save meeting history** keeps the session record on device when listening stops (capture stop, new session, or app quit). Saved records are searchable in the history browser and show a meeting badge when the session was detected as a meeting.

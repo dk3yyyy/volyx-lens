@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
 const { getDefaultSettings, PROVIDERS, migrateModelId, modelSupportsVision } = require('./provider-config');
+const { resolveHistoryEnabled } = require('./history-default');
 const { createCredentialVault } = require('./credential-vault');
 const { sanitizeShortcutsPatch } = require('./shortcut-validator');
 const { DEFAULT_SHORTCUT_DEFS } = require('./shortcut-defaults');
@@ -70,6 +71,16 @@ function load() {
   delete settingsOnly.apiKeyUpdates;
   delete settingsOnly.apiKeys;
   data = deepMerge(DEFAULTS, settingsOnly);
+  // A profile created before history defaulted to on keeps it off unless the
+  // person already stored a choice, so upgrading never starts writing
+  // transcripts to disk without an explicit decision.
+  const storedHistoryValue = raw.transcription && typeof raw.transcription === 'object'
+    ? raw.transcription.historyEnabled
+    : undefined;
+  data.transcription.historyEnabled = resolveHistoryEnabled({
+    hadSettingsFile: fs.existsSync(FILE),
+    storedValue: storedHistoryValue,
+  });
   const migratedModelDefaults = migrateLegacyModelDefaults(data);
   if (data.fallbackProvider === data.provider || (data.fallbackProvider !== '' && !Object.hasOwn(DEFAULTS.models, data.fallbackProvider))) data.fallbackProvider = '';
   if (!data.audio.micEnabled && !data.audio.systemEnabled) data.audio.micEnabled = true;
