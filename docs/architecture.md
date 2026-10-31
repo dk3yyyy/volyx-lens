@@ -89,7 +89,7 @@ streamWithFallback({ llm, fallback, params, onFallback })
 
 ### Response providers (`src/llm.js`, `src/provider-config.js`)
 
-9 response providers, each identified by a stable key:
+11 response providers, each identified by a stable key:
 
 | Key | SDK / path | Notes |
 |---|---|---|
@@ -102,6 +102,8 @@ streamWithFallback({ llm, fallback, params, onFallback })
 | `nvidia` | OpenAI SDK (`baseURL`) | `maxImagesPerRequest: 1` |
 | `openrouter` | OpenAI SDK (`baseURL`) | Vision-capable |
 | `ollama` | OpenAI SDK (`baseURL`) | Keyless, local |
+| `opencode` | OpenAI SDK (`baseURL`) | Keyless, local; default `http://127.0.0.1:4096/v1` |
+| `custom` | OpenAI SDK (`baseURL`) | User-supplied endpoint (required), key optional |
 
 `provider-config.js` is the single source of truth for provider metadata (labels, models, vision support, base URLs). `src/llm.js` implements the streaming adapters.
 
