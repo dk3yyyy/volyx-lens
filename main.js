@@ -30,6 +30,7 @@ const { buildPersonalContext } = require('./src/personal-context');
 const { normalizeSpokenDigits, formatTranscript, transcriptFilename } = require('./src/transcript-tools');
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
+const { drainPendingAudio } = require('./src/drain-batch-buffers');
 const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
 const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap, transcriptText } = require('./src/meeting-recap');
@@ -1172,9 +1173,23 @@ async function flushChannel(channel, { drain = false } = {}) {
 }
 
 async function drainBatchBuffers() {
-  await Promise.all(['you', 'them'].map(async (channel) => {
-    do { await flushChannel(channel, { drain: true }); } while (buffers[channel].length || retryQueues[channel].length);
-  }));
+  const outcome = await drainPendingAudio({
+    channels: ['you', 'them'],
+    flush: (channel) => flushChannel(channel, { drain: true }),
+    hasPending: (channel) => buffers[channel].length > 0 || retryQueues[channel].length > 0,
+  });
+  if (!outcome.abandoned.length) return;
+  // The provider rejected this audio on every pass. Keeping it would either spin
+  // forever or leak it into the next session, and every channel shares one STT
+  // provider, so dropping it is the honest outcome.
+  let dropped = 0;
+  for (const channel of outcome.abandoned) {
+    dropped += buffers[channel].length + retryQueues[channel].length;
+    buffers[channel] = [];
+    retryQueues[channel] = [];
+  }
+  console.log('[stt] drain abandoned', outcome.abandoned.join(','), 'chunks', dropped);
+  send('status', { message: 'Some speech captured just before the stop could not be transcribed; the capture was stopped anyway.' });
 }
 
 function handleSttError(err) {

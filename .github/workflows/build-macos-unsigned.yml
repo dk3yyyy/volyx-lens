@@ -21,14 +21,18 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.arch }} unsigned macOS artifacts
-    runs-on: macos-14
+    # Each architecture is built on a runner of that architecture. The x64 DMG used
+    # to be produced on an arm64 runner, which shipped an arm64 OCR helper inside it.
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: arm64
+            runner: macos-14
           - arch: x64
+            runner: macos-15-intel
     steps:
       - uses: actions/checkout@v5
         with:
@@ -90,15 +94,20 @@ jobs:
           codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -q 'Signature=adhoc'
           test "$(defaults read "$APP_PATH/Contents/Info" CFBundleIdentifier)" = "ai.volyx.lens"
 
+          EXPECTED_ARCH="x86_64"
+          test "$ARCH" = "arm64" && EXPECTED_ARCH="arm64"
+
           VISION_HELPER="$APP_PATH/Contents/Resources/native/volyx-lens-vision-ocr"
           SYSTEM_AUDIO_HELPER="$APP_PATH/Contents/Resources/native/volyx-lens-system-audio"
           test -x "$VISION_HELPER"
           test -x "$SYSTEM_AUDIO_HELPER"
           "$VISION_HELPER" --self-test | grep -q '"ok":true'
           "$SYSTEM_AUDIO_HELPER" --self-test | grep -q '"ok":true'
+          # The self-test proves a helper runs on this runner. It shipped an arm64
+          # helper inside the x64 app once, so the architecture is asserted too.
+          lipo -archs "$VISION_HELPER" | grep -qw "$EXPECTED_ARCH"
+          lipo -archs "$SYSTEM_AUDIO_HELPER" | grep -qw "$EXPECTED_ARCH"
 
-          EXPECTED_ARCH="x86_64"
-          test "$ARCH" = "arm64" && EXPECTED_ARCH="arm64"
           file "$APP_PATH/Contents/MacOS/Volyx Lens" | grep -q "$EXPECTED_ARCH"
           python3 - "$APP_PATH/Contents/MacOS/Volyx Lens" <<'PY'
           import subprocess, sys

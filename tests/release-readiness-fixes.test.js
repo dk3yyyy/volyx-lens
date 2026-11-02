@@ -168,7 +168,10 @@ test('transient STT backoff postpones instead of discarding buffered speech', ()
   assert.match(main, /async function flushChannel\(channel, \{ drain = false \} = \{\}\)/);
   assert.match(main, /if \(!drain && sttBackoffUntil && Date\.now\(\) < sttBackoffUntil\) return;/);
   assert.doesNotMatch(main, /if \(sttBackoffUntil && Date\.now\(\) < sttBackoffUntil\) \{ buffers\[channel\] = \[\]; return; \}/);
-  assert.match(main, /do \{ await flushChannel\(channel, \{ drain: true \}\);\s*\} while \(buffers\[channel\]\.length(?: \|\| retryQueues\[channel\]\.length)?\)/);
+  // The final drain is bounded in src/drain-batch-buffers.js, so a provider that
+  // keeps rejecting the audio finishes the stop instead of spinning here.
+  assert.match(main, /drainPendingAudio\(\{/);
+  assert.doesNotMatch(main, /do \{ await flushChannel\([^)]*\);\s*\} while/);
 });
 
 test('shutdown is centralized into one awaited shutdownAll', () => {
