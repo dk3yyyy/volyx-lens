@@ -76,39 +76,38 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.7.4
+### Current release: v0.7.5
 
 What changed in this release:
 
-- Clearing the transcript mid-answer no longer leaves the composer stuck, and a failed stream keeps the text you already received.
-- A stalled provider request falls through to your fallback instead of surfacing a timeout, and long meeting recaps keep the parts they finished.
-- Restoring a meeting backup into a full history is refused rather than reporting success after deleting the restored records.
-- Exported transcripts use the same clock as their header, and restoring default shortcuts now survives a restart.
-- Secondary text clears 4.5:1 over bright slides, readable text stays at 10px or more, and answers are selectable and copyable.
-- Provider keys are never written to disk without a working keyring; on a machine without one they last for the session only.
-- Local Whisper stays off unless a whisper-server binary is present, instead of offering an engine that cannot start.
+- **Opencode and Opencode Go** join the response providers, with a generic **Custom** OpenAI-compatible endpoint alongside them. Opencode Go uses a hosted Go key, bare model ids, per-model vision gating, and a reasoning-aware output floor.
+- **Meeting history is on by default for new installs.** Existing profiles keep the setting they already had, so an update never starts writing transcripts without a decision.
+- **The update button always does something.** Signed builds update in place; unsigned and development builds open the latest release page instead of showing a disabled control.
+- Helper binaries are validated by real path, regular-file status, and executable permissions before they are launched.
+- Timer-sensitive tests are deterministic, and the dependency audit gate is cleared with pinned overrides.
+- Docs and the landing page now match the code: onboarding counts, export formats, update channel, provider count, and the mobile download grid.
 
-v0.7.4 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux (consumed only by signed release builds); the macOS updater is published together with the signed DMGs.
+v0.7.5 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux (consumed only by signed release builds); the macOS updater is published together with the signed DMGs.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.4 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.4/volyx-lens-0.7.4-mac-arm64-unsigned.dmg) · right-click Open |
-| **Intel** | [v0.7.4 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.4/volyx-lens-0.7.4-mac-x64-unsigned.dmg) · right-click Open |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.5 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.5/volyx-lens-0.7.5-mac-arm64-unsigned.dmg) · right-click Open |
+| **Intel** | [v0.7.5 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.5/volyx-lens-0.7.5-mac-x64-unsigned.dmg) · right-click Open |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.7.4-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.7.4-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.7.4-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.7.5-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.7.5-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.7.5-linux-arm64.AppImage` |
 
-**[Open the v0.7.4 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.4)**
+**[Open the v0.7.5 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.5)**
 
 The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. The v0.7.2 release page was consolidated: installers, macOS DMGs and update manifests only, with every SHA-256 checksum in the release notes instead of as separate files. Later tag-triggered releases publish per-file checksum and SBOM files alongside the installers. Signed and notarized builds will replace them once release signing credentials are configured.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.7.4-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.4-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.7.5-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.5-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 
