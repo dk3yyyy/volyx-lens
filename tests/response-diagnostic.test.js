@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { getDefaultSettings } = require('../src/provider-config');
-const { MAX_OUTPUT_TOKENS, azureRouteKind, runResponseDiagnostic } = require('../src/response-diagnostic');
+const { MAX_OUTPUT_TOKENS, PROVIDER_TIMEOUT_MS, azureRouteKind, diagnosticMessage, runResponseDiagnostic } = require('../src/response-diagnostic');
 
 test('response diagnostic uses only the selected provider tier and one bounded text-only request', async () => {
   const settings = getDefaultSettings();
@@ -102,7 +102,7 @@ test('response diagnostic times out and aborts a hanging provider request', asyn
   });
   assert.equal(result.ok, false);
   assert.equal(result.code, 'timeout');
-  assert.match(result.message, /15 seconds/);
+  assert.match(result.message, /5 ms/);
   assert.equal(observedSignal.aborted, true);
 });
 
@@ -127,4 +127,13 @@ test('Azure route classification distinguishes project and resource endpoints', 
   assert.equal(azureRouteKind('https://one.services.ai.azure.com/openai/v1'), 'foundry-resource');
   assert.equal(azureRouteKind('https://one.openai.azure.com/openai/v1'), 'azure-openai-resource');
   assert.equal(azureRouteKind('not-a-url'), 'invalid');
+});
+
+test('Opencode Go gets a longer diagnostic deadline and a humanised label', () => {
+  assert.equal(PROVIDER_TIMEOUT_MS.opencodeGo, 30000);
+  assert.match(diagnosticMessage(new Error('failed'), { provider: 'openai', timedOut: true }), /within 15 seconds/);
+  assert.match(
+    diagnosticMessage(new Error('failed'), { provider: 'opencodeGo', timedOut: true, timeoutLabel: '30 seconds' }),
+    /within 30 seconds/,
+  );
 });

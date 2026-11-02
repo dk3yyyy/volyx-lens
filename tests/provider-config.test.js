@@ -203,6 +203,46 @@ test('Ollama still requires a model name before it is ready', () => {
   assert.match(resolved.configurationError, /model or deployment name is required/);
 });
 
+test('Opencode Go resolves against the hosted Go endpoint with bare model ids', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'opencodeGo';
+  settings.apiKeys.opencodeGo = 'oc_sk_test-key';
+
+  let resolved = resolveProvider(settings);
+  assert.equal(resolved.ready, true);
+  assert.equal(resolved.baseURL, 'https://opencode.ai/inference/go/openai/v1');
+  assert.equal(resolved.model, 'deepseek-v4.1-flash');
+  assert.equal(resolved.supportsVision, true);
+
+  settings.smart = true;
+  resolved = resolveProvider(settings);
+  assert.equal(resolved.model, 'gpt-6-luna');
+  assert.equal(resolved.supportsVision, true);
+
+  // A text-only model keeps the provider ready but loses image support; the
+  // gateway hangs rather than rejecting an image, so this must be local.
+  settings.smart = false;
+  settings.models.opencodeGo.fast = 'deepseek-v4-pro';
+  resolved = resolveProvider(settings);
+  assert.equal(resolved.ready, true);
+  assert.equal(resolved.supportsVision, false);
+});
+
+test('Opencode Go requires a key and only accepts HTTPS endpoint overrides', () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'opencodeGo';
+
+  let resolved = resolveProvider(settings);
+  assert.equal(resolved.ready, false);
+  assert.match(resolved.configurationError, /Opencode Go API key is required/);
+
+  settings.apiKeys.opencodeGo = 'oc_sk_test-key';
+  settings.endpointByTier.opencodeGo = { fast: 'http://localhost:4096/v1', smart: '' };
+  resolved = resolveProvider(settings);
+  assert.equal(resolved.ready, false);
+  assert.match(resolved.configurationError, /must be a valid HTTPS URL/);
+});
+
 test('Groq and OpenRouter require an API key and model before they are ready', () => {
   const settings = getDefaultSettings();
   settings.provider = 'groq';

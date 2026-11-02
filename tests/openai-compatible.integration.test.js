@@ -93,3 +93,27 @@ test('real OpenAI SDK constructs the official NVIDIA request without network acc
   const smart = await captureSdkRequest(settings);
   assert.equal(smart.requests[0].body.model, 'meta/llama-3.2-11b-vision-instruct');
 });
+
+test('real OpenAI SDK sends the Opencode Go session header, base URL, and tier budget', { concurrency: false }, async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'opencodeGo';
+  settings.apiKeys.opencodeGo = 'oc_sk_test-key';
+
+  const result = await captureSdkRequest(settings);
+  assert.equal(result.output, 'OK');
+  assert.equal(result.requests[0].url, 'https://opencode.ai/inference/go/openai/v1/chat/completions');
+  assert.equal(result.requests[0].headers.authorization, 'Bearer oc_sk_test-key');
+  assert.match(result.requests[0].headers['x-opencode-session'], /^ses_[a-f0-9]{32}$/);
+  assert.equal(result.requests[0].body.model, 'deepseek-v4.1-flash');
+  assert.equal(result.requests[0].body.max_tokens, 2048);
+
+  // A Smart-tier endpoint override keeps the session header and uses the
+  // pay-as-you-go base the override names.
+  settings.smart = true;
+  settings.endpointByTier.opencodeGo = { fast: '', smart: 'https://opencode.ai/inference/openai/v1' };
+  const smart = await captureSdkRequest(settings);
+  assert.equal(smart.requests[0].url, 'https://opencode.ai/inference/openai/v1/chat/completions');
+  assert.match(smart.requests[0].headers['x-opencode-session'], /^ses_[a-f0-9]{32}$/);
+  assert.equal(smart.requests[0].body.model, 'gpt-6-luna');
+  assert.equal(smart.requests[0].body.max_tokens, 4096);
+});

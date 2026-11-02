@@ -68,6 +68,43 @@ const PROVIDERS = Object.freeze({
     requiresKey: false,
     baseURL: 'http://127.0.0.1:4096/v1',
   },
+  opencodeGo: {
+    label: 'Opencode Go',
+    // Bare model ids: the gateway rejects the `opencode-go/` prefix the CLI
+    // uses. Both defaults read screenshots; reasoning tokens count against
+    // max_tokens, so llm.js keeps a larger output floor for this provider.
+    models: { fast: 'deepseek-v4.1-flash', smart: 'gpt-6-luna' },
+    supportsVision: true,
+    // A text-only model does not reject an image — the gateway hangs — so the
+    // flag is narrowed to the ids that advertise image input. Update this list
+    // when the Go catalog adds a vision model; text-only ids stay text-only.
+    visionModels: [
+      'deepseek-v4.1-flash',
+      'grok-4.7',
+      'muse-spark-1.2-contributor',
+      'muse-spark-1.3-contributor',
+      'glm-5.3-flash',
+      'gpt-5.6-luna',
+      'gpt-6-luna',
+      'claude-haiku-5-5',
+      'kimi-k2.7-code',
+      'kimi-k3',
+      'mimo-v2.6-flash',
+      'mimo-v2.6-pro',
+      'minimax-m3',
+      'minimax-m3.1-flash',
+      'step-5-preview',
+      'qwen3.8-max',
+      'qwen3.8-flash',
+      'qwen3.7-plus',
+      'kimi-k3.1-pro',
+      'gemini-4-argon',
+    ],
+    // Go-subscription keys use this base. Pay-as-you-go keys use
+    // https://opencode.ai/inference/openai/v1, which is what the per-tier
+    // endpoint overrides are for.
+    baseURL: 'https://opencode.ai/inference/go/openai/v1',
+  },
   custom: {
     label: 'Custom (OpenAI-compatible)',
     models: { fast: '', smart: '' },
@@ -98,7 +135,7 @@ const REALTIME_PROVIDERS = Object.freeze(['openai', 'azure', 'deepgram', 'azureS
 // APIs. These get optional per-tier API key slots (provider.fast / provider.smart)
 // and per-tier endpoint overrides in Settings. `opencode` and `custom` are here
 // so any OpenAI-compatible server can be pointed at per tier.
-const TIER_KEY_PROVIDERS = Object.freeze(['azure', 'deepseek', 'groq', 'nvidia', 'openrouter', 'opencode', 'custom']);
+const TIER_KEY_PROVIDERS = Object.freeze(['azure', 'deepseek', 'groq', 'nvidia', 'openrouter', 'opencode', 'opencodeGo', 'custom']);
 
 function getDefaultSettings() {
   const apiKeys = {};
@@ -387,6 +424,7 @@ module.exports = {
   PROVIDERS,
   STT_MODELS,
   REALTIME_PROVIDERS,
+  TIER_KEY_PROVIDERS,
   getDefaultSettings,
   normalizeAzureEndpoint,
   normalizeTranscriptionLanguage,

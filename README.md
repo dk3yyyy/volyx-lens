@@ -44,7 +44,7 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Meeting history and recovery:** when enabled, finalized meetings and an in-progress transcript checkpoint are saved on device. After an unexpected exit, choose whether to restore or discard the draft.
 - **Meeting notes:** generate structured notes (Summary, Key Points, Decisions, Action Items, Follow-Up) for saved records using your configured provider, with long-meeting confirmation before paid requests. Notes persist in meeting history.
 - **Slide tracking:** optional local slide-change detection while listening, with bounded in-memory previews and nearby transcript context; no automatic provider requests.
-- **Provider choice:** 11 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, a local Ollama server, Opencode, or any Custom OpenAI-compatible server). Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech; batch transcription falls back to OpenAI, Gemini, or Groq Whisper, with optional local Whisper. OpenAI and Azure support both roles.
+- **Provider choice:** 12 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, a local Ollama server, Opencode, Opencode Go, or any Custom OpenAI-compatible server). Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech; batch transcription falls back to OpenAI, Gemini, or Groq Whisper, with optional local Whisper. OpenAI and Azure support both roles.
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
@@ -183,7 +183,7 @@ If access was previously denied, enable Volyx Lens in System Settings, then full
 
 Open Settings with `⌘` `,` or the `…` button. Choose a response provider, enter its key and model/deployment names, then select **Use as default**. An optional fallback provider is used only when it is capable of the request and the default fails before producing answer text.
 
-Each provider stores separate **Fast** and **Smart** model/deployment names, so the Smart toggle switches tiers without extra configuration. If your fast and smart models live on different APIs, the per-provider **Tier API keys** fields (Fast key / Smart key) let each tier use its own key, and the **Endpoint overrides** fields (Fast URL / Smart URL) route each tier to its own OpenAI-compatible base URL; leaving either blank uses the shared provider key / default endpoint. Tier keys apply to Azure, DeepSeek, Groq, NVIDIA, OpenRouter, Opencode, and Custom. Azure endpoint overrides still pass through official-endpoint validation.
+Each provider stores separate **Fast** and **Smart** model/deployment names, so the Smart toggle switches tiers without extra configuration. If your fast and smart models live on different APIs, the per-provider **Tier API keys** fields (Fast key / Smart key) let each tier use its own key, and the **Endpoint overrides** fields (Fast URL / Smart URL) route each tier to its own OpenAI-compatible base URL; leaving either blank uses the shared provider key / default endpoint. Tier keys apply to Azure, DeepSeek, Groq, NVIDIA, OpenRouter, Opencode, Opencode Go, and Custom. Azure endpoint overrides still pass through official-endpoint validation.
 
 | Provider | Role | Configuration notes |
 |---|---|---|
@@ -197,6 +197,7 @@ Each provider stores separate **Fast** and **Smart** model/deployment names, so 
 | **NVIDIA** | responses | API key from build.nvidia.com; OpenAI-compatible Nemotron and hosted open models (`https://integrate.api.nvidia.com/v1`); vision requires a VLM model (e.g. `meta/llama-3.2-11b-vision-instruct`) |
 | **Ollama** | local responses | no key; local server with the OpenAI-compatible API (`http://localhost:11434/v1`); pull a model first |
 | **Opencode** | local responses | no key required; OpenAI-compatible server such as `opencode serve` (default `http://127.0.0.1:4096/v1`); set the model IDs your server serves |
+| **Opencode Go** | responses | hosted OpenCode Go subscription; `oc_sk_…` API key; default endpoint `https://opencode.ai/inference/go/openai/v1`; bare model IDs (no `opencode-go/` prefix); pay-as-you-go keys use `https://opencode.ai/inference/openai/v1`. Vision is gated per model: text-only models are refused locally because the gateway hangs on images. Reasoning tokens count against the output budget, so Volyx Lens keeps a 2,048 (Fast) / 4,096 (Smart) output floor |
 | **Custom (OpenAI-compatible)** | responses | any OpenAI-compatible base URL (LM Studio, vLLM, gateways, self-hosted proxies); endpoint URL required, key optional |
 | **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
 | **Azure AI Speech** | realtime transcription | Speech resource key and region (bare region name, e.g. `eastus`); no model name required |
@@ -362,9 +363,9 @@ Scanned PDFs are images, not text, and are not supported — export or OCR the d
 </details>
 
 <details>
-<summary><strong>Opencode or Custom provider reports a configuration error</strong></summary>
+<summary><strong>Opencode, Opencode Go, or Custom reports a configuration error</strong></summary>
 
-`endpoint URL is required` means the per-tier Fast/Smart URL is empty — set the OpenAI-compatible base URL in Settings (e.g. `http://127.0.0.1:4096/v1` for `opencode serve`). `must be a valid HTTPS URL` means a keyed custom endpoint must use HTTPS unless it is HTTP on localhost. A key is optional; when set it is sent as Bearer.
+`endpoint URL is required` means the per-tier Fast/Smart URL is empty — set the OpenAI-compatible base URL in Settings (e.g. `http://127.0.0.1:4096/v1` for `opencode serve`). `must be a valid HTTPS URL` means a keyed endpoint must use HTTPS; plain HTTP is only accepted for keyless localhost servers. A local Opencode or Custom key is optional; when set it is sent as Bearer. Opencode Go always needs a key: use the `oc_sk_…` key from your Go plan, enter bare model ids without the `opencode-go/` prefix, and keep the Go endpoint (`https://opencode.ai/inference/go/openai/v1`) unless you are deliberately using a pay-as-you-go key, which uses `https://opencode.ai/inference/openai/v1`.
 </details>
 
 ## Build from source
