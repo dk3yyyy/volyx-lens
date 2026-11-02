@@ -32,17 +32,17 @@ test('development builds explain that signed packaged builds are required', asyn
     supported: false,
     currentVersion: '0.2.0',
     status: 'unsupported',
-    message: 'Updates are available in official signed macOS release builds.',
+    message: 'This build cannot install updates automatically. Use Open Latest Release to download the current version.',
     availableVersion: null,
     progress: null,
   });
-  await assert.rejects(manager.check(), /official signed macOS release builds/);
+  await assert.rejects(manager.check(), /cannot install updates automatically/);
 });
 
 test('ad-hoc packaged builds cannot initialize the release updater', async () => {
   const { manager, getFactoryCalls } = fixture({ releaseBuild: false });
   assert.equal(manager.getState().supported, false);
-  await assert.rejects(manager.check(), /official signed macOS release builds/);
+  await assert.rejects(manager.check(), /cannot install updates automatically/);
   assert.equal(getFactoryCalls(), 0);
 });
 
@@ -146,11 +146,11 @@ test('development Windows builds explain that packaged builds are required', asy
     supported: false,
     currentVersion: '0.2.0',
     status: 'unsupported',
-    message: 'Updates are available in official Windows release builds.',
+    message: 'This build cannot install updates automatically. Use Open Latest Release to download the current version.',
     availableVersion: null,
     progress: null,
   });
-  await assert.rejects(manager.check(), /official Windows release builds/);
+  await assert.rejects(manager.check(), /cannot install updates automatically/);
 });
 
 test('a check that resolves without an event still reaches a terminal state', async () => {

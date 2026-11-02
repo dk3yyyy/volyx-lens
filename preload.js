@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateDownload: () => ipcRenderer.invoke('update:download'),
   updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateOpenReleases: () => ipcRenderer.invoke('update:open-releases'),
   testResponseProvider: (provider, tier) => ipcRenderer.invoke('provider:test-response', { provider, tier }),
   diagnosticsCopy: () => ipcRenderer.invoke('diagnostics:copy'),
   testRealtime: () => ipcRenderer.invoke('transcription:test'),

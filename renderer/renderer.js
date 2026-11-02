@@ -2347,8 +2347,15 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#update-status').textContent = String(update.message || 'Update status is unavailable.');
     const checking = status === 'checking';
     const downloading = status === 'downloading';
-    $('#update-check').disabled = update.supported !== true || checking || downloading;
-    $('#update-check').textContent = checking ? 'Checking…' : 'Check for Updates';
+    const canAutoUpdate = update.supported === true;
+    const button = $('#update-check');
+    button.dataset.mode = canAutoUpdate ? 'check' : 'releases';
+    // Every build gets a working button: automatic update where available,
+    // otherwise a direct route to the newest published release.
+    button.disabled = checking || downloading;
+    button.textContent = checking
+      ? 'Checking…'
+      : (canAutoUpdate ? 'Check for Updates' : 'Open Latest Release');
     $('#update-download').hidden = status !== 'available';
     $('#update-download').disabled = downloading;
     $('#update-install').hidden = status !== 'downloaded';
@@ -2467,6 +2474,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   });
   $('#shortcut-rebind-cancel').addEventListener('click', () => cancelRebind());
   $('#update-check').addEventListener('click', async () => {
+    if ($('#update-check').dataset.mode === 'releases') {
+      try { await volyxLens.updateOpenReleases(); }
+      catch { showStatus('The release page could not be opened.'); }
+      return;
+    }
     try { renderUpdateState(await volyxLens.updateCheck()); }
     catch (error) { showStatus(error && error.message ? error.message : 'The update check failed.'); await refreshUpdateState(); }
   });
