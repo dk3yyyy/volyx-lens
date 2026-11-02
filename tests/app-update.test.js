@@ -59,3 +59,11 @@ test('release configuration produces signed DMG installers and updater ZIP metad
   assert.match(releaseWorkflow, /validate-update-metadata\.js/);
   assert.match(releaseWorkflow, /gh release create/);
 });
+
+test('builds without in-place updates get a working release-page button', () => {
+  assert.match(preload, /updateOpenReleases: \(\) => ipcRenderer\.invoke\('update:open-releases'\)/);
+  assert.match(main, /handleTrusted\('update:open-releases', \(\) => shell\.openExternal\('https:\/\/github\.com\/dk3yyyy\/volyx-lens\/releases\/latest'\)\)/);
+  assert.match(renderer, /dataset\.mode = canAutoUpdate \? 'check' : 'releases'/);
+  assert.match(renderer, /updateOpenReleases\(\)/);
+  assert.match(renderer, /'Open Latest Release'/);
+});

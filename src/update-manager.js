@@ -2,16 +2,8 @@
 
 const SUPPORTED_PLATFORMS = new Set(['darwin', 'win32', 'linux']);
 
-function platformName(platform) {
-  if (platform === 'darwin') return 'macOS';
-  if (platform === 'win32') return 'Windows';
-  if (platform === 'linux') return 'Linux';
-  return platform;
-}
-
-function unsupportedMessage(platform) {
-  if (platform === 'darwin') return 'Updates are available in official signed macOS release builds.';
-  return `Updates are available in official ${platformName(platform)} release builds.`;
+function unsupportedMessage() {
+  return 'This build cannot install updates automatically. Use Open Latest Release to download the current version.';
 }
 
 function releaseChannel(platform, arch) {
@@ -26,7 +18,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   const supported = Boolean(app && app.isPackaged && SUPPORTED_PLATFORMS.has(platform) && releaseBuild === true);
   let state = supported
     ? publicState('idle', 'Check GitHub Releases for a signed Volyx Lens update.')
-    : publicState('unsupported', unsupportedMessage(platform));
+    : publicState('unsupported', unsupportedMessage());
   let updater = null;
   let activeCheck = null;
   let activeDownload = null;
@@ -57,7 +49,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   }
 
   function ensureSupported() {
-    if (!supported) throw new Error(unsupportedMessage(platform));
+    if (!supported) throw new Error(unsupportedMessage());
   }
 
   function initialize() {

@@ -38,7 +38,9 @@ ipcMain.handle('permissions:request', (_event, kind) => ({
   developmentClient: true,
   message: 'This npm start development build is a separate macOS permission client. Quit it and open the packaged app; a grant for Volyx Lens.app does not apply to this process.',
 }));
-ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.2.0', status: 'unsupported', message: 'Updates are available in official signed macOS release builds.', availableVersion: null, progress: null }));
+ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.2.0', status: 'unsupported', message: 'This build cannot install updates automatically. Use Open Latest Release to download the current version.', availableVersion: null, progress: null }));
+let releasePageOpens = 0;
+ipcMain.handle('update:open-releases', () => { releasePageOpens += 1; return { opened: true }; });
 ipcMain.handle('shortcuts:get', () => [
   { id: 'assist', feature: 'Assist', displayAccelerator: '⌘↵', registered: true },
   { id: 'solve', feature: 'Solve screen', displayAccelerator: '⌘H', registered: true },
@@ -191,6 +193,16 @@ app.whenReady().then(async () => {
   assert.equal(providerSemantics.roving, 1, 'one tab is in the tab order');
   assert.equal(providerSemantics.selectedControlsPanel, true, 'the selected tab controls the visible panel');
   assert.equal(providerSemantics.panelLabelledBy, providerSemantics.selectedId, 'the panel is named by the selected tab');
+
+  // A build without in-place updates must still have a working update button.
+  await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"updates\"]').click()");
+  await waitFor(win, "document.querySelector('#update-check').dataset.mode === 'releases'", 'release fallback mode');
+  const updateButton = await win.webContents.executeJavaScript(`(() => { const b = document.querySelector('#update-check'); return { text: b.textContent, disabled: b.disabled, mode: b.dataset.mode }; })()`);
+  assert.equal(updateButton.text, 'Open Latest Release', 'unsupported builds label the button as a release link');
+  assert.equal(updateButton.disabled, false, 'the release link is always clickable');
+  await win.webContents.executeJavaScript("document.querySelector('#update-check').click()");
+  await wait(40);
+  assert.equal(releasePageOpens, 1, 'the button opens the latest release page');
 
   await win.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
   await waitFor(win, "document.querySelector('#settings-scrim').classList.contains('hidden') && document.activeElement && document.activeElement.id === 'more-btn'", 'Settings close and focus restoration');

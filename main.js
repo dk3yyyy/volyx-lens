@@ -2770,6 +2770,9 @@ handleTrusted('update:get-state', () => updateManager.getState());
 handleTrusted('update:check', () => updateManager.check());
 handleTrusted('update:download', () => updateManager.download());
 handleTrusted('update:install', () => updateManager.install());
+// Unsigned and development builds cannot install in place. The Settings button
+// opens the newest published release instead of sitting disabled.
+handleTrusted('update:open-releases', () => shell.openExternal('https://github.com/dk3yyyy/volyx-lens/releases/latest'));
 handleTrusted('provider:test-response', (_event, payload) => testResponseConfiguration(payload));
 handleTrusted('diagnostics:copy', () => {
   const text = JSON.stringify(getSessionDiagnostics(), null, 2) + '\n';
