@@ -68,6 +68,67 @@ test('DeepSeek routes through its official OpenAI-compatible endpoint', async ()
   assert.equal(fake.instances[0].requests[0].model, 'deepseek-flash');
 });
 
+test('Opencode Go uses the Go base URL, a stable session header, and a reasoning budget', async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'opencodeGo';
+  settings.apiKeys.opencodeGo = 'oc_sk_test-key';
+
+  const fake = fakeOpenAI();
+  await createLLM(settings, { OpenAI: fake.FakeOpenAI }).stream(baseParams);
+
+  const options = fake.instances[0].options;
+  assert.equal(options.baseURL, 'https://opencode.ai/inference/go/openai/v1');
+  assert.equal(options.apiKey, 'oc_sk_test-key');
+  assert.match(options.defaultHeaders['x-opencode-session'], /^ses_[a-f0-9]{32}$/);
+  assert.equal(fake.instances[0].requests[0].model, 'deepseek-v4.1-flash');
+  assert.equal(fake.instances[0].requests[0].max_tokens, 2048);
+
+  // A mode's short budget is raised to the reasoning floor.
+  const floor = fakeOpenAI();
+  await createLLM(settings, { OpenAI: floor.FakeOpenAI }).stream({ ...baseParams, maxTokens: 400 });
+  assert.equal(floor.instances[0].requests[0].max_tokens, 2048);
+
+  // A budget above the floor is left alone.
+  const above = fakeOpenAI();
+  await createLLM(settings, { OpenAI: above.FakeOpenAI }).stream({ ...baseParams, maxTokens: 8000 });
+  assert.equal(above.instances[0].requests[0].max_tokens, 8000);
+
+  const smart = fakeOpenAI();
+  settings.smart = true;
+  await createLLM(settings, { OpenAI: smart.FakeOpenAI }).stream(baseParams);
+  assert.equal(smart.instances[0].requests[0].model, 'gpt-6-luna');
+  assert.equal(smart.instances[0].requests[0].max_tokens, 4096);
+  assert.equal(
+    smart.instances[0].options.defaultHeaders['x-opencode-session'],
+    options.defaultHeaders['x-opencode-session'],
+    'the session id stays stable for the app run',
+  );
+});
+
+test('Opencode Go refuses images for a text-only model instead of hanging', async () => {
+  const settings = getDefaultSettings();
+  settings.provider = 'opencodeGo';
+  settings.apiKeys.opencodeGo = 'oc_sk_test-key';
+  settings.models.opencodeGo.fast = 'deepseek-v4-pro';
+
+  const fake = fakeOpenAI();
+  await assert.rejects(
+    createLLM(settings, { OpenAI: fake.FakeOpenAI }).stream({ ...baseParams, imageDataUrl: 'data:image/png;base64,iVBORw0KGgo=' }),
+    /is not enabled for image input/,
+  );
+  assert.equal(fake.instances.length, 0, 'no request is sent');
+
+  // The Smart tier is gated independently, including multi-image requests.
+  const smartSettings = { ...settings, smart: true };
+  smartSettings.models = { ...settings.models, opencodeGo: { fast: 'deepseek-v4.1-flash', smart: 'glm-5.3' } };
+  const smartFake = fakeOpenAI();
+  await assert.rejects(
+    createLLM(smartSettings, { OpenAI: smartFake.FakeOpenAI }).stream({ ...baseParams, imageDataUrls: ['data:image/png;base64,iVBORw0KGgo=', 'data:image/jpeg;base64,/9j/'] }),
+    /is not enabled for image input/,
+  );
+  assert.equal(smartFake.instances.length, 0, 'no smart-tier request is sent');
+});
+
 test('Groq routes through its official OpenAI-compatible endpoint', async () => {
   const settings = getDefaultSettings();
   settings.provider = 'groq';
@@ -142,7 +203,7 @@ test('Groq refuses to send screenshots to its text-only API', async () => {
 
   await assert.rejects(
     llm.stream({ ...baseParams, imageDataUrl: null, imageDataUrls: ['data:image/png;base64,AA=='] }),
-    /does not support image input/i,
+    /is not enabled for image input/i,
   );
   assert.equal(fake.instances.length, 0);
 });
@@ -198,7 +259,7 @@ test('DeepSeek Flash accepts screenshots while V4 Pro refuses them', async () =>
   const pro = createLLM(settings, { OpenAI: textFake.FakeOpenAI });
   await assert.rejects(
     pro.stream({ ...baseParams, imageDataUrl: null, imageDataUrls: ['data:image/png;base64,AA=='] }),
-    /does not support image input/i,
+    /is not enabled for image input/i,
   );
   assert.equal(textFake.instances.length, 0);
 });

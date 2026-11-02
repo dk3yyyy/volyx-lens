@@ -1922,7 +1922,7 @@ async function runFeature(mode, userText, {
       mode,
       needsScreen,
       supportsVision: llm.supportsVision,
-      providerLabel: llm.label
+      providerLabel: llm.model ? `${llm.label} ${llm.model}` : llm.label
     });
     if (screenPlan.error) {
       if (isCurrent()) send('llm:error', { message: screenPlan.error });

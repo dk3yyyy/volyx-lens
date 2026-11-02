@@ -4,6 +4,13 @@ const { sanitizeProviderError } = require('./provider-error');
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const MAX_OUTPUT_TOKENS = 64;
+// Go models spend part of the reply budget on reasoning, so the generic
+// diagnostic deadline is extended for that provider.
+const PROVIDER_TIMEOUT_MS = Object.freeze({ opencodeGo: 30000 });
+
+function formatDuration(ms) {
+  return ms >= 1000 ? `${Math.round(ms / 1000)} seconds` : `${ms} ms`;
+}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -20,8 +27,8 @@ function azureRouteKind(baseURL) {
   }
 }
 
-function diagnosticMessage(error, { provider, model, route, timedOut }) {
-  if (timedOut) return 'The provider did not respond within 15 seconds.';
+function diagnosticMessage(error, { provider, model, route, timedOut, timeoutLabel = '15 seconds' }) {
+  if (timedOut) return `The provider did not respond within ${timeoutLabel}.`;
   const status = Number(error && error.status);
   const text = String((error && error.message) || '').toLowerCase();
 
@@ -35,7 +42,7 @@ function diagnosticMessage(error, { provider, model, route, timedOut }) {
     }
   }
 
-  return sanitizeProviderError(error, { timedOut: false, providerLabel: provider ? `${provider[0].toUpperCase()}${provider.slice(1)}` : '' });
+  return sanitizeProviderError(error, { timedOut: false, providerLabel: (PROVIDERS[provider] && PROVIDERS[provider].label) || '' });
 }
 
 async function runResponseDiagnostic({
@@ -43,7 +50,7 @@ async function runResponseDiagnostic({
   provider,
   tier,
   createLLM = defaultCreateLLM,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  timeoutMs,
   now = () => Date.now(),
 }) {
   const normalizedProvider = String(provider || '');
@@ -51,6 +58,9 @@ async function runResponseDiagnostic({
   if (!Object.hasOwn(PROVIDERS, normalizedProvider)) {
     return { ok: false, code: 'unknown_provider', message: 'Choose a supported response provider.' };
   }
+  const limitMs = Number(timeoutMs) > 0
+    ? Number(timeoutMs)
+    : (PROVIDER_TIMEOUT_MS[normalizedProvider] || DEFAULT_TIMEOUT_MS);
 
   const diagnosticSettings = clone(settings || {});
   diagnosticSettings.provider = normalizedProvider;
@@ -77,7 +87,7 @@ async function runResponseDiagnostic({
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, timeoutMs);
+  }, limitMs);
 
   try {
     await llm.stream({
@@ -94,7 +104,7 @@ async function runResponseDiagnostic({
       ok: true,
       code: 'connected',
       latencyMs: Math.max(0, now() - startedAt),
-      message: `${base.label} accepted a minimal text-only request using the ${normalizedTier} model.`,
+      message: `${base.label} accepted a short text-only request using the ${normalizedTier} model.`,
     };
   } catch (error) {
     const latencyMs = Math.max(0, now() - startedAt);
@@ -103,7 +113,7 @@ async function runResponseDiagnostic({
       ok: false,
       code: timedOut ? 'timeout' : (Number(error && error.status) ? `http_${Number(error.status)}` : 'request_failed'),
       latencyMs,
-      message: diagnosticMessage(error, { provider: normalizedProvider, model: base.model, route, timedOut }),
+      message: diagnosticMessage(error, { provider: normalizedProvider, model: base.model, route, timedOut, timeoutLabel: formatDuration(limitMs) }),
     };
   } finally {
     clearTimeout(timer);
@@ -113,6 +123,7 @@ async function runResponseDiagnostic({
 module.exports = {
   DEFAULT_TIMEOUT_MS,
   MAX_OUTPUT_TOKENS,
+  PROVIDER_TIMEOUT_MS,
   azureRouteKind,
   diagnosticMessage,
   runResponseDiagnostic,

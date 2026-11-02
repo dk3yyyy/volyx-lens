@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { TIER_KEY_PROVIDERS } = require('../src/provider-config');
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
@@ -54,7 +55,7 @@ test('settings and onboarding use compact click-through liquid-glass surfaces wi
 });
 
 test('settings UI exposes clean provider tabs with one provider configuration at a time', () => {
-  for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'ollama', 'opencode', 'custom']) {
+  for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'ollama', 'opencode', 'opencodeGo', 'custom']) {
     assert.match(html, new RegExp(`data-provider="${provider}"`));
     assert.match(html, new RegExp(`data-provider-config="${provider}"`));
   }
@@ -67,7 +68,7 @@ test('settings UI exposes clean provider tabs with one provider configuration at
   assert.match(html, /id="endpoint-smart"/);
   assert.match(html, /id="key-fast"/);
   assert.match(html, /id="key-smart"/);
-  assert.match(html, /data-tier-key-config="azure deepseek groq nvidia openrouter opencode custom"/);
+  assert.match(html, new RegExp(`data-tier-key-config="${TIER_KEY_PROVIDERS.join(' ')}"`), 'tier-key row must match TIER_KEY_PROVIDERS');
   assert.match(renderer, /row\.dataset\.providerConfig !== providerView/);
   assert.match(renderer, /data-endpoint-config/);
   assert.match(renderer, /data-tier-key-config/);

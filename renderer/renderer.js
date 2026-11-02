@@ -2510,7 +2510,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   $('#audio-mic-enabled').addEventListener('change', enforceAudioChannelSelection);
   $('#audio-system-enabled').addEventListener('change', enforceAudioChannelSelection);
 
-  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama', opencode: 'Opencode', custom: 'Custom (OpenAI-compatible)' });
+  const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama', opencode: 'Opencode', opencodeGo: 'Opencode Go', custom: 'Custom (OpenAI-compatible)' });
   function clearProviderTestResult() {
     const result = $('#provider-test-result');
     result.className = 'provider-test-result hidden';
@@ -2596,7 +2596,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       if (textOnly) {
         note.textContent = capability.supportsVision === false
           ? 'This provider is text-only in Volyx Lens. Meeting and transcript modes work; screen-only analysis requires a vision-capable provider.'
-          : `${tier === 'smart' ? 'Smart' : 'Fast'} (${liveModel || 'no model set'}) is text-only in Volyx Lens. Turn Smart off or pick a model that accepts images to use screen features.`;
+          : tier === 'smart'
+            ? `Smart (${liveModel || 'no model set'}) is not enabled for images in Volyx Lens. Pick a Smart model that accepts images, or turn Smart off to use the Fast model.`
+            : `Fast (${liveModel || 'no model set'}) is not enabled for images in Volyx Lens. Pick a Fast model that accepts images, or set a vision Smart model and turn Smart on.`;
       }
     }
     $('#model-fast').oninput = () => { void refreshCapabilityNote(); };
@@ -2625,7 +2627,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
-    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', nvidia: 'nvapi-...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key', azureSpeech: 'Azure AI Speech resource key' };
+    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', nvidia: 'nvapi-...', opencodeGo: 'oc_sk_...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key', azureSpeech: 'Azure AI Speech resource key' };
     for (const provider of Object.keys(keyPlaceholders)) {
       const input = $(`#key-${provider}`);
       input.value = '';
@@ -2811,7 +2813,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   async function saveSettings() {
     const apiKeyUpdates = {};
-    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'nvidia', 'deepgram', 'azureRealtime', 'azureSpeech']) {
+    for (const provider of ['openai', 'anthropic', 'gemini', 'azure', 'deepseek', 'groq', 'openrouter', 'nvidia', 'opencodeGo', 'deepgram', 'azureRealtime', 'azureSpeech']) {
       const value = $(`#key-${provider}`).value.trim();
       if (value) apiKeyUpdates[provider] = value;
     }
@@ -2885,7 +2887,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     button.disabled = true;
     button.textContent = 'Testing…';
     resultEl.className = 'provider-test-result';
-    resultEl.textContent = 'Saving settings, then sending one minimal text-only request…';
+    resultEl.textContent = 'Saving settings, then sending one short text-only request…';
     try {
       await saveSettings();
       const result = await volyxLens.testResponseProvider(testedProvider, testedTier);
@@ -3179,7 +3181,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       kicker: 'Bring your own model',
       note: 'Keys stay in the main process and use macOS Keychain-backed safeStorage when available.',
       title: 'Connect your AI provider.',
-      body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, DeepSeek, Groq, OpenRouter, <span class="hl">NVIDIA</span>, or a local <span class="hl">Ollama</span> server. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
+      body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, DeepSeek, Groq, OpenRouter, <span class="hl">NVIDIA</span>, <span class="hl">Opencode</span>, <span class="hl">Opencode Go</span>, <span class="hl">Custom</span>, or a local <span class="hl">Ollama</span> server. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
       buttons: [{ icon: 'settings', label: 'Open provider settings', detail: 'Add a key, endpoint, and model names', action: async () => {
         if (await finishOnboard({ restoreFocus: false, keepModalState: true })) await openSettings();
       } }]

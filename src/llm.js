@@ -1,6 +1,15 @@
-// LLM factory — OpenAI / Anthropic / Gemini / Azure Foundry / OpenAI-compatible providers (DeepSeek, Groq, OpenRouter, Ollama, Opencode, Custom, ...).
+// LLM factory — OpenAI / Anthropic / Gemini / Azure Foundry / OpenAI-compatible providers (DeepSeek, Groq, OpenRouter, Ollama, Opencode, Opencode Go, Custom, ...).
 // stream({ system, turns:[{role,text}], imageDataUrl?, imageDataUrls?, maxTokens, onToken }) -> Promise<fullText>
+const crypto = require('crypto');
 const { resolveProvider } = require('./provider-config');
+
+// The OpenCode Go gateway rejects requests without a session id and uses it as
+// the prompt-cache routing key, so one stable value per app run is enough.
+const OPENCODE_GO_SESSION = `ses_${crypto.randomBytes(16).toString('hex')}`;
+// Go models reason before answering, and reasoning tokens count against
+// max_tokens. These floors keep a short mode budget from ending with empty
+// content; a larger caller budget is left alone.
+const OPENCODE_GO_MAX_TOKENS = Object.freeze({ fast: 2048, smart: 4096 });
 
 function stripDataUrl(dataUrl) {
   const m = /^data:(.+?);base64,(.*)$/s.exec(dataUrl || '');
@@ -160,7 +169,9 @@ async function streamGemini({ GoogleGenAI, apiKey, model, system, turns, imageDa
 
 function createLLM(settings, dependencies = {}) {
   const resolved = resolveProvider(settings);
-  const maxTokens = settings.smart ? 1400 : 700;
+  const maxTokens = resolved.provider === 'opencodeGo'
+    ? OPENCODE_GO_MAX_TOKENS[resolved.tier]
+    : (settings.smart ? 1400 : 700);
 
   return {
     ...resolved,
@@ -168,11 +179,14 @@ function createLLM(settings, dependencies = {}) {
       if (!resolved.ready) throw new Error(resolved.configurationError);
       const hasImages = collectImageDataUrls(params.imageDataUrls, params.imageDataUrl).length > 0;
       if (hasImages && !resolved.supportsVision) {
-        throw new Error(`${resolved.label} ${resolved.model} does not support image input. Choose a vision-capable provider or model for screen features.`);
+        throw new Error(`${resolved.label} ${resolved.model} is not enabled for image input in Volyx Lens. Choose a vision-capable model or provider for screen features.`);
       }
 
       // params.maxTokens lets a mode ask for more room than the tier default.
       const args = { ...resolved, maxTokens, thinking: !!settings.smart, ...params };
+      if (resolved.provider === 'opencodeGo') {
+        args.maxTokens = Math.max(Number(args.maxTokens) || 0, OPENCODE_GO_MAX_TOKENS[resolved.tier]);
+      }
       if (resolved.provider === 'openai') {
         const OpenAI = dependencies.OpenAI || require('openai');
         return streamOpenAICompatible({ ...args, OpenAI, clientOptions: { apiKey: resolved.apiKey } });
@@ -196,11 +210,15 @@ function createLLM(settings, dependencies = {}) {
         const extraBody = resolved.provider === 'nvidia'
           ? { chat_template_kwargs: { enable_thinking: false, force_nonempty_content: true } }
           : null;
+        // Keyless local endpoints (Ollama) still require a placeholder so the SDK builds a client.
+        const clientOptions = { apiKey: resolved.apiKey || 'ollama', baseURL: resolved.baseURL };
+        if (resolved.provider === 'opencodeGo') {
+          clientOptions.defaultHeaders = { 'x-opencode-session': OPENCODE_GO_SESSION };
+        }
         return streamOpenAICompatible({
           ...args,
           OpenAI,
-          // Keyless local endpoints (Ollama) still require a placeholder so the SDK builds a client.
-          clientOptions: { apiKey: resolved.apiKey || 'ollama', baseURL: resolved.baseURL },
+          clientOptions,
           extraBody,
         });
       }

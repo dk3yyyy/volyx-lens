@@ -104,6 +104,22 @@ test('per-tier API keys survive the atomic Settings save and reload', () => {
   assert.equal(loadStore(userData, workingSafeStorage()).getSettings().apiKeys['nvidia.smart'], '');
 });
 
+test('Opencode Go per-tier keys survive the atomic Settings save and reload', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData, workingSafeStorage());
+  const updated = store.updateSettingsAndApiKeys({}, {
+    'opencodeGo.fast': 'oc_sk_fast-test',
+    'opencodeGo.smart': 'oc_sk_smart-test',
+  });
+  assert.equal(updated.credentialStatus.present['opencodeGo.fast'], true);
+  assert.equal(updated.credentialStatus.present['opencodeGo.smart'], true);
+  assert.doesNotMatch(JSON.stringify(updated), /oc_sk_(fast|smart)-test/);
+
+  const reloaded = loadStore(userData, workingSafeStorage()).getSettings();
+  assert.equal(reloaded.apiKeys['opencodeGo.fast'], 'oc_sk_fast-test');
+  assert.equal(reloaded.apiKeys['opencodeGo.smart'], 'oc_sk_smart-test');
+});
+
 test('per-tier endpoint overrides survive the atomic Settings save and reload', () => {
   const userData = temporaryUserData();
   const store = loadStore(userData);

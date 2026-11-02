@@ -10,10 +10,10 @@ const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const diagnostic = fs.readFileSync(path.join(root, 'src', 'response-diagnostic.js'), 'utf8');
 
-test('Settings discloses and explicitly triggers a minimal response-provider test', () => {
+test('Settings discloses and explicitly triggers a short response-provider test', () => {
   assert.match(html, /id="provider-test-tier"/);
   assert.match(html, /id="provider-test-btn"[^>]*>Test connection<\/button>/);
-  assert.match(html, /one minimal text-only request/);
+  assert.match(html, /one short text-only request/);
   assert.match(html, /never includes screenshots, transcript, or personal context/);
   assert.match(html, /small provider charge may apply/);
   assert.match(html, /id="provider-test-result"[^>]*role="status"[^>]*aria-live="polite"/);
