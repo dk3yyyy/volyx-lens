@@ -166,39 +166,39 @@ window.addEventListener('storage', (event) => {
 const RELEASE = 'https://github.com/dk3yyyy/volyx-lens/releases';
 const DL_ASSETS = {
   win: {
-    href: `${RELEASE}/download/v0.7.4/volyx-lens-0.7.4-win-x64.exe`,
+    href: `${RELEASE}/download/v0.7.5/volyx-lens-0.7.5-win-x64.exe`,
     label: 'Windows',
-    detail: 'x64 NSIS installer · v0.7.4',
+    detail: 'x64 NSIS installer · v0.7.5',
     direct: true
   },
   'mac-arm64': {
-    href: `${RELEASE}/download/v0.7.4/volyx-lens-0.7.4-mac-arm64-unsigned.dmg`,
+    href: `${RELEASE}/download/v0.7.5/volyx-lens-0.7.5-mac-arm64-unsigned.dmg`,
     label: 'macOS Apple Silicon',
-    detail: 'Unsigned DMG · v0.7.4',
+    detail: 'Unsigned DMG · v0.7.5',
     direct: true
   },
   'mac-x64': {
-    href: `${RELEASE}/download/v0.7.4/volyx-lens-0.7.4-mac-x64-unsigned.dmg`,
+    href: `${RELEASE}/download/v0.7.5/volyx-lens-0.7.5-mac-x64-unsigned.dmg`,
     label: 'macOS Intel',
-    detail: 'Unsigned DMG · v0.7.4',
+    detail: 'Unsigned DMG · v0.7.5',
     direct: true
   },
   mac: {
-    href: `${RELEASE}/tag/v0.7.4`,
+    href: `${RELEASE}/tag/v0.7.5`,
     label: 'macOS',
-    detail: 'Unsigned v0.7.4',
+    detail: 'Unsigned v0.7.5',
     direct: false
   },
   'linux-x64': {
-    href: `${RELEASE}/download/v0.7.4/volyx-lens-0.7.4-linux-x86_64.AppImage`,
+    href: `${RELEASE}/download/v0.7.5/volyx-lens-0.7.5-linux-x86_64.AppImage`,
     label: 'Linux x64',
-    detail: 'AppImage · v0.7.4',
+    detail: 'AppImage · v0.7.5',
     direct: true
   },
   'linux-arm64': {
-    href: `${RELEASE}/download/v0.7.4/volyx-lens-0.7.4-linux-arm64.AppImage`,
+    href: `${RELEASE}/download/v0.7.5/volyx-lens-0.7.5-linux-arm64.AppImage`,
     label: 'Linux arm64',
-    detail: 'AppImage · v0.7.4',
+    detail: 'AppImage · v0.7.5',
     direct: true
   }
 };
