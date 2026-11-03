@@ -18,6 +18,15 @@ const ANSWER_STYLE_RULE = [
   'Prefer short sentences and concrete nouns. Make the point, then stop.',
 ].join(' ');
 
+// The subset that belongs in a prompt whose job is to reproduce someone else's
+// words rather than to write well. Transcript cleanup must keep the speaker's
+// register, so it gets the punctuation rules and none of the "be brief" advice:
+// a cleaner told to "make the point, then stop" can shorten what was said.
+const PUNCTUATION_RULE = [
+  'Never use em dashes or en dashes. Use a comma, a full stop, or a colon instead.',
+  'Use straight quotes, never curly ones.',
+].join(' ');
+
 // Appends the rule unless the prompt already carries it. Prompts are assembled
 // from several modules, so without this guard the rule lands twice the moment a
 // second layer appends it (it did: the mode prompts and the shared output rule
@@ -28,4 +37,4 @@ function withAnswerStyle(prompt) {
   return text.includes(ANSWER_STYLE_RULE) ? text : `${text}\n\n${ANSWER_STYLE_RULE}`;
 }
 
-module.exports = { ANSWER_STYLE_RULE, withAnswerStyle };
+module.exports = { ANSWER_STYLE_RULE, PUNCTUATION_RULE, withAnswerStyle };

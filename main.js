@@ -2281,8 +2281,12 @@ async function recapMeetingRecord(id, options = {}) {
     // Notes record the exact copy they describe. Hashing the readable turns
     // (not the raw record) is what makes a second cleanup of the same meeting
     // visibly change the notes' source instead of leaving a stale claim.
+    // Notes are what people export and read back, so they get the same treatment
+    // as a live answer; before this they kept whatever dashes and curly quotes
+    // the model produced, even though Assist had already stopped doing that.
+    const cleanedAnswer = normalizeAnswerText(fullAnswer);
     const notes = {
-      ...parseNotes(fullAnswer),
+      ...parseNotes(cleanedAnswer),
       source: readingCleaned ? 'cleaned' : 'raw',
       sourceHash: (meetingStore.fingerprint(readableTurns) || {}).contentHash || null,
     };
@@ -2291,7 +2295,7 @@ async function recapMeetingRecord(id, options = {}) {
       return { ok: false, code: 'write_failed', message: 'The meeting notes could not be saved. The record may have been deleted.' };
     }
     invalidatePreviousMeetings();
-    return { ok: true, id: record.id, text: fullAnswer, notes, source: notes.source };
+    return { ok: true, id: record.id, text: cleanedAnswer, notes, source: notes.source };
   } catch (error) {
     if (controller.signal.aborted) return { ok: false, code: 'canceled' };
     // The recap path used to let raw provider text reach the renderer, which
