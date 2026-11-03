@@ -37,6 +37,8 @@ jobs:
       - run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Verify the bundled whisper.cpp runtime
+        run: npm run verify:whisper-runtime
       - name: Smoke launch packaged application
         run: |
           python3 - <<'PY'
@@ -67,6 +69,8 @@ jobs:
         run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Verify the bundled whisper.cpp runtime
+        run: npm run verify:whisper-runtime
 
   macos-package:
     runs-on: macos-14

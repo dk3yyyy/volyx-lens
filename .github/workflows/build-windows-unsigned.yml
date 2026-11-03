@@ -49,6 +49,10 @@ jobs:
           rm -f dist/latest.yml dist/*.blockmap
           test ! -f dist/latest.yml
 
+      - name: Verify the bundled whisper.cpp runtime
+        shell: bash
+        run: node scripts/verify-whisper-runtime.js
+
       - name: Verify the installer and write its checksum
         shell: bash
         run: |

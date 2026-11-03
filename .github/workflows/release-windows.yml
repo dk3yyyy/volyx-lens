@@ -109,6 +109,9 @@ jobs:
             rm -f dist/latest.yml dist/*.blockmap
             test ! -f dist/latest.yml
           fi
+      - name: Verify the bundled whisper.cpp runtime
+        shell: bash
+        run: node scripts/verify-whisper-runtime.js
       - name: Verify the installer signature
         shell: pwsh
         env:

@@ -205,7 +205,7 @@ Each provider stores separate **Fast** and **Smart** model/deployment names, so 
 | **Custom (OpenAI-compatible)** | responses | any OpenAI-compatible base URL (LM Studio, vLLM, gateways, self-hosted proxies); endpoint URL required, key optional |
 | **Deepgram** | realtime transcription | dedicated key; Nova streaming models |
 | **Azure AI Speech** | realtime transcription | Speech resource key and region (bare region name, e.g. `eastus`); no model name required |
-| **Local Whisper** | optional offline batch transcription | requires a `whisper-server` binary and a downloaded whisper.cpp model; audio transcribed in memory; disabled by default. The published build does not include the binary, so the toggle stays off unless `VOLYX_LENS_WHISPER_SIDECAR_BIN` points at one. |
+| **Local Whisper** | optional offline batch transcription | requires a `whisper-server` binary and a downloaded whisper.cpp model; audio transcribed in memory; disabled by default. Windows x64 and Linux x64/arm64 packages ship the pinned whisper.cpp server; macOS packages cannot (whisper.cpp publishes no macOS server), so there the toggle stays off unless `VOLYX_LENS_WHISPER_SIDECAR_BIN` points at one. |
 
 Choose a key that covers the features you use. A restricted OpenAI project key that only allows chat returns `403` on transcription. Anthropic has no speech-to-text, so pair it with an OpenAI, Gemini, Deepgram, Azure, or local Whisper key for listening. Gemini covers chat and transcription with one key.
 
