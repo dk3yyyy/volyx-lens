@@ -55,9 +55,15 @@ test('the sidecar resolver and packaging agree on the bundled whisper-server bin
   );
 });
 
-test('the provisioning downloader is pinned to a whisper.cpp release with real assets', () => {
-  const downloader = fs.readFileSync(path.join(root, 'dev', 'whisper-binary.js'), 'utf8');
-  assert.ok(!/whisper-macos-arm64\.tar\.gz/.test(downloader), 'dead macOS asset names must be removed');
-  assert.ok(!/whisper-linux-x86_64\.tar\.gz/.test(downloader), 'dead Linux asset names must be removed');
-  assert.match(downloader, /WHISPER_CPP_VERSION = 'v1\.9\.2'/, 'downloader must pin to a release that publishes server binaries');
+test('the whisper runtime is provisioned by the pinned manifest, not the deleted dev scaffolding', () => {
+  // dev/whisper-binary.js was Phase 5 scaffolding that could not load (it required
+  // a package that is not installed) and pinned a release with no checksums. The
+  // real provisioner is scripts/prepare-whisper-runtime.js driven by the manifest.
+  assert.equal(fs.existsSync(path.join(root, 'dev', 'whisper-binary.js')), false, 'dead scaffolding is gone');
+  const manifest = require('../src/whisper-runtime-manifest');
+  for (const [target, entry] of Object.entries(manifest.MANIFEST)) {
+    assert.match(entry.sha256, /^[0-9a-f]{64}$/, `${target} pins an archive checksum`);
+    assert.match(entry.assetUrl, /^https:\/\//, `${target} downloads over https`);
+  }
+  assert.match(fs.readFileSync(path.join(root, 'package.json'), 'utf8'), /scripts\/before-pack\.js/, 'packaging runs the provisioner');
 });

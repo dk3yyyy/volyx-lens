@@ -1,0 +1,30 @@
+version: 2
+# Grouped updates keep the PR noise down while still surfacing security fixes.
+# The overrides in package.json pin a few transitive packages by hand; without
+# this file they are the only supply-chain defence between releases.
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+    ignore:
+      # Electron majors move the bundled Node and Chromium; they need a manual
+      # pass through the packaging and smoke tests, not an auto-bump.
+      - dependency-name: electron
+        update-types: ["version-update:semver-major"]
+      - dependency-name: electron-builder
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
