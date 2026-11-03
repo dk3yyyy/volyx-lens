@@ -179,3 +179,9 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 ## Update path
 
 `src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows, `latest-<arch>-linux.yml` for Linux; the release workflow canonicalizes the Linux metadata name so the updater finds it). Windows and Linux publish auto-update metadata with the installer/AppImages. macOS auto-update is only published for signed builds; the current unsigned DMGs ship without updater metadata.
+
+### Update notifications
+
+`src/update-scheduler.js` polls `updateManager.check()` once shortly after launch and then every six hours (defaults in that module; timers are injected so the cadence is unit-tested). Polling is armed only while `settings.notifications.updates` is true **and** the build reports `supported: true`, because a build that cannot install an update would only notify about a dead end. `main.js` calls `updateScheduler.sync()` whenever settings change and `stop()` during `shutdownAll`.
+
+`src/update-notifications.js` is pure: given the previous state, the next state, and whether the preference is on, it returns an OS notification for the `available` and `downloaded` edges or `null`. Each notice carries a `key` (`available:<version>`), and `main.js` keeps the keys it has already announced — a periodic check re-enters `available` every cycle, so the transition alone would notify every six hours. Clicking a notification focuses the window, sends `update:open`, and the renderer opens Settings → Updates.

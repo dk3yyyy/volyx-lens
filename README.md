@@ -274,6 +274,7 @@ For a deeper dive into the process split, preload bridge surface, provider routi
 - **Protected secrets.** Credentials are accessed in the main process and use `safeStorage` / Keychain when available.
 - **Explicit expensive requests.** Large multi-image requests, multi-part long-meeting recaps, and multi-request transcript cleanups require confirmation.
 - **Opt-in slide tracking.** Screen samples are compared locally while Listening is active; only stable-change previews are held in bounded memory and nothing is sent to a provider automatically.
+- **Update checks are bounded and disclosed.** While update notifications are on (the default), a signed packaged build asks GitHub Releases for the newest version shortly after launch and then every six hours — one HTTPS request that carries no account, identifier, or usage data. Nothing is downloaded or installed without your action. Turn the toggle off in Settings → Updates and the request stops; builds that cannot install updates never check at all.
 - **Best-effort overlay privacy.** `setContentProtection(true)` / `NSWindowSharingNone` may reduce accidental capture on macOS, but is not a security guarantee or a concealment feature.
 
 ## Transcript workspace

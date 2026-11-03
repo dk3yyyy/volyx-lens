@@ -207,6 +207,13 @@ function sanitizeSettingsPatch(patch = {}) {
     }
     if (Object.keys(endpointByTier).length) safe.endpointByTier = endpointByTier;
   }
+  if (patch.notifications && typeof patch.notifications === 'object') {
+    const notifications = {};
+    if (Object.hasOwn(patch.notifications, 'updates') && typeof patch.notifications.updates === 'boolean') {
+      notifications.updates = patch.notifications.updates;
+    }
+    if (Object.keys(notifications).length) safe.notifications = notifications;
+  }
   if (patch.models && typeof patch.models === 'object') {
     const models = {};
     for (const provider of Object.keys(DEFAULTS.models)) {

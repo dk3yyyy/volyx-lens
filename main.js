@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, systemPreferences, powerMonitor, dialog, safeStorage, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, systemPreferences, powerMonitor, dialog, safeStorage, clipboard, nativeImage, Notification } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -49,6 +49,8 @@ const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
+const { updateNotificationFor, notificationsEnabled } = require('./src/update-notifications');
+const { createUpdateScheduler } = require('./src/update-scheduler');
 const { resolveWhisperBinary, defaultBinariesDir } = require('./src/whisper-sidecar');
 const { createRendererLogForwarder } = require('./src/renderer-log');
 const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
@@ -266,13 +268,59 @@ function send(channel, data) {
   if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) win.webContents.send(channel, data);
 }
 
+let previousUpdateState = null;
+const notifiedUpdateKeys = new Set();
+
+function showUpdateNotification(notice) {
+  try {
+    if (!Notification.isSupported()) return;
+    const notification = new Notification({ title: notice.title, body: notice.body });
+    // The notification is the only surface that can reach the user while the
+    // overlay is hidden behind another app, so clicking it has to land somewhere
+    // useful: the Updates pane, focused.
+    notification.on('click', () => {
+      if (!win || win.isDestroyed()) return;
+      win.show();
+      win.focus();
+      send('update:open', { kind: notice.kind, version: notice.version });
+    });
+    notification.show();
+  } catch (error) {
+    console.log('[update] notification failed', error && error.message ? String(error.message).slice(0, 120) : 'unknown');
+  }
+}
+
+function handleUpdateState(value) {
+  send('update:state', value);
+  const notice = updateNotificationFor({
+    previous: previousUpdateState,
+    next: value,
+    enabled: notificationsEnabled(store.getSettings()),
+  });
+  previousUpdateState = value;
+  // A periodic check reaches 'available' again on every cycle, so the key — not
+  // the transition — is what keeps this to one announcement per version.
+  if (notice && !notifiedUpdateKeys.has(notice.key)) {
+    notifiedUpdateKeys.add(notice.key);
+    showUpdateNotification(notice);
+  }
+}
+
 const updateManager = createUpdateManager({
   app,
   platform: process.platform,
   arch: process.arch,
   releaseBuild: require('./package.json').volyxReleaseBuild === true,
   updaterFactory: () => require('electron-updater').autoUpdater,
-  emit: (value) => send('update:state', value),
+  emit: handleUpdateState,
+});
+previousUpdateState = updateManager.getState();
+
+// Polling is armed by the notification setting and only on builds that can
+// actually install an update; everything else would notify about a dead end.
+const updateScheduler = createUpdateScheduler({
+  check: () => updateManager.check(),
+  isEnabled: () => updateManager.getState().supported === true && notificationsEnabled(store.getSettings()),
 });
 
 function taskContextState(extra = {}) {
@@ -1685,6 +1733,7 @@ async function shutdownAll() {
     state.capturing = false;
     lastCaptureEndedAt = Date.now();
     captureStartedAt = null;
+    updateScheduler.stop();
     clearCaptureTimers();
     cancelLiveRealtimeDiagnostic();
     pendingDisplayCapture = false;
@@ -2529,6 +2578,8 @@ handleTrusted('settings:set', (_e, patch = {}) => {
     else if (!isSlideTrackingEnabled) stopSlideTracking();
     else publishSlideTrackingState();
   }
+  // The notification toggle is also the switch that arms background checking.
+  updateScheduler.sync();
   return { ...store.getPublicSettings(), offlineWhisper };
 });
 handleTrusted('credentials:clear', (_e, provider) => {
@@ -3022,6 +3073,7 @@ app.whenReady().then(() => {
   }, { useSystemPicker: false });
 
   createWindow();
+  updateScheduler.start();
   const overrides = store.getSettings().shortcuts || {};
   if (Object.keys(overrides).length > 0) applyShortcutOverrides(overrides);
   registerShortcuts();
