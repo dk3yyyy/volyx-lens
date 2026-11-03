@@ -32,6 +32,7 @@ const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = 
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
 const { drainPendingAudio, buildDrainGap } = require('./src/drain-batch-buffers');
 const { normalizeAnswerText } = require('./src/answer-normalize');
+const { createStreamingNormalizer } = require('./src/streaming-normalizer');
 const { shouldKeepHistory, userTextForHistory } = require('./src/history-scope');
 const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
 const { createAutoAssistPolicy } = require('./src/auto-assist');
@@ -1990,7 +1991,15 @@ function cancelActiveFeature(reason = 'user', { notify = reason === 'user', inva
   if (activeFeatureRequest === request) activeFeatureRequest = null;
   if (invalidate) featureRunId += 1;
   state.busy = false;
-  if (notify) send('llm:canceled', { reason });
+  if (notify) {
+    // Flush the partial through the same normaliser so a cancelled answer does
+    // not keep the raw dashes a completed one would have lost.
+    let text = '';
+    if (request.stream && typeof request.stream.finish === 'function') {
+      try { request.stream.finish(); text = request.stream.text(); } catch { text = ''; }
+    }
+    send('llm:canceled', { reason, text });
+  }
   return true;
 }
 
@@ -2243,7 +2252,8 @@ async function runFeature(mode, userText, {
     // attempt arms and clears its own deadline inside streamWithFallback, so a
     // chunked job cannot spend the whole budget on one part and a deadline is not
     // mistaken for a cancel (VR-06, VR-07).
-    featureRequest = { controller: new AbortController(), reason: null };
+    const answerStream = createStreamingNormalizer();
+    featureRequest = { controller: new AbortController(), reason: null, stream: answerStream };
     activeFeatureRequest = featureRequest;
     if (isCurrent()) send('llm:start', { userBubble, small: !!def.small, contextSources: personalContext.sources, taskContextCount: availableTaskContextCount, taskContextTotalCount, responseProvider: llm.label || settings.provider });
     if (selection.usedFallback && isCurrent()) {
@@ -2377,7 +2387,13 @@ async function runFeature(mode, userText, {
         imageDataUrls,
         maxTokens: modeTokenBudget || undefined,
         signal: featureRequest.controller.signal,
-        onToken: (t) => { if (isCurrent()) send('llm:token', { text: t }); },
+        // Normalise as the answer streams so the text never has to be rewritten
+        // in front of the user; the stream is line-oriented and fence-aware.
+        onToken: (t) => {
+          if (!isCurrent()) return;
+          const ready = answerStream.push(t);
+          if (ready) send('llm:token', { text: ready });
+        },
         onFinish: ({ reason }) => { if (TRUNCATED_FINISH_REASON.test(String(reason || ''))) answerTruncated = true; }
       },
       onFallback: ({ from, to, reason }) => {
@@ -2391,11 +2407,12 @@ async function runFeature(mode, userText, {
       send('status', { message: 'The answer stopped at the model output limit and may be incomplete. Ask a narrower question, or turn on Smart for a larger budget.' });
     }
     if (isCurrent()) {
-      // The style rule asks for no em dashes; this guarantees it even when a
-      // provider ignores the instruction. Streamed tokens have already painted,
-      // so the cleaned answer travels with the terminal event and the renderer
-      // re-renders from it instead of leaving the raw text on screen.
-      const answer = normalizeAnswerText(String(fullAnswer || ''));
+      // Flush the trailing partial line so the caller and the renderer agree on
+      // the final text. Everything painted is already normalised, so the terminal
+      // event no longer has to substitute different text.
+      const tail = answerStream.finish();
+      if (tail) send('llm:token', { text: tail });
+      const answer = answerStream.text() || normalizeAnswerText(String(fullAnswer || ''));
       if (shouldKeepHistory(mode)) {
         chatHistory.addExchange(userTextForHistory({ mode, text: userText, label: def.userBubble }), answer);
       }
