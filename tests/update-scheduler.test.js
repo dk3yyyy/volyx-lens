@@ -117,6 +117,43 @@ test('a check that finishes after the switch is off does not re-arm', async () =
   assert.deepEqual(timers.delays(), [], 'no timer survives the stop');
 });
 
+test('a check spanning an off/on toggle leaves exactly one timer', async () => {
+  let enabled = true;
+  let calls = 0;
+  let release = null;
+  const timers = fakeTimers();
+  const scheduler = createUpdateScheduler({
+    // Only the first check hangs; once released, later checks are instant.
+    check: () => {
+      calls += 1;
+      if (calls > 1) return Promise.resolve();
+      return new Promise((resolve) => { release = resolve; });
+    },
+    isEnabled: () => enabled,
+    intervalMs: 5000,
+    initialDelayMs: 1000,
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+  });
+
+  scheduler.start();
+  const firing = timers.fire();
+  assert.equal(scheduler.isChecking(), true, 'the first check is in flight');
+
+  enabled = false;
+  scheduler.sync();
+  enabled = true;
+  scheduler.sync();
+
+  release();
+  await firing;
+
+  assert.deepEqual(timers.delays(), [5000], 'one chain, not the fresh timer plus a re-arm');
+  await timers.fire();
+  assert.equal(calls, 2, 'the single live timer runs exactly one further check');
+  assert.deepEqual(timers.delays(), [5000], 'the schedule stays a single chain');
+});
+
 test('stop is idempotent and safe before start', () => {
   const { scheduler, timers } = build();
   scheduler.stop();

@@ -53,6 +53,7 @@ const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
 const { updateNotificationFor, notificationsEnabled } = require('./src/update-notifications');
 const { createUpdateScheduler } = require('./src/update-scheduler');
+const { updateNotificationPolicy } = require('./src/notification-policy');
 const { resolveWhisperBinary, defaultBinariesDir } = require('./src/whisper-sidecar');
 const { createRendererLogForwarder } = require('./src/renderer-log');
 const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
@@ -272,11 +273,40 @@ function send(channel, data) {
 
 let previousUpdateState = null;
 const notifiedUpdateKeys = new Set();
+// Electron drops a notification that nothing references, which takes its click
+// handler with it, so every shown banner is held here until it closes.
+const liveUpdateNotifications = new Set();
+let deferredUpdateNotice = null;
+let screenLocked = false;
 
+// Returns true only when a banner actually reached the screen. The caller uses that
+// to decide whether to mark the version as announced: a notice suppressed because
+// the screen was locked, or because notifications are unavailable, must be allowed
+// to surface later instead of burning its only chance.
 function showUpdateNotification(notice) {
+  let policy;
   try {
-    if (!Notification.isSupported()) return;
-    const notification = new Notification({ title: notice.title, body: notice.body });
+    policy = updateNotificationPolicy({
+      notice,
+      notificationsSupported: Notification.isSupported(),
+      focused: Boolean(win && !win.isDestroyed() && win.isFocused()),
+      // Mid-transition counts: capture is about to start, so a banner now would
+      // land on top of the call the user just joined.
+      capturing: state.capturing || desiredCapturing,
+      locked: screenLocked,
+    });
+  } catch {
+    policy = { show: false, silent: true, defer: false };
+  }
+  if (policy.defer) {
+    deferredUpdateNotice = notice;
+    return false;
+  }
+  if (!policy.show) return false;
+  try {
+    const notification = new Notification({ title: notice.title, body: notice.body, silent: policy.silent });
+    liveUpdateNotifications.add(notification);
+    notification.on('close', () => liveUpdateNotifications.delete(notification));
     // The notification is the only surface that can reach the user while the
     // overlay is hidden behind another app, so clicking it has to land somewhere
     // useful: the Updates pane, focused.
@@ -287,8 +317,10 @@ function showUpdateNotification(notice) {
       send('update:open', { kind: notice.kind, version: notice.version });
     });
     notification.show();
+    return true;
   } catch (error) {
     console.log('[update] notification failed', error && error.message ? String(error.message).slice(0, 120) : 'unknown');
+    return false;
   }
 }
 
@@ -302,9 +334,10 @@ function handleUpdateState(value) {
   previousUpdateState = value;
   // A periodic check reaches 'available' again on every cycle, so the key — not
   // the transition — is what keeps this to one announcement per version.
-  if (notice && !notifiedUpdateKeys.has(notice.key)) {
+  // The key is recorded only once the banner has actually been shown, so a notice
+  // suppressed by a locked screen or by the OS is not silently consumed.
+  if (notice && !notifiedUpdateKeys.has(notice.key) && showUpdateNotification(notice)) {
     notifiedUpdateKeys.add(notice.key);
-    showUpdateNotification(notice);
   }
 }
 
@@ -1633,6 +1666,11 @@ async function applyCaptureState(active) {
       }
     }
     state.capturing = true;
+    // A listening session is a conversation boundary. Without this, the answers
+    // from one meeting were replayed into the next one's first question, and a
+    // "What should I say?" answer could be spoken in front of new participants
+    // using the previous meeting's context.
+    chatHistory.clear();
     startSlideTracking();
     captureStartedAt = pendingRestoredStartedAt || Date.now();
     pendingRestoredStartedAt = null;
@@ -3090,9 +3128,23 @@ app.whenReady().then(() => {
   if (Object.keys(overrides).length > 0) applyShortcutOverrides(overrides);
   registerShortcuts();
   powerMonitor.on('suspend', () => stopCaptureForSystem('suspend'));
-  powerMonitor.on('lock-screen', () => stopCaptureForSystem('lock'));
+  powerMonitor.on('lock-screen', () => {
+    screenLocked = true;
+    stopCaptureForSystem('lock');
+  });
   powerMonitor.on('resume', () => send('status', { message: 'Mac resumed. Listening remains off until you start it again.' }));
-  powerMonitor.on('unlock-screen', () => send('status', { message: 'Mac unlocked. Listening remains off until you start it again.' }));
+  powerMonitor.on('unlock-screen', () => {
+    screenLocked = false;
+    send('status', { message: 'Mac unlocked. Listening remains off until you start it again.' });
+    // A notice deferred while the screen was locked gets its one chance now. If it
+    // is suppressed again (still listening, or the window is focused), it stays
+    // unannounced rather than being counted as delivered.
+    const pendingNotice = deferredUpdateNotice;
+    deferredUpdateNotice = null;
+    if (pendingNotice && !notifiedUpdateKeys.has(pendingNotice.key) && showUpdateNotification(pendingNotice)) {
+      notifiedUpdateKeys.add(pendingNotice.key);
+    }
+  });
   powerMonitor.on('shutdown', () => { shutdownAll(); });
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

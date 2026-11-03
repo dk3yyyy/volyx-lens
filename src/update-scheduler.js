@@ -20,6 +20,13 @@ function createUpdateScheduler({
   let inFlight = false;
 
   function arm(delay) {
+    // A check that was in flight across a stop/start cycle can re-arm after that
+    // cycle already armed its own timer; clearing first keeps one chain, so the
+    // cadence cannot double and stop() can still reach the only live handle.
+    if (timer !== null) {
+      clearTimer(timer);
+      timer = null;
+    }
     timer = setTimer(tick, delay);
     // Never hold the app open just to poll for updates.
     if (timer && typeof timer.unref === 'function') timer.unref();
