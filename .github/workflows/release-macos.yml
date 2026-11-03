@@ -128,6 +128,11 @@ jobs:
           node scripts/validate-update-metadata.js "$METADATA_PATH" "$ZIP_PATH" "$VERSION" "${{ matrix.arch }}"
           (cd dist && shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256")
           (cd dist && shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256")
+          # A signed release publishes exactly the per-architecture channel file
+          # electron-updater requests, plus checksummed ZIP and DMG archives. A
+          # re-run that left a second version behind fails here instead of
+          # clobbering the release assets.
+          node scripts/verify-release-assets.js --platform darwin --dir dist --signed --arch "${{ matrix.arch }}"
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-${{ matrix.arch }}.cdx.json"
       - name: Attest build provenance
         uses: actions/attest@v4

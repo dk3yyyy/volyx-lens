@@ -96,6 +96,10 @@ jobs:
             || { echo "Metadata validation failed; dist contents:"; ls -la dist; exit 1; }
           # shasum (Perl) is not installed on all runners; hash with node.
           APPIMAGE_NAME="$APPIMAGE_NAME" node -e "const fs=require('fs'),c=require('crypto');const n=process.env.APPIMAGE_NAME;const p='dist/'+n;fs.writeFileSync(p+'.sha256',c.createHash('sha256').update(fs.readFileSync(p)).digest('hex')+'  '+n+'\n');"
+          # The published set has to match what electron-updater requests for
+          # this architecture, including the canonical metadata name above, and
+          # must not still carry a second build from a re-run.
+          node scripts/verify-release-assets.js --platform linux --dir dist --arch "$ARCH"
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json"
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
