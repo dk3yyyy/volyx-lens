@@ -18,6 +18,6 @@ We aim to acknowledge a report within 3 business days, give an initial assessmen
 
 ## Scope
 
-Useful reports include credential exposure, unsafe IPC or renderer boundaries, unintended screen or audio capture, sensitive-data retention, provider-routing failures, and dependency vulnerabilities with a demonstrated impact on Volyx Lens.
+Useful reports include credential exposure, unsafe IPC or renderer boundaries, unintended screen or audio capture, sensitive-data retention, provider-routing failures, outbound update checks and the release metadata they trust, and dependency vulnerabilities with a demonstrated impact on Volyx Lens.
 
 Out of scope: defects in a third-party AI or transcription provider; issues that require a jailbroken operating system, physical access, or an already-compromised renderer process; and reports that only restate a provider's own retention or logging policy.

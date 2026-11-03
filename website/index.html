@@ -211,6 +211,7 @@
           <li><span>02</span>The app has no analytics or advertising SDK.</li>
           <li><span>03</span>You can switch providers without changing the workflow.</li>
           <li><span>04</span>The active transcript and Task Context stay memory-only, within fixed size limits, for the current session, and are cleared when the session ends. Saved meeting history and crash recovery are on by default for new installs; transcript text is written to this device only, and you can turn both off at any time.</li>
+          <li><span>05</span>The only periodic request is the update check: while notifications are on, the app asks GitHub Releases for the newest version shortly after launch and every six hours; those requests necessarily carry your IP address, the updater's user agent, a random updater ID stored on this device, and the platform-specific update channel, and turning notifications off in Settings → Updates stops the scheduled check.</li>
         </ul>
         <p class="privacy-caveat">Your chosen AI provider still receives the context you send and applies its own retention and privacy terms. Review those terms before sharing sensitive material.</p>
       </div>
