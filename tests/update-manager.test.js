@@ -272,3 +272,14 @@ test('an ordinary service failure still reads as a retryable error', async () =>
   assert.equal(manager.getState().status, 'error');
   assert.match(manager.getState().message, /Try again later/);
 });
+
+test('a bare 404 is treated the same as the channel-file error code', async () => {
+  // Providers do not all wrap the status in ERR_UPDATER_CHANNEL_FILE_NOT_FOUND;
+  // a plain HttpError with a 404 has to reach the same conclusion.
+  const { manager, updater } = fixture();
+  await manager.check();
+  const error = new Error('Not Found');
+  error.statusCode = 404;
+  updater.emit('error', error);
+  assert.equal(manager.getState().status, 'unavailable');
+});
