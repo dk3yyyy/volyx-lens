@@ -69,6 +69,9 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Verify the bundled whisper.cpp runtime
+        # The packaged tree only exists on the leg that ran pack; without this the
+        # other matrix entry verifies a directory that was never built.
+        if: matrix.node == 20
         run: npm run verify:whisper-runtime
       - name: Smoke launch packaged application
         if: matrix.node == 20
