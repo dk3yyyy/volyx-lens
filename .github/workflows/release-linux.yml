@@ -80,10 +80,12 @@ jobs:
             if [ -f "dist/$candidate" ]; then META="dist/$candidate"; echo "Using update metadata: $candidate"; break; fi
           done
           test -n "$META"
-          # electron-updater always requests latest-<arch>-linux.yml for Linux;
-          # canonicalize whatever electron-builder actually wrote (arm64 can
-          # arrive as latest-arm64-linux-arm64.yml).
-          EXPECTED_META="latest-${ARCH}-linux.yml"
+          # Publish the exact name electron-updater asks for. Its Linux suffix is
+          # "-linux" on x64 but "-linux-arm64" on arm64, so the old hard-coded
+          # latest-<arch>-linux.yml meant every arm64 client requested a file
+          # that never existed, while x64 worked and hid the bug.
+          EXPECTED_META="$(node -e 'const { channelFileFor } = require("./src/update-metadata"); process.stdout.write(channelFileFor({ platform: "linux", arch: process.argv[1], channel: "latest-" + process.argv[1] }));' "$ARCH")"
+          echo "Expected update metadata: $EXPECTED_META"
           if [ "$(basename "$META")" != "$EXPECTED_META" ]; then
             mv "$META" "dist/$EXPECTED_META"
             echo "Canonicalized update metadata to: $EXPECTED_META"

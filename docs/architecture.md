@@ -180,7 +180,7 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 
 ## Update path
 
-`src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows, `latest-<arch>-linux.yml` for Linux; the release workflow canonicalizes the Linux metadata name so the updater finds it). Windows publishes that metadata only for a signed installer, so the unsigned installer ships with no `latest.yml` and no auto-update channel, while the tag-triggered Linux release publishes it for the unsigned AppImages and they do update in place. macOS auto-update is only published for signed builds; the current unsigned DMGs ship without updater metadata.
+`src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows; on Linux the name is the channel plus the platform suffix, `latest-x64-linux.yml` and `latest-arm64-linux-arm64.yml`, composed by `src/update-metadata.js` so the workflow publishes the name the client requests). Windows publishes that metadata only for a signed installer, so the unsigned installer ships with no `latest.yml` and no auto-update channel, while the tag-triggered Linux release publishes it for the unsigned AppImages and they do update in place. macOS auto-update is only published for signed builds; the current unsigned DMGs ship without updater metadata.
 
 ### Update notifications
 
