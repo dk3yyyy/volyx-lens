@@ -33,7 +33,8 @@
     "release:linux": "electron-builder --linux AppImage --publish never",
     "release:win": "electron-builder --win nsis --publish never",
     "dist": "npm run release:mac",
-    "check:history-ui": "electron scripts/check-history-ui.js"
+    "check:history-ui": "electron scripts/check-history-ui.js",
+    "verify:whisper-runtime": "node scripts/verify-whisper-runtime.js"
   },
   "build": {
     "appId": "ai.volyx.lens",
@@ -48,7 +49,7 @@
     ],
     "artifactName": "volyx-lens-${version}-${os}-${arch}.${ext}",
     "asar": true,
-    "beforePack": "scripts/build-vision-ocr.js",
+    "beforePack": "scripts/before-pack.js",
     "publish": [
       {
         "provider": "github",
@@ -71,7 +72,11 @@
           "volyx-lens-vision-ocr",
           "volyx-lens-system-audio",
           "whisper-server",
-          "whisper-server.exe"
+          "whisper-server.exe",
+          "whisper.dll",
+          "ggml*.dll",
+          "libwhisper.so*",
+          "libggml*.so*"
         ]
       }
     ],

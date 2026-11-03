@@ -51,6 +51,9 @@ jobs:
           rm -f dist/latest*.yml
           test -z "$(ls dist/latest*.yml 2>/dev/null || true)"
 
+      - name: Verify the bundled whisper.cpp runtime
+        run: node scripts/verify-whisper-runtime.js --arch=${{ matrix.arch }}
+
       - name: Smoke launch the packaged AppImage
         run: |
           set -euo pipefail

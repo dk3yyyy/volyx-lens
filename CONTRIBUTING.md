@@ -45,6 +45,7 @@ npm run release:check     # Release-readiness checks
 |---|---|
 | `VOLYX_LENS_NO_PROTECT` | Disables `setContentProtection(true)` on the overlay window (useful for screen-recording the app itself). |
 | `VOLYX_LENS_WHISPER_SIDECAR_BIN` | Absolute path to a pre-built `whisper-server` binary, bypassing the bundled download. |
+| `VOLYX_LENS_SKIP_WHISPER_RUNTIME` | Set to `1` to skip provisioning the pinned whisper.cpp server during `electron-builder` packaging. |
 | `VOLYX_LENS_WHISPER_SIDECAR` | Set to `1` to opt into whisper sidecar mode for offline transcription. |
 | `VOLYX_LENS_WHISPER_CLI` | Path to a local whisper CLI executable (legacy offline path). |
 | `VOLYX_LENS_WHISPER_MODEL` | Model file path for the local whisper CLI. |

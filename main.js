@@ -2631,9 +2631,10 @@ function transcriptionSettingsChanged(previous, updated) {
   return JSON.stringify(relevant(previous)) !== JSON.stringify(relevant(updated));
 }
 
-// The published build ships no whisper-server binary, so the Settings toggle must
-// not promise an engine that cannot start (VR-02). The env var and a provisioned
-// binary are both honoured; anything else reports unavailable with a reason.
+// A build without a bundled whisper-server (macOS packages, or a target
+// whisper.cpp does not publish one for) must not promise an engine that cannot
+// start (VR-02). The env var, a provisioned binary and the packaged binary are
+// all honoured; anything else reports unavailable with a reason.
 function offlineWhisperStatus() {
   try {
     const resolved = resolveWhisperBinary({
