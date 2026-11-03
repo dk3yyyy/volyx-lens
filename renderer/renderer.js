@@ -2113,7 +2113,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     finalizeAi('Response ready.');
     setBusy(false);
   });
-  volyxLens.on('llm:canceled', () => {
+  volyxLens.on('llm:canceled', ({ text } = {}) => {
+    // A cancelled answer used to keep the raw text, so Stop left the em dashes a
+    // completed answer would have lost. The main process now flushes the partial
+    // through the same normaliser and sends the cleaned copy.
+    if (typeof text === 'string' && text && aiEl) aiEl.dataset.raw = text;
     const partialKept = Boolean(aiEl && (aiEl.dataset.raw || '').trim());
     if (partialKept) finalizeAi('Response canceled. Partial response kept.');
     else {

@@ -7,7 +7,6 @@ const { releaseUpdateFrom } = require('./release-check');
 // reports that as a channel-file error. It is not a service outage: the build has
 // no update channel any more (unsigned Windows from 0.7.5 onwards), so the useful
 // answer is "get the installer from the release page", not "try again later".
-const RELEASE_PAGE = 'https://github.com/dk3yyyy/volyx-lens/releases/latest';
 
 function isMissingMetadataError(error) {
   // Keyed on the code electron-updater actually throws, never on message text:
@@ -69,7 +68,6 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
       status,
       message,
       availableVersion: extra.availableVersion || null,
-      releaseUrl: typeof extra.releaseUrl === 'string' ? extra.releaseUrl : null,
       progress: Number.isFinite(extra.progress) ? Math.max(0, Math.min(100, Math.round(extra.progress))) : null,
       // Always present so the renderer can distinguish "never checked" (null)
       // from a check that finished just now.
@@ -84,7 +82,6 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
     if (extra.checked === true) lastCheckedAt = Date.now();
     state = publicState(status, message, {
       availableVersion: Object.prototype.hasOwnProperty.call(extra, 'availableVersion') ? extra.availableVersion : state.availableVersion,
-      releaseUrl: Object.prototype.hasOwnProperty.call(extra, 'releaseUrl') ? extra.releaseUrl : state.releaseUrl,
       progress: extra.progress,
     });
     emit({ ...state });
@@ -129,7 +126,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
     });
     updater.on('error', (error) => {
       if (isMissingMetadataError(error)) {
-        setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, releaseUrl: RELEASE_PAGE, checked: checkInFlight });
+        setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, checked: checkInFlight });
         return;
       }
       setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null, checked: checkInFlight });
@@ -166,7 +163,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
       })
       .catch((error) => {
         if (isMissingMetadataError(error)) {
-          setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, releaseUrl: RELEASE_PAGE, checked: true });
+          setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, checked: true });
           return;
         }
         setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null, checked: true });
@@ -193,7 +190,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
           release: release ? { tag_name: release.version, html_url: release.url } : null,
         });
         if (result.available) {
-          setState('available', `Volyx Lens ${result.version} is available.`, { availableVersion: result.version, releaseUrl: result.url, checked: true });
+          setState('available', `Volyx Lens ${result.version} is available.`, { availableVersion: result.version, checked: true });
         } else if (!release) {
           setState('current', 'No published release was found. Try again later.', { availableVersion: null, checked: true });
         } else {

@@ -35,7 +35,6 @@ test('development builds explain that signed packaged builds are required', asyn
     status: 'unsupported',
     message: 'This build cannot install updates automatically. Use Open Latest Release to download the current version.',
     availableVersion: null,
-    releaseUrl: null,
     progress: null,
     lastCheckedAt: null,
   });
@@ -152,7 +151,6 @@ test('development Windows builds explain that packaged builds are required', asy
     status: 'unsupported',
     message: 'This build cannot install updates automatically. Use Open Latest Release to download the current version.',
     availableVersion: null,
-    releaseUrl: null,
     progress: null,
     lastCheckedAt: null,
   });
@@ -212,7 +210,6 @@ test('an unsigned build can report a newer release without being able to install
   const state = await manager.check();
   assert.equal(state.status, 'available');
   assert.equal(state.availableVersion, '0.3.0');
-  assert.equal(state.releaseUrl, 'https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.3.0');
   await assert.rejects(manager.download(), /installs updates by hand/);
   await assert.rejects(manager.install(), /installs updates by hand/);
 });
@@ -264,7 +261,6 @@ test('a release that stopped publishing metadata points at the release page', as
   const state = manager.getState();
   assert.equal(state.status, 'unavailable');
   assert.match(state.message, /release page/);
-  assert.equal(state.releaseUrl, 'https://github.com/dk3yyyy/volyx-lens/releases/latest');
 });
 
 test('an ordinary service failure still reads as a retryable error', async () => {
