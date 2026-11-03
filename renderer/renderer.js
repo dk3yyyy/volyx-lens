@@ -2158,6 +2158,25 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       await refreshUpdateState();
     } catch { showStatus('Open Settings to see the available update.'); }
   });
+  // Deep links other than updates land here. The payload crossed IPC, so it is
+  // re-checked rather than trusted: an unknown route gets a status line instead
+  // of a guess. selectSettingsSection falls back to Providers for a pane that is
+  // not one of the real pages, so a bad pane cannot leave the dialog blank.
+  volyxLens.on('deeplink:open', async (event) => {
+    try {
+      const route = event && typeof event.route === 'string' ? event.route : '';
+      if (route === 'open') { $('#input').focus(); return; }
+      if (route === 'settings' || route === 'release') {
+        await openSettings();
+        const pane = event && typeof event.pane === 'string' ? event.pane : '';
+        // Release notes live on the Updates page, so a release link without an
+        // explicit pane still lands somewhere useful.
+        selectSettingsSection(pane || (route === 'release' ? 'updates' : 'providers'), { focus: true });
+        return;
+      }
+      showStatus('This link does not open anything in Volyx Lens.');
+    } catch { showStatus('Open Settings to continue from this link.'); }
+  });
   volyxLens.on('transcription:state', (event) => {
     if (event.status === 'source' && event.channel === 'them') {
       const labels = { connecting: 'Connecting', connected: 'Connected', failed: 'Failed', stopped: 'Idle' };

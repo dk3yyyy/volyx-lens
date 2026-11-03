@@ -57,6 +57,7 @@ const { createReleaseChecker } = require('./src/release-check-client');
 const { updateNotificationPolicy } = require('./src/notification-policy');
 const { resolveWhisperBinary, defaultBinariesDir } = require('./src/whisper-sidecar');
 const { createRendererLogForwarder } = require('./src/renderer-log');
+const { parseDeepLink } = require('./src/deep-link');
 const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
@@ -1070,15 +1071,85 @@ function fitWindowToMovedEdge(anchor) {
   applyDockBounds({ side, collapsed: false, anchor, targetDisplay: display });
 }
 
-// One app instance owns the meetings folder. A second launch focuses the first
-// window instead of racing it on the same JSON files.
-const primaryInstance = app.requestSingleInstanceLock();
-if (!primaryInstance) app.quit();
-else app.on('second-instance', () => {
-  if (!win) return;
+// -------- deep links --------
+// The installer registers volyxlens:// from package.json build.protocols. Only
+// the installed app claims the scheme: `npm start` runs the shared Electron
+// binary, and registering there would make every link launch a dev copy (or
+// steal the handler from the installed app while a dev session is open).
+if (app.isPackaged) app.setAsDefaultProtocolClient('volyxlens');
+
+// A cold start can hand the URL over before the renderer has subscribed to IPC
+// (macOS delivers open-url before ready; Windows/Linux pass it in argv), so the
+// newest link is held until app:renderer-ready. One slot is enough: the latest
+// link is the destination the user actually asked for.
+let pendingDeepLink = null;
+let rendererReady = false;
+
+function deepLinkFromArgv(argv) {
+  if (!Array.isArray(argv)) return null;
+  for (const entry of argv) {
+    if (typeof entry !== 'string') continue;
+    // Windows quotes arguments that contain '?' and similar characters.
+    // Electron normally strips that quoting, but a stray pair of quotes must
+    // not hide the scheme from the scan.
+    const value = entry.trim().replace(/^"(.*)"$/, '$1');
+    if (/^volyxlens:/i.test(value)) return value;
+  }
+  return null;
+}
+
+function focusAppWindow() {
+  if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+}
+
+function routeDeepLink(rawUrl) {
+  const parsed = parseDeepLink(rawUrl);
+  if (!parsed.ok) {
+    // The payload is never logged: a rejected link can still contain private
+    // text, and the reason code is all support needs to diagnose it.
+    console.log(`[deeplink] ignored (${parsed.reason})`);
+    return false;
+  }
+  // Updates already have a renderer handler that opens Settings on the Updates
+  // pane and refreshes the state, so the new channel carries everything else.
+  if (parsed.route === 'updates') {
+    send('update:open', { kind: 'deeplink' });
+  } else {
+    send('deeplink:open', { route: parsed.route, pane: parsed.query.pane || '' });
+  }
+  return true;
+}
+
+function handleDeepLink(rawUrl) {
+  focusAppWindow();
+  if (!rendererReady) {
+    pendingDeepLink = rawUrl;
+    return;
+  }
+  routeDeepLink(rawUrl);
+}
+
+// macOS delivers links to the running app as Apple events. The listener has to
+// exist before ready, because the launch event can arrive first.
+app.on('open-url', (event, url) => {
+  // The app owns this event; without preventDefault Electron would also treat
+  // the link as a navigation.
+  event.preventDefault();
+  handleDeepLink(url);
+});
+
+// One app instance owns the meetings folder. A second launch focuses the first
+// window instead of racing it on the same JSON files; when that launch came from
+// a volyxlens:// link, the link rides along in argv.
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+else app.on('second-instance', (_event, argv) => {
+  const deepLink = deepLinkFromArgv(argv);
+  if (deepLink) handleDeepLink(deepLink);
+  else focusAppWindow();
 });
 
 function createWindow() {
@@ -1165,6 +1236,10 @@ function createWindow() {
   win.webContents.on('did-start-loading', () => {
     uiModalOpen = true;
     rendererModalStateReported = false;
+    // A reload drops every renderer IPC listener, so a link that arrives mid-
+    // reload must be queued for the next app:renderer-ready instead of sent into
+    // a page that cannot hear it.
+    rendererReady = false;
   });
   win.webContents.on('did-finish-load', () => {
     if (!rendererHasLoaded) {
@@ -1181,6 +1256,8 @@ function createWindow() {
   win.webContents.on('render-process-gone', (_e, d) => {
     uiModalOpen = true;
     rendererModalStateReported = false;
+    // A restarted renderer subscribes again, so links are queued meanwhile.
+    rendererReady = false;
     console.log('[volyx-lens] renderer gone', JSON.stringify(d));
     if (state.capturing) setCapturing(false);
   });
@@ -3013,6 +3090,17 @@ onTrusted('ui:modal-state', (_e, open) => {
 });
 onTrusted('app:renderer-ready', () => {
   if (!rendererModalStateReported) uiModalOpen = true;
+  rendererReady = true;
+  // A cold-start deep link (or one that arrived during a reload) is replayed
+  // here, once the renderer is actually listening.
+  if (pendingDeepLink) {
+    const pending = pendingDeepLink;
+    pendingDeepLink = null;
+    // The launch that carried the link may have run before a window existed
+    // (macOS open-url arrives before ready), so focus again now that it does.
+    focusAppWindow();
+    routeDeepLink(pending);
+  }
   publishDockState();
   publishSlideTrackingState();
   console.log('VOLYX_LENS_RENDERER_READY');
@@ -3132,6 +3220,13 @@ app.whenReady().then(() => {
   }, { useSystemPicker: false });
 
   createWindow();
+  // Windows and Linux pass the launch URL as a command-line argument. macOS
+  // delivers it through open-url instead. Either way the renderer is not
+  // listening yet, so handleDeepLink queues it for app:renderer-ready.
+  if (process.platform !== 'darwin') {
+    const launchDeepLink = deepLinkFromArgv(process.argv);
+    if (launchDeepLink) handleDeepLink(launchDeepLink);
+  }
   updateScheduler.start();
   const overrides = store.getSettings().shortcuts || {};
   if (Object.keys(overrides).length > 0) applyShortcutOverrides(overrides);

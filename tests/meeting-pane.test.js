@@ -92,7 +92,8 @@ test('a retention of zero keeps everything', () => {
 test('a second launch focuses the first window instead of sharing the folder', () => {
   assert.match(main, /const primaryInstance = app\.requestSingleInstanceLock\(\);/);
   assert.match(main, /if \(!primaryInstance\) app\.quit\(\);/);
-  assert.match(main, /app\.on\('second-instance', \(\) => \{/);
+  assert.match(main, /app\.on\('second-instance', \(_event, argv\) => \{/);
+  assert.match(main, /focusAppWindow\(\)/);
   assert.match(main, /if \(!primaryInstance\) return;/);
 });
 
