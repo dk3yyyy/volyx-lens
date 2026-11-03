@@ -2,7 +2,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { updateNotificationFor, notificationsEnabled, notificationKey } = require('../src/update-notifications');
+const {
+  updateNotificationFor,
+  notificationsEnabled,
+  notificationKey,
+  isNotifiedUpdateKey,
+  sanitizeNotifiedUpdateKeys,
+  appendNotifiedUpdateKey,
+  NOTIFIED_UPDATE_KEY_LIMIT,
+} = require('../src/update-notifications');
 
 function state(status, extra = {}) {
   return { supported: true, status, availableVersion: null, currentVersion: '0.7.4', progress: null, message: '', ...extra };
@@ -97,4 +105,69 @@ test('the manual-update notice respects the preference and unsupported builds', 
   assert.equal(updateNotificationFor({ previous: state('idle'), next: current, enabled: false }), null);
   assert.equal(updateNotificationFor({ previous: state('idle'), next: { ...current, supported: false } }), null);
   assert.equal(updateNotificationFor({ previous: current, next: current }), null, 'not again while it stays unavailable');
+});
+
+test('only kind:version keys are accepted from the persisted list', () => {
+  for (const key of ['available:0.8.0', 'ready:0.8.0', 'unavailable:unknown', 'available:1.2.3-beta.1+build.7']) {
+    assert.equal(isNotifiedUpdateKey(key), true, key);
+  }
+  for (const key of [
+    '', 'available', 'available:', ':0.8.0', 'unknown:0.8.0', 'Available:0.8.0',
+    'available:0.8.0\n', 'available:0.8.0 ', ' available:0.8.0', 'available:0.8.0:1',
+    'available:0.8.0/../../x', 'ready:0.8.0:',
+    null, 42, {}, ['available:0.8.0'],
+  ]) {
+    assert.equal(isNotifiedUpdateKey(key), false, JSON.stringify(key));
+  }
+});
+
+test('a corrupted persisted list is reduced to the keys it can trust', () => {
+  // The settings file is user-writable, so unknown shapes are dropped rather
+  // than coerced into a key the announcement path would then trust.
+  assert.deepEqual(sanitizeNotifiedUpdateKeys(null), []);
+  assert.deepEqual(sanitizeNotifiedUpdateKeys('available:0.8.0'), []);
+  assert.deepEqual(sanitizeNotifiedUpdateKeys({ 0: 'available:0.8.0' }), []);
+  assert.deepEqual(sanitizeNotifiedUpdateKeys(undefined), []);
+  assert.deepEqual(
+    sanitizeNotifiedUpdateKeys([
+      null,
+      {},
+      'bogus',
+      'available:0.8.0',
+      42,
+      'ready:0.8.0',
+      'available:0.8.0',
+      ['unavailable:unknown'],
+    ]),
+    ['ready:0.8.0', 'available:0.8.0'],
+    'unknown shapes disappear and a repeated key is the newest entry',
+  );
+});
+
+test('the persisted list keeps only the newest keys within the cap', () => {
+  const keys = Array.from({ length: NOTIFIED_UPDATE_KEY_LIMIT + 2 }, (_, index) => `available:0.0.${index}`);
+  const kept = sanitizeNotifiedUpdateKeys(keys);
+  assert.equal(kept.length, NOTIFIED_UPDATE_KEY_LIMIT);
+  assert.deepEqual(kept, keys.slice(-NOTIFIED_UPDATE_KEY_LIMIT), 'oldest announcements are evicted first');
+
+  // Re-announcing an old key must move it to the newest position, otherwise the
+  // cap would evict the version the user was just told about.
+  const reannounced = sanitizeNotifiedUpdateKeys([...keys.slice(0, NOTIFIED_UPDATE_KEY_LIMIT + 1), 'available:0.0.0']);
+  assert.equal(reannounced.length, NOTIFIED_UPDATE_KEY_LIMIT);
+  assert.equal(reannounced.at(-1), 'available:0.0.0');
+  assert.equal(reannounced.includes('available:0.0.1'), false, 'the genuinely oldest key was dropped');
+});
+
+test('appending is bounded, deduplicated, and round-trips', () => {
+  let list = [];
+  for (let index = 0; index < NOTIFIED_UPDATE_KEY_LIMIT + 3; index += 1) {
+    list = appendNotifiedUpdateKey(list, `available:0.0.${index}`);
+  }
+  assert.equal(list.length, NOTIFIED_UPDATE_KEY_LIMIT);
+  assert.deepEqual(sanitizeNotifiedUpdateKeys(list), list, 'a sanitized list is stable across a reload');
+
+  assert.deepEqual(appendNotifiedUpdateKey(list, 'not-a-key'), list, 'an invalid key changes nothing');
+  assert.equal(appendNotifiedUpdateKey(list, 'ready:0.0.0').at(-1), 'ready:0.0.0');
+  assert.equal(appendNotifiedUpdateKey([], 'available:0.0.1').length, 1);
+  assert.equal(appendNotifiedUpdateKey(null, 'available:0.0.1').length, 1, 'a non-array base is replaced');
 });
