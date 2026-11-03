@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { MODES } = require('../src/prompts');
+const { ANSWER_STYLE_RULE } = require('../src/answer-style');
 
 test('screen-only Assist requires a screenshot and excludes transcript text from its prompt', () => {
   const mode = MODES['assist-screen'];
@@ -70,4 +71,28 @@ test('answer prompts stay general-purpose rather than interview-specific', () =>
   const systems = Object.values(MODES).map((mode) => mode.system || '').join('\n');
   assert.doesNotMatch(systems, /STAR|behavioral interview|hiring manager|interviewer/i);
   assert.doesNotMatch(systems, /compensation expectations/i);
+});
+
+test('every mode prompt ends with the shared answer style rule exactly once', () => {
+  for (const [mode, def] of Object.entries(MODES)) {
+    assert.ok(def.system.includes(ANSWER_STYLE_RULE), `${mode} should carry the shared style rule`);
+    assert.equal(
+      def.system.split(ANSWER_STYLE_RULE).length - 1,
+      1,
+      `${mode} should not paste the style rule more than once`,
+    );
+  }
+});
+
+test('prompt text uses no em dashes, en dashes, or curly quotes', () => {
+  const forbidden = /[\u2013\u2014\u2018\u2019\u201c\u201d]/;
+  const ctx = {
+    transcript: [{ channel: 'them', text: 'Can you walk me through the migration plan?' }],
+    userText: 'What is the timeline?',
+    slideContext: 'Timeline slide text',
+  };
+  for (const [mode, def] of Object.entries(MODES)) {
+    assert.doesNotMatch(def.system, forbidden, `${mode} system prompt`);
+    assert.doesNotMatch(String(def.build(ctx)), forbidden, `${mode} build prompt`);
+  }
 });

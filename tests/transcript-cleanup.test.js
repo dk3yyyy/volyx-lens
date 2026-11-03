@@ -82,6 +82,8 @@ test('the prompt fixes identity, forbids rewriting, and protects numbers and neg
   assert.match(CLEAN_SYSTEM_PROMPT, /leave that word exactly as it arrived/i);
   assert.match(CLEAN_SYSTEM_PROMPT, /never turn a spoken number into digits/i);
   assert.match(CLEAN_SYSTEM_PROMPT, /never change a negation/i);
+  assert.match(CLEAN_SYSTEM_PROMPT, /Never use em dashes/i);
+  assert.doesNotMatch(CLEAN_SYSTEM_PROMPT, /[—–‘’“”]/);
 
   const prompt = buildCleanPrompt(planCleanBatches(turns(2)).batches[0]);
   assert.match(prompt, /\[0\] Them: /);

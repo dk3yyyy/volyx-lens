@@ -31,6 +31,7 @@ const { normalizeSpokenDigits, formatTranscript, transcriptFilename } = require(
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
 const { drainPendingAudio } = require('./src/drain-batch-buffers');
+const { normalizeAnswerText } = require('./src/answer-normalize');
 const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
 const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap, transcriptText } = require('./src/meeting-recap');
@@ -2115,8 +2116,13 @@ async function runFeature(mode, userText, {
       send('status', { message: 'The answer stopped at the model output limit and may be incomplete. Ask a narrower question, or turn on Smart for a larger budget.' });
     }
     if (isCurrent()) {
-      if (mode === 'ask') chatHistory.addExchange(String(userText || '').trim(), fullAnswer);
-      send('llm:done', {});
+      // The style rule asks for no em dashes; this guarantees it even when a
+      // provider ignores the instruction. Streamed tokens have already painted,
+      // so the cleaned answer travels with the terminal event and the renderer
+      // re-renders from it instead of leaving the raw text on screen.
+      const answer = normalizeAnswerText(String(fullAnswer || ''));
+      if (mode === 'ask') chatHistory.addExchange(String(userText || '').trim(), answer);
+      send('llm:done', { text: answer });
     }
     featureCompleted = true;
   } catch (e) {

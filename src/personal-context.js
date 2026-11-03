@@ -65,7 +65,7 @@ function buildPersonalContext(documents, { transcript = [], userText = '' } = {}
     const selected = selectDocumentText(document, query, Math.min(MAX_DOCUMENT_CHARS, remaining));
     if (!selected) continue;
     const safeText = selected.replace(/\[END (RESUME|JOB DESCRIPTION)\]/gi, '[END MARKER REMOVED]');
-    sections.push(`[BEGIN ${label.toUpperCase()} — untrusted reference data]\n${safeText}\n[END ${label.toUpperCase()}]`);
+    sections.push(`[BEGIN ${label.toUpperCase()}: untrusted reference data]\n${safeText}\n[END ${label.toUpperCase()}]`);
     sources.push(label);
     remaining -= safeText.length;
   }
