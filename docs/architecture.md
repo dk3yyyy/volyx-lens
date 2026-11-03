@@ -32,6 +32,7 @@ Volyx Lens is an Electron application with a strict split between a privileged m
 
 - **Main process** (`main.js`): owns all native resources — the BrowserWindow, capture pipelines, provider clients, credential storage, and OS integrations. It never executes renderer code.
 - **Renderer process** (`renderer/`): a sandboxed Chromium context with `nodeIntegration: false`, `contextIsolation: true`, and `sandbox: true`. It has no direct access to Node.js, the filesystem, or native APIs.
+- **Deep links** (`src/deep-link.js`): the parser accepts only `volyxlens://updates` (or `update`), `volyxlens://release`, `volyxlens://settings` with an optional allowlisted `pane`, and `volyxlens://open`. macOS delivers a link through `open-url`, Windows and Linux through argv on `second-instance` and at launch, and `main.js` holds the newest link in a single slot until `app:renderer-ready` so a cold start still routes it.
 
 ## Preload bridge surface
 
@@ -60,7 +61,7 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Audio streaming | `micPcm`, `systemPcm` |
 | Window | `setIgnoreMouse`, `setWindowCollapsed`, `setModalState`, `openPane` |
 | Lifecycle | `rendererReady`, `quit`, `relaunch`, `log` |
-| Events | `on(channel, cb)`, a filtered allowlist of 31 IPC channels, including `update:open` |
+| Events | `on(channel, cb)`, a filtered allowlist of 32 IPC channels, including `update:open` and `deeplink:open` |
 
 The bridge exposes 84 members in total: 82 methods plus the `platform` and `audioConfig` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
 
@@ -121,9 +122,9 @@ Realtime transcription runs on four providers. Batch transcription is a fallback
 | `azureSpeech` | Realtime | Azure AI Speech (region-based, separate credentials) |
 | `gemini` | Batch | Gemini batch transcription |
 | `groq` | Batch | Groq Whisper, enabled by a Groq key rather than a separate selector |
-| `local Whisper` | Offline batch | whisper.cpp server; disabled by default |
+| `local Whisper` | Offline batch | whisper.cpp server; bundled on Windows x64 and Linux x64/arm64; disabled by default |
 
-`REALTIME_PROVIDERS` in `provider-config.js` lists the four realtime keys. The batch fallback order lives in `src/stt.js`. Local Whisper is gated by `transcription.offlineEnabled`, needs a `whisper-server` binary, and downloads a pinned model into a private cache when one is not present.
+`REALTIME_PROVIDERS` in `provider-config.js` lists the four realtime keys. The batch fallback order lives in `src/stt.js`. Local Whisper is gated by `transcription.offlineEnabled` and needs a `whisper-server` binary. Packaging provisions the pinned whisper.cpp server for Windows x64 and Linux x64/arm64 through `scripts/prepare-whisper-runtime.js`: it downloads the pinned release (v1.9.5, nightly tag `b5454`), verifies the SHA-256 of the archive and of every extracted file, and installs the server plus its shared libraries into `native-bin/` for `electron-builder` to ship. `VOLYX_LENS_SKIP_WHISPER_RUNTIME=1` skips that step. whisper.cpp publishes no macOS server, so a macOS package ships no engine and the toggle stays off there unless `VOLYX_LENS_WHISPER_SIDECAR_BIN` points at one. The Windows build needs the Microsoft Visual C++ 2015-2022 Redistributable at runtime. The model is downloaded into a private cache when one is not present.
 
 ## Capture pipelines
 
@@ -184,8 +185,10 @@ A build is described by two separate capabilities. `installable` means it can do
 
 `src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows; on Linux the name is the channel plus the platform suffix, `latest-x64-linux.yml` and `latest-arm64-linux-arm64.yml`, composed by `src/update-metadata.js` so the workflow publishes the name the client requests). Windows publishes that metadata only for a signed installer, so the unsigned installer ships with no `latest.yml` and no auto-update channel, while the tag-triggered Linux release publishes it for the unsigned AppImages and they do update in place. macOS auto-update is only published for signed builds; the current unsigned DMGs ship without updater metadata.
 
+Before a release job uploads, `scripts/verify-release-assets.js` checks the file set against `src/release-assets.js`: no duplicate installer, AppImage, or macOS archive for an architecture, a checksum beside each Windows and Linux artifact, and a `latest*.yml` name that matches the channel the client requests (or no metadata where the build intentionally publishes none). Five workflows run it before upload.
+
 ### Update notifications
 
-`src/update-scheduler.js` polls `updateManager.check()` once shortly after launch and then every six hours (defaults in that module; timers are injected so the cadence is unit-tested). Polling is armed only while `settings.notifications.updates` is true **and** the build reports `supported: true`; a build that can only point at the release page still qualifies, because knowing a release exists is useful on its own. `main.js` calls `updateScheduler.sync()` whenever settings change and `stop()` during `shutdownAll`.
+`src/update-scheduler.js` polls `updateManager.check()` once shortly after launch and then every six hours (defaults in that module; timers are injected so the cadence is unit-tested). The relative timer measures awake time, so `main.js` calls `updateScheduler.onResume()` on `powerMonitor`'s `resume`; when the six-hour interval elapsed in wall time while the machine slept, the scheduler arms a short catch-up check instead of waiting out a fresh interval. Polling is armed only while `settings.notifications.updates` is true **and** the build reports `supported: true`; a build that can only point at the release page still qualifies, because knowing a release exists is useful on its own. `main.js` calls `updateScheduler.sync()` whenever settings change and `stop()` during `shutdownAll`. `update-manager` records `lastCheckedAt` when a check finishes, including a failed one, and the Updates pane shows it.
 
-`src/update-notifications.js` is pure: given the previous state, the next state, and whether the preference is on, it returns an OS notification for the `available` and `downloaded` edges or `null`. Each notice carries a `key` (`available:<version>`), and `main.js` keeps the keys it has already announced — a periodic check re-enters `available` every cycle, so the transition alone would notify every six hours. Clicking a notification focuses the window, sends `update:open`, and the renderer opens Settings → Updates.
+`src/update-notifications.js` is pure: given the previous state, the next state, and whether the preference is on, it returns an OS notification for the `available`, `unavailable`, and `downloaded` edges or `null`. Each notice carries a `key` (`available:<version>`), and `main.js` persists the keys it has announced through `store.recordNotifiedUpdateKey`, so a relaunch does not announce the same version again; a periodic check re-enters `available` every cycle, so the transition alone would notify every six hours. `src/notification-policy.js` decides delivery: a banner is silent, a locked screen defers the notice until unlock, and listening or a focused window drops it. Clicking a notification focuses the window, sends `update:open`, and the renderer opens Settings → Updates.

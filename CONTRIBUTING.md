@@ -13,7 +13,7 @@ Thanks for wanting to contribute. Volyx Lens is a privacy-first cross-platform c
 Native build tools are required for some platform-specific features:
 
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`) — required for the native OCR helper (`volyx-lens-vision-ocr`) and the system-audio helper (`volyx-lens-system-audio`).
-- **Windows:** [Windows Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ build tools workload) or a full Visual Studio installation — required for native module compilation if you rebuild native dependencies.
+- **Windows:** [Windows Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ build tools workload) or a full Visual Studio installation — required for native module compilation if you rebuild native dependencies. The packaged whisper.cpp server also needs the Microsoft Visual C++ 2015-2022 Redistributable at runtime.
 - **Linux:** `build-essential`, `libsecret-1-dev`, `libnotify-dev`, and `libgtk-3-dev` (Debian/Ubuntu equivalents) — required for keyring and notification support. The Them channel additionally needs `pulseaudio-utils` (or PipeWire's PulseAudio compatibility) at runtime.
 
 ## Testing
@@ -30,6 +30,8 @@ This runs all `tests/*.test.js` files via Node's built-in test runner. To run a 
 node --test tests/provider-config.test.js
 ```
 
+CI runs the unit suite on Node 20 and 22; the coverage, syntax, and UI checks run once on Node 20.
+
 Other verification checks:
 
 ```bash
@@ -45,7 +47,7 @@ npm run release:check     # Release-readiness checks
 |---|---|
 | `VOLYX_LENS_NO_PROTECT` | Disables `setContentProtection(true)` on the overlay window (useful for screen-recording the app itself). |
 | `VOLYX_LENS_WHISPER_SIDECAR_BIN` | Absolute path to a pre-built `whisper-server` binary, bypassing the bundled download. |
-| `VOLYX_LENS_SKIP_WHISPER_RUNTIME` | Set to `1` to skip provisioning the pinned whisper.cpp server during `electron-builder` packaging. |
+| `VOLYX_LENS_SKIP_WHISPER_RUNTIME` | Set to `1` to skip provisioning the pinned whisper.cpp server (Windows x64 and Linux x64/arm64) during `electron-builder` packaging; the package then ships no local Whisper engine. |
 | `VOLYX_LENS_WHISPER_SIDECAR` | Set to `1` to opt into whisper sidecar mode for offline transcription. |
 | `VOLYX_LENS_WHISPER_CLI` | Path to a local whisper CLI executable (legacy offline path). |
 | `VOLYX_LENS_WHISPER_MODEL` | Model file path for the local whisper CLI. |
