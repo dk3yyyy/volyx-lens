@@ -207,13 +207,26 @@ Each provider stores separate **Fast** and **Smart** model/deployment names, so 
 | **Azure AI Speech** | realtime transcription | Speech resource key and region (bare region name, e.g. `eastus`); no model name required |
 | **Local Whisper** | optional offline batch transcription | requires a `whisper-server` binary and a downloaded whisper.cpp model; audio transcribed in memory; disabled by default. Windows x64 and Linux x64/arm64 packages ship the pinned whisper.cpp server; macOS packages cannot (whisper.cpp publishes no macOS server), so there the toggle stays off unless `VOLYX_LENS_WHISPER_SIDECAR_BIN` points at one. |
 
+On Windows, local Whisper also needs the Microsoft Visual C++ 2015-2022 Redistributable.
+
 Choose a key that covers the features you use. A restricted OpenAI project key that only allows chat returns `403` on transcription. Anthropic has no speech-to-text, so pair it with an OpenAI, Gemini, Deepgram, Azure, or local Whisper key for listening. Gemini covers chat and transcription with one key.
 
-Keys stay in the Electron main process and are protected with `safeStorage` / macOS Keychain where available. The renderer receives credential status, not stored secret values. Settings warns if secure storage is unavailable.
+Keys stay in the Electron main process and are protected with `safeStorage` / macOS Keychain where available. The renderer receives credential status, not stored secret values. Settings warns if secure storage is unavailable. An older plaintext credential record is rewritten so the file no longer holds the keys in the clear on first load, whether or not a keyring is available.
 
 ### 3. Understand screen-share behavior
 
 Capture behavior depends on your operating system and the app being used to share or record. On macOS, some tools honor Volyx Lens's protected-window flag and ScreenCaptureKit-based tools may not. On Windows 10 2004 or later the window is removed from capture through `WDA_EXCLUDEFROMCAPTURE`; older Windows versions capture it as a black window. Linux has no OS-level capture exclusion. Assume the overlay may be visible, and do not rely on capture protection to conceal recording or AI assistance.
+
+## Deep links
+
+The installed app registers `volyxlens://`, so a link can open a specific view instead of only bringing the window forward:
+
+- `volyxlens://settings?pane=listening` opens Settings on a pane. The pane values are `providers`, `listening`, `context`, `shortcuts`, `updates`, and `help`.
+- `volyxlens://updates`, or `volyxlens://update`, opens the Updates pane and refreshes its state.
+- `volyxlens://release` opens the Updates pane.
+- `volyxlens://open` brings the app forward and focuses the prompt.
+
+The scheme is registered by the installed app, not by `npm start`. Other schemes, unknown routes, extra query parameters, and absolute URLs are refused.
 
 ## Task Context
 
@@ -279,7 +292,7 @@ For a deeper dive into the process split, preload bridge surface, provider routi
 - **Protected secrets.** Credentials are accessed in the main process and use `safeStorage` / Keychain when available.
 - **Explicit expensive requests.** Large multi-image requests, multi-part long-meeting recaps, and multi-request transcript cleanups require confirmation.
 - **Opt-in slide tracking.** Screen samples are compared locally while Listening is active; only stable-change previews are held in bounded memory and nothing is sent to a provider automatically.
-- **Update checks are bounded and disclosed.** While update notifications are on (the default), a packaged build asks GitHub for the newest version shortly after launch and then every six hours. A signed build that can install updates uses the updater's release feed; a build that cannot install in place, such as an unsigned DMG or installer, asks the public GitHub Releases API for the newest tag instead. Both necessarily carry your IP address, a user agent, and on the updater path a random updater ID stored in the app's data folder plus the platform-specific channel (which encodes the architecture on macOS and Linux); nothing else is sent. Nothing is downloaded or installed without your action. Turn the toggle off in Settings → Updates and the scheduled check stops.
+- **Update checks are bounded and disclosed.** While update notifications are on (the default), a packaged build asks GitHub for the newest version shortly after launch, every six hours, and once more after the machine wakes when that interval passed while it slept. A signed build that can install updates uses the updater's release feed; a build that cannot install in place, such as an unsigned DMG or installer, asks the public GitHub Releases API for the newest tag instead. Both necessarily carry your IP address, a user agent, and on the updater path a random updater ID stored in the app's data folder plus the platform-specific channel (which encodes the architecture on macOS and Linux); nothing else is sent. Nothing is downloaded or installed without your action. The Updates pane shows when the last check finished. Update notices are silent, wait for the screen to unlock, stay away while you are listening or the window is focused, and announce a version once rather than on every launch. Turn the toggle off in Settings → Updates and the scheduled check stops.
 - **Best-effort overlay privacy.** `setContentProtection(true)` / `NSWindowSharingNone` may reduce accidental capture on macOS, but is not a security guarantee or a concealment feature.
 
 ## Transcript workspace
@@ -290,6 +303,8 @@ While listening, confirmed provider chunks are grouped into timestamped **You** 
 - export TXT, Markdown, structured JSON, or SRT/VTT subtitles through a native save dialog;
 - clear the session with confirmation;
 - show sanitized diagnostics without keys, endpoints, raw audio, images, personal-context text, or transcript content.
+
+When the final drain gives up on audio that was still buffered, the workspace shows a transcript gap with the affected channel and an approximate duration instead of a silent hole.
 
 Long answer requests use bounded recent context. Longer recaps use bounded part summaries and require confirmation before multiple paid provider requests are made.
 
@@ -335,6 +350,12 @@ Turn on **Settings → Privacy & security → Microphone → Let desktop apps ac
 <summary><strong>Volyx Lens fails to start with “Cannot read properties of undefined (reading 'getPath')”</strong></summary>
 
 Something in your environment set `ELECTRON_RUN_AS_NODE=1`, which makes Electron boot as plain Node. Some editors and terminals set it, notably VS Code's integrated terminal. Clear it and relaunch: `unset ELECTRON_RUN_AS_NODE` (PowerShell: `Remove-Item Env:\ELECTRON_RUN_AS_NODE`).
+</details>
+
+<details>
+<summary><strong>The overlay reloads itself or closes after a renderer crash</strong></summary>
+
+A renderer crash reloads the overlay up to twice a minute, with clicks passing through to your screen while it restarts; a crash past that budget shuts the app down cleanly instead of looping.
 </details>
 
 <details>

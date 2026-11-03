@@ -211,7 +211,7 @@
           <li><span>02</span>The app has no analytics or advertising SDK.</li>
           <li><span>03</span>You can switch providers without changing the workflow.</li>
           <li><span>04</span>The active transcript and Task Context stay memory-only, within fixed size limits, for the current session, and are cleared when the session ends. Saved meeting history and crash recovery are on by default for new installs; transcript text is written to this device only, and you can turn both off at any time.</li>
-          <li><span>05</span>The only periodic request is the update check: while notifications are on, the app asks GitHub Releases for the newest version shortly after launch and every six hours; those requests necessarily carry your IP address, the updater's user agent, a random updater ID stored on this device, and the platform-specific update channel, and turning notifications off in Settings → Updates stops the scheduled check.</li>
+          <li><span>05</span>The only periodic request is the update check: while notifications are on, the app asks GitHub Releases for the newest version shortly after launch, every six hours, and once shortly after the machine wakes if six hours passed while it slept; those requests necessarily carry your IP address, the updater's user agent, a random updater ID stored on this device, and the platform-specific update channel, and turning notifications off in Settings → Updates stops the scheduled check.</li>
         </ul>
         <p class="privacy-caveat">Your chosen AI provider still receives the context you send and applies its own retention and privacy terms. Review those terms before sharing sensitive material.</p>
       </div>
@@ -300,7 +300,7 @@
         <p class="eyebrow">Bring your own model access</p>
         <h2 id="provider-heading">Twelve response providers.<br><em>No forced route.</em></h2>
         <p>Configure the response and transcription providers that fit your work. Model availability and charges come from those providers, not Volyx Lens.</p>
-        <p>Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech. Batch transcription falls back to OpenAI, Google Gemini, or Groq Whisper. Local Whisper works only when a whisper-server binary is configured, and the published build does not bundle one. Pick a transcription language or let it auto-detect.</p>
+        <p>Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech. Batch transcription falls back to OpenAI, Google Gemini, or Groq Whisper. Local Whisper ships in the Windows and Linux packages (macOS packages cannot bundle one, so there it works only when a whisper-server binary is configured). Pick a transcription language or let it auto-detect.</p>
       </div>
       <div class="provider-lists">
         <p class="provider-group">Response providers</p>
@@ -398,7 +398,7 @@
         </details>
         <details>
           <summary>What works offline?<span aria-hidden="true"></span></summary>
-          <p>AI responses require a configured provider; with a local Ollama server they run fully offline. Realtime transcription uses your configured provider (OpenAI, Azure Foundry, Deepgram, or Azure AI Speech), and Local Whisper covers offline batch transcription only when a whisper-server binary is configured (the published build does not bundle one); automatic cloud fallback remains off by default.</p>
+          <p>AI responses require a configured provider; with a local Ollama server they run fully offline. Realtime transcription uses your configured provider (OpenAI, Azure Foundry, Deepgram, or Azure AI Speech), and Local Whisper covers offline batch transcription in the Windows and Linux packages, or anywhere a whisper-server binary is configured (macOS packages do not bundle one); automatic cloud fallback remains off by default.</p>
         </details>
         <details>
           <summary>Can Volyx Lens detect and save meetings?<span aria-hidden="true"></span></summary>
