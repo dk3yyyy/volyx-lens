@@ -50,8 +50,9 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | History | `historyList`, `historyLimits`, `historyGet`, `historyDelete`, `historyDeleteMany`, `historyUndoDelete`, `historyRestoreTrash`, `historyClear`, `historyExport`, `historyBackupAll`, `historyRestoreAll`, `historyRecap`, `historyClean`, `historyParticipant`, `historyDiscardCleaned` |
 | Recovery | `recoveryGet`, `recoveryRestore`, `recoveryDiscard` |
 | Diagnostics | `diagnosticsGet`, `diagnosticsCopy` |
+| Clipboard | `copyText` |
 | Shortcuts | `shortcutsGet`, `shortcutsRetry`, `shortcutsSet`, `shortcutsReset`, `shortcutsValidate` |
-| Updates | `updateGetState`, `updateCheck`, `updateDownload`, `updateInstall` |
+| Updates | `updateGetState`, `updateCheck`, `updateDownload`, `updateInstall`, `updateOpenReleases` |
 | Provider testing | `testResponseProvider`, `providerCapability`, `testRealtime`, `startLiveTranscriptionTest`, `finishLiveTranscriptionTest`, `liveTranscriptionPcm`, `retryRealtime` |
 | Permissions | `requestPermission`, `permissionStatus`, `openPermissionSettings` |
 | Slide tracking | `slideTrackingClear`, `slideTrackingReview` |
@@ -59,9 +60,9 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Audio streaming | `micPcm`, `systemPcm` |
 | Window | `setIgnoreMouse`, `setWindowCollapsed`, `setModalState`, `openPane` |
 | Lifecycle | `rendererReady`, `quit`, `relaunch`, `log` |
-| Events | `on(channel, cb)`, a filtered allowlist of 29 IPC channels |
+| Events | `on(channel, cb)`, a filtered allowlist of 31 IPC channels, including `update:open` |
 
-The bridge exposes 83 members in total; the table groups them by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
+The bridge exposes 84 members in total: 82 methods plus the `platform` and `audioConfig` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
 
 The `on()` listener uses a strict allowlist of event channels. Any channel not in the allowlist is silently ignored, preventing the renderer from subscribing to unintended IPC traffic.
 
@@ -166,7 +167,8 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 4. `createResponseRoute` builds primary + fallback LLM instances.
 5. `chooseInitialProvider` selects the best compatible provider.
 6. `streamWithFallback` streams tokens back to the renderer via `llm:token` IPC.
-7. Renderer displays the streaming answer. On completion, `llm:done` fires; on error, `llm:error` fires with a sanitized message.
+7. On completion, the main process normalizes the finished answer before it sends `llm:done` (`src/answer-normalize.js`): em and en dashes become commas, a dash between digits becomes a hyphen, and curly quotes become straight ones, while fenced code blocks are copied through byte for byte.
+8. Renderer displays the streaming answer and re-renders the normalized text carried by `llm:done`; on error, `llm:error` fires with a sanitized message.
 
 ## On-device state
 
@@ -178,7 +180,7 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 
 ## Update path
 
-`src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows, `latest-<arch>-linux.yml` for Linux; the release workflow canonicalizes the Linux metadata name so the updater finds it). Windows and Linux publish auto-update metadata with the installer/AppImages. macOS auto-update is only published for signed builds; the current unsigned DMGs ship without updater metadata.
+`src/update-manager.js` uses `electron-updater` with per-platform publish metadata (`latest.yml` for Windows, `latest-<arch>-linux.yml` for Linux; the release workflow canonicalizes the Linux metadata name so the updater finds it). Windows publishes that metadata only for a signed installer, so the unsigned installer ships with no `latest.yml` and no auto-update channel, while the tag-triggered Linux release publishes it for the unsigned AppImages and they do update in place. macOS auto-update is only published for signed builds; the current unsigned DMGs ship without updater metadata.
 
 ### Update notifications
 

@@ -82,12 +82,12 @@ What changed in this release:
 
 - **Opencode and Opencode Go** join the response providers, with a generic **Custom** OpenAI-compatible endpoint alongside them. Opencode Go uses a hosted Go key, bare model ids, per-model vision gating, and a reasoning-aware output floor.
 - **Meeting history is on by default for new installs.** Existing profiles keep the setting they already had, so an update never starts writing transcripts without a decision.
-- **The update button always does something.** Signed builds update in place; unsigned and development builds open the latest release page instead of showing a disabled control.
+- **The update button always does something.** Windows and macOS update in place only when the build is signed, and unsigned Linux AppImages update in place too. A build that cannot self-update, such as unsigned Windows or macOS or a development build, opens the latest release page instead of showing a disabled control.
 - Helper binaries are validated by real path, regular-file status, and executable permissions before they are launched.
 - Timer-sensitive tests are deterministic, and the dependency audit gate is cleared with pinned overrides.
 - Docs and the landing page now match the code: onboarding counts, export formats, update channel, provider count, and the mobile download grid.
 
-v0.7.5 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata is published for Windows and Linux (consumed only by signed release builds); the macOS updater is published together with the signed DMGs.
+v0.7.5 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Signed and notarized macOS builds launch without that step once credentials are configured. Auto-update metadata follows signing on Windows and macOS: a signed Windows installer publishes `latest.yml`, an unsigned one publishes no `latest.yml` and has no auto-update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish `latest-<arch>-linux.yml` for the unsigned AppImages, so they do update in place.
 
 | Mac | Installer |
 |---|---|
@@ -130,6 +130,7 @@ Ad-hoc verification builds are produced as workflow artifacts from the Actions t
 | Capability | macOS | Windows | Linux |
 |---|---|---|---|
 | Release artifact | Unsigned DMG (signed and notarized once credentials are configured) | NSIS installer via release CI | AppImage (x64/arm64) via release CI |
+| Auto-update | ✅ Signed builds only; the unsigned DMGs carry no updater metadata | ✅ Signed installers only; the unsigned installer publishes no `latest.yml` | ✅ AppImages update in place; no signing step exists for them |
 | Microphone (You channel) | ✅ | ✅ | ✅ |
 | Screen + coding help | ✅ | ✅ | ✅ |
 | Meeting audio (Them channel) | ✅ ScreenCaptureKit helper | ✅ system-audio loopback | ⚠️ best-effort via PulseAudio/PipeWire monitor |
@@ -162,6 +163,8 @@ Notes:
 | **Ask anything** | type and press `↵` | selected screen/conversation context |
 | **New Session** | `/new` or New Session | clears in-memory session context |
 | **Emergency quit** | `⌘` `⇧` `X` or power button | stops capture and clears session media context |
+
+Assist, What should I say?, and typed questions share one conversation: the most recent exchanges, up to 8 turns and 12,000 characters, travel with each new request. New Session clears that conversation, and starting a new listening session starts a new one, so one meeting's answers cannot follow you into the next.
 
 The **Smart** toggle selects the configured higher-capability model. Settings reports whether each global shortcut registered successfully and keeps equivalent visible buttons available.
 
@@ -274,7 +277,7 @@ For a deeper dive into the process split, preload bridge surface, provider routi
 - **Protected secrets.** Credentials are accessed in the main process and use `safeStorage` / Keychain when available.
 - **Explicit expensive requests.** Large multi-image requests, multi-part long-meeting recaps, and multi-request transcript cleanups require confirmation.
 - **Opt-in slide tracking.** Screen samples are compared locally while Listening is active; only stable-change previews are held in bounded memory and nothing is sent to a provider automatically.
-- **Update checks are bounded and disclosed.** While update notifications are on (the default), a signed packaged build asks GitHub Releases for the newest version shortly after launch and then every six hours — one HTTPS request that carries no account, identifier, or usage data. Nothing is downloaded or installed without your action. Turn the toggle off in Settings → Updates and the request stops; builds that cannot install updates never check at all.
+- **Update checks are bounded and disclosed.** While update notifications are on (the default), a packaged release build that can install updates asks GitHub Releases for the newest version shortly after launch and then every six hours. The check makes a few HTTPS requests to GitHub, and they necessarily carry your IP address, the updater's user agent, a random updater ID stored in the app's data folder, and the platform-specific update channel it asks for (which also encodes the architecture on macOS and Linux); nothing else is sent. Nothing is downloaded or installed without your action. Turn the toggle off in Settings → Updates and the scheduled check stops; builds that cannot install updates never check at all.
 - **Best-effort overlay privacy.** `setContentProtection(true)` / `NSWindowSharingNone` may reduce accidental capture on macOS, but is not a security guarantee or a concealment feature.
 
 ## Transcript workspace

@@ -57,7 +57,7 @@ npm run release:check     # Release-readiness checks
 
 - Branch from `main`: `git checkout -b fix/your-description`
 - Keep changes focused. Prefer small, reviewable pull requests over one large change.
-- Preserve the privacy boundaries documented in the README. Anything that touches audio, screen, or personal-context data must stay local-first and never phone home.
+- Preserve the privacy boundaries documented in the README. Anything that touches audio, screen, or personal-context data must stay local-first and never phone home. The one documented exception is the update check in `src/update-scheduler.js`: it contacts GitHub Releases only on builds that can install updates, only while Settings → Updates notifications are on, and the scheduled check stops when they are turned off.
 - Include tests for behavior changes (`npm test` runs the full suite).
 - Run `npm test` and `npm run check:syntax` before pushing.
 - Open a pull request against `main` and describe what you changed and why.
