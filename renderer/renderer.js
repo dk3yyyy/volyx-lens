@@ -2141,6 +2141,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     clearTranscriptWorkspace();
   });
   volyxLens.on('update:state', renderUpdateState);
+  // Clicking the update notification lands on the pane that can act on it.
+  volyxLens.on('update:open', async () => {
+    try {
+      await openSettings();
+      selectSettingsSection('updates', { focus: true });
+      await refreshUpdateState();
+    } catch { showStatus('Open Settings to see the available update.'); }
+  });
   volyxLens.on('transcription:state', (event) => {
     if (event.status === 'source' && event.channel === 'them') {
       const labels = { connecting: 'Connecting', connected: 'Connected', failed: 'Failed', stopped: 'Idle' };
@@ -2686,6 +2694,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#audio-mic-enabled').checked = audio.micEnabled !== false;
     $('#audio-system-enabled').checked = audio.systemEnabled !== false;
     $('#audio-browser-processing').checked = audio.browserMicProcessing !== false;
+    // Absent means on: the default belongs to the settings store, not the DOM.
+    $('#update-notify').checked = !(settings.notifications && settings.notifications.updates === false);
     $('#question-detection-enabled').checked = settings.questionDetection !== false;
     $('#auto-answer-enabled').checked = settings.autoAnswer === true;
     $('#auto-answer-enabled').disabled = settings.questionDetection === false;
@@ -2843,6 +2853,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       ? Math.max(0, Math.min(1, savedPercent / 100))
       : 0.5;
     settings.autoAnswerCooldownSec = Math.max(10, Math.min(600, Number($('#auto-answer-cooldown').value) || 60));
+    settings.notifications = { ...(settings.notifications || {}), updates: $('#update-notify').checked };
     $('#auto-answer-enabled').disabled = settings.questionDetection === false;
     $('#auto-answer-confidence').disabled = settings.autoAnswer !== true;
     $('#auto-answer-cooldown').disabled = settings.autoAnswer !== true;

@@ -471,7 +471,8 @@
                 <button id="update-install" type="button" hidden>Restart &amp; Install</button>
               </div>
             </div>
-            <div class="s-note">Updates are manual: Volyx Lens does not check or download in the background. Signed packaged builds install in place; in every other build the button opens the latest release page so you can download the current installer.</div>
+            <div class="s-field"><label for="update-notify">Notify me when an update is available</label><input id="update-notify" type="checkbox" /></div>
+            <div class="s-note">With notifications on, Volyx Lens checks GitHub Releases for a signed update shortly after launch and then every six hours, and shows a desktop notification when one is available. It never downloads or installs without you asking. Builds that cannot self-update stay silent because there is nothing to install; the button opens the latest release page instead.</div>
           </section>
 
           <section class="s-page" id="settings-page-help" data-settings-page="help" aria-labelledby="settings-help-title" hidden>

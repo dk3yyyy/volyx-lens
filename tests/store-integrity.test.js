@@ -411,3 +411,17 @@ test('a legacy plaintext record is read for the session then rewritten without i
   assert.doesNotMatch(rewritten, /legacy-fixture-key/, 'the file no longer carries it');
   assert.match(rewritten, /"mode": "memory-only"/);
 });
+
+test('the update notification preference defaults on, persists, and rejects non-booleans', () => {
+  const store = loadStore(temporaryUserData());
+  assert.equal(store.getSettings().notifications.updates, true, 'on by default');
+  assert.equal(store.getPublicSettings().notifications.updates, true, 'the renderer can read it');
+
+  store.setSettings({ notifications: { updates: false } });
+  assert.equal(store.getSettings().notifications.updates, false);
+  assert.equal(store.getPublicSettings().notifications.updates, false);
+
+  // A stray value must not silently turn the switch back on.
+  store.setSettings({ notifications: { updates: 'no' } });
+  assert.equal(store.getSettings().notifications.updates, false);
+});

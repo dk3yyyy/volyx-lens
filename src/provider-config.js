@@ -158,6 +158,7 @@ function getDefaultSettings() {
     autoAnswerConfidence: 0.5,
     autoAnswerCooldownSec: 60,
     assistContext: 'both',
+    notifications: { updates: true },
     apiKeys: { ...apiKeys, deepgram: '', azureRealtime: '', azureSpeech: '' },
     models,
     endpoints: { azure: '', azureRealtime: '' },
