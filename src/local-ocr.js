@@ -7,6 +7,31 @@ const MAX_STDOUT_BYTES = 512 * 1024;
 const MAX_TEXT_CHARACTERS = 64 * 1024;
 const DEFAULT_TIMEOUT_MS = 15000;
 
+// Short, fixed explanations for every reason local OCR can report. The UI shows
+// these verbatim, so they must stay path-free and never echo helper stderr or any
+// other string that came off the filesystem.
+const OCR_REASON_LABELS = Object.freeze(Object.assign(Object.create(null), {
+  unsupported_platform: 'not available on this platform',
+  helper_missing: 'helper not installed in this build',
+  unsafe_helper: 'helper failed its safety check',
+  spawn_failed: 'helper could not start',
+  timeout: 'helper timed out',
+  output_oversized: 'helper returned too much data',
+  helper_reported_error: 'helper reported an error',
+  helper_exit: 'helper stopped unexpectedly',
+  invalid_output: 'helper returned unreadable output',
+  invalid_image: 'screen image could not be read',
+  internal_error: 'recognition failed unexpectedly',
+}));
+const OCR_REASON_FALLBACK = 'reason not reported';
+
+// Map an internal reason code to one stable user-facing clause. Unknown codes
+// (including prototype keys) get the neutral fallback instead of being echoed.
+function ocrReasonLabel(reason) {
+  const key = typeof reason === 'string' ? reason.trim() : '';
+  return OCR_REASON_LABELS[key] || OCR_REASON_FALLBACK;
+}
+
 function decodeImageDataUrl(dataUrl) {
   if (typeof dataUrl !== 'string') throw new Error('invalid_image');
   const match = /^data:image\/(?:png|jpeg);base64,([A-Za-z0-9+/=\r\n]+)$/.exec(dataUrl);
@@ -237,6 +262,9 @@ module.exports = {
   MAX_STDOUT_BYTES,
   MAX_TEXT_CHARACTERS,
   DEFAULT_TIMEOUT_MS,
+  OCR_REASON_LABELS,
+  OCR_REASON_FALLBACK,
+  ocrReasonLabel,
   decodeImageDataUrl,
   resolveVisionHelper,
   validateVisionHelper,

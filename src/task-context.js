@@ -7,6 +7,15 @@ const DEFAULT_MAX_OCR_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_OCR_CAPTURE_BYTES = 64 * 1024;
 const ALLOWED_IMAGE = /^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=\r\n]+$/;
 const OCR_STATUSES = new Set(['pending', 'ready', 'failed', 'unavailable', 'evicted']);
+// Reason codes come from src/local-ocr.js. Only a short lowercase token is kept:
+// the renderer never displays the code itself, but bounding it here keeps a
+// malformed or hostile string out of the task-context state entirely.
+const OCR_REASON_PATTERN = /^[a-z][a-z_]{0,39}$/;
+
+function normalizeOcrReason(reason) {
+  const value = typeof reason === 'string' ? reason.trim() : '';
+  return OCR_REASON_PATTERN.test(value) ? value : null;
+}
 
 function createTaskContext({
   maxCaptures = DEFAULT_MAX_CAPTURES,
@@ -40,6 +49,10 @@ function createTaskContext({
       bytes: capture.bytes,
       pinned: capture.pinned,
       ocrStatus: capture.ocrStatus,
+      // A reason code only applies while OCR is not working; once text exists the
+      // reason is stale and is cleared. The code is mapped to user-facing wording
+      // in the main process so no path or helper output can reach the renderer.
+      ocrReason: capture.ocrStatus === 'unavailable' || capture.ocrStatus === 'failed' ? capture.ocrReason || null : null,
       ocrCharacters: capture.ocrText ? capture.ocrText.length : 0,
       ocrTruncated: capture.ocrTruncated === true,
       overlapPreviousId: capture.overlapPreviousId || null,
@@ -124,7 +137,7 @@ function createTaskContext({
     }
   }
 
-  function add(dataUrl, { ocrStatus = 'pending' } = {}) {
+  function add(dataUrl, { ocrStatus = 'pending', ocrReason = null } = {}) {
     if (typeof dataUrl !== 'string' || !ALLOWED_IMAGE.test(dataUrl)) {
       throw new Error('Task context capture did not produce a supported PNG or JPEG image.');
     }
@@ -156,6 +169,7 @@ function createTaskContext({
       capturedAt,
       pinned: false,
       ocrStatus: initialOcrStatus,
+      ocrReason: initialOcrStatus === 'unavailable' || initialOcrStatus === 'failed' ? normalizeOcrReason(ocrReason) : null,
       ocrText: null,
       ocrBytes: 0,
       ocrTruncated: false,
@@ -256,13 +270,16 @@ function createTaskContext({
     return { text, bytes: Buffer.byteLength(text, 'utf8'), truncated: true };
   }
 
-  function setOcrResult(id, { status, text = '', truncated = false } = {}) {
+  function setOcrResult(id, { status, text = '', truncated = false, reason = null } = {}) {
     const capture = captures.find((entry) => entry.id === id);
     if (!capture || !OCR_STATUSES.has(status) || status === 'pending') return summary({ ocrUpdated: false, updatedCapture: null });
 
     capture.ocrText = null;
     capture.ocrBytes = 0;
     capture.ocrTruncated = false;
+    // Keep the failure reason only while it still describes the capture: ready
+    // text and evicted text no longer have a failed OCR result behind them.
+    capture.ocrReason = status === 'unavailable' || status === 'failed' ? normalizeOcrReason(reason) : null;
     let ocrEvicted = 0;
     if (status === 'ready') {
       const bounded = boundedOcrText(text);

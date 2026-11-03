@@ -52,7 +52,7 @@ test('task context is bounded, ordered, deduplicated, removable, and memory-only
   const page = context.list({ offset: 0, limit: 2 });
   assert.equal(page.total, 3);
   assert.equal(page.captures.length, 2);
-  assert.deepEqual(Object.keys(page.captures[0]).sort(), ['bytes', 'capturedAt', 'id', 'ocrCharacters', 'ocrStatus', 'ocrTruncated', 'overlapConfidence', 'overlapLineEnd', 'overlapLineStart', 'overlapLines', 'overlapPreviousId', 'overlapPreviousSequence', 'pinned', 'sequence']);
+  assert.deepEqual(Object.keys(page.captures[0]).sort(), ['bytes', 'capturedAt', 'id', 'ocrCharacters', 'ocrReason', 'ocrStatus', 'ocrTruncated', 'overlapConfidence', 'overlapLineEnd', 'overlapLineStart', 'overlapLines', 'overlapPreviousId', 'overlapPreviousSequence', 'pinned', 'sequence']);
   assert.doesNotMatch(JSON.stringify(page), /data:image|hash/);
 
   const removed = context.remove(page.captures[0].id);
@@ -219,6 +219,32 @@ test('OCR unavailable and failed states expose no error or recognized content', 
   assert.equal(captures.find((entry) => entry.id === unavailable.id).ocrStatus, 'unavailable');
   assert.equal(captures.find((entry) => entry.id === failed.id).ocrStatus, 'failed');
   assert.doesNotMatch(JSON.stringify(captures), /must be discarded/);
+});
+
+test('OCR failure reasons are bounded, kept only while failed, and cleared by success', () => {
+  const context = createTaskContext({ maxTotalBytes: 10000, maxCaptureBytes: 1000 });
+  const unavailable = context.add(image('reason-unavailable'), {
+    ocrStatus: 'unavailable',
+    ocrReason: 'helper_missing',
+  }).addedCapture;
+  assert.equal(unavailable.ocrReason, 'helper_missing');
+
+  const failed = context.add(image('reason-failed')).addedCapture;
+  context.setOcrResult(failed.id, { status: 'failed', reason: 'spawn_failed' });
+  let captures = context.list().captures;
+  assert.equal(captures.find((entry) => entry.id === failed.id).ocrReason, 'spawn_failed');
+
+  // A reason is a short code, never free text: a path or a sentence is dropped
+  // instead of being echoed through the list payload.
+  const hostile = context.add(image('reason-hostile')).addedCapture;
+  context.setOcrResult(hostile.id, { status: 'failed', reason: '/Users/someone/private/volyx-lens-vision-ocr' });
+  captures = context.list().captures;
+  assert.equal(captures.find((entry) => entry.id === hostile.id).ocrReason, null);
+
+  // A ready result makes the old failure reason stale.
+  context.setOcrResult(unavailable.id, { status: 'ready', text: 'recognized' });
+  captures = context.list().captures;
+  assert.equal(captures.find((entry) => entry.id === unavailable.id).ocrReason, null);
 });
 
 test('overlapping code pages remain saved, link lines 40–60, and rank only unique content', () => {
