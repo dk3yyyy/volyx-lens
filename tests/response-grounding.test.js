@@ -15,10 +15,12 @@ test('all model requests receive an explicit uncertainty and no-guessing rule', 
   assert.match(main, /Summarize this sequential meeting-transcript part[^`]*\$\{SOURCE_UNCERTAINTY_RULE\}/);
 });
 
-test('main process uses bounded chat history for typed follow-ups and clears it with the session', () => {
+test('main process uses bounded chat history for every conversational mode and clears it with the session', () => {
   assert.match(main, /createChatHistory/);
-  assert.match(main, /chatHistory\.turnsFor\(built\)/);
-  assert.match(main, /if \(mode === 'ask'\) chatHistory\.addExchange/);
+  // Assist, Say, and a typed question share one thread. Recording only `ask` meant
+  // an Assist answer was invisible to the question that followed it.
+  assert.match(main, /shouldKeepHistory\(mode\) \? chatHistory\.turnsFor\(built\)/);
+  assert.match(main, /if \(shouldKeepHistory\(mode\)\) \{\s*\n\s*chatHistory\.addExchange\(/);
   assert.match(main, /resetTranscriptData\(\);\n\s*chatHistory\.clear\(\);/);
   assert.match(main, /handleTrusted\('transcript:clear'[\s\S]*?resetTranscriptData\(\);\n\s*chatHistory\.clear\(\);/);
 });

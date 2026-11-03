@@ -32,6 +32,7 @@ const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = 
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
 const { drainPendingAudio } = require('./src/drain-batch-buffers');
 const { normalizeAnswerText } = require('./src/answer-normalize');
+const { shouldKeepHistory, userTextForHistory } = require('./src/history-scope');
 const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
 const { createAutoAssistPolicy } = require('./src/auto-assist');
 const { planMeetingRecap, transcriptText } = require('./src/meeting-recap');
@@ -2086,7 +2087,10 @@ async function runFeature(mode, userText, {
     }
     const baseSystem = personalContext.systemRules ? `${def.system}\n\n${personalContext.systemRules}` : def.system;
     const system = `${baseSystem}\n\n${SOURCE_UNCERTAINTY_RULE}\n\n${UNTRUSTED_INPUT_RULE}\n\n${PLAIN_TEXT_OUTPUT_RULE}`;
-    const turns = mode === 'ask' ? chatHistory.turnsFor(built) : [{ role: 'user', text: built }];
+    // Assist, Say, and a typed question are one conversation. Sending history only
+    // for `ask` meant pressing Assist and then asking a follow-up started the model
+    // from nothing, with no sight of the answer it had just given.
+    const turns = shouldKeepHistory(mode) ? chatHistory.turnsFor(built) : [{ role: 'user', text: built }];
     // Coding and screen explanations need more room than a one-line reply.
     const modeTokenBudget = def.maxTokens
       ? (settings.smart ? def.maxTokens.smart : def.maxTokens.fast)
@@ -2121,7 +2125,9 @@ async function runFeature(mode, userText, {
       // so the cleaned answer travels with the terminal event and the renderer
       // re-renders from it instead of leaving the raw text on screen.
       const answer = normalizeAnswerText(String(fullAnswer || ''));
-      if (mode === 'ask') chatHistory.addExchange(String(userText || '').trim(), answer);
+      if (shouldKeepHistory(mode)) {
+        chatHistory.addExchange(userTextForHistory({ mode, text: userText, label: def.userBubble }), answer);
+      }
       send('llm:done', { text: answer });
     }
     featureCompleted = true;
