@@ -57,6 +57,7 @@ const { createReleaseChecker } = require('./src/release-check-client');
 const { updateNotificationPolicy } = require('./src/notification-policy');
 const { resolveWhisperBinary, defaultBinariesDir } = require('./src/whisper-sidecar');
 const { createRendererLogForwarder } = require('./src/renderer-log');
+const { shouldReloadAfterCrash, DEFAULT_CRASH_WINDOW_MS, DEFAULT_CRASH_MAX_RELOADS } = require('./src/renderer-crash-recovery');
 const { parseDeepLink } = require('./src/deep-link');
 const { DEFAULT_DOCK_SIZES, dockBounds, dockIntentPoint, dockSideForIntent, railCenter, sameBounds } = require('./src/window-docking');
 const { createWindowAutoFitController } = require('./src/window-auto-fit');
@@ -1206,7 +1207,62 @@ else app.on('second-instance', (_event, argv) => {
   else focusAppWindow();
 });
 
+// -------- renderer crash recovery --------
+// The renderer is the only thing that tells the main process to let clicks
+// through, so a dead renderer leaves an invisible always-on-top window that
+// swallows every click. Until it reports ready again the window is forced into
+// pass-through, and a reload budget (src/renderer-crash-recovery.js) decides
+// whether to bring it back or take the window away.
+let overlayPassThroughForced = false;
+
+function setOverlayPassThrough(active) {
+  if (!win || win.isDestroyed()) return;
+  // Same native switch as the renderer's `mouse:ignore` path. forward:true keeps
+  // hover events flowing, so a reloaded renderer can take the mouse back and
+  // re-enable it over its own UI.
+  try {
+    win.setIgnoreMouseEvents(active === true, { forward: true });
+  } catch (error) {
+    // The window can go away between the destroy check and the native call while
+    // a quit is in flight. That window is being torn down, so a lost switch is
+    // harmless; throwing here would turn recovery into another crash.
+    console.log('[volyx-lens] unable to set overlay click-through', String(error && error.message || error).slice(0, 120));
+  }
+}
+
+function forceOverlayPassThrough() {
+  if (overlayPassThroughForced) return;
+  overlayPassThroughForced = true;
+  setOverlayPassThrough(true);
+  console.log('[volyx-lens] renderer unavailable; overlay forced click-through');
+}
+
+function releaseOverlayPassThrough() {
+  if (!overlayPassThroughForced) return;
+  overlayPassThroughForced = false;
+  // Do not call setIgnoreMouseEvents here. The reloaded renderer installs its
+  // mousemove listener and sends its boot-time `mouse:ignore` before reporting
+  // ready, so it already owns the switch; if the pointer was over the UI during
+  // boot it may have re-enabled the mouse, and forcing pass-through now would
+  // swallow that first click.
+  console.log('[volyx-lens] renderer ready; click-through restored to the renderer');
+}
+
+function quitAfterFatalError(detail) {
+  // Fail visibly rather than leaving an always-on-top window that cannot be
+  // dismissed. Cleanup runs before the destroy because destroying the window
+  // fires 'window-all-closed', which would otherwise quit mid-cleanup.
+  console.error(`[volyx-lens] fatal: ${detail}; shutting down and quitting`);
+  shutdownAll().finally(() => {
+    try { if (win && !win.isDestroyed()) win.destroy(); } catch {}
+    app.quit();
+  });
+}
+
 function createWindow() {
+  // Crash state belongs to a window, not the app: a recreated window starts with
+  // no forced pass-through and its fresh renderer reports its own click-through.
+  overlayPassThroughForced = false;
   const { workArea } = screen.getPrimaryDisplay();
   const { width: W, height: H } = dockSizes().expanded;
   let rendererHasLoaded = false;
@@ -1307,6 +1363,10 @@ function createWindow() {
     rendererHasLoaded = true;
     win.showInactive();
   });
+  // Reload budget for this window, in closure scope so a fresh window starts
+  // with a clean one. Only reloads are recorded; a crash that exhausts the
+  // budget is the quit decision.
+  const rendererCrashes = [];
   win.webContents.on('render-process-gone', (_e, d) => {
     uiModalOpen = true;
     rendererModalStateReported = false;
@@ -1314,6 +1374,34 @@ function createWindow() {
     rendererReady = false;
     console.log('[volyx-lens] renderer gone', JSON.stringify(d));
     if (state.capturing) setCapturing(false);
+    // From here until the renderer is ready again nothing would turn the
+    // click-through switch back on, so force it before deciding anything: the
+    // screen must stay usable even if the reload itself fails.
+    forceOverlayPassThrough();
+    if (!win || win.isDestroyed()) return;
+    // Shutdown is tearing the window down; reloading now would race the quit.
+    if (shutdownPromise) return;
+    const decision = shouldReloadAfterCrash({
+      crashes: rendererCrashes,
+      now: Date.now(),
+      windowMs: DEFAULT_CRASH_WINDOW_MS,
+      maxReloads: DEFAULT_CRASH_MAX_RELOADS,
+    });
+    rendererCrashes.length = 0;
+    rendererCrashes.push(...decision.crashes);
+    if (!decision.reload) {
+      quitAfterFatalError(
+        `renderer crashed ${decision.recent} time${decision.recent === 1 ? '' : 's'} within ${Math.round(DEFAULT_CRASH_WINDOW_MS / 1000)}s; reload budget of ${DEFAULT_CRASH_MAX_RELOADS} spent`,
+      );
+      return;
+    }
+    console.log(`[volyx-lens] reloading renderer (${decision.recent + 1}/${DEFAULT_CRASH_MAX_RELOADS} within ${Math.round(DEFAULT_CRASH_WINDOW_MS / 1000)}s)`);
+    try {
+      win.reload();
+    } catch (error) {
+      // A reload that throws means the window can never get its renderer back.
+      quitAfterFatalError(`renderer reload failed: ${String(error && error.message || error).slice(0, 120)}`);
+    }
   });
 }
 
@@ -3124,6 +3212,37 @@ const rendererLog = createRendererLogForwarder({
   write: (line) => console.log(line),
 });
 onTrusted('log', (_e, msg) => rendererLog.forward(msg));
+
+// -------- main-process backstop --------
+// Without these, an unhandled rejection or uncaught exception either shows
+// Electron's error dialog or leaves the app half-dead: the overlay is still on
+// screen, but nothing behind it works. Both are reported through the same
+// capped, sanitized forwarder as renderer logs, so a repeating fault cannot
+// flood the log and a huge error object cannot fill the disk.
+function boundedProcessError(error) {
+  // The stack is what makes the line actionable; a plain string (common for
+  // `throw 'message'`) has none. Either way the length is capped here as well
+  // as in the forwarder, because one bad error must not crowd out the rest.
+  const detail = (error && typeof error === 'object' && (error.stack || error.message))
+    || (typeof error === 'string' ? error : '');
+  return String(detail || (error == null ? '' : error)).slice(0, 1000);
+}
+
+process.on('unhandledRejection', (reason) => {
+  // A rejected promise is a bug to fix, not a reason to kill a live session.
+  // Logging itself must never become the next unhandled error, so it is guarded.
+  try { rendererLog.forward(`[main] unhandledRejection: ${boundedProcessError(reason)}`); } catch {}
+});
+
+process.on('uncaughtException', (error) => {
+  try { rendererLog.forward(`[main] uncaughtException: ${boundedProcessError(error)}`); } catch {}
+  // Keep running only while a window is still alive to serve the user. With no
+  // window there is nothing to interact with, so clean up and quit instead of
+  // lingering invisibly.
+  if (win && !win.isDestroyed()) return;
+  quitAfterFatalError('uncaughtException with no live overlay window');
+});
+
 onTrusted('ui:modal-state', (_e, open) => {
   const nextOpen = open === true;
   const modalStateWasKnown = rendererModalStateReported;
@@ -3155,6 +3274,9 @@ onTrusted('ui:modal-state', (_e, open) => {
 onTrusted('app:renderer-ready', () => {
   if (!rendererModalStateReported) uiModalOpen = true;
   rendererReady = true;
+  // The new renderer has installed its mousemove listener before reporting
+  // ready, so it can own the click-through decision again from this point.
+  releaseOverlayPassThrough();
   // A cold-start deep link (or one that arrived during a reload) is replayed
   // here, once the renderer is actually listening.
   if (pendingDeepLink) {
