@@ -153,7 +153,7 @@ jobs:
             dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.zip
             dist/volyx-lens-mac-${{ matrix.arch }}.cdx.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: volyx-lens-macos-${{ matrix.arch }}-unsigned
           path: |

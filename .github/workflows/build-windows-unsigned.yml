@@ -85,7 +85,7 @@ jobs:
             dist/volyx-lens-*-win-x64.exe
             dist/volyx-lens-windows.cdx.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: volyx-lens-windows-x64-unsigned
           path: |

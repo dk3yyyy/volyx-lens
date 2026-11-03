@@ -122,7 +122,7 @@ jobs:
           (cd dist && shasum -a 256 "$(basename "$ZIP_OUTPUT")" > "$(basename "$ZIP_OUTPUT").sha256")
           (cd dist && shasum -a 256 "$(basename "$DMG_OUTPUT")" > "$(basename "$DMG_OUTPUT").sha256")
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: volyx-lens-macos-${{ matrix.arch }}-adhoc-test
           path: |

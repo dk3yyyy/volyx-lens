@@ -145,7 +145,7 @@ jobs:
         with:
           subject-path: dist/*-${{ matrix.arch }}.zip
           sbom-path: dist/volyx-lens-${{ matrix.arch }}.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: volyx-lens-macos-${{ matrix.arch }}
           path: |

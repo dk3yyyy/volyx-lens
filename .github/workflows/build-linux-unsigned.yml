@@ -101,7 +101,7 @@ jobs:
             dist/*.AppImage
             dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: volyx-lens-linux-${{ matrix.arch }}-unsigned
           path: |
