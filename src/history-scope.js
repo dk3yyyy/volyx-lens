@@ -10,10 +10,22 @@
 // Auto-assist fires on its own when a question is detected, and slide review is
 // an internal step, so neither may push turns into that thread.
 
-const NON_CONVERSATIONAL_MODES = new Set(['auto-assist', 'slide-review']);
+// An allowlist, not a denylist: a future internal mode added without thinking
+// about history must default to staying out of the thread rather than silently
+// being replayed into the user's next question.
+const CONVERSATIONAL_MODES = new Set([
+  'ask',
+  'assist',
+  'assist-screen',
+  'assist-conversation',
+  'say',
+  'followup',
+  'recap',
+  'leetcode',
+]);
 
 function shouldKeepHistory(mode) {
-  return !NON_CONVERSATIONAL_MODES.has(String(mode == null ? '' : mode));
+  return CONVERSATIONAL_MODES.has(String(mode == null ? '' : mode));
 }
 
 // A press of Assist carries no typed text, but the model still needs a user turn
@@ -29,4 +41,4 @@ function userTextForHistory({ mode, text, label } = {}) {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
-module.exports = { shouldKeepHistory, userTextForHistory, NON_CONVERSATIONAL_MODES };
+module.exports = { shouldKeepHistory, userTextForHistory, CONVERSATIONAL_MODES };
