@@ -37,6 +37,7 @@ test('development builds explain that signed packaged builds are required', asyn
     availableVersion: null,
     releaseUrl: null,
     progress: null,
+    lastCheckedAt: null,
   });
   await assert.rejects(manager.check(), /cannot install updates automatically/);
 });
@@ -153,6 +154,7 @@ test('development Windows builds explain that packaged builds are required', asy
     availableVersion: null,
     releaseUrl: null,
     progress: null,
+    lastCheckedAt: null,
   });
   await assert.rejects(manager.check(), /cannot install updates automatically/);
 });
@@ -283,3 +285,64 @@ test('a bare 404 is treated the same as the channel-file error code', async () =
   updater.emit('error', error);
   assert.equal(manager.getState().status, 'unavailable');
 });
+
+test('a finished check carries a numeric lastCheckedAt and a running check does not', async () => {
+  const { manager, states } = fixture();
+  const before = Date.now();
+  const checking = manager.check();
+  // check() settles the 'checking' state synchronously, before the request can
+  // finish, so this is the state the pane sees while the work is in flight.
+  const running = manager.getState();
+  assert.equal(running.status, 'checking');
+  assert.equal(running.lastCheckedAt, null, 'a check in progress has not finished yet');
+
+  const settled = await checking;
+  assert.equal(settled.status, 'available');
+  assert.equal(typeof settled.lastCheckedAt, 'number');
+  assert.ok(settled.lastCheckedAt >= before, 'the timestamp is the completion time');
+  assert.ok(settled.lastCheckedAt <= Date.now());
+
+  const checkingStates = states.filter((state) => state.status === 'checking');
+  assert.ok(checkingStates.length > 0);
+  for (const state of checkingStates) {
+    assert.equal(state.lastCheckedAt, null, 'the timestamp is not set when the request starts');
+  }
+  assert.ok(states.every((state) => state.status === 'checking' || typeof state.lastCheckedAt === 'number'));
+});
+
+test('a failed check still records when it finished', async () => {
+  const { manager, updater } = fixture();
+  const before = Date.now();
+  const checking = manager.check();
+  updater.emit('error', new Error('offline'));
+  await checking;
+  const state = manager.getState();
+  assert.equal(state.status, 'error');
+  assert.equal(typeof state.lastCheckedAt, 'number');
+  assert.ok(state.lastCheckedAt >= before);
+});
+
+test('the release-page checker path records a completion too', async () => {
+  const manager = releaseFixture();
+  assert.equal(manager.getState().lastCheckedAt, null);
+  const state = await manager.check();
+  assert.equal(typeof state.lastCheckedAt, 'number');
+  assert.equal(manager.getState().lastCheckedAt, state.lastCheckedAt);
+});
+
+test('a download failure does not claim a check just happened', async () => {
+  const { manager, updater } = fixture();
+  const checking = manager.check();
+  updater.emit('update-available', { version: '0.3.0' });
+  await checking;
+  const completedAt = manager.getState().lastCheckedAt;
+  assert.equal(typeof completedAt, 'number');
+
+  // Leave a gap wide enough that a wrongly stamped Date.now() would differ.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  updater.downloadUpdate = async () => { throw new Error('disk full'); };
+  await manager.download();
+  assert.equal(manager.getState().status, 'error');
+  assert.equal(manager.getState().lastCheckedAt, completedAt, 'only a check, not a download, moves the timestamp');
+});
+

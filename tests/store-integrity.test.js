@@ -410,6 +410,50 @@ test('a legacy plaintext record is read for the session then rewritten without i
   const rewritten = fs.readFileSync(file, 'utf8');
   assert.doesNotMatch(rewritten, /legacy-fixture-key/, 'the file no longer carries it');
   assert.match(rewritten, /"mode": "memory-only"/);
+  // Rewriting must not depend on a working keyring, and a later settings save
+  // must stay successful while keeping the key out of the file.
+  assert.doesNotThrow(() => store.setSettings({ smart: true }));
+  assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /legacy-fixture-key/);
+  assert.equal(store.getPublicSettings().credentialStatus.persisted, false, 'the key is session-only');
+});
+
+test('a plaintext record under a secure vault is sealed and still serves the session', () => {
+  const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+  fs.writeFileSync(file, JSON.stringify({
+    version: 1,
+    credentials: { version: 1, mode: 'plaintext-fallback', values: { openai: 'legacy-secure-fixture-key' } },
+  }, null, 2), { mode: 0o600 });
+
+  // The keyring became available after the plaintext record was written. That
+  // must not leave the old clear-text record on disk until some unrelated
+  // setting changes.
+  const store = loadStore(userData, workingSafeStorage());
+  assert.equal(store.getSettings().apiKeys.openai, 'legacy-secure-fixture-key', 'the session still has the key');
+  const rewritten = fs.readFileSync(file, 'utf8');
+  assert.doesNotMatch(rewritten, /legacy-secure-fixture-key/, 'the plaintext value is gone immediately');
+  assert.match(rewritten, /"mode": "safeStorage"/, 'the record is re-sealed with the working keyring');
+
+  const reloaded = loadStore(userData, workingSafeStorage());
+  assert.equal(reloaded.getSettings().apiKeys.openai, 'legacy-secure-fixture-key', 'the sealed record restores the key');
+  assert.equal(reloaded.getPublicSettings().credentialStatus.secure, true);
+});
+
+test('a locked safeStorage record is never destroyed by the plaintext scrub', () => {
+  const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+  const lockedRecord = { version: 1, mode: 'safeStorage', values: { openai: 'opaque-ciphertext' } };
+  fs.writeFileSync(file, JSON.stringify({ credentials: lockedRecord }));
+
+  // No keyring: the record cannot be opened or re-sealed, so it must survive
+  // both the load path and a later settings write byte for byte.
+  const store = loadStore(userData);
+  assert.equal(store.getPublicSettings().credentialStatus.backend, 'locked-safeStorage');
+  assert.equal(store.getSettings().apiKeys.openai, '', 'nothing is invented for the session');
+  store.setSettings({ smart: false });
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, lockedRecord);
+  assert.throws(() => store.updateApiKeys({ deepseek: 'must-not-reseal' }), /locked by the operating system/i);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, lockedRecord);
 });
 
 test('the update notification preference defaults on, persists, and rejects non-booleans', () => {
