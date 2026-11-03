@@ -425,3 +425,49 @@ test('the update notification preference defaults on, persists, and rejects non-
   store.setSettings({ notifications: { updates: 'no' } });
   assert.equal(store.getSettings().notifications.updates, false);
 });
+
+test('announced update keys persist across a relaunch so a version is announced once per install', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  assert.deepEqual(store.getSettings().notifiedUpdateKeys, [], 'a fresh install has announced nothing');
+  assert.equal(Object.hasOwn(store.getPublicSettings(), 'notifiedUpdateKeys'), false, 'the renderer never sees main-process bookkeeping');
+
+  store.recordNotifiedUpdateKey('available:0.8.0');
+  store.recordNotifiedUpdateKey('ready:0.8.0');
+
+  // A new process means a fresh module instance reading the same userData dir.
+  const reloaded = loadStore(userData).getSettings().notifiedUpdateKeys;
+  assert.deepEqual(reloaded, ['available:0.8.0', 'ready:0.8.0']);
+
+  // Re-recording the newest key is idempotent: no duplicate and no reordering.
+  assert.deepEqual(store.recordNotifiedUpdateKey('ready:0.8.0'), ['available:0.8.0', 'ready:0.8.0']);
+
+  // The renderer must not be able to inject or clear the list through a patch.
+  store.setSettings({ notifiedUpdateKeys: ['available:9.9.9'] });
+  assert.deepEqual(store.getSettings().notifiedUpdateKeys, ['available:0.8.0', 'ready:0.8.0']);
+
+  // An invalid key is ignored on the way in, not written in the hope a reader
+  // will drop it later.
+  assert.deepEqual(store.recordNotifiedUpdateKey('not-a-key'), ['available:0.8.0', 'ready:0.8.0']);
+
+  // The cap holds across relaunches too: only the newest announcements survive.
+  for (let index = 0; index < 12; index += 1) store.recordNotifiedUpdateKey(`available:0.1.${index}`);
+  assert.deepEqual(
+    loadStore(userData).getSettings().notifiedUpdateKeys,
+    Array.from({ length: 10 }, (_, index) => `available:0.1.${index + 2}`),
+  );
+});
+
+test('a persisted update-key list of the wrong shape or with unknown keys is ignored', () => {
+  const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+
+  fs.writeFileSync(file, JSON.stringify({ version: 1, notifiedUpdateKeys: 'available:0.8.0' }, null, 2), { mode: 0o600 });
+  assert.deepEqual(loadStore(userData).getSettings().notifiedUpdateKeys, [], 'a non-array is not coerced');
+
+  fs.writeFileSync(file, JSON.stringify({
+    version: 1,
+    notifiedUpdateKeys: [null, 7, {}, 'nope:0.8.0', 'available:', 'ready:0.8.0'],
+  }, null, 2), { mode: 0o600 });
+  assert.deepEqual(loadStore(userData).getSettings().notifiedUpdateKeys, ['ready:0.8.0'], 'only valid keys survive');
+});

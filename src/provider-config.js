@@ -159,6 +159,10 @@ function getDefaultSettings() {
     autoAnswerCooldownSec: 60,
     assistContext: 'both',
     notifications: { updates: true },
+    // Announcement bookkeeping, not a user preference: main-process state kept
+    // here so the existing atomic settings store persists it without a new file.
+    // The renderer neither reads nor writes it (see sanitizeSettingsPatch).
+    notifiedUpdateKeys: [],
     apiKeys: { ...apiKeys, deepgram: '', azureRealtime: '', azureSpeech: '' },
     models,
     endpoints: { azure: '', azureRealtime: '' },

@@ -274,7 +274,10 @@ function send(channel, data) {
 }
 
 let previousUpdateState = null;
-const notifiedUpdateKeys = new Set();
+// The Set is the fast path for this launch; the settings store is the durable
+// copy, so quitting and relaunching on the same version does not announce it
+// again. Hydrated before the first update state can produce a notice.
+const notifiedUpdateKeys = new Set(store.getSettings().notifiedUpdateKeys);
 // Electron drops a notification that nothing references, which takes its click
 // handler with it, so every shown banner is held here until it closes.
 const liveUpdateNotifications = new Set();
@@ -326,6 +329,17 @@ function showUpdateNotification(notice) {
   }
 }
 
+// Best-effort durability for the in-memory Set above. A failed write leaves the
+// key announced for this launch and is logged, never surfaced: the banner has
+// already reached the user, and the settings store explains its own failures.
+function persistAnnouncedUpdateKey(key) {
+  try {
+    store.recordNotifiedUpdateKey(key);
+  } catch (error) {
+    console.log('[update] could not persist announced version', error && error.message ? String(error.message).slice(0, 120) : 'unknown');
+  }
+}
+
 function handleUpdateState(value) {
   send('update:state', value);
   const notice = updateNotificationFor({
@@ -340,6 +354,7 @@ function handleUpdateState(value) {
   // suppressed by a locked screen or by the OS is not silently consumed.
   if (notice && !notifiedUpdateKeys.has(notice.key) && showUpdateNotification(notice)) {
     notifiedUpdateKeys.add(notice.key);
+    persistAnnouncedUpdateKey(notice.key);
   }
 }
 
@@ -3237,7 +3252,12 @@ app.whenReady().then(() => {
     screenLocked = true;
     stopCaptureForSystem('lock');
   });
-  powerMonitor.on('resume', () => send('status', { message: 'Mac resumed. Listening remains off until you start it again.' }));
+  powerMonitor.on('resume', () => {
+    // Relative timers pause while the machine sleeps, so wall time past the
+    // interval is caught up here instead of after another full six hours.
+    updateScheduler.onResume();
+    send('status', { message: 'Mac resumed. Listening remains off until you start it again.' });
+  });
   powerMonitor.on('unlock-screen', () => {
     screenLocked = false;
     send('status', { message: 'Mac unlocked. Listening remains off until you start it again.' });
@@ -3248,6 +3268,7 @@ app.whenReady().then(() => {
     deferredUpdateNotice = null;
     if (pendingNotice && !notifiedUpdateKeys.has(pendingNotice.key) && showUpdateNotification(pendingNotice)) {
       notifiedUpdateKeys.add(pendingNotice.key);
+      persistAnnouncedUpdateKey(pendingNotice.key);
     }
   });
   powerMonitor.on('shutdown', () => { shutdownAll(); });

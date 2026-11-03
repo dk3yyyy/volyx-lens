@@ -7,6 +7,7 @@ const { resolveHistoryEnabled } = require('./history-default');
 const { createCredentialVault } = require('./credential-vault');
 const { sanitizeShortcutsPatch } = require('./shortcut-validator');
 const { DEFAULT_SHORTCUT_DEFS } = require('./shortcut-defaults');
+const { sanitizeNotifiedUpdateKeys, appendNotifiedUpdateKey } = require('./update-notifications');
 
 const FILE = path.join(app.getPath('userData'), 'volyx-lens-data.json');
 const DEFAULTS = getDefaultSettings();
@@ -60,6 +61,9 @@ function load() {
   let raw = {};
   try { raw = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch {}
   const legacyKeys = raw.apiKeys && typeof raw.apiKeys === 'object' ? raw.apiKeys : {};
+  // Read before the merge: the on-disk value is user-writable and may be any
+  // shape, so it is validated separately instead of being deep-merged.
+  const storedUpdateKeys = raw.notifiedUpdateKeys;
   persistedCredentialRecord = raw.credentials && typeof raw.credentials === 'object' ? raw.credentials : null;
   const openedCredentials = vault.openWithStatus(persistedCredentialRecord);
   credentialRecordLocked = !!(persistedCredentialRecord && persistedCredentialRecord.mode === 'safeStorage'
@@ -70,7 +74,9 @@ function load() {
   delete settingsOnly.credentialStatus;
   delete settingsOnly.apiKeyUpdates;
   delete settingsOnly.apiKeys;
+  delete settingsOnly.notifiedUpdateKeys;
   data = deepMerge(DEFAULTS, settingsOnly);
+  data.notifiedUpdateKeys = sanitizeNotifiedUpdateKeys(storedUpdateKeys);
   // A profile created before history defaulted to on keeps it off unless the
   // person already stored a choice, so upgrading never starts writing
   // transcripts to disk without an explicit decision.
@@ -135,6 +141,9 @@ function publicSettings() {
   const full = load();
   const result = clone(full);
   result.apiKeys = Object.fromEntries(KEY_NAMES.map((name) => [name, '']));
+  // Main-process bookkeeping; the renderer never needs it and must not be able
+  // to round-trip it back through a settings patch.
+  delete result.notifiedUpdateKeys;
   const persistedNames = (persistedCredentialRecord && persistedCredentialRecord.values) || {};
   const securityStatus = vault.getSecurityStatus();
   result.credentialStatus = {
@@ -335,10 +344,33 @@ function updateApiKeys(updates) {
   return updateSettingsAndApiKeys({}, updates);
 }
 
+// Persists the key of a version that has actually been announced. Called only on
+// announce, so the whole-settings write stays rare; the append sanitizes and
+// bounds the list so a corrupted file cannot grow it without limit. It is
+// idempotent: re-recording the newest key skips the disk write entirely.
+function recordNotifiedUpdateKey(key) {
+  const settings = load();
+  const current = settings.notifiedUpdateKeys;
+  const next = appendNotifiedUpdateKey(current, key);
+  const unchanged = next.length === current.length && next.every((value, index) => value === current[index]);
+  if (unchanged) return current;
+  const previous = data;
+  data = clone(data);
+  data.notifiedUpdateKeys = next;
+  try {
+    save();
+  } catch (error) {
+    data = previous;
+    throw error;
+  }
+  return data.notifiedUpdateKeys;
+}
+
 module.exports = {
   getSettings: () => load(),
   getPublicSettings: () => publicSettings(),
   setSettings,
+  recordNotifiedUpdateKey,
   updateSettingsAndApiKeys,
   updateApiKeys,
   clearApiKey(name) { return updateApiKeys({ [name]: '' }); },
