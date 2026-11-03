@@ -44,12 +44,20 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   const canCheck = installable || (packaged && releaseChecker != null && typeof releaseChecker.latest === 'function');
   // `supported` keeps its old meaning on the wire: this build can check at all.
   const supported = canCheck;
+  // Epoch ms of the last finished check, or null before the first one. It is
+  // deliberately separate from `status`: a check that failed still checked, and
+  // the pane should say when that last attempt happened.
+  let lastCheckedAt = null;
   let state = canCheck
     ? publicState('idle', 'Check GitHub Releases for the latest Volyx Lens version.')
     : publicState('unsupported', unsupportedMessage());
   let updater = null;
   let activeCheck = null;
   let activeDownload = null;
+  // True only while a check request is in flight. The updater's 'error' event is
+  // also used for download failures, and stamping lastCheckedAt there would claim
+  // a check happened when only a download failed.
+  let checkInFlight = false;
 
   function publicState(status, message, extra = {}) {
     return {
@@ -63,10 +71,17 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
       availableVersion: extra.availableVersion || null,
       releaseUrl: typeof extra.releaseUrl === 'string' ? extra.releaseUrl : null,
       progress: Number.isFinite(extra.progress) ? Math.max(0, Math.min(100, Math.round(extra.progress))) : null,
+      // Always present so the renderer can distinguish "never checked" (null)
+      // from a check that finished just now.
+      lastCheckedAt: Number.isFinite(lastCheckedAt) ? lastCheckedAt : null,
     };
   }
 
   function setState(status, message, extra = {}) {
+    // Only a terminal transition records a finished check. The 'checking' state
+    // keeps the previous timestamp, so the pane can still say when it last got an
+    // answer while a new request is running.
+    if (extra.checked === true) lastCheckedAt = Date.now();
     state = publicState(status, message, {
       availableVersion: Object.prototype.hasOwnProperty.call(extra, 'availableVersion') ? extra.availableVersion : state.availableVersion,
       releaseUrl: Object.prototype.hasOwnProperty.call(extra, 'releaseUrl') ? extra.releaseUrl : state.releaseUrl,
@@ -101,9 +116,9 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
     updater.on('checking-for-update', () => setState('checking', 'Checking for updates…', { availableVersion: null }));
     updater.on('update-available', (info) => {
       const version = safeVersion(info);
-      setState('available', version ? `Volyx Lens ${version} is available.` : 'A new Volyx Lens update is available.', { availableVersion: version });
+      setState('available', version ? `Volyx Lens ${version} is available.` : 'A new Volyx Lens update is available.', { availableVersion: version, checked: checkInFlight });
     });
-    updater.on('update-not-available', () => setState('current', 'Volyx Lens is up to date.', { availableVersion: null }));
+    updater.on('update-not-available', () => setState('current', 'Volyx Lens is up to date.', { availableVersion: null, checked: checkInFlight }));
     updater.on('download-progress', (progress) => {
       const percent = Number(progress && progress.percent);
       setState('downloading', Number.isFinite(percent) ? `Downloading update… ${Math.round(percent)}%` : 'Downloading update…', { progress: percent });
@@ -114,10 +129,10 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
     });
     updater.on('error', (error) => {
       if (isMissingMetadataError(error)) {
-        setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, releaseUrl: RELEASE_PAGE });
+        setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, releaseUrl: RELEASE_PAGE, checked: checkInFlight });
         return;
       }
-      setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null });
+      setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null, checked: checkInFlight });
     });
     return updater;
   }
@@ -132,6 +147,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
       return { ...state };
     }
     const service = initialize();
+    checkInFlight = true;
     setState('checking', 'Checking for updates…', { availableVersion: null });
     activeCheck = Promise.resolve(service.checkForUpdates())
       .then((result) => {
@@ -142,20 +158,20 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
         if (state.status !== 'checking') return result;
         const version = safeVersion(result && result.updateInfo);
         if (version && version !== state.currentVersion) {
-          setState('available', `Volyx Lens ${version} is available.`, { availableVersion: version });
+          setState('available', `Volyx Lens ${version} is available.`, { availableVersion: version, checked: true });
         } else {
-          setState('current', 'Volyx Lens is up to date.', { availableVersion: null });
+          setState('current', 'Volyx Lens is up to date.', { availableVersion: null, checked: true });
         }
         return result;
       })
       .catch((error) => {
         if (isMissingMetadataError(error)) {
-          setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, releaseUrl: RELEASE_PAGE });
+          setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, releaseUrl: RELEASE_PAGE, checked: true });
           return;
         }
-        setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null });
+        setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null, checked: true });
       })
-      .finally(() => { activeCheck = null; });
+      .finally(() => { checkInFlight = false; activeCheck = null; });
     await activeCheck;
     return { ...state };
   }
@@ -165,6 +181,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
       await activeCheck;
       return { ...state };
     }
+    checkInFlight = true;
     setState('checking', 'Checking for updates…', { availableVersion: null });
     activeCheck = Promise.resolve(releaseChecker.latest())
       .then((release) => {
@@ -176,16 +193,16 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
           release: release ? { tag_name: release.version, html_url: release.url } : null,
         });
         if (result.available) {
-          setState('available', `Volyx Lens ${result.version} is available.`, { availableVersion: result.version, releaseUrl: result.url });
+          setState('available', `Volyx Lens ${result.version} is available.`, { availableVersion: result.version, releaseUrl: result.url, checked: true });
         } else if (!release) {
-          setState('current', 'No published release was found. Try again later.', { availableVersion: null });
+          setState('current', 'No published release was found. Try again later.', { availableVersion: null, checked: true });
         } else {
-          setState('current', 'Volyx Lens is up to date.', { availableVersion: null });
+          setState('current', 'Volyx Lens is up to date.', { availableVersion: null, checked: true });
         }
         return { ...state };
       })
-      .catch(() => setState('error', 'GitHub could not be reached. Try again later.', { availableVersion: null }))
-      .finally(() => { activeCheck = null; });
+      .catch(() => setState('error', 'GitHub could not be reached. Try again later.', { availableVersion: null, checked: true }))
+      .finally(() => { checkInFlight = false; activeCheck = null; });
     await activeCheck;
     return { ...state };
   }

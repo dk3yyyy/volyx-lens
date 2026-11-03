@@ -67,3 +67,17 @@ test('builds without in-place updates get a working release-page button', () => 
   assert.match(renderer, /updateOpenReleases\(\)/);
   assert.match(renderer, /'Open Latest Release'/);
 });
+
+test('the Updates pane shows when the last check finished', () => {
+  assert.match(html, /id="update-last-checked"[^>]*data-updates-last-checked/);
+  // It is secondary copy, not a second live region: #update-status already
+  // announces changes with role="status".
+  const lastChecked = html.match(/<div[^>]*data-updates-last-checked[^>]*>/);
+  assert.ok(lastChecked, 'the element exists');
+  assert.doesNotMatch(lastChecked[0], /role="status"|aria-live/);
+  // The formatter loads as a plain script before the renderer, the same pattern
+  // as the notes and plain-math helpers.
+  assert.match(html, /<script src="relative-time\.js"><\/script>[\s\S]*<script src="renderer\.js"><\/script>/);
+  assert.match(renderer, /formatLastChecked\(update\.lastCheckedAt\)/);
+  assert.match(renderer, /querySelector\('\[data-updates-last-checked\]'\)/);
+});

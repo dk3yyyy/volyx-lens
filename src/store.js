@@ -97,7 +97,15 @@ function load() {
   // An older build wrote provider keys in the clear when secure storage was missing.
   // They are read into memory so the session keeps working, then the record is
   // rewritten without them, so the file stops carrying live keys (VR-22).
-  const scrubPlaintextCredentials = openedCredentials.plaintext === true && !vault.isSecure();
+  //
+  // The plaintext record is unsafe on its own, regardless of the backend in use
+  // now. Gating this on `!vault.isSecure()` meant a profile that once ran without
+  // a keyring never got cleaned up after one became available: the keys stayed in
+  // cleartext until the user happened to change an unrelated setting. save() seals
+  // whatever backend is live at this moment, so an unconditional scrub either
+  // writes a safeStorage record or a memory-only one, and never throws when the
+  // keyring is missing.
+  const scrubPlaintextCredentials = openedCredentials.plaintext === true;
   if (scrubPlaintextCredentials) {
     console.log('[store] rewriting a legacy plaintext credential record without its values');
   }

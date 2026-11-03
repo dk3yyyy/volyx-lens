@@ -2,6 +2,7 @@
 (function () {
   const { icon } = window.ICONS;
   const { renderNotesHtml } = window.volyxLensNotesMarkup;
+  const { formatLastChecked } = window.volyxLensRelativeTime;
   const volyxLens = window.volyxLens; // exposed by preload
   const $ = (s) => document.querySelector(s);
 
@@ -2433,6 +2434,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const status = String(update.status || 'error');
     $('#update-current-version').textContent = update.currentVersion ? `v${update.currentVersion}` : 'Unknown';
     $('#update-status').textContent = String(update.message || 'Update status is unavailable.');
+    // This line is informational, not a live region: #update-status already
+    // announces the status change, so a second role="status" would double every
+    // update for screen-reader users.
+    const lastChecked = document.querySelector('[data-updates-last-checked]');
+    if (lastChecked) lastChecked.textContent = formatLastChecked(update.lastCheckedAt);
     const checking = status === 'checking';
     const downloading = status === 'downloading';
     // Two capabilities, not one: a build can learn a release exists without
