@@ -10,34 +10,66 @@ permissions:
 
 jobs:
   verify:
+    name: Verify (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm run coverage
+      # The unit suite runs on both supported LTS lines. Everything else —
+      # coverage, the coverage thresholds, the syntax check, and the packaged
+      # smoke test — stays on Node 20, so those run once instead of once per
+      # version and the job does not double in cost.
+      - name: Run unit tests (Node 22)
+        if: matrix.node != 20
+        run: npm test
+      - name: Run unit tests with coverage (Node 20)
+        if: matrix.node == 20
+        run: npm run coverage
       - name: Generate coverage report
+        if: matrix.node == 20
         run: npm run coverage:report
       - name: Check coverage thresholds
+        if: matrix.node == 20
         run: npx c8 check-coverage --lines=70 --branches=70 --functions=60 --statements=70
-      - run: npm run check:syntax
-      - run: xvfb-run -a npm run check:onboarding-ui -- --no-sandbox
-      - run: xvfb-run -a npm run check:settings-ui -- --no-sandbox
-      - run: xvfb-run -a npm run check:history-ui -- --no-sandbox
-      - run: xvfb-run -a npm run check:e2e-smoke
-      - run: npm run security:secrets
+      - name: Check JavaScript syntax
+        if: matrix.node == 20
+        run: npm run check:syntax
+      - name: Onboarding UI check
+        if: matrix.node == 20
+        run: xvfb-run -a npm run check:onboarding-ui -- --no-sandbox
+      - name: Settings UI check
+        if: matrix.node == 20
+        run: xvfb-run -a npm run check:settings-ui -- --no-sandbox
+      - name: History UI check
+        if: matrix.node == 20
+        run: xvfb-run -a npm run check:history-ui -- --no-sandbox
+      - name: End-to-end smoke test
+        if: matrix.node == 20
+        run: xvfb-run -a npm run check:e2e-smoke
+      - name: Check for committed secrets
+        if: matrix.node == 20
+        run: npm run security:secrets
       - name: Reject dependency vulnerabilities
+        if: matrix.node == 20
         run: npm audit --audit-level=low
-      - run: npm run pack
+      - name: Package the application
+        if: matrix.node == 20
+        run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Smoke launch packaged application
+        if: matrix.node == 20
         run: |
           python3 - <<'PY'
           import subprocess

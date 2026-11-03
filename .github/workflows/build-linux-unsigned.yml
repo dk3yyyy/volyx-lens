@@ -85,6 +85,10 @@ jobs:
             const file = 'dist/' + name;
             fs.writeFileSync(file + '.sha256', crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') + '  ' + name + '\n');
           "
+          # Check the published set: the AppImage for this architecture, its
+          # checksum, and no channel file at all. This build intentionally ships
+          # without updater metadata, unlike the signed Linux release.
+          node scripts/verify-release-assets.js --platform linux --dir dist --arch "${{ matrix.arch }}" --no-metadata
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-linux-${{ matrix.arch }}.cdx.json"
 
       - name: Attest build provenance

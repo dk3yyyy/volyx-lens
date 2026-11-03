@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
   MAX_STDOUT_BYTES,
   decodeImageDataUrl,
@@ -8,6 +11,17 @@ const {
   runVisionHelper,
   createLocalOcr,
 } = require('../src/local-ocr');
+
+
+// The host's own node binary is not a usable fixture: a setup-node install can
+// put a symlink in the helper's path, which the darwin validation rejects on
+// purpose. A real file is what this contract is about.
+function helperFixture() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-ocr-helper-'));
+  const helper = path.join(dir, 'volyx-lens-vision-ocr');
+  fs.writeFileSync(helper, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  return helper;
+}
 
 function image(value = 'screen') {
   return `data:image/png;base64,${Buffer.from(value).toString('base64')}`;
@@ -31,8 +45,8 @@ function fakeChild(onInput = null) {
 test('local OCR validates image data and platform-specific helper permissions', () => {
   assert.deepEqual(decodeImageDataUrl(image('abc')), Buffer.from('abc'));
   assert.throws(() => decodeImageDataUrl('https://example.test/screen.png'), /invalid_image/);
-  assert.equal(validateVisionHelper(process.execPath, 'linux').ready, false);
-  assert.equal(validateVisionHelper(process.execPath, 'darwin').ready, true);
+  assert.equal(validateVisionHelper(helperFixture(), 'linux').ready, false);
+  assert.equal(validateVisionHelper(helperFixture(), 'darwin').ready, true);
 });
 
 test('Vision helper receives image bytes over stdin with no shell and returns bounded clean text', async () => {
@@ -71,7 +85,7 @@ test('local OCR serializes work and individual cancellation releases queued capt
   const children = [];
   const runner = createLocalOcr({
     platform: 'darwin',
-    helperPath: process.execPath,
+    helperPath: helperFixture(),
     spawnImpl: () => {
       const child = fakeChild();
       children.push(child);
@@ -99,7 +113,7 @@ test('local OCR can cancel queued work without interrupting the active job', asy
   const children = [];
   const runner = createLocalOcr({
     platform: 'darwin',
-    helperPath: process.execPath,
+    helperPath: helperFixture(),
     spawnImpl: () => {
       const child = fakeChild();
       children.push(child);
@@ -123,7 +137,7 @@ test('cancelAll resolves queued OCR immediately and prevents it from spawning', 
   const children = [];
   const runner = createLocalOcr({
     platform: 'darwin',
-    helperPath: process.execPath,
+    helperPath: helperFixture(),
     spawnImpl: () => {
       const child = fakeChild();
       children.push(child);

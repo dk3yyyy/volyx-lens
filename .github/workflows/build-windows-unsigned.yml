@@ -68,6 +68,10 @@ jobs:
             const hash = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
             fs.writeFileSync(file + '.sha256', hash + '  ' + path.basename(file) + '\n');
           "
+          # Check the published set, not just that an installer exists: exactly
+          # one *.exe with its checksum and no latest.yml, because an unsigned
+          # installer must not advertise an update channel (or a re-run).
+          node scripts/verify-release-assets.js --platform win32 --dir dist --arch x64
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-windows.cdx.json"
 
       - name: Attest build provenance

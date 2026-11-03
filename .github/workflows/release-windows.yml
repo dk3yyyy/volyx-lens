@@ -157,6 +157,15 @@ jobs:
           fi
           # shasum (Perl) is not installed on Windows runners; hash with node.
           NSIS_NAME="$NSIS_NAME" node -e "const fs=require('fs'),c=require('crypto');const n=process.env.NSIS_NAME;const p='dist/'+n;fs.writeFileSync(p+'.sha256',c.createHash('sha256').update(fs.readFileSync(p)).digest('hex')+'  '+n+'\n');"
+          # Assert the whole published set, not just one file: a signed build
+          # must carry latest.yml and an unsigned build must not, exactly one
+          # installer ships with its checksum, and a re-run that left a second
+          # version behind fails here instead of clobbering the release.
+          if [ -n "$CSC_LINK_VALUE" ]; then
+            node scripts/verify-release-assets.js --platform win32 --dir dist --signed --arch x64
+          else
+            node scripts/verify-release-assets.js --platform win32 --dir dist --arch x64
+          fi
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-windows.cdx.json"
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
