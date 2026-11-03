@@ -76,3 +76,25 @@ test('a suppressed notice is not marked as announced', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   assert.match(main, /showUpdateNotification\(notice\)\) \{\s*\n\s*notifiedUpdateKeys\.add\(notice\.key\);/);
 });
+
+test('a build that lost its update channel says so once', () => {
+  // Unsigned Windows from 0.7.5 on can never reach 'available'; without this the
+  // client polls every six hours and stays silent while the user stays stuck.
+  const current = state('unavailable', { currentVersion: '0.7.5' });
+  const notice = updateNotificationFor({ previous: state('checking'), next: current });
+  assert.equal(notice.kind, 'unavailable');
+  assert.match(notice.body, /installer/i);
+  assert.match(notice.title, /manual update/i);
+
+  // Same installed version, same key, so main's dedupe announces it once.
+  const again = updateNotificationFor({ previous: state('checking'), next: current });
+  assert.equal(notice.key, again.key);
+  assert.notEqual(notice.key, notificationKey('unavailable', '0.7.6'));
+});
+
+test('the manual-update notice respects the preference and unsupported builds', () => {
+  const current = state('unavailable', { currentVersion: '0.7.5' });
+  assert.equal(updateNotificationFor({ previous: state('idle'), next: current, enabled: false }), null);
+  assert.equal(updateNotificationFor({ previous: state('idle'), next: { ...current, supported: false } }), null);
+  assert.equal(updateNotificationFor({ previous: current, next: current }), null, 'not again while it stays unavailable');
+});

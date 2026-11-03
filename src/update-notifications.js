@@ -8,6 +8,7 @@
 
 const AVAILABLE_TITLE = 'Volyx Lens update available';
 const READY_TITLE = 'Volyx Lens update ready to install';
+const UNAVAILABLE_TITLE = 'Volyx Lens needs a manual update';
 
 function notificationsEnabled(settings) {
   const notifications = settings && settings.notifications;
@@ -35,6 +36,19 @@ function updateNotificationFor({ previous, next, enabled = true } = {}) {
     };
   }
 
+  // A build that lost its update channel (unsigned Windows from 0.7.5) will never
+  // become 'available', so without this it would poll forever and say nothing. The
+  // user has to install by hand, and nobody opens Settings to find that out.
+  if (next.status === 'unavailable' && before !== 'unavailable') {
+    return {
+      kind: 'unavailable',
+      version: null,
+      key: notificationKey('unavailable', next.currentVersion),
+      title: UNAVAILABLE_TITLE,
+      body: 'This build can no longer update itself. Open Settings to download the newest installer.',
+    };
+  }
+
   if (next.status === 'downloaded' && before !== 'downloaded') {
     const version = next.availableVersion || null;
     return {
@@ -49,4 +63,4 @@ function updateNotificationFor({ previous, next, enabled = true } = {}) {
   return null;
 }
 
-module.exports = { updateNotificationFor, notificationsEnabled, notificationKey, AVAILABLE_TITLE, READY_TITLE };
+module.exports = { updateNotificationFor, notificationsEnabled, notificationKey, AVAILABLE_TITLE, READY_TITLE, UNAVAILABLE_TITLE };
