@@ -164,7 +164,7 @@ Notes:
 | **New Session** | `/new` or New Session | clears in-memory session context |
 | **Emergency quit** | `⌘` `⇧` `X` or power button | stops capture and clears session media context |
 
-Assist, What should I say?, and typed questions share one conversation: the most recent exchanges, up to 8 turns and 12,000 characters, travel with each new request. New Session clears that conversation.
+Assist, What should I say?, and typed questions share one conversation: the most recent exchanges, up to 8 turns and 12,000 characters, travel with each new request. New Session clears that conversation, and starting a new listening session starts a new one, so one meeting's answers cannot follow you into the next.
 
 The **Smart** toggle selects the configured higher-capability model. Settings reports whether each global shortcut registered successfully and keeps equivalent visible buttons available.
 
