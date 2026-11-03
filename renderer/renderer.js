@@ -41,6 +41,8 @@
   let taskContextListRequest = 0;
   let providerView = 'openai';
   let providerTestActive = false;
+  // Whether this build can install an update, set by renderUpdateState.
+  let updateInstallable = true;
   let shortcutStatus = [];
   let busy = false;
   let transcriptTurns = [];
@@ -2362,18 +2364,25 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#update-status').textContent = String(update.message || 'Update status is unavailable.');
     const checking = status === 'checking';
     const downloading = status === 'downloading';
-    const canAutoUpdate = update.supported === true;
+    // Two capabilities, not one: a build can learn a release exists without
+    // being able to install it. Unsigned builds check through the public API.
+    const canCheck = update.supported === true;
+    const installable = update.installable !== false;
+    updateInstallable = installable;
     const button = $('#update-check');
-    button.dataset.mode = canAutoUpdate ? 'check' : 'releases';
+    button.dataset.mode = canCheck ? 'check' : 'releases';
     // Every build gets a working button: automatic update where available,
     // otherwise a direct route to the newest published release.
     button.disabled = checking || downloading;
     button.textContent = checking
       ? 'Checking…'
-      : (canAutoUpdate ? 'Check for Updates' : 'Open Latest Release');
+      : (canCheck ? 'Check for Updates' : 'Open Latest Release');
     $('#update-download').hidden = status !== 'available';
-    $('#update-download').disabled = downloading;
-    $('#update-install').hidden = status !== 'downloaded';
+    $('#update-download').disabled = downloading || checking;
+    // When the build cannot install in place, the same button fetches the
+    // installer from the release page instead of pretending to download it.
+    $('#update-download').textContent = installable ? 'Download Update' : 'Get the Installer';
+    $('#update-install').hidden = status !== 'downloaded' || !installable;
     const progress = $('#update-progress');
     progress.classList.toggle('hidden', !downloading);
     progress.setAttribute('aria-hidden', downloading ? 'false' : 'true');
@@ -2498,6 +2507,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     catch (error) { showStatus(error && error.message ? error.message : 'The update check failed.'); await refreshUpdateState(); }
   });
   $('#update-download').addEventListener('click', async () => {
+    if (!updateInstallable) {
+      try { await volyxLens.updateOpenReleases(); }
+      catch { showStatus('The release page could not be opened.'); }
+      return;
+    }
     try { renderUpdateState(await volyxLens.updateDownload()); }
     catch (error) { showStatus(error && error.message ? error.message : 'The update download failed.'); await refreshUpdateState(); }
   });
