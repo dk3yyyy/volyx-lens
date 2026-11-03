@@ -45,3 +45,24 @@ test('chat history falls back to finite defaults for non-finite limits', () => {
   characterBounded.addExchange('q'.repeat(7000), 'a'.repeat(7000));
   assert.equal(characterBounded.size(), 0);
 });
+
+test('one long answer cannot evict the whole conversation', () => {
+  // The reported failure: a 13k-character answer plus one exchange left size()===1,
+  // so the next question had no history at all.
+  const history = createChatHistory({ maxTurns: 8, maxCharacters: 12000 });
+  history.addExchange('first question', 'x'.repeat(13000));
+  history.addExchange('second question', 'second answer');
+
+  assert.equal(history.size(), 2, 'both exchanges survive');
+  const turns = history.turnsFor('third question');
+  assert.equal(turns.length, 5);
+  const longAnswer = turns[1].text;
+  assert.ok(longAnswer.length <= 6000 + 10, `answer capped, got ${longAnswer.length}`);
+  assert.match(longAnswer, /\[…\]$/, 'the cut is marked so the model knows it is truncated');
+});
+
+test('a short answer is stored verbatim', () => {
+  const history = createChatHistory();
+  history.addExchange('q', 'a complete short answer');
+  assert.equal(history.turnsFor('next')[1].text, 'a complete short answer');
+});

@@ -51,3 +51,10 @@ test('a packaged helper for the wrong architecture is rejected', () => {
   const matching = () => { assertHelperArch({ helper: 'volyx-lens-vision-ocr', expectedArch: 'arm64', runLipo: () => 'arm64' }); };
   assert.doesNotThrow(matching);
 });
+
+test('an unknown build architecture fails loudly instead of falling back to the host', () => {
+  // The silent fallback is what put an arm64 helper in the Intel DMG.
+  assert.throws(() => targetArchFor({ arch: 'universal' }), /Unsupported build architecture/);
+  assert.throws(() => targetArchFor({ arch: 4 }), /Unsupported build architecture/);
+  assert.throws(() => targetArchFor({ arch: 'ppc64' }), /Unsupported build architecture/);
+});

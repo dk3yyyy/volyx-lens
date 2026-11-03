@@ -63,3 +63,11 @@ test('starting a capture clears the thread, so one meeting cannot leak into the 
   const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   assert.match(main, /state\.capturing = true;[\s\S]{0,400}?chatHistory\.clear\(\);/);
 });
+
+test('a mode nobody thought about stays out of the thread', () => {
+  // The old denylist failed open: a new internal mode would have been replayed
+  // into the user's next question.
+  for (const mode of ['slide-review', 'auto-assist', 'some-future-mode', '', 'ASK']) {
+    assert.equal(shouldKeepHistory(mode), false, JSON.stringify(mode));
+  }
+});

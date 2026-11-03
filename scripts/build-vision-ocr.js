@@ -9,7 +9,17 @@ const { spawnSync } = require('node:child_process');
 const ARCH_BY_NAME = { 1: 'x86_64', 3: 'arm64', x64: 'x86_64', arm64: 'arm64' };
 
 function targetArchFor(context = {}) {
-  return ARCH_BY_NAME[context && context.arch] || ARCH_BY_NAME[process.arch] || 'arm64';
+  const requested = context ? context.arch : undefined;
+  if (requested === undefined || requested === null) {
+    const host = ARCH_BY_NAME[process.arch];
+    if (!host) throw new Error(`Unsupported host architecture: ${process.arch}`);
+    return host;
+  }
+  const mapped = ARCH_BY_NAME[requested];
+  // Falling back to the host architecture here is exactly how an arm64 helper
+  // ended up inside an x64 DMG; an unknown target must fail the build instead.
+  if (!mapped) throw new Error(`Unsupported build architecture: ${String(requested)}`);
+  return mapped;
 }
 
 function visionCompileArgs({ source, output, targetArch }) {
