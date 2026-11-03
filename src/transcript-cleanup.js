@@ -21,6 +21,8 @@
 // Scope note: this runs only when the user asks for it, after a session is
 // saved. It never touches the live capture path.
 
+const { ANSWER_STYLE_RULE } = require('./answer-style');
+
 const CLEAN_BATCH_TURNS = 100;
 const CLEAN_BATCH_CHARACTERS = 6000;
 const MAX_CLEAN_BATCHES = 30;
@@ -48,6 +50,7 @@ const CLEAN_SYSTEM_PROMPT =
   'Never change a negation: if the speaker said not, keep not. ' +
   'When a word is unintelligible and you cannot tell what was said, leave that word exactly as it arrived. ' +
   'Keep the speaker\'s register, including profanity and filler words. ' +
+  `${ANSWER_STYLE_RULE} ` +
   'Output only the repaired lines. No preamble, no explanation, no code fences.';
 
 function speakerLabel(channel) {

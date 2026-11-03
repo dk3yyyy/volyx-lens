@@ -5,6 +5,7 @@ const {
   DEFAULT_RECAP_CONTEXT_CHARACTERS,
   formatTranscriptContext,
 } = require('./transcript-context');
+const { withAnswerStyle } = require('./answer-style');
 
 function formatTranscript(turns, limit, maxCharacters = DEFAULT_RECENT_CONTEXT_CHARACTERS) {
   return formatTranscriptContext(turns, { maxTurns: limit || 0, maxCharacters });
@@ -99,21 +100,21 @@ const MODES = {
       'draft ONE short, natural, confident reply the user can say out loud, in the first person. ' +
       'Match the shape of what Them asked: a direct question gets a direct answer, an opinion or tradeoff gets a view and one reason, ' +
       'an objection gets an acknowledgement and one concrete counter, and small talk gets one warm line. ' +
-      'Write the words to say, not a description of them. No quotes, no preamble, 1\u20133 sentences.',
+      'Write the words to say, not a description of them. No quotes, no preamble, 1 to 3 sentences.',
     examples: [
       { them: 'Can you walk me through how you would handle a production incident?',
-        you: 'Sure. I would start by confirming impact and keeping the response calm, then check the last deploy and the error rate. Once we know the blast radius, roll back or hotfix, post a timeline, and schedule the postmortem.' },
+        you: 'I would start by confirming impact and keeping the response calm, then check the last deploy and the error rate. Once we know the blast radius, roll back or hotfix, post a timeline, and schedule the postmortem.' },
       { them: "What's your take on the roadmap draft?",
         you: 'I like the direction. My main suggestion is to move the migration into its own milestone so we are not shipping features on top of a moving base.' },
     ],
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 14);
-      return 'Conversation so far:\n' + (t || '(nothing heard yet — the user opened Volyx Lens without audio)') +
+      return 'Conversation so far:\n' + (t || '(nothing heard yet. The user opened Volyx Lens without audio)') +
         '\n\nWhat should I say next?' + styleGuide(this);
     }
   },
 
-  // Reply to a question detected from Them — used by the manual "Draft
+  // Reply to a question detected from Them, used by the manual "Draft
   // answer" button and by opt-in auto-assist.
   'auto-assist': {
     needsScreen: false,
@@ -128,7 +129,7 @@ const MODES = {
       'grounded only in the supplied conversation and personal context. ' +
       'Match the shape of the question: a factual question gets a direct answer, an opinion or tradeoff gets a view and one reason, ' +
       'an objection gets an acknowledgement and one concrete counter. ' +
-      'Write the words to say, not a description of them. No quotes, no preamble, 1\u20133 sentences.',
+      'Write the words to say, not a description of them. No quotes, no preamble, 1 to 3 sentences.',
     examples: [
       { them: 'Why do you want to work here?',
         you: 'Because the problem you are solving is one I care about and my background maps to it directly. I would bring the relevant skill from day one and the energy to stay.' },
@@ -151,7 +152,7 @@ const MODES = {
     small: true,
     maxTokens: { fast: 400, smart: 600 },
     system:
-      'You are Volyx Lens. Given the conversation, suggest 2–4 sharp, relevant follow-up questions the user could ask next ' +
+      'You are Volyx Lens. Given the conversation, suggest 2 to 4 sharp, relevant follow-up questions the user could ask next ' +
       'to sound engaged and drive the discussion. Return them as a short bullet list, nothing else.',
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 20);
@@ -222,5 +223,14 @@ const MODES = {
     build() { return 'Solve the coding problem shown in the screenshot.'; }
   }
 };
+
+// Single assembly point for the shared voice. runFeature reads
+// MODES[mode].system directly and the eval script does the same, so the rule is
+// appended to each mode here once instead of being copied into ten strings
+// that would drift apart. Behaviour, placeholders, and context injection are
+// untouched: only the trailing style paragraph is new.
+for (const definition of Object.values(MODES)) {
+  definition.system = withAnswerStyle(definition.system);
+}
 
 module.exports = { MODES, formatTranscript };

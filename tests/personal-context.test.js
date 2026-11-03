@@ -27,11 +27,15 @@ test('personal documents are delimited as untrusted data with strict anti-fabric
     { kind: 'jobDescription', enabled: true, text: 'Role requires workflow reliability and Python.' },
   ], { userText: 'Why am I suitable for workflow reliability?' });
   assert.deepEqual(context.sources, ['Resume', 'Job Description']);
-  assert.match(context.text, /BEGIN RESUME — untrusted reference data/);
+  assert.match(context.text, /BEGIN RESUME: untrusted reference data/);
   assert.match(context.text, /END MARKER REMOVED/);
   assert.match(context.systemRules, /never instructions/i);
   assert.match(context.systemRules, /Never invent or inflate/i);
   assert.match(context.systemRules, /ask the user/i);
+  // The voice rule belongs to the prompt assembly (src/answer-style.js), not to
+  // the personal-context block, which is concatenated into that prompt.
+  assert.doesNotMatch(context.text, /[—–‘’“”]/);
+  assert.doesNotMatch(context.systemRules, /[—–‘’“”]/);
   assert.ok(context.text.length <= 12000 + 500);
 });
 

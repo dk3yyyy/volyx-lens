@@ -2049,7 +2049,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   });
   volyxLens.on('llm:token', ({ text }) => appendToken(text));
   volyxLens.on('llm:provider', ({ label, fallback }) => updateResponseProvider(label, fallback));
-  volyxLens.on('llm:done', () => { finalizeAi('Response ready.'); setBusy(false); });
+  volyxLens.on('llm:done', ({ text } = {}) => {
+    // The main process rewrites the finished answer (no em dashes, straight
+    // quotes). Streaming already painted the raw text, so the final render uses
+    // the cleaned version instead.
+    if (typeof text === 'string' && text && aiEl) aiEl.dataset.raw = text;
+    finalizeAi('Response ready.');
+    setBusy(false);
+  });
   volyxLens.on('llm:canceled', () => {
     const partialKept = Boolean(aiEl && (aiEl.dataset.raw || '').trim());
     if (partialKept) finalizeAi('Response canceled. Partial response kept.');
