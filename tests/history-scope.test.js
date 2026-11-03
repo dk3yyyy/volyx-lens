@@ -53,3 +53,13 @@ test('the thread still prunes to the configured budget', () => {
   assert.ok(turns.length <= 4, `expected at most 4 turns, got ${turns.length}`);
   assert.equal(turns[turns.length - 1].text, 'latest question');
 });
+
+test('starting a capture clears the thread, so one meeting cannot leak into the next', () => {
+  // main.js is the only place that owns this ordering and it has no executed
+  // coverage, so the invariant is pinned here: the reset has to happen when
+  // capture actually starts, next to the state flip, not on a schedule.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(main, /state\.capturing = true;[\s\S]{0,400}?chatHistory\.clear\(\);/);
+});

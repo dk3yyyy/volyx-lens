@@ -66,3 +66,13 @@ test('notifications are on unless the stored preference says otherwise', () => {
   assert.equal(notificationsEnabled({ notifications: { updates: false } }), false);
   assert.equal(notificationsEnabled(null), true);
 });
+
+test('a suppressed notice is not marked as announced', () => {
+  // The key has to be recorded only when a banner actually reached the screen,
+  // otherwise a locked screen or an unavailable OS silently consumes that
+  // version's one announcement.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(main, /showUpdateNotification\(notice\)\) \{\s*\n\s*notifiedUpdateKeys\.add\(notice\.key\);/);
+});
