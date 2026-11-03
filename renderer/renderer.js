@@ -2370,13 +2370,17 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const installable = update.installable !== false;
     updateInstallable = installable;
     const button = $('#update-check');
-    button.dataset.mode = canCheck ? 'check' : 'releases';
+    // 'unavailable' means this build lost its update channel (unsigned Windows
+    // from 0.7.5 on). Checking again cannot help, so the button goes straight to
+    // the release page instead of repeating a failing request.
+    const releaseOnly = status === 'unavailable';
+    button.dataset.mode = releaseOnly || !canCheck ? 'releases' : 'check';
     // Every build gets a working button: automatic update where available,
     // otherwise a direct route to the newest published release.
     button.disabled = checking || downloading;
     button.textContent = checking
       ? 'Checking…'
-      : (canCheck ? 'Check for Updates' : 'Open Latest Release');
+      : (releaseOnly || !canCheck ? 'Open Latest Release' : 'Check for Updates');
     $('#update-download').hidden = status !== 'available';
     $('#update-download').disabled = downloading || checking;
     // When the build cannot install in place, the same button fetches the

@@ -3,6 +3,21 @@
 const SUPPORTED_PLATFORMS = new Set(['darwin', 'win32', 'linux']);
 const { releaseUpdateFrom } = require('./release-check');
 
+// A release that published no update metadata answers 404, and electron-updater
+// reports that as a channel-file error. It is not a service outage: the build has
+// no update channel any more (unsigned Windows from 0.7.5 onwards), so the useful
+// answer is "get the installer from the release page", not "try again later".
+const RELEASE_PAGE = 'https://github.com/dk3yyyy/volyx-lens/releases/latest';
+
+function isMissingMetadataError(error) {
+  // Keyed on the code electron-updater actually throws, never on message text:
+  // an error message can quote a file name for an unrelated failure, and matching
+  // it would turn a real outage into a false "go download it" instruction.
+  const code = String((error && error.code) || '');
+  const status = Number(error && error.statusCode);
+  return code === 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' || status === 404;
+}
+
 function manualInstallMessage() {
   return 'This build installs updates by hand. Download the newest installer from the release page.';
 }
@@ -97,7 +112,13 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
       const version = safeVersion(info) || state.availableVersion;
       setState('downloaded', version ? `Volyx Lens ${version} is ready to install.` : 'The update is ready to install.', { availableVersion: version, progress: 100 });
     });
-    updater.on('error', () => setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null }));
+    updater.on('error', (error) => {
+      if (isMissingMetadataError(error)) {
+        setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, releaseUrl: RELEASE_PAGE });
+        return;
+      }
+      setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null });
+    });
     return updater;
   }
 
@@ -127,7 +148,13 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
         }
         return result;
       })
-      .catch(() => setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null }))
+      .catch((error) => {
+        if (isMissingMetadataError(error)) {
+          setState('unavailable', 'This version no longer publishes update metadata, so it cannot update itself. Download the newest installer from the release page.', { availableVersion: null, releaseUrl: RELEASE_PAGE });
+          return;
+        }
+        setState('error', 'The update service is unavailable. Try again later.', { availableVersion: null });
+      })
       .finally(() => { activeCheck = null; });
     await activeCheck;
     return { ...state };

@@ -249,3 +249,26 @@ test('a packaged build with no checker and no release flag stays unsupported', (
   assert.equal(manager.getState().supported, false);
   assert.equal(manager.getState().installable, false);
 });
+
+test('a release that stopped publishing metadata points at the release page', async () => {
+  // 0.7.5 shipped Windows with the updater armed and latest.yml alongside it.
+  // 0.7.6 publishes no metadata for an unsigned installer, so those clients hit
+  // a channel-file 404. That is not an outage and must not look like one.
+  const { manager, updater } = fixture();
+  await manager.check(); // initialises the updater and its listeners
+  const error = new Error('Cannot find channel "latest.yml" in the latest release artifacts');
+  error.code = 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND';
+  updater.emit('error', error);
+  const state = manager.getState();
+  assert.equal(state.status, 'unavailable');
+  assert.match(state.message, /release page/);
+  assert.equal(state.releaseUrl, 'https://github.com/dk3yyyy/volyx-lens/releases/latest');
+});
+
+test('an ordinary service failure still reads as a retryable error', async () => {
+  const { manager, updater } = fixture();
+  await manager.check();
+  updater.emit('error', new Error('ETIMEDOUT while contacting the update server'));
+  assert.equal(manager.getState().status, 'error');
+  assert.match(manager.getState().message, /Try again later/);
+});
