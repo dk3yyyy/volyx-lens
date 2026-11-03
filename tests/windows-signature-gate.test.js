@@ -35,9 +35,12 @@ test('a configured certificate has to produce a valid signature', () => {
   assert.match(workflow, /Signing certificate is configured, so this build must be signed|must be signed/);
 });
 
-test('an unsigned Windows build says so instead of pretending', () => {
+test('an unsigned Windows build ships without an update channel instead of pretending', () => {
   assert.match(workflow, /No signing certificate configured/);
-  assert.match(workflow, /rest on TLS plus the SHA-512/);
+  // The build used to accept TLS plus a checksum as its trust basis and publish
+  // latest.yml anyway. An unsigned installer now gets no update channel at all.
+  assert.match(workflow, /no latest\.yml/);
+  assert.doesNotMatch(workflow, /rest on TLS plus the SHA-512/);
 });
 
 test('package.json carries no invented publisher', () => {
