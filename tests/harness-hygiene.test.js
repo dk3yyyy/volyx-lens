@@ -55,12 +55,26 @@ test('a coverage tree does not turn the identity check red', () => {
   }
 });
 
-test('the compact onboarding measurement waits for the open animation', () => {
+test('the compact onboarding measurement waits for the open animation and the resize', () => {
   const start = onboarding.indexOf('win.setSize(500, 480)');
   assert.ok(start > 0, 'the compact case is exercised');
-  const body = onboarding.slice(start, start + 400);
-  assert.match(body, /await waitForStableDialogHeight\(win\)/, 'measuring mid-animation is a flake, not a regression');
-  assert.doesNotMatch(body, /await wait(100);/, 'the fixed wait that measured at 100ms is gone');
+  const body = onboarding.slice(start, start + 900);
+  assert.match(body, /await waitFor\(win, 'innerWidth === 500'/, 'the resize must reach the renderer before geometry is read');
+  assert.match(body, /await waitForEntryAnimation\(win, '#onboard'/, 'measuring mid-animation is a flake, not a regression');
+  assert.doesNotMatch(body, /await waitForStableDialogHeight/, 'three equal samples can be three stale samples before the animation starts or the resize lands');
+  assert.doesNotMatch(body, /await wait\(100\);/, 'the fixed wait that measured at 100ms is gone');
+});
+
+test('the CI UI-harness retry is bounded, keeps the first log, and fails on a second failure', () => {
+  const retry = read('scripts/retry-ui-check.sh');
+  const ci = read('.github/workflows/ci.yml');
+  assert.match(retry, /max_attempts=2/);
+  assert.match(retry, /sleep "\$backoff_seconds"/, 'the retry backs off instead of spinning');
+  assert.match(retry, /cat "\$first_log"/, 'a second failure prints the first attempt log');
+  assert.match(retry, /exit "\$status"/, 'a second failure keeps the failing exit code');
+  for (const name of ['check:onboarding-ui', 'check:settings-ui', 'check:history-ui']) {
+    assert.ok(ci.includes(`retry-ui-check.sh ${name}`), `${name} runs through the bounded retry`);
+  }
 });
 
 test('every harness stubs the boot-time history fetch', () => {

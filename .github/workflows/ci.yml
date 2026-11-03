@@ -45,15 +45,19 @@ jobs:
       - name: Check JavaScript syntax
         if: matrix.node == 20
         run: npm run check:syntax
+      # The three renderer harnesses paint real Chromium windows under xvfb on a
+      # shared runner. Each gets one bounded retry: the script re-runs once after
+      # a short backoff, and a second failure still exits non-zero with the first
+      # attempt's full log attached.
       - name: Onboarding UI check
         if: matrix.node == 20
-        run: xvfb-run -a npm run check:onboarding-ui -- --no-sandbox
+        run: bash scripts/retry-ui-check.sh check:onboarding-ui --no-sandbox
       - name: Settings UI check
         if: matrix.node == 20
-        run: xvfb-run -a npm run check:settings-ui -- --no-sandbox
+        run: bash scripts/retry-ui-check.sh check:settings-ui --no-sandbox
       - name: History UI check
         if: matrix.node == 20
-        run: xvfb-run -a npm run check:history-ui -- --no-sandbox
+        run: bash scripts/retry-ui-check.sh check:history-ui --no-sandbox
       - name: End-to-end smoke test
         if: matrix.node == 20
         run: xvfb-run -a npm run check:e2e-smoke

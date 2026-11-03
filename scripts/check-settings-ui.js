@@ -2,6 +2,15 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  FIRST_PAINT_TIMEOUT_MS,
+  installHarnessGuards,
+  trackRendererConsole,
+  waitFor,
+  waitForHost,
+  waitForPaint,
+  waitForRendererReady,
+} = require('./ui-harness-helpers');
 
 const root = path.join(__dirname, '..');
 const screenshotDir = process.env.VOLYX_LENS_SETTINGS_SCREENSHOT_DIR || '';
@@ -52,30 +61,37 @@ const modalReports = [];
 ipcMain.on('ui:modal-state', (_event, open) => { modalReports.push(open === true); });
 let recoveryDraft = null;
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function waitFor(win, expression, message, timeoutMs = 2500) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    if (await win.webContents.executeJavaScript(`Boolean(${expression})`)) return;
-    await wait(25);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
 async function capture(win, name) {
   if (!screenshotDir) return;
   fs.mkdirSync(screenshotDir, { recursive: true });
   fs.writeFileSync(path.join(screenshotDir, `${name}.png`), (await win.webContents.capturePage()).toPNG());
 }
 
+let win = null;
+const consoleLines = [];
+const guards = installHarnessGuards({
+  app,
+  getWindow: () => win,
+  label: 'Settings UI check',
+  consoleLines,
+  getExtraLines: () => [`releasePageOpens=${releasePageOpens}`, `modalReports=${JSON.stringify(modalReports)}`],
+});
+
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 700, height: 600, minWidth: 500, minHeight: 480, show: false,
     backgroundColor: '#151827',
     webPreferences: { preload: path.join(root, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
+  trackRendererConsole(win, { lines: consoleLines });
+  // Opening Settings before the renderer's boot IIFE has loaded `settings`
+  // throws in openSettings() and leaves the scrim shut, so the old 450ms sleep
+  // turned a slow boot into a permanent failure. Boot completion is the real
+  // precondition; wait for it, with a generous first-paint budget.
+  const booted = waitForRendererReady(ipcMain);
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
+  await booted;
   win.show();
-  await wait(450);
   await win.webContents.executeJavaScript("document.querySelector('#more-btn').click()");
   await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'Settings to open');
 
@@ -84,7 +100,10 @@ app.whenReady().then(async () => {
   for (const section of sections) {
     await win.webContents.executeJavaScript(`document.querySelector('[data-settings-section="${section}"]').click()`);
     await waitFor(win, `document.activeElement && document.activeElement.id === 'settings-${section}-title'`, `${section} heading focus`);
-    await wait(60); // Allow Chromium to paint the already-verified section before screenshot capture.
+    // Let Chromium paint the already-verified section before the screenshot.
+    // Geometry reads below force layout themselves, so this is not a sleep
+    // standing in for a load that might not have happened.
+    await waitForPaint(win);
     const state = await win.webContents.executeJavaScript(`(() => {
       const dialog = document.querySelector('#settings').getBoundingClientRect();
       const visible = [...document.querySelectorAll('[data-settings-page]')].filter((page) => !page.hidden);
@@ -201,7 +220,9 @@ app.whenReady().then(async () => {
   assert.equal(updateButton.text, 'Open Latest Release', 'unsupported builds label the button as a release link');
   assert.equal(updateButton.disabled, false, 'the release link is always clickable');
   await win.webContents.executeJavaScript("document.querySelector('#update-check').click()");
-  await wait(40);
+  // The click handler awaits the IPC round trip; the release-page counter moves
+  // in the main process, so wait for the effect rather than for 40ms to pass.
+  await waitForHost(() => releasePageOpens === 1, 'the update button to open the latest release page');
   assert.equal(releasePageOpens, 1, 'the button opens the latest release page');
 
   await win.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
@@ -213,7 +234,8 @@ app.whenReady().then(async () => {
   await win.webContents.executeJavaScript("document.querySelector('#more-btn').click()");
   await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'Settings to reopen');
   win.setSize(500, 480);
-  await waitFor(win, 'innerWidth === 500', 'compact viewport');
+  await waitFor(win, 'innerWidth === 500', 'compact viewport', FIRST_PAINT_TIMEOUT_MS);
+  await waitForPaint(win);
   const compact = await win.webContents.executeJavaScript(`(() => {
     const dialog = document.querySelector('#settings').getBoundingClientRect();
     const nav = document.querySelector('.s-nav');
@@ -241,8 +263,13 @@ app.whenReady().then(async () => {
   await capture(win, 'compact');
 
   recoveryDraft = { turnCount: 500, totalTurns: 620, truncated: 120, clippedTurns: 2, startedAt: Date.now() - 60000, updatedAt: Date.now() };
+  // BrowserWindow.reload() is not awaitable. Attach the boot listener before
+  // reloading, because polling executeJavaScript across the navigation can throw
+  // "render frame was disposed" and turn a normal reload into a failure.
+  const rebooting = waitForRendererReady(ipcMain);
   win.reload();
-  await waitFor(win, "document.querySelector('#meeting-recovery-dialog').open === true", 'meeting recovery dialog to open after reload', 5000);
+  await rebooting;
+  await waitFor(win, "document.querySelector('#meeting-recovery-dialog').open === true", 'meeting recovery dialog to open after reload');
   const recoverySummary = await win.webContents.executeJavaScript("document.querySelector('#meeting-recovery-summary').textContent");
   assert.equal(modalReports[modalReports.length - 1], true, 'recovery dialog should report an open modal');
   assert.match(recoverySummary, /500 transcript turns from .+ can be recovered\./, 'recovery summary should describe the restored draft');
@@ -250,12 +277,13 @@ app.whenReady().then(async () => {
   assert.match(recoverySummary, /2 long turns were shortened/, 'recovery summary should disclose shortened turns');
   await win.webContents.executeJavaScript("document.querySelector('#meeting-recovery-discard').click()");
   await waitFor(win, "document.querySelector('#meeting-recovery-dialog').open === false", 'recovery dialog to close after discard');
-  await wait(50);
+  // The dialog close and the modal-state report happen after an awaited IPC
+  // call, so the report is the condition to wait for, not a 50ms sleep.
+  await waitForHost(() => modalReports[modalReports.length - 1] === false, 'the recovery dialog to clear the modal state');
   assert.equal(modalReports[modalReports.length - 1], false, 'closing the recovery dialog should clear modal state');
 
   console.log('Settings UI behavior passed: 5 simple pages, stable layout, focus containment/restoration, compact fit, and recovery dialog modal state.');
-  app.quit();
-}).catch((error) => {
-  console.error(error);
-  app.exit(1);
+  await guards.finish(0);
+}).catch(async (error) => {
+  await guards.finish(1, error);
 });

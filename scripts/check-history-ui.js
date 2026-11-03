@@ -10,6 +10,13 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const {
+  installHarnessGuards,
+  trackRendererConsole,
+  waitFor,
+  waitForHost,
+  waitForRendererReady,
+} = require('./ui-harness-helpers');
 
 const root = path.join(__dirname, '..');
 const { STT_MODELS } = require('../src/provider-config');
@@ -200,33 +207,50 @@ ipcMain.handle('history:restore-all', () => {
   return nextRestoreResult;
 });
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function waitFor(win, expression, message, timeoutMs = 3000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    if (await win.webContents.executeJavaScript(`Boolean(${expression})`)) return;
-    await wait(25);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
 const run = (win, expression) => win.webContents.executeJavaScript(expression);
 
+let win = null;
+const consoleLines = [];
+const guards = installHarnessGuards({
+  app,
+  getWindow: () => win,
+  label: 'History UI check',
+  consoleLines,
+  getExtraLines: () => [
+    `calls.menu=${JSON.stringify(calls.menu)}`,
+    `calls.clipboard=${JSON.stringify(calls.clipboard)}`,
+    `calls.participant=${JSON.stringify(calls.participant)}`,
+    `calls.discard=${JSON.stringify(calls.discard)}`,
+    `calls.deleteMany=${JSON.stringify(calls.deleteMany)}`,
+    `calls.undo=${JSON.stringify(calls.undo)}`,
+  ],
+});
+
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 700, height: 620, minWidth: 500, minHeight: 480, show: false,
     backgroundColor: '#151827',
     webPreferences: { preload: path.join(root, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
 
-  win.webContents.on('console-message', (_event, level, message) => {
-    if (level >= 2) console.log('[renderer]', message);
-  });
+  trackRendererConsole(win, { lines: consoleLines });
 
+  // Open the pane only after boot: before it finishes, the panel's first render
+  // races the settings/limits/history IPC loads, and a fixed 450ms sleep turns a
+  // slow cold start into a failure the assertions cannot recover from.
+  const booted = waitForRendererReady(ipcMain);
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
+  await booted;
   win.show();
-  await wait(450);
   // Confirmations are part of the flow under test; accept them.
   await run(win, 'void (window.confirm = () => true);');
+
+  // The baseline must be the focused look. The renderer sets window-inactive at
+  // load while the window is still hidden, and a runner without a window manager
+  // can deliver the real focus event late; drive the same state machine
+  // explicitly instead of sampling whatever the OS did first.
+  await run(win, "window.dispatchEvent(new Event('focus'))");
+  await waitFor(win, "!document.body.classList.contains('window-inactive')", 'the active window state before measuring');
 
   // An unfocused window dims its accent without moving anything. The geometry
   // check is the guard against a restyle that quietly resizes the pill.
@@ -329,7 +353,7 @@ app.whenReady().then(async () => {
     const box = document.querySelector('#meeting-history-search');
     box.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   })()`);
-  await waitFor(win, "true", 'the field menu resolved');
+  await waitForHost(() => calls.menu[calls.menu.length - 1] === 'editable', 'the field context menu to reach the main process');
   assert.deepEqual(calls.menu.slice(-1), ['editable'], 'a text field asks for the editing roles');
 
   // The answer is selectable, and right-clicking it offers a copy that actually
@@ -350,8 +374,13 @@ app.whenReady().then(async () => {
     return selectable;
   })()`);
   assert.equal(answerState, 'text', 'the answer can be selected like any other content');
-  await waitFor(win, "true", 'the answer menu resolved');
-  await waitFor(win, "true", 'the copy resolved');
+  // The menu and the copy both cross IPC; "true" is not a condition, it is a
+  // race. Wait until the call the assertion is about has actually arrived.
+  await waitForHost(
+    () => calls.menu[calls.menu.length - 1] === 'answer'
+      && calls.clipboard[calls.clipboard.length - 1] === 'Three slides were reordered.',
+    'the answer context menu and its clipboard copy',
+  );
   assert.deepEqual(calls.menu.slice(-1), ['answer'], 'the answer asked for the answer menu');
   assert.deepEqual(calls.clipboard.slice(-1), ['Three slides were reordered.'], 'the answer reached the clipboard bridge');
   nextMenuAction = null;
@@ -430,7 +459,7 @@ app.whenReady().then(async () => {
   assert.match(await run(win, "document.querySelector('.notes-source').textContent"), /as it was heard/);
 
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
-  await wait(60);
+  await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Raw'", 'the raw view to render');
   const rawView = await run(win, `({
     label: document.querySelector('#meeting-view-toggle').textContent,
     firstText: document.querySelector('#meeting-history-turns .history-text').textContent,
@@ -439,7 +468,7 @@ app.whenReady().then(async () => {
   assert.doesNotMatch(rawView.firstText, /\.$/, 'raw wording has no added punctuation');
 
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
-  await wait(60);
+  await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Changes'", 'the changes view to render');
   const changesView = await run(win, `({
     label: document.querySelector('#meeting-view-toggle').textContent,
     rows: document.querySelectorAll('#meeting-history-turns .history-turn').length,
@@ -459,16 +488,26 @@ app.whenReady().then(async () => {
     input.value = '  Ada Lovelace  ';
     input.dispatchEvent(new Event('change', { bubbles: true }));
   `);
-  await wait(120);
+  // The change handler awaits historyParticipant before it re-renders the
+  // speaker label, so wait for both the IPC payload and the rendered name.
+  await waitForHost(
+    () => {
+      const last = calls.participant[calls.participant.length - 1];
+      return Boolean(last) && last.id === 'meeting-a' && last.participant === '  Ada Lovelace  ';
+    },
+    'the speaker name to reach the main process',
+  );
+  await waitFor(win, "document.querySelector('#meeting-history-turns .history-speaker').textContent === 'Ada Lovelace'", 'the renamed speaker to render');
   assert.deepEqual(calls.participant.at(-1), { id: 'meeting-a', participant: '  Ada Lovelace  ' });
   const namedSpeaker = await run(win, "document.querySelector('#meeting-history-turns .history-speaker').textContent");
   assert.equal(namedSpeaker, 'Ada Lovelace');
 
   // Discarding the cleaned copy keeps the raw transcript.
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
-  await wait(60);
+  await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Cleaned'", 'the cleaned view before discarding the copy');
   await run(win, "document.querySelector('#meeting-discard-cleaned').click()");
-  await wait(200);
+  await waitFor(win, "document.querySelector('#meeting-view-toggle').classList.contains('hidden')", 'the cleaned copy to be discarded');
+  await waitForHost(() => calls.discard.includes('meeting-a'), 'the discard to reach the main process');
   assert.deepEqual(calls.discard, ['meeting-a']);
   const afterDiscard = await run(win, `({
     toggleHidden: document.querySelector('#meeting-view-toggle').classList.contains('hidden'),
@@ -490,14 +529,13 @@ app.whenReady().then(async () => {
     const boxes = [...document.querySelectorAll('#meeting-history-list .history-entry-select')];
     for (const box of boxes) { box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); }
   })()`);
-  await wait(60);
+  await waitFor(win, "document.querySelector('#meeting-history-delete-selected').textContent === 'Delete 2'", 'both selected meetings to be counted');
   const bulkLabel = await run(win, "document.querySelector('#meeting-history-delete-selected').textContent");
   assert.equal(bulkLabel, 'Delete 2');
   await run(win, "document.querySelector('#meeting-history-delete-selected').click()");
-  await wait(250);
+  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 0", 'list emptied');
   assert.equal(calls.deleteMany.length, 1);
   assert.deepEqual(calls.deleteMany[0].sort(), ['meeting-a', 'meeting-b']);
-  await waitFor(win, "document.querySelectorAll('#meeting-history-list .history-entry').length === 0", 'list emptied');
 
   // Deleting is recoverable: the pane offers Undo and puts the meetings back.
   await waitFor(win, "document.querySelector('#meeting-history-undo-row')?.classList.contains('hidden') === false", 'the undo row after a bulk delete');
@@ -549,8 +587,7 @@ app.whenReady().then(async () => {
   assert.match(notesPwn.text, /<img src=x onerror=alert\(1\)>/, 'the payload is visible as the text it is');
 
   console.log('History UI behavior passed: inactive window state, context menus, accessibility preferences, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
-  app.exit(0);
-}).catch((error) => {
-  console.error('History UI behavior failed:', error && error.message ? error.message : error);
-  app.exit(1);
+  await guards.finish(0);
+}).catch(async (error) => {
+  await guards.finish(1, error);
 });

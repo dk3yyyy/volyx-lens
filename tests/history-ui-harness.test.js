@@ -11,11 +11,13 @@ test('the history pane harness is wired into npm and CI', () => {
   assert.equal(pkg.scripts['check:history-ui'], 'electron scripts/check-history-ui.js');
 
   const ci = read('.github/workflows/ci.yml');
-  assert.match(ci, /npm run check:history-ui/);
+  assert.match(ci, /retry-ui-check\.sh check:history-ui/);
 
   const script = read('scripts/check-history-ui.js');
   assert.match(script, /History UI behavior passed:/);
-  assert.match(script, /app\.exit\(1\)/, 'a failure exits non-zero');
+  assert.match(script, /installHarnessGuards/);
+  assert.match(script, /guards\.finish\(1, error\)/, 'a failure exits non-zero');
+  assert.match(read('scripts/ui-harness-helpers.js'), /app\.exit\(code\)/, 'the shared guard owns process teardown');
 });
 
 test('the history harness covers the behaviours the pane promises', () => {

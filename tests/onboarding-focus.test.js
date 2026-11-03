@@ -29,8 +29,10 @@ test('the dialog is only refocused while it is open', () => {
 });
 
 test('the harness re-asks the runner for window focus on every attempt', () => {
-  assert.match(harness, /async function waitFor\(win, expression, message, timeoutMs = 2500, onAttempt = null\)/);
-  assert.match(harness, /if \(onAttempt\) await onAttempt\(\);/);
+  const helpers = fs.readFileSync(path.join(root, 'scripts', 'ui-harness-helpers.js'), 'utf8');
+  assert.match(helpers, /async function waitFor\(win, expression, message, timeoutMs = INTERACTION_TIMEOUT_MS, onAttempt = null\)/);
+  assert.match(helpers, /if \(onAttempt\) await onAttempt\(\);/);
   assert.match(harness, /\(\) => \{ win\.show\(\); win\.focus\(\); win\.webContents\.focus\(\); \}/);
-  assert.match(harness, /'initial onboarding heading focus',\s*10000,/, 'the cold-start window is still ten seconds');
+  assert.match(harness, /'initial onboarding heading focus',\s*FIRST_PAINT_TIMEOUT_MS,/, 'the cold-start window is still ten seconds');
+  assert.match(helpers, /const FIRST_PAINT_TIMEOUT_MS = 10000;/, 'the first-paint budget is ten seconds');
 });
