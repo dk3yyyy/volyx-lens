@@ -1,6 +1,11 @@
 'use strict';
 
 const SUPPORTED_PLATFORMS = new Set(['darwin', 'win32', 'linux']);
+const { releaseUpdateFrom } = require('./release-check');
+
+function manualInstallMessage() {
+  return 'This build installs updates by hand. Download the newest installer from the release page.';
+}
 
 function unsupportedMessage() {
   return 'This build cannot install updates automatically. Use Open Latest Release to download the current version.';
@@ -14,10 +19,18 @@ function releaseChannel(platform, arch) {
   return 'latest';
 }
 
-function createUpdateManager({ app, platform = process.platform, arch = process.arch, releaseBuild = false, updaterFactory, emit = () => {} }) {
-  const supported = Boolean(app && app.isPackaged && SUPPORTED_PLATFORMS.has(platform) && releaseBuild === true);
-  let state = supported
-    ? publicState('idle', 'Check GitHub Releases for a signed Volyx Lens update.')
+function createUpdateManager({ app, platform = process.platform, arch = process.arch, releaseBuild = false, updaterFactory, releaseChecker = null, emit = () => {} }) {
+  const packaged = Boolean(app && app.isPackaged && SUPPORTED_PLATFORMS.has(platform));
+  // Installing in place needs a signed release build; learning that a release
+  // exists does not. Splitting the two is what makes the Updates pane and the
+  // update notification honest on an unsigned macOS DMG or Windows installer
+  // instead of showing a dead toggle that can never fire.
+  const installable = packaged && releaseBuild === true && typeof updaterFactory === 'function';
+  const canCheck = installable || (packaged && releaseChecker != null && typeof releaseChecker.latest === 'function');
+  // `supported` keeps its old meaning on the wire: this build can check at all.
+  const supported = canCheck;
+  let state = canCheck
+    ? publicState('idle', 'Check GitHub Releases for the latest Volyx Lens version.')
     : publicState('unsupported', unsupportedMessage());
   let updater = null;
   let activeCheck = null;
@@ -26,10 +39,14 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   function publicState(status, message, extra = {}) {
     return {
       supported,
+      // False on builds that can only point at the release page, so the renderer
+      // offers "get the installer" instead of a download button that would throw.
+      installable,
       currentVersion: String(app && app.getVersion ? app.getVersion() : '0.0.0'),
       status,
       message,
       availableVersion: extra.availableVersion || null,
+      releaseUrl: typeof extra.releaseUrl === 'string' ? extra.releaseUrl : null,
       progress: Number.isFinite(extra.progress) ? Math.max(0, Math.min(100, Math.round(extra.progress))) : null,
     };
   }
@@ -37,6 +54,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   function setState(status, message, extra = {}) {
     state = publicState(status, message, {
       availableVersion: Object.prototype.hasOwnProperty.call(extra, 'availableVersion') ? extra.availableVersion : state.availableVersion,
+      releaseUrl: Object.prototype.hasOwnProperty.call(extra, 'releaseUrl') ? extra.releaseUrl : state.releaseUrl,
       progress: extra.progress,
     });
     emit({ ...state });
@@ -48,8 +66,12 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
     return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value) ? value.slice(0, 64) : null;
   }
 
-  function ensureSupported() {
-    if (!supported) throw new Error(unsupportedMessage());
+  function ensureCanCheck() {
+    if (!canCheck) throw new Error(unsupportedMessage());
+  }
+
+  function ensureInstallable() {
+    if (!installable) throw new Error(manualInstallMessage());
   }
 
   function initialize() {
@@ -80,7 +102,10 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   }
 
   async function check() {
-    ensureSupported();
+    ensureCanCheck();
+    // Unsigned builds have no updater to drive, so they ask the public API what
+    // the newest release is and stop there. Nothing is downloaded or installed.
+    if (!installable) return checkPublishedRelease();
     if (activeCheck) {
       await activeCheck;
       return { ...state };
@@ -108,8 +133,38 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
     return { ...state };
   }
 
+  async function checkPublishedRelease() {
+    if (activeCheck) {
+      await activeCheck;
+      return { ...state };
+    }
+    setState('checking', 'Checking for updates…', { availableVersion: null });
+    activeCheck = Promise.resolve(releaseChecker.latest())
+      .then((release) => {
+        // The checker returns the version and URL it already validated; the pure
+        // helper takes the GitHub payload shape, so map rather than duplicate the
+        // comparison.
+        const result = releaseUpdateFrom({
+          currentVersion: state.currentVersion,
+          release: release ? { tag_name: release.version, html_url: release.url } : null,
+        });
+        if (result.available) {
+          setState('available', `Volyx Lens ${result.version} is available.`, { availableVersion: result.version, releaseUrl: result.url });
+        } else if (!release) {
+          setState('current', 'No published release was found. Try again later.', { availableVersion: null });
+        } else {
+          setState('current', 'Volyx Lens is up to date.', { availableVersion: null });
+        }
+        return { ...state };
+      })
+      .catch(() => setState('error', 'GitHub could not be reached. Try again later.', { availableVersion: null }))
+      .finally(() => { activeCheck = null; });
+    await activeCheck;
+    return { ...state };
+  }
+
   async function download() {
-    ensureSupported();
+    ensureInstallable();
     if (activeDownload) {
       await activeDownload;
       return { ...state };
@@ -131,7 +186,7 @@ function createUpdateManager({ app, platform = process.platform, arch = process.
   }
 
   async function install() {
-    ensureSupported();
+    ensureInstallable();
     if (state.status !== 'downloaded') throw new Error('The update is not ready to install.');
     try {
       initialize().quitAndInstall(false, true);

@@ -53,6 +53,7 @@ const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
 const { updateNotificationFor, notificationsEnabled } = require('./src/update-notifications');
 const { createUpdateScheduler } = require('./src/update-scheduler');
+const { createReleaseChecker } = require('./src/release-check-client');
 const { updateNotificationPolicy } = require('./src/notification-policy');
 const { resolveWhisperBinary, defaultBinariesDir } = require('./src/whisper-sidecar');
 const { createRendererLogForwarder } = require('./src/renderer-log');
@@ -347,6 +348,10 @@ const updateManager = createUpdateManager({
   arch: process.arch,
   releaseBuild: require('./package.json').volyxReleaseBuild === true,
   updaterFactory: () => require('electron-updater').autoUpdater,
+  // Unsigned builds cannot install in place, but they can still tell the user a
+  // release exists. That is the difference between a dead Updates pane and a
+  // useful one on the DMGs and installers most people actually download.
+  releaseChecker: createReleaseChecker({ userAgent: `Volyx-Lens/${require('./package.json').version}` }),
   emit: handleUpdateState,
 });
 previousUpdateState = updateManager.getState();

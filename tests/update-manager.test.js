@@ -30,10 +30,12 @@ test('development builds explain that signed packaged builds are required', asyn
   const { manager } = fixture({ packaged: false });
   assert.deepEqual(manager.getState(), {
     supported: false,
+    installable: false,
     currentVersion: '0.2.0',
     status: 'unsupported',
     message: 'This build cannot install updates automatically. Use Open Latest Release to download the current version.',
     availableVersion: null,
+    releaseUrl: null,
     progress: null,
   });
   await assert.rejects(manager.check(), /cannot install updates automatically/);
@@ -144,10 +146,12 @@ test('development Windows builds explain that packaged builds are required', asy
   const { manager } = fixture({ packaged: false, platform: 'win32' });
   assert.deepEqual(manager.getState(), {
     supported: false,
+    installable: false,
     currentVersion: '0.2.0',
     status: 'unsupported',
     message: 'This build cannot install updates automatically. Use Open Latest Release to download the current version.',
     availableVersion: null,
+    releaseUrl: null,
     progress: null,
   });
   await assert.rejects(manager.check(), /cannot install updates automatically/);
@@ -182,4 +186,66 @@ test('a check whose result is already new information keeps the event-driven mes
   assert.equal(state.status, 'available');
   assert.equal(state.message, 'Volyx Lens 0.4.0 is available.');
   assert.equal(states.filter((entry) => entry.status === 'available').length, 1, 'one available state, not two');
+});
+
+function releaseFixture({ release = { version: '0.3.0', url: 'https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.3.0' }, latest } = {}) {
+  const checker = { latest: latest || (async () => release) };
+  const manager = createUpdateManager({
+    app: { isPackaged: true, getVersion: () => '0.2.0' },
+    platform: 'darwin',
+    arch: 'arm64',
+    releaseBuild: false,
+    updaterFactory: () => { throw new Error('the updater must not be initialized for an unsigned build'); },
+    releaseChecker: checker,
+    emit: () => {},
+  });
+  return manager;
+}
+
+test('an unsigned build can report a newer release without being able to install it', async () => {
+  const manager = releaseFixture();
+  assert.equal(manager.getState().supported, true, 'it can check');
+  assert.equal(manager.getState().installable, false, 'it cannot install');
+
+  const state = await manager.check();
+  assert.equal(state.status, 'available');
+  assert.equal(state.availableVersion, '0.3.0');
+  assert.equal(state.releaseUrl, 'https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.3.0');
+  await assert.rejects(manager.download(), /installs updates by hand/);
+  await assert.rejects(manager.install(), /installs updates by hand/);
+});
+
+test('an unsigned build reports up to date when the published release is not newer', async () => {
+  const manager = releaseFixture({ release: { version: '0.2.0', url: 'https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.2.0' } });
+  const state = await manager.check();
+  assert.equal(state.status, 'current');
+  assert.equal(state.availableVersion, null);
+});
+
+test('an unsigned build says so when no release is published yet', async () => {
+  const manager = releaseFixture({ release: null });
+  const state = await manager.check();
+  assert.equal(state.status, 'current');
+  assert.match(state.message, /No published release/);
+});
+
+test('an unsigned build reports a failed lookup without pretending it is up to date', async () => {
+  const manager = releaseFixture({ latest: async () => { throw new Error('offline'); } });
+  const state = await manager.check();
+  assert.equal(state.status, 'error');
+  assert.match(state.message, /GitHub could not be reached/);
+  assert.equal(state.availableVersion, null);
+});
+
+test('a packaged build with no checker and no release flag stays unsupported', () => {
+  const manager = createUpdateManager({
+    app: { isPackaged: true, getVersion: () => '0.2.0' },
+    platform: 'darwin',
+    arch: 'arm64',
+    releaseBuild: false,
+    updaterFactory: () => { throw new Error('unused'); },
+    emit: () => {},
+  });
+  assert.equal(manager.getState().supported, false);
+  assert.equal(manager.getState().installable, false);
 });
