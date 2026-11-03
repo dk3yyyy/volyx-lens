@@ -67,6 +67,91 @@ test('indented prose around a fence is normalised while the fence is not', () =>
   );
 });
 
+test('an inline code span is copied byte for byte', () => {
+  const span = '`git log --oneline — file  --stat`';
+  assert.equal(
+    normalizeAnswerText(`Run — this: ${span} — then stop.`),
+    `Run, this: ${span}, then stop.`,
+    'the em dash and the doubled space inside the span are part of the command'
+  );
+  // A double-backtick span is the way to show a command that contains a
+  // backtick, and it is protected the same way.
+  assert.equal(
+    normalizeAnswerText('Use ``git log — file`` here — now.'),
+    'Use ``git log — file`` here, now.'
+  );
+  // A wider run in the middle of a line is still a code span, not a fence.
+  assert.equal(
+    normalizeAnswerText('Run — ```npm test — --watch``` — now.'),
+    'Run, ```npm test — --watch```, now.'
+  );
+});
+
+test('a URL with an em dash stays intact', () => {
+  assert.equal(
+    normalizeAnswerText('See — https://x.test/a—b — it works.'),
+    'See, https://x.test/a—b, it works.',
+    'the dash belongs to the address, not to the sentence'
+  );
+});
+
+test('an indented code block is preserved while surrounding prose is normalised', () => {
+  const block = [
+    '    git log --oneline — file  --stat',
+    '    if (a  === b) { return 2019–2020; }',
+  ].join('\n');
+  const input = ['Run — this:', '', block, '', 'That — worked.'].join('\n');
+
+  assert.equal(
+    normalizeAnswerText(input),
+    ['Run, this:', '', block, '', 'That, worked.'].join('\n')
+  );
+  assert.equal(
+    normalizeAnswerText('\tgit log — file'),
+    '\tgit log — file',
+    'a tab at the start of the text is an indented code block'
+  );
+});
+
+test('a four-space line inside a paragraph is prose, not code', () => {
+  // Markdown does not start an indented code block in the middle of a
+  // paragraph, so this is a wrapped continuation of the line above it. A list
+  // continuation looks the same, and there is no way to tell them apart, so the
+  // conservative reading is the renderer's: prose.
+  assert.equal(
+    normalizeAnswerText('The plan — as agreed\n    ships Friday — morning.'),
+    'The plan, as agreed\n    ships Friday, morning.'
+  );
+});
+
+test('a markdown table row with a dash placeholder survives', () => {
+  const table = [
+    '| Field | Value |',
+    '| ----- | ----- |',
+    '| Owner  |  —  |',
+    '| Date   |  —  |',
+  ].join('\n');
+  assert.equal(
+    normalizeAnswerText(table),
+    table,
+    'padding and dash placeholders are table structure'
+  );
+  assert.equal(
+    normalizeAnswerText(`Table — below:\n${table}\nDone — now.`),
+    `Table, below:\n${table}\nDone, now.`,
+    'the prose around the table is still normalised'
+  );
+});
+
+test('in one line only the prose around code and a URL is normalised', () => {
+  const code = '`--since=2019–2020`';
+  const url = 'https://x.test/a—b';
+  assert.equal(
+    normalizeAnswerText(`The flag — ${code} — and the link ${url} — plus “quotes”.`),
+    `The flag, ${code}, and the link ${url}, plus "quotes".`
+  );
+});
+
 test('curly quotes become straight quotes in prose', () => {
   assert.equal(
     normalizeAnswerText('“The plan” and ‘the date’ are set.'),
@@ -103,6 +188,37 @@ test('normalising twice is the same as normalising once', () => {
   assert.equal(twice, once, 'second pass changes nothing');
   assert.notEqual(once, mixed, 'first pass actually normalised something');
   assert.ok(once.includes('// — “kept” 2019–2020'), 'the fence survived both passes');
+});
+
+test('normalising the combined fixture twice is the same as once', () => {
+  const fixture = [
+    'The plan — as agreed — ships “Friday”.',
+    'Copy — `git log --oneline — file  --stat` — before the call.',
+    'The link https://x.test/a—b — and 2019–2020 stay put.',
+    '',
+    '    const flag = "--since=2019–2020"; // — kept  ',
+    '',
+    '| Field | Value |',
+    '| ----- | ----- |',
+    '| Owner  |  —  |',
+    '```sh',
+    'npm test -- --reporter=spec — "as is"',
+    '```',
+    'Sign — here.',
+  ].join('\n');
+
+  const once = normalizeAnswerText(fixture);
+  const twice = normalizeAnswerText(once);
+
+  assert.equal(twice, once, 'second pass changes nothing');
+  assert.notEqual(once, fixture, 'first pass actually normalised something');
+  assert.ok(once.includes('`git log --oneline — file  --stat`'), 'the inline span survived');
+  assert.ok(once.includes('https://x.test/a—b'), 'the URL survived');
+  assert.ok(
+    once.includes('    const flag = "--since=2019–2020"; // — kept  '),
+    'the code block survived'
+  );
+  assert.ok(once.includes('| Owner  |  —  |'), 'the table row survived');
 });
 
 test('non-string input is returned unchanged', () => {
