@@ -246,7 +246,7 @@ test('archive helpers reject unknown formats and paths that escape the extractio
   const commands = extractionCommands({ archive: 'zip', archivePath: 'a.zip', destination: 'b', platform: 'win32' });
   assert.deepEqual(commands.map((command) => command.command), ['tar', 'unzip'], 'Windows prefers its built-in bsdtar');
   assert.throws(() => resolveInsideArchive('/tmp/extracted', '../escape'), /unsafe/);
-  assert.equal(resolveInsideArchive('/tmp/extracted', 'fixture/server'), path.resolve('/tmp/extracted/fixture/server'));
+  assert.equal(resolveInsideArchive("/tmp/extracted", "fixture/server"), path.resolve("/tmp/extracted/fixture/server"));
 });
 
 function packagedTree({ binaryContents, libraryContents = null }) {

@@ -117,9 +117,13 @@ function extractArchive({ runtime, archivePath, destination, platform }) {
 // Archive members may contain ".." or absolute paths; only paths that stay inside
 // the extraction directory are ever touched.
 function resolveInsideArchive(root, relativePath) {
-  const resolved = path.resolve(root, relativePath);
-  const rootWithSeparator = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-  if (!resolved.startsWith(rootWithSeparator)) {
+  // Resolve the root first: on Windows a POSIX-style root ("/tmp/x") resolves to
+  // a drive-qualified path, so comparing it against the un-normalised root
+  // rejected every entry, including safe ones.
+  const absoluteRoot = path.resolve(root);
+  const resolved = path.resolve(absoluteRoot, relativePath);
+  const rootWithSeparator = absoluteRoot.endsWith(path.sep) ? absoluteRoot : `${absoluteRoot}${path.sep}`;
+  if (resolved !== absoluteRoot && !resolved.startsWith(rootWithSeparator)) {
     throw new Error(`The whisper.cpp archive contains an unsafe path: ${relativePath}.`);
   }
   return resolved;
