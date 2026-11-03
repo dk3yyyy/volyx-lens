@@ -1,5 +1,7 @@
 'use strict';
 
+const { AUDIO_CHUNK_DURATION_MS } = require('./audio-config');
+
 // Draining on Stop is best-effort: whatever speech is still buffered gets one more
 // chance at transcription. A provider that keeps rejecting that audio must not hold
 // the capture state machine hostage. The previous loop re-requested the same chunks
@@ -117,4 +119,45 @@ async function drainPendingAudio({
   };
 }
 
-module.exports = { drainPendingAudio, DEFAULT_MAX_PASSES, DEFAULT_DEADLINE_MS };
+// Channels a gap may name, in the order the UI lists speakers. Anything else the
+// caller passes is ignored: the payload is rendered as text and must stay bounded.
+const GAP_CHANNELS = ['you', 'them'];
+const MAX_GAP_DURATION_MS = 10 * 60 * 1000;
+const MAX_DROPPED_CHUNKS = 100000;
+
+// Build the transcript gap that records abandoned drain audio. Dropping the chunks
+// silently would leave the saved transcript reading as continuous speech, so this
+// turns the loss into a visible marker. Pure and exported so the shape can be
+// tested without the Electron main process.
+function buildDrainGap({
+  abandoned = [],
+  droppedChunks = {},
+  chunkDurationMs = AUDIO_CHUNK_DURATION_MS,
+  ts = Date.now(),
+} = {}) {
+  const sourceChannels = Array.isArray(abandoned) ? abandoned : [];
+  const channels = GAP_CHANNELS.filter((channel) => sourceChannels.includes(channel));
+  if (!channels.length) return null;
+
+  const chunkMs = Number.isFinite(chunkDurationMs) && chunkDurationMs > 0
+    ? chunkDurationMs
+    : AUDIO_CHUNK_DURATION_MS;
+  const perChannel = droppedChunks && typeof droppedChunks === 'object' ? droppedChunks : {};
+  const chunks = channels.map((channel) => {
+    const count = Math.floor(Number(perChannel[channel]));
+    return Number.isFinite(count) ? Math.max(0, Math.min(MAX_DROPPED_CHUNKS, count)) : 0;
+  });
+  // Microphone and system audio run concurrently, so the hole in the transcript
+  // timeline is the longest abandoned buffer, not the sum of both. A drain only
+  // abandons a channel that still has pending audio, so floor at one chunk.
+  const longest = Math.max(1, ...chunks);
+  const durationMs = Math.min(MAX_GAP_DURATION_MS, Math.round(longest * chunkMs));
+  return {
+    ts: Number.isFinite(ts) ? Math.max(0, Math.trunc(ts)) : Date.now(),
+    reason: 'drain-failed',
+    channels,
+    durationMs,
+  };
+}
+
+module.exports = { drainPendingAudio, buildDrainGap, DEFAULT_MAX_PASSES, DEFAULT_DEADLINE_MS };

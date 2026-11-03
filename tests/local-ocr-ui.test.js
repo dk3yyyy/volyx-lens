@@ -46,7 +46,8 @@ test('native OCR uses Apple Vision locally with bounded stdin and JSON stdout', 
 
 test('Add Screen queues local OCR only after storage and never turns OCR into a provider request', () => {
   const capture = main.slice(main.indexOf('async function captureTaskContextScreen'), main.indexOf('function undoTaskContext'));
-  assert.match(capture, /taskContext\.add\(dataUrl, \{ ocrStatus:/);
+  assert.match(capture, /taskContext\.add\(dataUrl, \{/);
+  assert.match(capture, /ocrStatus: ocrAvailable \? 'pending' : 'unavailable'/);
   assert.match(capture, /publishTaskContextState\(result\)/);
   assert.match(capture, /processTaskContextOcr\(result\.addedCapture\.id/);
   assert.match(capture, /No AI request was made/);
@@ -78,4 +79,23 @@ test('OCR work and private text are cleared on remove, Undo, Clear, relaunch, qu
   assert.match(main, /async function shutdownAll\(\)[\s\S]*?localOcr\.cancelAll\(\);\n\s*clearTaskContext\(\);/);
   assert.match(main, /app\.on\('before-quit'[\s\S]*?shutdownAll\(\)\.finally\(\s*\(\) => app\.quit\(\)\)/);
   assert.match(main, /if \(!taskContext\.has\(captureId\)\) localOcr\.cancel\(captureId\)/);
+});
+
+test('OCR failures carry a short reason to the pane as a suffix and a title', () => {
+  assert.match(main, /const \{ createLocalOcr, ocrReasonLabel \} = require\('\.\/src\/local-ocr'\)/);
+  // The availability reason is attached where the capture is created, and the
+  // per-job reason where its result comes back; neither is left to the renderer.
+  assert.match(main, /ocrReason: ocrAvailable \? null : ocrAvailability\.reason/);
+  assert.match(main, /reason: result\.reason \|\| null/);
+  assert.match(main, /function taskContextPage\(page\)/);
+  assert.match(main, /ocrReasonLabel: ocrReason \? ocrReasonLabel\(ocrReason\) : null/);
+  assert.match(main, /unavailable on this build: \$\{ocrReasonLabel\(ocrAvailability\.reason\)\}/);
+  assert.match(taskContext, /ocrReason: initialOcrStatus === 'unavailable'/);
+  assert.match(renderer, /capture\.ocrReasonLabel/);
+  assert.match(renderer, /meta\.title = `Local text recognition: \$\{ocrReason\}\./);
+  assert.match(renderer, /Text: Unavailable\$\{suffix\}/);
+  assert.match(renderer, /Text: Failed\$\{suffix\}/);
+  // Wording comes from local-ocr's fixed map, so no path or helper stderr can ride
+  // along with the label into the pane.
+  assert.match(localOcr, /OCR_REASON_LABELS = Object\.freeze/);
 });

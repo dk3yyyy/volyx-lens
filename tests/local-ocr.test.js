@@ -6,6 +6,9 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   MAX_STDOUT_BYTES,
+  OCR_REASON_LABELS,
+  OCR_REASON_FALLBACK,
+  ocrReasonLabel,
   decodeImageDataUrl,
   validateVisionHelper,
   runVisionHelper,
@@ -159,4 +162,40 @@ test('non-macOS OCR reports unavailable without decoding or spawning', async () 
   assert.deepEqual(runner.availability(), { available: false, engine: null, reason: 'unsupported_platform' });
   assert.deepEqual(await runner.recognize(image()), { status: 'unavailable', reason: 'unsupported_platform' });
   assert.equal(spawned, false);
+});
+
+test('every OCR reason maps to stable user-facing wording with no filesystem paths', () => {
+  // Wording is part of the contract: when it changes, this test changes with it
+  // rather than the pane drifting to a different sentence per release.
+  assert.deepEqual({ ...OCR_REASON_LABELS }, {
+    unsupported_platform: 'not available on this platform',
+    helper_missing: 'helper not installed in this build',
+    unsafe_helper: 'helper failed its safety check',
+    spawn_failed: 'helper could not start',
+    timeout: 'helper timed out',
+    output_oversized: 'helper returned too much data',
+    helper_reported_error: 'helper reported an error',
+    helper_exit: 'helper stopped unexpectedly',
+    invalid_output: 'helper returned unreadable output',
+    invalid_image: 'screen image could not be read',
+    internal_error: 'recognition failed unexpectedly',
+  });
+  for (const [code, label] of Object.entries(OCR_REASON_LABELS)) {
+    assert.equal(ocrReasonLabel(code), label, code);
+    assert.ok(label.length > 0 && label.length <= 80, `${code} stays short`);
+    assert.doesNotMatch(label, /[\\/]/, `${code} has no separator`);
+    assert.doesNotMatch(label, /volyx-lens-vision-ocr|native-bin|Users|private\/var/, `${code} names no helper or path`);
+  }
+  // Unknown and prototype-shaped input gets the neutral fallback instead of
+  // leaking whatever was passed in.
+  assert.equal(ocrReasonLabel('__proto__'), OCR_REASON_FALLBACK);
+  assert.equal(ocrReasonLabel('/Users/someone/helper'), OCR_REASON_FALLBACK);
+  assert.equal(ocrReasonLabel(undefined), OCR_REASON_FALLBACK);
+  assert.equal(ocrReasonLabel({ reason: 'helper_missing' }), OCR_REASON_FALLBACK);
+
+  // The availability path that main actually reads feeds the same mapping.
+  const runner = createLocalOcr({ platform: 'linux', helperPath: '/missing' });
+  const availability = runner.availability();
+  assert.equal(availability.available, false);
+  assert.equal(ocrReasonLabel(availability.reason), 'not available on this platform');
 });

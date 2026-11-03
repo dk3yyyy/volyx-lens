@@ -29,6 +29,8 @@ class StreamingLinearResampler {
 class VolyxLensPcmCaptureProcessor extends AudioWorkletProcessor {
   constructor(options = {}) {
     super();
+    // Keep in sync with AUDIO_CHUNK_SAMPLES in src/audio-config.js: main uses the
+    // chunk duration to estimate how much speech a dropped drain buffer held.
     this.chunkSize = 2048;
     this.targetSampleRate = Math.max(8000, Number(options.processorOptions && options.processorOptions.targetSampleRate) || 24000);
     this.sourceSampleRate = sampleRate;

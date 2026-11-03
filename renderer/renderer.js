@@ -146,13 +146,26 @@
     }
   }
 
+  // Main sends one fixed clause per capture (and a state-level fallback for older
+  // rows). Showing it turns "Text: Unavailable" into a reason the user can act on;
+  // bounding it here keeps a malformed payload from stretching the metadata row.
+  function taskContextOcrReason(capture) {
+    // Evicted means the text was dropped to stay inside the memory budget, not
+    // that recognition failed, so the availability reason does not apply to it.
+    if (!capture || !['unavailable', 'failed'].includes(capture.ocrStatus)) return '';
+    const label = String(capture.ocrReasonLabel || (taskContext.ocr && taskContext.ocr.label) || '').trim();
+    return label.length > 120 ? `${label.slice(0, 117)}…` : label;
+  }
+
   function taskContextOcrLabel(capture) {
     const characters = Math.max(0, Number(capture.ocrCharacters) || 0);
+    const reason = taskContextOcrReason(capture);
+    const suffix = reason ? ` — ${reason}` : '';
     if (capture.ocrStatus === 'pending') return 'Text: Processing';
     if (capture.ocrStatus === 'ready') return `Text: ${characters.toLocaleString()} chars${capture.ocrTruncated ? '+' : ''}`;
-    if (capture.ocrStatus === 'failed') return 'Text: Failed';
+    if (capture.ocrStatus === 'failed') return `Text: Failed${suffix}`;
     if (capture.ocrStatus === 'evicted') return 'Text: Evicted';
-    return 'Text: Unavailable';
+    return `Text: Unavailable${suffix}`;
   }
 
   function taskContextOverlapLabel(capture) {
@@ -186,6 +199,8 @@
         const meta = document.createElement('span');
         const overlapLabel = taskContextOverlapLabel(capture);
         meta.textContent = `${taskContextTime(capture.capturedAt)} · ${formatTaskContextBytes(capture.bytes)} · ${taskContextOcrLabel(capture)}${overlapLabel ? ` · ${overlapLabel}` : ''}`;
+        const ocrReason = taskContextOcrReason(capture);
+        if (ocrReason) meta.title = `Local text recognition: ${ocrReason}.`;
         copy.append(title, meta);
 
         const pin = document.createElement('button');
@@ -1717,6 +1732,42 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     return `${left}${noSpace ? '' : ' '}${right}`;
   }
 
+  // A gap is the only record of audio that never became text. Normalise the
+  // payload before it reaches the DOM: a reason the renderer does not know, an
+  // oversized duration, or an unexpected channel must not make the row lie about
+  // what was lost. Wording stays fixed so the same loss always reads the same.
+  const GAP_REASONS = new Set(['realtime-failed', 'drain-failed']);
+  const MAX_GAP_DURATION_MS = 10 * 60 * 1000;
+
+  function normalizeTranscriptGap(event) {
+    const ts = Number(event && event.ts);
+    const reason = String((event && event.reason) || '');
+    const channels = (Array.isArray(event && event.channels) ? event.channels : [])
+      .filter((channel) => channel === 'you' || channel === 'them')
+      .slice(0, 2);
+    const durationMs = Math.max(0, Math.min(MAX_GAP_DURATION_MS, Math.round(Number(event && event.durationMs) || 0)));
+    return {
+      ts: Number.isFinite(ts) ? ts : Date.now(),
+      reason: GAP_REASONS.has(reason) ? reason : 'unknown',
+      channels,
+      durationMs,
+    };
+  }
+
+  function transcriptGapLabel(gap) {
+    if (gap.reason === 'realtime-failed') return 'Transcription gap while realtime recovered';
+    if (gap.reason === 'drain-failed') {
+      const seconds = Math.max(1, Math.round(gap.durationMs / 1000));
+      const speaker = gap.channels.length === 1
+        ? (gap.channels[0] === 'you' ? 'microphone ' : 'system ')
+        : gap.channels.length === 2
+          ? 'microphone and system '
+          : '';
+      return `Transcription gap: about ${seconds}s of ${speaker}audio captured just before the stop was not transcribed`;
+    }
+    return 'Transcription gap: some audio was not transcribed';
+  }
+
   function renderTranscriptWorkspace() {
     const workspace = $('#transcript-workspace');
     const list = $('#transcript-list');
@@ -1732,9 +1783,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         rows.push({ ...partial, partial: true });
       }
     }
-    // A realtime failure leaves audio that never became text. Keep the marker in
-    // time order so the transcript does not look continuous across the hole (VR-13).
-    const orderedRows = rows.concat(transcriptGaps.map((gap) => ({ gap: true, ts: gap.ts })))
+    // A realtime failure or an abandoned drain leaves audio that never became
+    // text. Keep the marker in time order so the transcript does not look
+    // continuous across the hole (VR-13).
+    const orderedRows = rows.concat(transcriptGaps.map((gap) => ({ ...gap, gap: true })))
       .sort((a, b) => (Number(a.ts) || 0) - (Number(b.ts) || 0));
     const visibleRows = orderedRows.slice(-200);
     const hideWorkspace = !listeningActive && visibleRows.length === 0;
@@ -1750,7 +1802,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         const row = document.createElement('div');
         row.className = 'transcript-gap';
         row.setAttribute('role', 'note');
-        row.textContent = 'Transcription gap while realtime recovered';
+        row.textContent = transcriptGapLabel(turn);
+        row.title = 'Audio before this marker is missing from the transcript.';
         list.appendChild(row);
         continue;
       }
@@ -2133,8 +2186,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   volyxLens.on('question:detected', showQuestionSuggestion);
   volyxLens.on('question:clear', clearQuestionSuggestion);
   volyxLens.on('transcript:gap', (event) => {
-    const ts = Number(event && event.ts);
-    transcriptGaps.push({ ts: Number.isFinite(ts) ? ts : Date.now() });
+    transcriptGaps.push(normalizeTranscriptGap(event));
     transcriptGaps = transcriptGaps.slice(-50);
     renderTranscriptWorkspace();
   });

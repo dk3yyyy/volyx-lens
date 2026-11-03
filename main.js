@@ -30,7 +30,7 @@ const { buildPersonalContext } = require('./src/personal-context');
 const { normalizeSpokenDigits, formatTranscript, transcriptFilename } = require('./src/transcript-tools');
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
-const { drainPendingAudio } = require('./src/drain-batch-buffers');
+const { drainPendingAudio, buildDrainGap } = require('./src/drain-batch-buffers');
 const { normalizeAnswerText } = require('./src/answer-normalize');
 const { shouldKeepHistory, userTextForHistory } = require('./src/history-scope');
 const { detectQuestion, estimateQuestionConfidence } = require('./src/question-detection');
@@ -43,7 +43,7 @@ const { parseNotes } = require('./src/notes');
 const { createTaskContext } = require('./src/task-context');
 const { createSlideTracker, hashFrame } = require('./src/slide-tracking');
 const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-fingerprint');
-const { createLocalOcr } = require('./src/local-ocr');
+const { createLocalOcr, ocrReasonLabel } = require('./src/local-ocr');
 const { createSystemAudioCapture } = require('./src/system-audio-capture');
 const { createLinuxMonitorCapture } = require('./src/linux-monitor-capture');
 const { createAcousticEchoFilter } = require('./src/acoustic-echo-filter');
@@ -230,7 +230,7 @@ let pendingStopReason = null;
 const FLUSH_MS = 3500;
 const MIN_BYTES = Math.floor(AUDIO_SAMPLE_RATE * 2 * 0.6); // ~0.6s
 const RMS_GATE = 240;
-const MAX_BATCH_CHUNKS = 180; // roughly 30 seconds per speaker at 4096 samples/chunk
+const MAX_BATCH_CHUNKS = 180; // ~15 seconds per speaker at 2048 samples/chunk (24 kHz)
 const MAX_TRANSCRIPT_TURNS = 500;
 let flushTimer = null;
 let realtimeManager = null;
@@ -380,13 +380,37 @@ const updateScheduler = createUpdateScheduler({
 });
 
 function taskContextState(extra = {}) {
-  return { ...taskContext.summary(), ...extra };
+  const availability = localOcr.availability();
+  return {
+    ...taskContext.summary(),
+    // Why local text recognition cannot run on this build, in words the pane can
+    // show. Only fixed labels cross IPC — the resolved helper path stays in main.
+    ocr: {
+      available: availability.available,
+      reason: availability.reason,
+      label: availability.available ? null : ocrReasonLabel(availability.reason),
+    },
+    ...extra,
+  };
 }
 
 function publishTaskContextState(extra = {}) {
   const value = taskContextState(extra);
   send('task-context:state', value);
   return value;
+}
+
+// Translate OCR reason codes to fixed wording before a list page reaches the
+// renderer, so the pane never interprets helper states or holds its own copy of
+// the strings. The code itself is dropped; only a bounded clause crosses IPC.
+function taskContextPage(page) {
+  return {
+    ...page,
+    captures: page.captures.map(({ ocrReason, ...capture }) => ({
+      ...capture,
+      ocrReasonLabel: ocrReason ? ocrReasonLabel(ocrReason) : null,
+    })),
+  };
 }
 
 function slideTrackingState() {
@@ -586,10 +610,16 @@ async function processTaskContextOcr(captureId, dataUrl, generation) {
   try {
     let result;
     try { result = await localOcr.recognize(dataUrl, { jobId: captureId }); }
-    catch { result = { status: 'failed' }; }
+    catch { result = { status: 'failed', reason: 'internal_error' }; }
     if (generation !== taskContextOcrGeneration || !result || result.status === 'cancelled') return;
     const status = ['ready', 'failed', 'unavailable'].includes(result.status) ? result.status : 'failed';
-    const updated = taskContext.setOcrResult(captureId, { status, text: result.text || '', truncated: result.truncated === true });
+    // Carry the reason code so the pane can say why, not just that OCR failed.
+    const updated = taskContext.setOcrResult(captureId, {
+      status,
+      text: result.text || '',
+      truncated: result.truncated === true,
+      reason: result.reason || null,
+    });
     if (updated.ocrUpdated) publishTaskContextState(updated);
   } finally {
     pendingTaskContextOcr.delete(captureId);
@@ -603,20 +633,29 @@ async function captureTaskContextScreen() {
     const dataUrl = await captureScreenshot({ maxWidth: 1920, format: 'jpeg', quality: 80, displayId: activeDisplayId() });
     if (generation !== taskContextGeneration) return taskContextState({ added: false, canceled: true });
     if (!dataUrl) throw new Error('No screen image was available. Check macOS Screen Recording permission.');
-    const ocrAvailable = localOcr.availability().available;
-    const result = taskContext.add(dataUrl, { ocrStatus: ocrAvailable ? 'pending' : 'unavailable' });
+    const ocrAvailability = localOcr.availability();
+    const ocrAvailable = ocrAvailability.available;
+    const result = taskContext.add(dataUrl, {
+      ocrStatus: ocrAvailable ? 'pending' : 'unavailable',
+      // The capture-level reason survives per-capture cancellation and eviction;
+      // the state-level label is only a fallback for lists built before it.
+      ocrReason: ocrAvailable ? null : ocrAvailability.reason,
+    });
     for (const captureId of pendingTaskContextOcr) {
       if (!taskContext.has(captureId)) localOcr.cancel(captureId);
     }
     const stateValue = publishTaskContextState(result);
     if (result.added && ocrAvailable) void processTaskContextOcr(result.addedCapture.id, dataUrl, taskContextOcrGeneration);
+    const unavailableNote = ocrAvailable
+      ? ' Local text indexing queued.'
+      : ` Local text indexing is unavailable on this build: ${ocrReasonLabel(ocrAvailability.reason)}.`;
     const message = result.duplicate
       ? 'Task context already contains that exact screen.'
       : result.nearDuplicate
         ? 'Task context already contains a visually similar screen, so the new capture was not saved. No AI request was made.'
         : result.budgetBlocked
           ? 'Task context could not save that screen because pinned captures fill the available memory or capture-count budget. Unpin or remove a capture and try again. No AI request was made.'
-          : `Task context saved screen ${result.addedCapture.sequence} in memory.${result.evicted ? ` ${result.evicted} oldest unpinned screen${result.evicted === 1 ? '' : 's'} removed to stay within the memory budget.` : ''}${ocrAvailable ? ' Local text indexing queued.' : ' Local text indexing is unavailable on this build.'} No AI request was made.`;
+          : `Task context saved screen ${result.addedCapture.sequence} in memory.${result.evicted ? ` ${result.evicted} oldest unpinned screen${result.evicted === 1 ? '' : 's'} removed to stay within the memory budget.` : ''}${unavailableNote} No AI request was made.`;
     send('status', { message });
     return stateValue;
   })();
@@ -1363,12 +1402,21 @@ async function drainBatchBuffers() {
   // forever or leak it into the next session, and every channel shares one STT
   // provider, so dropping it is the honest outcome.
   let dropped = 0;
+  const droppedChunks = {};
   for (const channel of outcome.abandoned) {
-    dropped += buffers[channel].length + retryQueues[channel].length;
+    // A failed flush leaves retryQueues holding the same chunks that are still in
+    // buffers, so count the larger of the two instead of counting that audio twice.
+    const chunks = Math.max(buffers[channel].length, retryQueues[channel].length);
+    droppedChunks[channel] = chunks;
+    dropped += chunks;
     buffers[channel] = [];
     retryQueues[channel] = [];
   }
   console.log('[stt] drain abandoned', outcome.abandoned.join(','), 'chunks', dropped);
+  // The status line is transient, so the saved transcript would otherwise read as
+  // continuous across audio that was dropped. A gap entry keeps the hole visible.
+  const gap = buildDrainGap({ abandoned: outcome.abandoned, droppedChunks });
+  if (gap) send('transcript:gap', gap);
   send('status', { message: 'Some speech captured just before the stop could not be transcribed; the capture was stopped anyway.' });
 }
 
@@ -2778,7 +2826,7 @@ handleTrusted('recovery:get', () => {
 handleTrusted('recovery:restore', () => restoreMeetingRecovery());
 handleTrusted('recovery:discard', () => meetingRecovery.clear());
 handleTrusted('task-context:get', () => taskContextState());
-handleTrusted('task-context:list', (_event, payload = {}) => taskContext.list({ offset: Number(payload.offset), limit: Number(payload.limit) }));
+handleTrusted('task-context:list', (_event, payload = {}) => taskContextPage(taskContext.list({ offset: Number(payload.offset), limit: Number(payload.limit) })));
 handleTrusted('task-context:capture', () => captureTaskContextScreen());
 handleTrusted('task-context:undo', () => undoTaskContext());
 handleTrusted('task-context:remove', (_event, id) => removeTaskContextCapture(id));
