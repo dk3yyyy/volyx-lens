@@ -13,11 +13,12 @@ updates:
         applies-to: version-updates
         update-types: ["minor", "patch"]
     ignore:
-      # Electron majors move the bundled Node and Chromium; they need a manual
-      # pass through the packaging and smoke tests, not an auto-bump.
-      - dependency-name: electron
-        update-types: ["version-update:semver-major"]
-      - dependency-name: electron-builder
+      # Majors land as PRs nobody asked for and are not safe to take
+      # mechanically: Electron moves Node and Chromium, the provider SDKs move
+      # their wire shapes, and the build tooling moves its config. Security
+      # advisories still come through as alerts. Bump a major by hand when there
+      # is a reason to.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
@@ -28,3 +29,8 @@ updates:
       actions:
         applies-to: version-updates
         update-types: ["minor", "patch"]
+    ignore:
+      # The workflows pin full SHAs on purpose; a major action bump changes its
+      # inputs and needs a read of the changelog, not a green CI.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
