@@ -146,7 +146,7 @@ jobs:
           npm sbom --sbom-format cyclonedx > "dist/volyx-lens-mac-${ARCH}.cdx.json"
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/volyx-lens-*-mac-${{ matrix.arch }}-unsigned.dmg
