@@ -13,7 +13,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const fetch = require('node-fetch').default;
+// Global fetch (Node 20+, and Electron's main process) is the API this module
+// uses. It used to require node-fetch, which was never a declared dependency: it
+// only resolved because an old SDK happened to pull it in, and the openai 4 to 7
+// bump removed it.
 const { normalizeWhisperLanguage } = require('./whisper-language');
 const { fileFor, unavailableReason, downloadUrl } = require('./whisper-models');
 
