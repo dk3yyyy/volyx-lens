@@ -41,7 +41,7 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - name: Verify tag matches package version
         run: test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
