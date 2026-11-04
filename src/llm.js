@@ -237,4 +237,4 @@ function createLLM(settings, dependencies = {}) {
   };
 }
 
-module.exports = { createLLM };
+module.exports = { createLLM, streamOpenAICompatible };
