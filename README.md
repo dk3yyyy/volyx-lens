@@ -76,40 +76,40 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.7.6
+### Current release: v0.7.7
 
 What changed in this release:
 
-- **Update checks reach every build now.** Signed builds still install in place. An unsigned macOS DMG or Windows installer can at least tell you a new version exists: it asks the public GitHub Releases API, shows a notification, and the button fetches the installer from the release page. Before this, those builds never checked at all and the notification toggle did nothing.
-- **arm64 Linux auto-update works.** It never had. The updater asks for `latest-arm64-linux-arm64.yml` on arm64 while the release published `latest-arm64-linux.yml`, so those AppImages silently never updated. x64 was unaffected, which is why it went unnoticed.
-- **Assist remembers the conversation.** Assist, What should I say?, and typed questions now share one thread of up to 8 turns, so a follow-up can see the answer you just read. Starting a listening session or a new session clears it, so one meeting's answers never follow you into the next.
-- **Answers read like a person wrote them.** Em dashes, en dashes and curly quotes are removed from answers before they are shown, and saved meeting notes get the same treatment. Fenced code, inline code, URLs and tables are left byte for byte.
-- **Stopping no longer hangs.** A provider that kept rejecting the last audio could hold Stop for minutes; the final drain is now bounded to ten seconds and says what it dropped.
-- **Update notifications stopped interrupting.** Banners are silent, stay away while you are listening or looking at the app, and wait for the screen to unlock. The same version is announced once.
-- **Windows auto-update is signed-only.** This installer is unsigned, so it publishes no update metadata and cannot update itself. If you are on 0.7.6 for Windows, that build can no longer update itself either: download and run this installer, and your settings are kept.
-- **Intel Macs get working OCR.** The macOS text-recognition helper is now built for the architecture the app ships as, so Intel DMGs no longer carry an Apple Silicon helper.
+- **Local transcription actually ships.** The Windows and Linux packages now contain a pinned whisper.cpp server with its shared libraries, checksum-verified at build time, so the offline toggle is no longer a promise the build cannot keep. macOS packages cannot bundle one, so there it stays off unless you point it at your own server.
+- **The overlay recovers instead of dying.** A renderer crash used to leave an invisible always-on-top panel that swallowed clicks until you force-quit. It now lets clicks through, reloads itself at most twice a minute, and quits cleanly rather than looping.
+- **Links can open a view.** The installed app registers `volyxlens://`: `volyxlens://updates`, `volyxlens://release`, `volyxlens://settings?pane=listening`, `volyxlens://open`. Other schemes and arbitrary URLs are refused.
+- **Answers are cleaned while they stream**, so the text no longer rewrites itself at the end, and a cancelled answer no longer keeps the dashes a finished one would have lost.
+- **Updates behave better.** A version is announced once rather than on every launch, the app catches up after the machine wakes instead of waiting out another six hours, and the pane tells you when it last checked.
+- **Old plaintext keys are scrubbed.** A profile that once ran without a keyring used to keep its API keys in cleartext forever; the record is now rewritten on first load, sealed when a keyring exists and memory-only when it does not.
+- **Stopping shows what it lost.** Audio the provider kept rejecting now leaves a visible transcript gap, and an unavailable OCR helper says why instead of only "Unavailable".
+- **Release assets are verified** before upload, so an unsigned or stale artifact cannot overwrite a good one.
 
-v0.7.6 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
+v0.7.7 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.6 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.6/volyx-lens-0.7.6-mac-arm64-unsigned.dmg) · right-click Open |
-| **Intel** | [v0.7.6 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.6/volyx-lens-0.7.6-mac-x64-unsigned.dmg) · right-click Open |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.7 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg) · right-click Open |
+| **Intel** | [v0.7.7 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-x64-unsigned.dmg) · right-click Open |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.7.6-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.7.6-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.7.6-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.7.7-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.7.7-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.7.7-linux-arm64.AppImage` |
 
-**[Open the v0.7.6 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.6)**
+**[Open the v0.7.7 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7)**
 
 The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. Later tag-triggered releases publish per-file checksum and SBOM files alongside the installers. Signed and notarized builds will replace them once release signing credentials are configured.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.7.6-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.6-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.7.7-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.7-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 
