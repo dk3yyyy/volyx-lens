@@ -30,7 +30,7 @@ This runs all `tests/*.test.js` files via Node's built-in test runner. To run a 
 node --test tests/provider-config.test.js
 ```
 
-CI runs the unit suite on Node 20 and 22; the coverage, syntax, and UI checks run once on Node 20.
+CI runs the unit suite on Node 22 and 24; the coverage, syntax, and UI checks run once on Node 22.
 
 Other verification checks:
 

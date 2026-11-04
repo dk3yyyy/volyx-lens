@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22]
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -30,55 +30,55 @@ jobs:
       # coverage, the coverage thresholds, the syntax check, and the packaged
       # smoke test — stays on Node 20, so those run once instead of once per
       # version and the job does not double in cost.
-      - name: Run unit tests (Node 22)
-        if: matrix.node != 20
+      - name: Run unit tests (Node 24)
+        if: matrix.node != 22
         run: npm test
-      - name: Run unit tests with coverage (Node 20)
-        if: matrix.node == 20
+      - name: Run unit tests with coverage (Node 22)
+        if: matrix.node == 22
         run: npm run coverage
       - name: Generate coverage report
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: npm run coverage:report
       - name: Check coverage thresholds
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: npx c8 check-coverage --lines=70 --branches=70 --functions=60 --statements=70
       - name: Check JavaScript syntax
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: npm run check:syntax
       # The three renderer harnesses paint real Chromium windows under xvfb on a
       # shared runner. Each gets one bounded retry: the script re-runs once after
       # a short backoff, and a second failure still exits non-zero with the first
       # attempt's full log attached.
       - name: Onboarding UI check
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: bash scripts/retry-ui-check.sh check:onboarding-ui --no-sandbox
       - name: Settings UI check
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: bash scripts/retry-ui-check.sh check:settings-ui --no-sandbox
       - name: History UI check
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: bash scripts/retry-ui-check.sh check:history-ui --no-sandbox
       - name: End-to-end smoke test
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: xvfb-run -a npm run check:e2e-smoke
       - name: Check for committed secrets
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: npm run security:secrets
       - name: Reject dependency vulnerabilities
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: npm audit --audit-level=low
       - name: Package the application
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Verify the bundled whisper.cpp runtime
         # The packaged tree only exists on the leg that ran pack; without this the
         # other matrix entry verifies a directory that was never built.
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: npm run verify:whisper-runtime
       - name: Smoke launch packaged application
-        if: matrix.node == 20
+        if: matrix.node == 22
         run: |
           python3 - <<'PY'
           import subprocess
@@ -99,7 +99,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
@@ -120,7 +120,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test

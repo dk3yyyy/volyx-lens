@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - name: Verify tag matches package version
         run: test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"

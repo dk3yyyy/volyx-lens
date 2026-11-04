@@ -318,13 +318,15 @@ test('every release workflow runs the CLI before it uploads assets', () => {
   assert.match(read('build-linux-unsigned.yml'), /verify-release-assets\.js --platform linux --dir dist --arch[^\n]*--no-metadata/);
 });
 
-test('CI runs the unit suite on Node 20 and 22 but coverage and syntax once', () => {
+test('CI runs the unit suite on Node 22 and 24 but coverage and syntax once', () => {
+  // 22 is the floor now: pdfjs 6 needs Promise.withResolvers. 24 proves the next
+  // LTS line before users find it.
   const ci = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
-  assert.match(ci, /node: \[20, 22\]/);
-  assert.match(ci, /if: matrix\.node != 20\s*\n\s*run: npm test/);
-  assert.match(ci, /if: matrix\.node == 20\s*\n\s*run: npm run coverage/);
-  assert.match(ci, /if: matrix\.node == 20\s*\n\s*run: npm run check:syntax/);
-  // The other jobs stay on Node 20 so the matrix does not multiply the cost of
+  assert.match(ci, /node: \[22, 24\]/);
+  assert.match(ci, /if: matrix\.node != 22\s*\n\s*run: npm test/);
+  assert.match(ci, /if: matrix\.node == 22\s*\n\s*run: npm run coverage/);
+  assert.match(ci, /if: matrix\.node == 22\s*\n\s*run: npm run check:syntax/);
+  // The other jobs stay on Node 22 so the matrix does not multiply the cost of
   // packaging, Windows, macOS, and the Swift toolchain.
-  assert.equal((ci.match(/node-version: 20/g) || []).length, 2);
+  assert.equal((ci.match(/node-version: 22/g) || []).length, 2);
 });
