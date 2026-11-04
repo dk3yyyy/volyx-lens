@@ -111,7 +111,31 @@ function runExtractor({ command, args, cwd }) {
   return true;
 }
 
-function extractArchive({ runtime, archivePath, destination, platform }) {
+// A zip is unpacked in-process. `tar` is not portable enough to rely on here: the
+// Windows release job runs under Git Bash, where `tar` is GNU tar (it cannot read
+// zip at all and prints "This does not look like a tar archive"), while the test
+// job resolves Windows' bsdtar, which reads a "D:\..." operand as a remote host.
+// jszip is already a runtime dependency, so neither quirk can break packaging.
+async function extractZipInProcess({ archivePath, destination }) {
+  const JSZip = require('jszip');
+  const data = await fs.promises.readFile(archivePath);
+  const zip = await JSZip.loadAsync(data);
+  for (const [name, entry] of Object.entries(zip.files)) {
+    const target = resolveInsideArchive(destination, name);
+    if (entry.dir) {
+      await fs.promises.mkdir(target, { recursive: true });
+      continue;
+    }
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    await fs.promises.writeFile(target, await entry.async('nodebuffer'), { mode: 0o755 });
+  }
+}
+
+async function extractArchive({ runtime, archivePath, destination, platform }) {
+  if (runtime.archive === 'zip') {
+    await extractZipInProcess({ archivePath, destination });
+    return;
+  }
   const commands = extractionCommands({ archive: runtime.archive, archivePath, destination, platform });
   for (const candidate of commands) {
     if (runExtractor(candidate)) return;
@@ -276,7 +300,7 @@ async function prepareWhisperRuntime({
   const archivePath = await downloadArchive({ runtime: target, cacheDir: resolvedCacheDir, fetchImpl });
   const extractDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'volyx-whisper-runtime-'));
   try {
-    extractArchive({ runtime: target, archivePath, destination: extractDir, platform });
+    await extractArchive({ runtime: target, archivePath, destination: extractDir, platform });
     const files = verifyExtractedFiles({ extractDir, runtime: target });
     for (const file of files) {
       await installFile({ source: file.extracted, destination: path.join(binariesDir, file.name) });
@@ -292,6 +316,7 @@ async function prepareWhisperRuntime({
 
 module.exports = {
   SKIP_ENV,
+  extractZipInProcess,
   removeStaleRuntimeFiles,
   MAX_ARCHIVE_BYTES,
   prepareWhisperRuntime,

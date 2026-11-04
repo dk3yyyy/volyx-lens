@@ -350,3 +350,23 @@ test('Windows extraction names the archive relatively so a drive letter is not a
   assert.equal(posix[0].args[1], '/tmp/x.tar.gz', 'POSIX keeps the absolute path');
   assert.equal(posix[0].cwd, undefined);
 });
+
+test('a zip archive is unpacked in-process, with no tar or unzip on PATH', async () => {
+  // The Windows release job runs under Git Bash, where tar is GNU tar and cannot
+  // read zip; the test job resolves Windows bsdtar, which misreads drive letters.
+  // Extracting in-process removes both failure modes.
+  const JSZip = require('jszip');
+  const { extractZipInProcess } = require('../scripts/prepare-whisper-runtime');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-zip-'));
+  const zip = new JSZip();
+  zip.file('Release/whisper-server.exe', 'binary-contents');
+  zip.file('Release/whisper.dll', 'dll-contents');
+  fs.writeFileSync(path.join(dir, 'runtime.zip'), await zip.generateAsync({ type: 'nodebuffer' }));
+  const destination = path.join(dir, 'out');
+  fs.mkdirSync(destination);
+
+  await extractZipInProcess({ archivePath: path.join(dir, 'runtime.zip'), destination });
+
+  assert.equal(fs.readFileSync(path.join(destination, 'Release/whisper-server.exe'), 'utf8'), 'binary-contents');
+  assert.equal(fs.readFileSync(path.join(destination, 'Release/whisper.dll'), 'utf8'), 'dll-contents');
+});
