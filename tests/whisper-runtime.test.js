@@ -339,3 +339,14 @@ test('beforePack chains the Vision helper build and the whisper runtime provisio
     else process.env.VOLYX_LENS_SKIP_WHISPER_RUNTIME = previous;
   }
 });
+
+test('Windows extraction names the archive relatively so a drive letter is not a host', () => {
+  // bsdtar reads D:\path as host "D" and fails with "Cannot connect to D"; it has
+  // no --force-local (GNU tar does), so tar runs from the archive's directory.
+  const win = extractionCommands({ archive: 'zip', archivePath: '/tmp/a/x.zip', destination: '/tmp/a/out', platform: 'win32' });
+  assert.equal(win[0].args[1], 'x.zip', 'the operand is the bare file name');
+  assert.equal(win[0].cwd, '/tmp/a', 'tar runs inside the archive directory');
+  const posix = extractionCommands({ archive: 'tar.gz', archivePath: '/tmp/x.tar.gz', destination: '/tmp/out', platform: 'linux' });
+  assert.equal(posix[0].args[1], '/tmp/x.tar.gz', 'POSIX keeps the absolute path');
+  assert.equal(posix[0].cwd, undefined);
+});
