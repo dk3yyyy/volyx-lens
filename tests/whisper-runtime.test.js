@@ -339,3 +339,12 @@ test('beforePack chains the Vision helper build and the whisper runtime provisio
     else process.env.VOLYX_LENS_SKIP_WHISPER_RUNTIME = previous;
   }
 });
+
+test('Windows extraction passes --force-local so a drive letter is not read as a host', () => {
+  // D:\path looks like host "D" to bsdtar; without this the Windows build failed
+  // with "tar: Cannot connect to D: resolve failed".
+  const win = extractionCommands({ archive: 'zip', archivePath: 'D:\\a\\x.zip', destination: 'D:\\a\\out', platform: 'win32' });
+  assert.ok(win[0].args.includes('--force-local'), 'windows tar gets --force-local');
+  const posix = extractionCommands({ archive: 'tar.gz', archivePath: '/tmp/x.tar.gz', destination: '/tmp/out', platform: 'linux' });
+  assert.ok(!posix[0].args.includes('--force-local'), 'GNU tar never sees the bsdtar-only flag');
+});

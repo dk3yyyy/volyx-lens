@@ -87,8 +87,12 @@ function displayPath(file, projectDir) {
 // unzip and GNU tar, macOS ships both unzip and bsdtar.
 function extractionCommands({ archive, archivePath, destination, platform = process.platform }) {
   const unzip = { command: 'unzip', args: ['-q', '-o', archivePath, '-d', destination] };
-  const untar = { command: 'tar', args: ['-xzf', archivePath, '-C', destination] };
-  const bsdtar = { command: 'tar', args: ['-xf', archivePath, '-C', destination] };
+  // Windows bsdtar reads "D:\\path" as a remote host called D, so a drive-letter
+  // path fails with "Cannot connect to D". --force-local keeps it a local path.
+  // It is only passed on Windows because GNU tar rejects the flag.
+  const local = platform === 'win32' ? ['--force-local'] : [];
+  const untar = { command: 'tar', args: [...local, '-xzf', archivePath, '-C', destination] };
+  const bsdtar = { command: 'tar', args: [...local, '-xf', archivePath, '-C', destination] };
   if (archive === 'tar.gz') return [untar, bsdtar];
   if (archive === 'zip') return platform === 'win32' ? [bsdtar, unzip] : [unzip, bsdtar];
   throw new Error(`Unsupported whisper.cpp archive type: ${archive}.`);
