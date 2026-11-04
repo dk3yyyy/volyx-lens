@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const root = path.join(__dirname, '..');
+const root_dir = path.join(__dirname, '..');
+const root = root_dir;
+const pkg = require('../package.json');
 
 function walkFiles(dir, acc = []) {
   const stat = fs.statSync(dir);
@@ -66,4 +68,32 @@ test('the whisper runtime is provisioned by the pinned manifest, not the deleted
     assert.match(entry.assetUrl, /^https:\/\//, `${target} downloads over https`);
   }
   assert.match(fs.readFileSync(path.join(root, 'package.json'), 'utf8'), /scripts\/before-pack\.js/, 'packaging runs the provisioner');
+});
+test('no module requires a package that package.json does not declare', () => {
+  // whisper-sidecar required node-fetch, which only resolved because an old SDK
+  // happened to depend on it. The openai 4 to 7 bump removed it and the app broke
+  // at load time, which no unit test noticed because that file was not imported.
+  const builtins = new Set(require('node:module').builtinModules);
+  const declared = new Set([
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.devDependencies || {}),
+  ]);
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === '.git') continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!full.endsWith('.js')) continue;
+      const source = fs.readFileSync(full, 'utf8');
+      for (const match of source.matchAll(/require\((['"])([^'"]+)\1\)/g)) {
+        const name = match[2];
+        if (name.startsWith('.') || name.startsWith('node:') || builtins.has(name)) continue;
+        const root = name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0];
+        if (!declared.has(root)) offenders.push(`${path.relative(root_dir, full)} requires ${root}`);
+      }
+    }
+  };
+  walk(root_dir);
+  assert.deepEqual(offenders.sort(), [], `undeclared requires:\n${offenders.join('\n')}`);
 });
