@@ -86,20 +86,22 @@ function displayPath(file, projectDir) {
 // wins. Windows 10+ ships bsdtar (which reads zip and tar.gz), Linux ships
 // unzip and GNU tar, macOS ships both unzip and bsdtar.
 function extractionCommands({ archive, archivePath, destination, platform = process.platform }) {
-  const unzip = { command: 'unzip', args: ['-q', '-o', archivePath, '-d', destination] };
-  // Windows bsdtar reads "D:\\path" as a remote host called D, so a drive-letter
-  // path fails with "Cannot connect to D". --force-local keeps it a local path.
-  // It is only passed on Windows because GNU tar rejects the flag.
-  const local = platform === 'win32' ? ['--force-local'] : [];
-  const untar = { command: 'tar', args: [...local, '-xzf', archivePath, '-C', destination] };
-  const bsdtar = { command: 'tar', args: [...local, '-xf', archivePath, '-C', destination] };
+  // Windows ships bsdtar, and it reads a "D:\\..." operand as a remote host, which
+  // fails with "Cannot connect to D". It does not support GNU tar's --force-local,
+  // so the archive is named relatively and tar runs from its directory instead.
+  const windowsSafe = platform === 'win32';
+  const archiveArg = windowsSafe ? path.basename(archivePath) : archivePath;
+  const cwd = windowsSafe ? path.dirname(archivePath) : undefined;
+  const unzip = { command: 'unzip', args: ['-q', '-o', archiveArg, '-d', destination], cwd };
+  const untar = { command: 'tar', args: ['-xzf', archiveArg, '-C', destination], cwd };
+  const bsdtar = { command: 'tar', args: ['-xf', archiveArg, '-C', destination], cwd };
   if (archive === 'tar.gz') return [untar, bsdtar];
   if (archive === 'zip') return platform === 'win32' ? [bsdtar, unzip] : [unzip, bsdtar];
   throw new Error(`Unsupported whisper.cpp archive type: ${archive}.`);
 }
 
-function runExtractor({ command, args }) {
-  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 1024 * 1024 });
+function runExtractor({ command, args, cwd }) {
+  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 1024 * 1024, cwd });
   if (result.error && result.error.code === 'ENOENT') return false;
   if (result.error) throw result.error;
   if (result.status !== 0) {

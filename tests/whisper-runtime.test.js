@@ -340,11 +340,13 @@ test('beforePack chains the Vision helper build and the whisper runtime provisio
   }
 });
 
-test('Windows extraction passes --force-local so a drive letter is not read as a host', () => {
-  // D:\path looks like host "D" to bsdtar; without this the Windows build failed
-  // with "tar: Cannot connect to D: resolve failed".
-  const win = extractionCommands({ archive: 'zip', archivePath: 'D:\\a\\x.zip', destination: 'D:\\a\\out', platform: 'win32' });
-  assert.ok(win[0].args.includes('--force-local'), 'windows tar gets --force-local');
+test('Windows extraction names the archive relatively so a drive letter is not a host', () => {
+  // bsdtar reads D:\path as host "D" and fails with "Cannot connect to D"; it has
+  // no --force-local (GNU tar does), so tar runs from the archive's directory.
+  const win = extractionCommands({ archive: 'zip', archivePath: '/tmp/a/x.zip', destination: '/tmp/a/out', platform: 'win32' });
+  assert.equal(win[0].args[1], 'x.zip', 'the operand is the bare file name');
+  assert.equal(win[0].cwd, '/tmp/a', 'tar runs inside the archive directory');
   const posix = extractionCommands({ archive: 'tar.gz', archivePath: '/tmp/x.tar.gz', destination: '/tmp/out', platform: 'linux' });
-  assert.ok(!posix[0].args.includes('--force-local'), 'GNU tar never sees the bsdtar-only flag');
+  assert.equal(posix[0].args[1], '/tmp/x.tar.gz', 'POSIX keeps the absolute path');
+  assert.equal(posix[0].cwd, undefined);
 });
