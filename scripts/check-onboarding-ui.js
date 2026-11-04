@@ -2,9 +2,17 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  FIRST_PAINT_TIMEOUT_MS,
+  installHarnessGuards,
+  trackRendererConsole,
+  waitFor,
+  waitForEntryAnimation,
+  waitForPaint,
+  waitForRendererReady,
+} = require('./ui-harness-helpers');
 
 const root = path.join(__dirname, '..');
-const { STT_MODELS } = require('../src/provider-config');
 const screenshotDir = process.env.VOLYX_LENS_ONBOARDING_SCREENSHOT_DIR || '';
 const emptyContext = { count: 0, maxCaptures: null, maxTotalBytes: 96 * 1024 * 1024, totalBytes: 0, pinnedCount: 0, revision: 0 };
 const settings = {
@@ -40,45 +48,32 @@ ipcMain.handle('permissions:request', (_event, kind) => (
 ipcMain.handle('permissions:status', (_event, kind) => ({ kind, status: 'not-determined', granted: false }));
 ipcMain.on('mouse:ignore', () => {});
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function waitFor(win, expression, message, timeoutMs = 2500, onAttempt = null) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    if (onAttempt) await onAttempt();
-    if (await win.webContents.executeJavaScript(`Boolean(${expression})`)) return;
-    await wait(25);
-  }
-  throw new Error(`Timed out waiting for ${message}`);
-}
-async function waitForPaint(win) {
-  await win.webContents.executeJavaScript('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-}
-async function waitForStableDialogHeight(win, timeoutMs = 2500) {
-  const started = Date.now();
-  let previous = null;
-  let stableSamples = 0;
-  while (Date.now() - started < timeoutMs) {
-    const height = await win.webContents.executeJavaScript("document.querySelector('#onboard').getBoundingClientRect().height");
-    stableSamples = previous !== null && Math.abs(height - previous) <= 0.1 ? stableSamples + 1 : 0;
-    if (stableSamples >= 3) return;
-    previous = height;
-    await wait(25);
-  }
-  throw new Error('Timed out waiting for onboarding dialog geometry to stabilize');
-}
 async function capture(win, name) {
   if (!screenshotDir) return;
   fs.mkdirSync(screenshotDir, { recursive: true });
   fs.writeFileSync(path.join(screenshotDir, `${name}.png`), (await win.webContents.capturePage()).toPNG());
 }
 
+let win = null;
+const consoleLines = [];
+const guards = installHarnessGuards({
+  app,
+  getWindow: () => win,
+  label: 'Onboarding UI check',
+  consoleLines,
+});
+
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 700, height: 600, minWidth: 500, minHeight: 480, show: false,
     backgroundColor: '#151827',
     webPreferences: { preload: path.join(root, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
+  trackRendererConsole(win, { lines: consoleLines });
+  // Attach before loadFile so a fast boot cannot send renderer-ready first.
+  const booted = waitForRendererReady(ipcMain);
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
+  await booted;
   win.show();
   win.focus();
   win.webContents.focus();
@@ -90,15 +85,17 @@ app.whenReady().then(async () => {
     win,
     "document.activeElement && document.activeElement.id === 'ob-title'",
     'initial onboarding heading focus',
-    10000,
+    FIRST_PAINT_TIMEOUT_MS,
     () => { win.show(); win.focus(); win.webContents.focus(); },
   );
 
   const names = ['welcome', 'permissions', 'provider', 'sharing', 'ready'];
   const heights = [];
   for (let index = 0; index < names.length; index += 1) {
-    await waitForPaint(win);
-    await waitForStableDialogHeight(win);
+    // overlayIn scales the dialog while it runs, so sampling geometry before the
+    // animation settles measures a smaller dialog than the CSS declares. Wait
+    // for the animation (a condition), not for a guessed number of milliseconds.
+    await waitForEntryAnimation(win, '#onboard', FIRST_PAINT_TIMEOUT_MS);
     const state = await win.webContents.executeJavaScript(`(() => {
       const dialog = document.querySelector('#onboard').getBoundingClientRect();
       const content = document.querySelector('#ob-content');
@@ -210,9 +207,13 @@ app.whenReady().then(async () => {
   settings.onboarded = false;
   await win.webContents.executeJavaScript("document.querySelector('#logo-btn').click(); document.querySelector('#ob-next').click()");
   win.setSize(500, 480);
-  // The dialog animates in over 260ms, so a fixed wait measures mid-flight and
-  // the footer height assertion flickers. Wait for the geometry to settle.
-  await waitForStableDialogHeight(win);
+  // Two conditions the old fixed/geometry-sample wait did not prove: the window
+  // resize has actually reached the renderer, and the dialog's entry animation
+  // has finished. Either one can still be pending on a loaded xvfb runner, and
+  // reading geometry before both makes the footer assertion measure the wrong
+  // layout (54px single row instead of the 70px compact two-row footer).
+  await waitFor(win, 'innerWidth === 500', 'compact viewport width of 500px', FIRST_PAINT_TIMEOUT_MS);
+  await waitForEntryAnimation(win, '#onboard', FIRST_PAINT_TIMEOUT_MS);
   const compact = await win.webContents.executeJavaScript(`(() => {
     const footer = document.querySelector('.ob-footer').getBoundingClientRect();
     const dialog = document.querySelector('#onboard').getBoundingClientRect();
@@ -224,8 +225,7 @@ app.whenReady().then(async () => {
   await capture(win, 'compact');
 
   console.log('Onboarding UI behavior passed: 5 stable steps, focus trap/restoration, modal isolation, and compact layout.');
-  app.quit();
-}).catch((error) => {
-  console.error(error);
-  app.exit(1);
+  await guards.finish(0);
+}).catch(async (error) => {
+  await guards.finish(1, error);
 });
