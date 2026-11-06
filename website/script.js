@@ -118,7 +118,7 @@ function applyTheme(theme, { persist = false } = {}) {
   const isLight = theme === 'light';
   document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
   if (themeColorMeta) {
-    themeColorMeta.setAttribute('content', isLight ? '#f5f2ff' : '#0d0b1e');
+    themeColorMeta.setAttribute('content', isLight ? '#f3f3f3' : '#161616');
   }
   if (themeToggle) {
     themeToggle.setAttribute('aria-label', isLight ? 'Switch to dark mode' : 'Switch to light mode');
@@ -140,7 +140,7 @@ function currentTheme() {
     // ignore storage failures
   }
   if (saved === 'light' || saved === 'dark') return saved;
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  return 'light';
 }
 
 // The theme is already set by the inline script in <head> to avoid a flash.
@@ -149,7 +149,7 @@ function currentTheme() {
 const initialTheme = currentTheme();
 document.documentElement.setAttribute('data-theme', initialTheme === 'light' ? 'light' : 'dark');
 if (themeColorMeta) {
-  themeColorMeta.setAttribute('content', initialTheme === 'light' ? '#f5f2ff' : '#0d0b1e');
+  themeColorMeta.setAttribute('content', initialTheme === 'light' ? '#f3f3f3' : '#161616');
 }
 if (themeToggle) {
   themeToggle.setAttribute('aria-label', initialTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
@@ -274,3 +274,21 @@ async function initDownloads() {
 }
 
 initDownloads();
+
+
+// ---- reveals -------------------------------------------------------------
+// Content is visible without JavaScript. The motion layer only opts in when
+// the visitor allows motion and the browser can observe intersections.
+const revealTargets = [...document.querySelectorAll('[data-reveal]')];
+const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (revealTargets.length && !reduceMotion && 'IntersectionObserver' in window) {
+  document.documentElement.setAttribute('data-motion', 'on');
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add('is-in');
+      revealObserver.unobserve(entry.target);
+    });
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 });
+  revealTargets.forEach((target) => revealObserver.observe(target));
+}

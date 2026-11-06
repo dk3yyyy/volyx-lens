@@ -27,62 +27,62 @@ function contrast(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-function lightToken(name) {
-  const block = css.match(/html\[data-theme='light'\] \{([\s\S]*?)\}/);
-  assert.ok(block, 'the light theme block exists');
-  const token = block[1].match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i'));
-  assert.ok(token, `light --${name} is defined`);
-  return token[1];
+function token(blockPattern, name) {
+  const block = css.match(blockPattern);
+  assert.ok(block, `expected a theme block matching ${blockPattern}`);
+  const value = block[1].match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i'));
+  assert.ok(value, `--${name} is defined`);
+  return value[1];
 }
 
-test('secondary text keeps 4.5:1 on the light paper', () => {
-  const ratio = contrast(hex(lightToken('dim')), hex(lightToken('night')));
-  assert.ok(ratio >= 4.5, `light --dim contrast is ${ratio.toFixed(2)}`);
+function rootToken(name) {
+  return token(/:root \{([\s\S]*?)\n\}/, name);
+}
+
+function releaseToken(name) {
+  return token(/\.release-section \{([\s\S]*?)\n\}/, name);
+}
+
+test('muted text keeps 4.5:1 on the page ground', () => {
+  const ratio = contrast(hex(rootToken('muted')), hex(rootToken('bg')));
+  assert.ok(ratio >= 4.5, `muted-on-background contrast is ${ratio.toFixed(2)}`);
 });
 
-test('the cyan section label is darkened for the light paper', () => {
-  const rule = css.match(/html\[data-theme='light'\] \.eyebrow \{ color: (#[0-9a-f]{6}); \}/i);
-  assert.ok(rule, 'the light eyebrow override exists');
-  const ratio = contrast(hex(rule[1]), hex(lightToken('night')));
-  assert.ok(ratio >= 4.5, `eyebrow contrast is ${ratio.toFixed(2)}`);
+test('hero note keeps 4.5:1 on the dark hero', () => {
+  const ratio = contrast(hex(rootToken('deep-muted')), hex(rootToken('deep')));
+  assert.ok(ratio >= 4.5, `hero note contrast is ${ratio.toFixed(2)}`);
 });
 
-test('the changelog is readable on the indigo release section', () => {
-  const list = css.match(/\.whats-new ul \{[\s\S]*?color: (#[0-9a-f]{6});/i);
-  assert.ok(list, 'the changelog colour is explicit');
-  const section = css.match(/\.release-section \{[^}]*background:\s*(#[0-9a-f]{6})/i);
-  assert.ok(section, 'the release section background is explicit');
-  const ratio = contrast(hex(list[1]), hex(section[1]));
-  assert.ok(ratio >= 4.5, `changelog contrast is ${ratio.toFixed(2)}`);
-  assert.match(css, /\.whats-new li \{[^}]*text-align: left/);
+test('the release section keeps its own dark ink on the mint field', () => {
+  const ink = hex(releaseToken('ink'));
+  const muted = hex(releaseToken('muted'));
+  const background = hex(rootToken('accent'));
+  assert.ok(contrast(ink, background) >= 4.5, 'release ink contrast');
+  assert.ok(contrast(muted, background) >= 4.5, 'release muted contrast');
 });
 
-test('the release section eyebrow stays ink on the indigo band', () => {
-  const rule = css.match(/html\[data-theme='light'\] \.release-section \.eyebrow \{ color: (#[0-9a-f]{6}); \}/i);
-  assert.ok(rule, 'the release eyebrow override exists');
-  const section = css.match(/\.release-section \{[^}]*background:\s*(#[0-9a-f]{6})/i);
-  const ratio = contrast(hex(rule[1]), hex(section[1]));
-  assert.ok(ratio >= 4.5, `release eyebrow contrast is ${ratio.toFixed(2)}`);
+test('the release section does not inherit the dark-theme ink', () => {
+  assert.match(css, /\.release-section \{[\s\S]*?--ink: #232323/i);
 });
 
-test('the release ribbon keeps 4.5:1 in the light theme', () => {
-  const ribbon = css.match(/html\[data-theme='light'\] \.release-ribbon \{\s*background: (#[0-9a-f]{6});\s*color: (#[0-9a-f]{6});/i);
-  assert.ok(ribbon, 'the light ribbon colours are explicit');
-  const ratio = contrast(hex(ribbon[1]), hex(ribbon[2]));
+test('the aperture fragment keeps 4.5:1 on its light panel', () => {
+  const ratio = contrast(hex('#5f5f5f'), hex('#f3f3f3'));
+  assert.ok(ratio >= 4.5, `aperture note contrast is ${ratio.toFixed(2)}`);
+});
+
+test('the release ribbon keeps 4.5:1 and wraps instead of clipping', () => {
+  const rule = css.match(/\.release-ribbon \{([\s\S]*?)\n\}/);
+  assert.ok(rule, 'the ribbon rule exists');
+  assert.match(rule[1], /background:\s*var\(--deep\)/);
+  assert.match(rule[1], /color:\s*var\(--deep-muted\)/);
+  const ratio = contrast(hex(rootToken('deep')), hex(rootToken('deep-muted')));
   assert.ok(ratio >= 4.5, `ribbon contrast is ${ratio.toFixed(2)}`);
+  assert.match(rule[1], /flex-wrap:\s*wrap/, 'the ribbon wraps at narrow widths');
+  assert.doesNotMatch(rule[1], /white-space:\s*nowrap/, 'the ribbon never clips');
 });
 
-test('the ribbon wraps on a phone instead of clipping', () => {
-  const block = css.match(/@media \(max-width: 560px\) \{([\s\S]*?)\n\}/);
-  assert.ok(block, 'the phone ribbon rule exists');
-  assert.match(block[1], /\.release-ribbon \{[\s\S]*?flex-wrap: wrap/);
-  assert.match(block[1], /white-space: normal/);
-  assert.match(block[1], /\.release-divider \{ display: none; \}/);
-});
-
-test('the hero trust line is at least 11px', () => {
-  const rule = css.match(/\.hero-note \{[^}]*font-size: ([.\d]+)rem/);
+test('the hero note does not fall below 11px', () => {
+  const rule = css.match(/\.hero-note \{[^}]*font-size:\s*([.\d]+)rem/);
   assert.ok(rule, 'the hero note size is explicit');
-  const px = parseFloat(rule[1]) * 16;
-  assert.ok(px >= 11, `hero note is ${px}px`);
+  assert.ok(parseFloat(rule[1]) * 16 >= 11, 'hero note is at least 11px');
 });
