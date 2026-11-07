@@ -1,8 +1,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const AUDIO_SAMPLE_RATE = 24000;
+const ACCENT_IDS = new Set(['indigo', 'sage', 'ember']);
+const ACCENT_ARG = '--volyx-accent=';
+
+function initialAccentTheme() {
+  const argument = (process.argv || []).find((value) => value.startsWith(ACCENT_ARG));
+  const id = argument ? argument.slice(ACCENT_ARG.length) : '';
+  return ACCENT_IDS.has(id) ? id : 'indigo';
+}
 
 contextBridge.exposeInMainWorld('volyxLens', {
   platform: process.platform,
+  initialAccentTheme: initialAccentTheme(),
   audioConfig: Object.freeze({ sampleRate: AUDIO_SAMPLE_RATE }),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
