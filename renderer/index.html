@@ -212,7 +212,7 @@
         <nav class="s-nav" aria-label="Settings sections">
           <button type="button" class="on" data-settings-section="providers" aria-controls="settings-page-providers"><strong>Providers</strong><span>Models and keys</span></button>
           <button type="button" data-settings-section="listening" aria-controls="settings-page-listening"><strong>Listening</strong><span>Audio and transcript</span></button>
-          <button type="button" data-settings-section="context" aria-controls="settings-page-context"><strong>Context</strong><span>Resume and role</span></button>
+          <button type="button" data-settings-section="context" aria-controls="settings-page-context"><strong>Context</strong><span>Rules, resume, and role</span></button>
           <button type="button" data-settings-section="appearance" aria-controls="settings-page-appearance"><strong>Appearance</strong><span>Accent theme</span></button>
           <button type="button" data-settings-section="shortcuts" aria-controls="settings-page-shortcuts"><strong>Shortcuts</strong><span>Keyboard status</span></button>
           <button type="button" data-settings-section="updates" aria-controls="settings-page-updates"><strong>Updates</strong><span>Version and releases</span></button>
@@ -308,7 +308,14 @@
           </section>
 
           <section class="s-page" id="settings-page-context" data-settings-page="context" aria-labelledby="settings-context-title" hidden>
-            <div class="s-page-head"><h2 tabindex="-1" id="settings-context-title">Personal Context</h2><p>Optional local documents that help tailor answers to your work.</p></div>
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-context-title">Context</h2><p>Standing instructions and optional local documents that tailor answers.</p></div>
+        <label class="s-label" for="ai-rules-text">AI rules <span class="s-hint">applied to every answer</span></label>
+        <div class="s-rule-field">
+          <textarea id="ai-rules-text" rows="5" maxlength="2000" spellcheck="true" aria-describedby="ai-rules-help ai-rules-count" placeholder="Example: Answer in British English. Keep suggestions to two sentences. Name the trade-off before recommending an option."></textarea>
+          <div class="s-rule-meta"><span id="ai-rules-count">0 / 2000</span><label class="context-enable"><input id="ai-rules-enabled" type="checkbox" checked /> Use in answers</label></div>
+        </div>
+        <div id="ai-rules-warning" class="s-warn hidden" role="alert"></div>
+        <div id="ai-rules-help" class="s-note">Rules are sent in the system prompt of every live answer request, including Assist, Say, Recap, and typed questions, to whichever provider answers, including the fallback. They are not sent to the connection test, transcription, transcript cleanup, or saved-meeting notes. Stored locally in your Volyx Lens settings; do not paste secrets.</div>
         <label class="s-label">Personal context <span class="s-hint">local resume and job description</span></label>
         <div class="context-document" data-kind="resume">
           <div class="context-document-head"><strong>Resume / CV</strong><label class="context-enable"><input id="context-resume-enabled" type="checkbox" disabled /> Use</label></div>

@@ -224,6 +224,12 @@ const MODES = {
   }
 };
 
+// Only live answer modes receive user rules. Archived notes, transcript cleanup,
+// chunk summaries, and connection diagnostics stay neutral.
+for (const mode of ['assist', 'assist-screen', 'assist-conversation', 'say', 'auto-assist', 'followup', 'recap', 'slide-review', 'ask', 'leetcode']) {
+  MODES[mode].usesAiRules = true;
+}
+
 // Single assembly point for the shared voice. runFeature reads
 // MODES[mode].system directly and the eval script does the same, so the rule is
 // appended to each mode here once instead of being copied into ten strings

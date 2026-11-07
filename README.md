@@ -46,6 +46,7 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Slide tracking:** optional local slide-change detection while listening, with bounded in-memory previews and nearby transcript context; no automatic provider requests.
 - **Provider choice:** 12 response providers (OpenAI, Anthropic, Gemini, Azure Foundry, DeepSeek, Groq, OpenRouter, NVIDIA, a local Ollama server, Opencode, Opencode Go, or any Custom OpenAI-compatible server). Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech; batch transcription falls back to OpenAI, Gemini, or Groq Whisper, with optional local Whisper. OpenAI and Azure support both roles.
 - **Transcription language:** pick a language or let providers auto-detect; the selection is honored per job and normalized for cloud and local Whisper routes.
+- **AI rules:** add up to 2,000 characters of standing instructions to every live answer, with an on/off switch and a local-only warning about secrets.
 - **Personal context:** import a resume/CV and job description with bounded extraction and relevance selection.
 - **Local controls:** clear sessions, export transcripts, inspect sanitized diagnostics, and stop capture immediately.
 - **Native macOS and Windows behavior:** compact draggable overlay, edge-aware expanded docking, Keychain-backed credential storage, and best-effort capture exclusion.

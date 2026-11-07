@@ -153,6 +153,7 @@ function getDefaultSettings() {
 
   return {
     appearance: { theme: DEFAULT_ACCENT_THEME },
+    aiRules: { text: '', enabled: true },
     provider: 'openai',
     fallbackProvider: '',
     smart: false,

@@ -32,7 +32,7 @@ test('personal-context IPC is narrow and file paths remain in the main process',
 test('answer generation discloses and safely injects only selected personal context', () => {
   assert.match(main, /buildPersonalContext\(personalContextStore\.getEnabledDocuments\(\)/);
   assert.match(main, /contextSources: personalContext\.sources/);
-  assert.match(main, /const baseSystem = personalContext\.systemRules/);
+  assert.match(main, /const baseSystem = \[def\.system, rulesBlock, personalContext\.systemRules\]/);
   assert.match(main, /const system = `\$\{baseSystem\}\\n\\n\$\{SOURCE_UNCERTAINTY_RULE\}\\n\\n\$\{UNTRUSTED_INPUT_RULE\}\\n\\n\$\{PLAIN_TEXT_OUTPUT_RULE\}`/);
   assert.match(renderer, /Personal context selected:/);
   assert.match(renderer, /Response provider:/);

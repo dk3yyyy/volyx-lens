@@ -4,6 +4,7 @@ const path = require('path');
 const { app, safeStorage } = require('electron');
 const { getDefaultSettings, PROVIDERS, migrateModelId, modelSupportsVision } = require('./provider-config');
 const { isAccentTheme, normalizeAccentTheme } = require('./appearance-themes');
+const { normalizeAiRules } = require('./ai-rules');
 const { resolveHistoryEnabled } = require('./history-default');
 const { createCredentialVault } = require('./credential-vault');
 const { sanitizeShortcutsPatch } = require('./shortcut-validator');
@@ -81,6 +82,7 @@ function load() {
   // appearance is a small, closed enum. Normalise it after the merge so a
   // hand-edited or removed value cannot reach the renderer or the CSS attribute.
   data.appearance = { theme: normalizeAccentTheme(data.appearance && data.appearance.theme) };
+  data.aiRules = normalizeAiRules(data.aiRules);
   if (!data.transcription || typeof data.transcription !== 'object' || Array.isArray(data.transcription)) {
     data.transcription = { ...DEFAULTS.transcription };
   }
@@ -227,6 +229,13 @@ function sanitizeSettingsPatch(patch = {}) {
   if (patch.appearance && typeof patch.appearance === 'object' && !Array.isArray(patch.appearance)
     && isAccentTheme(patch.appearance.theme)) {
     safe.appearance = { theme: patch.appearance.theme };
+  }
+  if (patch.aiRules && typeof patch.aiRules === 'object' && !Array.isArray(patch.aiRules)) {
+    const normalized = normalizeAiRules(patch.aiRules);
+    const rules = {};
+    if (typeof patch.aiRules.text === 'string') rules.text = normalized.text;
+    if (typeof patch.aiRules.enabled === 'boolean') rules.enabled = patch.aiRules.enabled;
+    if (Object.keys(rules).length) safe.aiRules = rules;
   }
   if (['both', 'screen', 'conversation'].includes(patch.assistContext)) safe.assistContext = patch.assistContext;
   if (patch.endpoints && typeof patch.endpoints === 'object') {
