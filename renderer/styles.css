@@ -10,6 +10,10 @@
   --accent-hair: rgba(102,119,255,0.22);
   --accent-wash: rgba(102,119,255,0.15);
   --accent-glow: rgba(102,119,255,0.40);
+  --accent-muted: #7280C3;
+  --accent-muted-fill: #646E9E;
+  --accent-muted-hi: #7E89D0;
+  --accent-muted-soft: #ACB0CC;
   --cyan: #42CFE8;
   --live: #4FD19B;
   --warning: #F3B84B;
@@ -55,6 +59,38 @@ html, body {
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
+}
+
+:root[data-accent-theme="sage"] {
+  --accent: #B3CEB7;
+  --accent-hi: #C6DEC9;
+  --accent-soft: #D8E7DB;
+  --accent-fill: #567250;
+  --accent-fill-hi: #5C7A56;
+  --accent-ink: #FFFFFF;
+  --accent-hair: rgba(179,206,183,0.20);
+  --accent-wash: rgba(120,170,135,0.16);
+  --accent-glow: rgba(120,180,140,0.30);
+  --accent-muted: #8FA891;
+  --accent-muted-fill: #626D5F;
+  --accent-muted-hi: #9AB39C;
+  --accent-muted-soft: #C9DCCC;
+}
+
+:root[data-accent-theme="ember"] {
+  --accent: #FFA477;
+  --accent-hi: #FFB894;
+  --accent-soft: #FFD4BE;
+  --accent-fill: #AB572A;
+  --accent-fill-hi: #B05F31;
+  --accent-ink: #FFFFFF;
+  --accent-hair: rgba(255,164,119,0.20);
+  --accent-wash: rgba(200,110,60,0.16);
+  --accent-glow: rgba(255,120,60,0.32);
+  --accent-muted: #C98E72;
+  --accent-muted-fill: #8B6959;
+  --accent-muted-hi: #D49B7F;
+  --accent-muted-soft: #F0CDBB;
 }
 
 /* An unfocused window is visibly subdued. The accent keeps its hue but loses
@@ -333,7 +369,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 #task-context-panel button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 65%, transparent); background: color-mix(in srgb, var(--accent) 20%, transparent); color: #fff; }
 #task-context-panel button:disabled { opacity: 0.4; cursor: default; }
 #task-context-panel kbd { margin-left: 3px; color: var(--tx-mut); font: inherit; }
-#task-context-eviction { grid-column: 1 / -1; padding: 5px 7px; border: 1px solid rgba(255,184,92,0.22); border-radius: 6px; background: rgba(255,184,92,0.07); color: #FFD49A; font-size: 10px; line-height: 1.3; }
+#task-context-eviction { grid-column: 1 / -1; padding: 5px 7px; border: 1px solid rgba(255,184,92,0.22); border-radius: 6px; background: rgba(255,184,92,0.07); color: var(--warning); font-size: 10px; line-height: 1.3; }
 .task-context-manager { grid-column: 1 / -1; min-width: 0; display: grid; gap: 5px; }
 #task-context-list { display: grid; gap: 4px; max-height: 132px; overflow-y: auto; padding-right: 2px; }
 .task-context-empty { padding: 7px; border-radius: 6px; background: rgba(0,0,0,0.12); color: var(--tx-mut); font-size: 10.5px; text-align: center; }
@@ -637,7 +673,7 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .provider-config-row > .s-label:first-child { display: block; }
 .s-field { display: flex; align-items: center; gap: 10px; }
 .s-field > label { width: 110px; flex: 0 0 110px; color: var(--tx-mut); font-size: 12px; line-height: 1.25; }
-.s-field input, .s-field select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: var(--r-8); border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
+.s-field input, .s-field select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: var(--r-8); border: 1px solid var(--accent-muted); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
 .s-field input:focus, .s-field select:focus { border-color: var(--accent); }
 .s-field input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px; margin-left: auto; padding: 0; accent-color: var(--accent); cursor: pointer; }
 .key-field .key-clear { width: auto; flex: 0 0 auto; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--tx-mut); border-radius: 7px; padding: 7px 8px; font-size: 10px; cursor: pointer; }
