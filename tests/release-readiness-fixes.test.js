@@ -60,7 +60,7 @@ test('provider selector implements keyboard-operable tab semantics', () => {
   assert.match(html, /role="tab" aria-controls="provider-config-panel"/);
   assert.match(html, /id="provider-config-panel" role="tabpanel"/);
   assert.match(renderer, /button\.setAttribute\('aria-selected'/);
-  assert.match(renderer, /\['ArrowLeft', 'ArrowRight', 'Home', 'End'\]/);
+  assert.match(renderer, /\['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'\]/);
   const panelStart = html.indexOf('id="provider-config-panel"');
   const panelEnd = html.indexOf('</section>', panelStart);
   const panel = html.slice(panelStart, panelEnd);

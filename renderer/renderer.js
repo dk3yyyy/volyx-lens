@@ -2692,6 +2692,32 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   $('#audio-system-enabled').addEventListener('change', enforceAudioChannelSelection);
 
   const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama', opencode: 'Opencode', opencodeGo: 'Opencode Go', custom: 'Custom (OpenAI-compatible)' });
+  const PROVIDER_IDS = Object.keys(PROVIDER_LABELS);
+  function providerIsConfigured(id) {
+    const present = (settings.credentialStatus && settings.credentialStatus.present) || {};
+    if (present[id]) return true;
+    const models = (settings.models && settings.models[id]) || {};
+    if (String(models.fast || '').trim() || String(models.smart || '').trim()) return true;
+    const endpoints = (settings.endpointByTier && settings.endpointByTier[id]) || {};
+    return Boolean(String(endpoints.fast || '').trim() || String(endpoints.smart || '').trim());
+  }
+  function renderProviderList() {
+    const configured = new Set([settings.provider, settings.fallbackProvider].filter(Boolean));
+    for (const id of PROVIDER_IDS) if (providerIsConfigured(id)) configured.add(id);
+    const configuredList = $('#provider-configured');
+    const catalogList = $('#provider-catalog-list');
+    if (!configuredList || !catalogList) return;
+    for (const id of PROVIDER_IDS) {
+      const button = document.querySelector(`#provider-seg [data-provider="${id}"]`);
+      if (!button) continue;
+      (configured.has(id) ? configuredList : catalogList).appendChild(button);
+    }
+    const count = $('#provider-catalog-count');
+    if (count) count.textContent = `(${catalogList.querySelectorAll('[data-provider]').length})`;
+    const selected = document.querySelector(`#provider-seg [data-provider="${providerView}"]`);
+    const catalog = $('#provider-catalog');
+    if (catalog && selected && selected.parentElement === catalogList) catalog.open = true;
+  }
   function clearProviderTestResult() {
     const result = $('#provider-test-result');
     result.className = 'provider-test-result hidden';
@@ -2796,6 +2822,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     [...fallback.options].forEach((option) => { option.disabled = option.value === settings.provider; });
     if (settings.fallbackProvider === settings.provider) settings.fallbackProvider = '';
     fallback.value = settings.fallbackProvider || '';
+    renderProviderList();
   }
 
   function renderTranscriptionProviderConfig() {
@@ -2919,12 +2946,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     renderProviderConfig();
   }));
   $('#provider-seg').addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
     const tabs = [...document.querySelectorAll('#provider-seg [role="tab"]')];
     const current = Math.max(0, tabs.indexOf(document.activeElement));
     let next = current;
-    if (event.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
-    if (event.key === 'ArrowRight') next = (current + 1) % tabs.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (current - 1 + tabs.length) % tabs.length;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (current + 1) % tabs.length;
     if (event.key === 'Home') next = 0;
     if (event.key === 'End') next = tabs.length - 1;
     event.preventDefault();

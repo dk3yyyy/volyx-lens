@@ -225,8 +225,13 @@
           <strong>API keys are not saved on this system</strong>
           <span>Secure storage (macOS Keychain / safeStorage) is unavailable, so keys you enter are kept in memory for this session only and are never written to disk. They are gone after a restart. Fix secure storage to save them.</span>
         </div>
-        <label class="s-label">Response providers <span class="s-hint">choose a provider to configure</span></label>
-        <div class="s-seg provider-tabs" id="provider-seg" role="tablist" aria-label="Provider configuration">
+        <div class="provider-list-shell">
+          <div class="s-label">Response providers <span class="s-hint">configured first; add another when needed</span></div>
+          <div id="provider-seg" role="tablist" class="provider-list" aria-label="Provider configuration" aria-orientation="vertical">
+            <div id="provider-configured" class="provider-rows"></div>
+            <details id="provider-catalog" class="provider-catalog">
+              <summary>Add or configure another provider <span id="provider-catalog-count"></span></summary>
+              <div id="provider-catalog-list" class="provider-rows">
           <button id="provider-tab-openai" role="tab" aria-controls="provider-config-panel" data-provider="openai"><span>OpenAI</span><small class="provider-default-mark">Default</small></button>
           <button id="provider-tab-anthropic" role="tab" aria-controls="provider-config-panel" data-provider="anthropic"><span>Anthropic</span><small class="provider-default-mark">Default</small></button>
           <button id="provider-tab-gemini" role="tab" aria-controls="provider-config-panel" data-provider="gemini"><span>Gemini</span><small class="provider-default-mark">Default</small></button>
@@ -239,12 +244,15 @@
           <button id="provider-tab-opencode" role="tab" aria-controls="provider-config-panel" data-provider="opencode"><span>Opencode</span><small class="provider-default-mark">Default</small></button>
           <button id="provider-tab-opencodeGo" role="tab" aria-controls="provider-config-panel" data-provider="opencodeGo"><span>Opencode Go</span><small class="provider-default-mark">Default</small></button>
           <button id="provider-tab-custom" role="tab" aria-controls="provider-config-panel" data-provider="custom"><span>Custom</span><small class="provider-default-mark">Default</small></button>
+                      </div>
+            </details>
+          </div>
         </div>
+        <div class="provider-route-bar"><div class="s-field"><label for="provider-fallback">Fallback</label><select id="provider-fallback"><option value="">None</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="azure">Azure Foundry</option><option value="deepseek">DeepSeek</option><option value="groq">Groq</option><option value="openrouter">OpenRouter</option><option value="nvidia">NVIDIA</option><option value="ollama">Ollama</option><option value="opencode">Opencode</option><option value="opencodeGo">Opencode Go</option><option value="custom">Custom (OpenAI-compatible)</option></select></div><div class="s-note">The fallback is tried only when the default fails before producing text.</div></div>
 
         <div class="provider-config-panel" id="provider-config-panel" role="tabpanel" tabindex="0" aria-labelledby="provider-tab-openai">
         <div class="provider-routing-card">
           <div class="provider-routing-head"><div><strong id="provider-view-title">OpenAI</strong><span id="provider-view-state">Default response provider</span></div><button id="provider-default-btn" type="button">Use as default</button></div>
-          <div class="s-field"><label for="provider-fallback">Fallback</label><select id="provider-fallback"><option value="">None</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="azure">Azure Foundry</option><option value="deepseek">DeepSeek</option><option value="groq">Groq</option><option value="openrouter">OpenRouter</option><option value="nvidia">NVIDIA</option><option value="ollama">Ollama</option><option value="opencode">Opencode</option><option value="opencodeGo">Opencode Go</option><option value="custom">Custom (OpenAI-compatible)</option></select></div>
           <div class="s-note">Volyx Lens uses the default provider for answers. The fallback is tried only when the default is unavailable or fails before producing any text; it never mixes two partial answers. Transcription provider settings remain separate below.</div>
         </div>
 
