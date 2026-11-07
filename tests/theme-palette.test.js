@@ -118,7 +118,7 @@ test('the warning chip does not collide with Ember soft', () => {
 
 test('the settings input boundary is visible on every palette', () => {
   const field = block('.s-field input, .s-field select');
-  assert.match(field, /border:\s*1px solid var\(--accent-soft\)/);
+  assert.match(field, /border:\s*1px solid var\(--field-border\)/);
   assert.doesNotMatch(field, /rgba\(255,255,255,0\.14\)/);
   const focus = block('.s-field input:focus-visible, .s-field select:focus-visible');
   assert.match(focus, /outline:\s*2px solid var\(--accent-soft\)/);

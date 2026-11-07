@@ -14,6 +14,7 @@
   --accent-muted-fill: #646E9E;
   --accent-muted-hi: #7E89D0;
   --accent-muted-soft: #ACB0CC;
+  --field-border: #5A6788;
   --theme-indigo: #6677FF;
   --theme-sage: #B3CEB7;
   --theme-ember: #FFA477;
@@ -697,7 +698,7 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .provider-config-row > .s-label:first-child { display: block; }
 .s-field { display: flex; align-items: center; gap: 10px; }
 .s-field > label { width: 110px; flex: 0 0 110px; color: var(--tx-mut); font-size: 12px; line-height: 1.25; }
-.s-field input, .s-field select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: var(--r-8); border: 1px solid var(--accent-soft); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
+.s-field input, .s-field select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: var(--r-8); border: 1px solid var(--field-border); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
 .s-theme-group { border: 1px solid var(--bd-hair); border-radius: var(--r-control); padding: 12px; margin: 0; display: grid; gap: 6px; }
 .s-theme-group legend { padding: 0 4px; color: var(--tx-mut); font-size: 11px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
 .s-theme-option { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid transparent; border-radius: var(--r-control); cursor: pointer; }
