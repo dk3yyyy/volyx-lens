@@ -506,6 +506,9 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .hero h1 { font-size: clamp(2.6rem, 4.4vw, 3.6rem); }
   .app-main { padding: 12px 14px 14px; }
 }
+@media (min-width: 1001px) {
+  .route-cross, .route-zone-provider { transform: translateY(56px); }
+}
 @media (max-width: 1000px) {
   .hero-grid { grid-template-columns: 1fr; row-gap: 24px; align-items: start; }
   .hero-panel .app-window { max-height: 430px; }
@@ -518,12 +521,13 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .route-map { grid-template-columns: 1fr; }
   .route-zone-local { padding: 18px; }
   .route-cross { min-height: 108px; }
-  .route-cross::before { top: -18px; bottom: -18px; left: 18px; }
-  .cross-line { top: 50%; right: 12%; left: 18px; }
+  .cross-line { top: 0; bottom: 0; left: 18px; right: auto; width: 1px; height: auto; }
+  .cross-line::after { top: auto; right: auto; bottom: 0; left: -3.5px; transform: rotate(135deg); }
+  .cross-pulse { display: none; }
   .cross-kicker, .cross-proto { right: auto; left: 34px; text-align: left; }
   .cross-kicker { top: 22px; }
   .cross-proto { top: 68px; }
-  .no-relay { left: 50%; }
+  .no-relay { left: 18px; }
   .route-zone-provider { padding: 18px 0 0; }
   .route-node-provider { padding: 20px; }
   .fact-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

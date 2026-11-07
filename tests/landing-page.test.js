@@ -27,7 +27,7 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, /No Volyx Lens server sits in between/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /Apache License 2\.0/i);
-  assert.match(html, /Every build ships unsigned; each file has a \.sha256 checksum and a CycloneDX SBOM/i);
+  assert.match(html, /current macOS DMGs ship unsigned; every file has a \.sha256 checksum and a CycloneDX SBOM/i);
   assert.match(html, /Developer ID and notarized once release signing credentials are configured/i);
   assert.doesNotMatch(html, /VolyxAI/i);
   assert.doesNotMatch(html, /customer(s)?|trusted by|SOC\s?2|guaranteed invisible/i);
@@ -82,7 +82,7 @@ test('landing page ships accessible navigation, context switches and reduced mot
 
 test('landing page explains the implemented context, meeting, coding and offline boundaries', () => {
   assert.match(html, /Task Context/i);
-  assert.match(html, /Several screens in Task Context/i);
+  assert.match(html, /Keep several screens in Task Context/i);
   assert.match(html, /tells you what it left out/i);
   assert.match(html, /You and Them/i);
   assert.match(html, /meeting transcripts/i);
@@ -90,7 +90,7 @@ test('landing page explains the implemented context, meeting, coding and offline
   assert.match(html, /offline/i);
   assert.match(html, /Keys are stored on your machine/i);
   assert.match(html, /keys stay in memory for the session/i);
-  assert.match(html, /Recording law is still yours/i);
+  assert.match(html, /Recording law is still your responsibility/i);
   assert.match(html, /off by default/i);
 });
 

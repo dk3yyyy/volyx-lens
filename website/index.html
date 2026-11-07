@@ -111,7 +111,7 @@
               <div class="provider-menu" id="provider-menu" hidden>
                 <button type="button" data-provider-option="OpenAI" aria-pressed="true">OpenAI<small>Responses, transcription</small></button>
                 <button type="button" data-provider-option="Anthropic" aria-pressed="false">Anthropic<small>Responses</small></button>
-                <button type="button" data-provider-option="Google Gemini" aria-pressed="false">Gemini<small>Responses, batch transcription</small></button>
+                <button type="button" data-provider-option="Google Gemini" aria-pressed="false">Google Gemini<small>Responses, batch transcription</small></button>
                 <button type="button" data-provider-option="Groq" aria-pressed="false">Groq<small>Responses, Whisper</small></button>
               </div>
             </div>
@@ -240,7 +240,7 @@
           <div class="meeting-head">
             <div>
               <p class="row-index">02 / Meeting capture</p>
-              <h3>Meeting transcripts, split by speaker</h3>
+              <h3>Meeting transcripts, with You and Them separated</h3>
             </div>
             <p>Separate You and Them channels, searchable history on your device, and notes only when you ask for them.</p>
           </div>
@@ -278,7 +278,7 @@
         <article class="work-row work-row-task">
           <div class="work-copy">
             <p class="row-index">03 / Task Context</p>
-            <h3>Several screens in Task Context</h3>
+            <h3>Keep several screens in Task Context</h3>
             <p>Task Context keeps a small set of screens in local memory and tells you what it left out.</p>
             <p class="row-detail">4 kept · 2 omitted · nothing sent until you ask</p>
           </div>
@@ -338,9 +338,9 @@
         <div class="section-head section-head-providers">
           <div>
             <p class="eyebrow">03 — Providers</p>
-            <h2 id="providers-title">Use the provider you already pay for.</h2>
+            <h2 id="providers-title">Works with the provider you already use.</h2>
           </div>
-          <p>12 response providers, hosted or local, plus any OpenAI-compatible endpoint. Bring a key for hosted providers. Model availability and charges are set by the provider.</p>
+          <p>12 response providers, including a custom OpenAI-compatible endpoint. Hosted or local, bring a key when the provider needs one. Model availability and charges are set by the provider.</p>
         </div>
 
         <div class="provider-groups">
@@ -423,7 +423,7 @@
       </div>
 
       <div class="wrap install-disclosures">
-        <p class="platform-note">macOS 13 Ventura or later. Every build ships unsigned; each file has a .sha256 checksum and a CycloneDX SBOM. The macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured.</p>
+        <p class="platform-note">macOS 13 Ventura or later. Windows, Linux, and the current macOS DMGs ship unsigned; every file has a .sha256 checksum and a CycloneDX SBOM. The macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured.</p>
         <p class="install-license">Apache License 2.0 · no relay · no analytics SDK</p>
       </div>
     </section>
@@ -438,7 +438,7 @@
         <div class="notes-list">
           <details>
             <summary>macOS builds are unsigned</summary>
-            <p>Drag the app into Applications and try to open it once. On macOS 15 and later, go to System Settings → Privacy &amp; Security and choose <strong>Open Anyway</strong>. On macOS 13–14, right-click the app and choose Open. <code>xattr -cr "/Applications/Volyx Lens.app"</code> is an advanced fallback. It runs as a panel rather than a Dock app, so there may be no Dock icon; reopen it from Applications. The build is not notarised, so macOS may ask for Screen Recording permission again after an update.</p>
+            <p>Drag the app into Applications and try to open it once. On macOS 15 and later, go to System Settings → Privacy &amp; Security and choose <strong>Open Anyway</strong>. On macOS 13–14, right-click the app and choose Open. <code>xattr -cr "/Applications/Volyx Lens.app"</code> is an advanced fallback. It runs as a panel rather than a Dock app, so there may be no Dock icon; reopen it from Applications. The build is not notarized, so macOS may ask for Screen Recording permission again after an update.</p>
           </details>
           <details>
             <summary>Windows shows an unknown publisher warning</summary>
@@ -457,7 +457,7 @@
             <p>With a local Ollama server, responses run offline. Local Whisper covers offline batch transcription on Windows and Linux after you enable it and download a model; macOS supports offline batch transcription when a whisper-server binary is configured.</p>
           </details>
           <details>
-            <summary>Recording law is still yours</summary>
+            <summary>Recording law is still your responsibility</summary>
             <p>Capture permissions are explicit, but local consent and recording laws still apply. Do not capture private conversations, protected work, exams or interviews without permission. Capture exclusion is best-effort and never guaranteed.</p>
           </details>
         </div>
