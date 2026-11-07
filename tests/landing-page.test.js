@@ -102,6 +102,9 @@ test('landing page publishes complete canonical and social metadata with a stric
   const image = html.match(/<meta property="og:image" content="([^"]+)"/);
   assert.ok(image && image[1].startsWith(canonical));
   assert.equal(html.match(/<meta name="twitter:image" content="([^"]+)"/)[1], image[1]);
+  assert.match(html, /<meta property="og:image:width" content="1200">/);
+  assert.match(html, /<meta property="og:image:height" content="630">/);
+  assert.match(html, /<meta name="twitter:image:alt" content="[^"]+">/);
 
   const match = html.match(/<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i);
   assert.ok(match, 'expected a Content-Security-Policy meta tag');
