@@ -7,8 +7,6 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const css = fs.readFileSync(path.join(root, 'website', 'styles.css'), 'utf8');
-const theme = fs.readFileSync(path.join(root, 'website', 'theme.js'), 'utf8');
-const script = fs.readFileSync(path.join(root, 'website', 'script.js'), 'utf8');
 
 function hex(value) {
   const m = String(value).trim().match(/^#([0-9a-f]{6})$/i);
@@ -45,17 +43,19 @@ function token(scope, name) {
 const light = block(/:root \{([\s\S]*?)\n\}/, 'the light token block');
 const dark = block(/\[data-theme="dark"\] \{([\s\S]*?)\n\}/, 'the dark token block');
 
-test('light and dark themes both define the same core roles', () => {
-  for (const name of ['bg', 'surface', 'ink', 'muted', 'accent', 'accent-ink', 'field-slate', 'field-sage', 'field-blush', 'field-olive']) {
+test('both themes define the same core roles', () => {
+  for (const name of ['bg', 'surface', 'ink', 'muted', 'accent', 'accent-ink', 'panel', 'panel-ink', 'focus']) {
     assert.ok(token(light, name), `light --${name}`);
     assert.ok(token(dark, name), `dark --${name}`);
   }
 });
 
-test('muted text keeps 4.5:1 in both themes', () => {
+test('running text keeps 4.5:1 in both themes', () => {
   for (const [name, scope] of [['light', light], ['dark', dark]]) {
-    const ratio = contrast(hex(token(scope, 'muted')), hex(token(scope, 'bg')));
-    assert.ok(ratio >= 4.5, `${name} muted-on-background contrast is ${ratio.toFixed(2)}`);
+    for (const role of ['ink', 'muted']) {
+      const ratio = contrast(hex(token(scope, role)), hex(token(scope, 'bg')));
+      assert.ok(ratio >= 4.5, `${name} ${role}-on-background is ${ratio.toFixed(2)}`);
+    }
   }
 });
 
@@ -66,33 +66,27 @@ test('accent buttons keep 4.5:1 in both themes', () => {
   }
 });
 
-test('the olive field keeps its pale ink in both themes', () => {
-  for (const [name, scope] of [['light', light], ['dark', dark]]) {
-    const ratio = contrast(hex(token(scope, 'field-olive')), hex(token(scope, 'olive-ink')));
-    assert.ok(ratio >= 4.5, `${name} olive field contrast is ${ratio.toFixed(2)}`);
-  }
+test('the dark app panel and its focus ring stay legible', () => {
+  const panel = token(light, 'panel');
+  const panelInk = token(light, 'panel-ink');
+  assert.ok(contrast(hex(panel), hex(panelInk)) >= 4.5, 'panel ink contrast');
+  const focus = css.match(/\.app-window :focus-visible \{[^}]*outline-color:\s*(#[0-9a-f]{6})/i);
+  assert.ok(focus, 'the app fragment focus colour is explicit');
+  const ratio = contrast(hex(focus[1]), hex(panel));
+  assert.ok(ratio >= 3, `focus ring contrast is ${ratio.toFixed(2)}`);
 });
 
-test('the release ribbon keeps 4.5:1 and wraps instead of clipping', () => {
-  const rule = css.match(/\.release-ribbon \{([\s\S]*?)\n\}/);
-  assert.ok(rule, 'the ribbon rule exists');
-  assert.match(rule[1], /background:\s*var\(--accent\)/);
-  assert.match(rule[1], /color:\s*var\(--accent-ink\)/);
-  assert.match(rule[1], /flex-wrap:\s*wrap/);
-  assert.doesNotMatch(rule[1], /white-space:\s*nowrap/);
+test('the page follows the OS when no theme is stored', () => {
+  assert.match(css, /@media \(prefers-color-scheme: dark\)[\s\S]*:root:not\(\[data-theme\]\)/);
 });
 
-test('the page follows the operating system until a choice is stored', () => {
-  assert.match(theme, /prefers-color-scheme: dark/);
-  assert.match(script, /prefers-color-scheme: dark/);
-  assert.match(script, /systemTheme\.addEventListener\('change'/);
-  assert.match(script, /saved !== 'light' && saved !== 'dark'/);
+test('running body text is at least 16px', () => {
+  const body = css.match(/body \{[^}]*font:\s*400\s+([\d.]+)px/i);
+  assert.ok(body, 'body font size is explicit');
+  assert.ok(Number(body[1]) >= 16, `body is ${body[1]}px`);
 });
 
-test('the hero note and body text stay above the floor', () => {
-  const rule = css.match(/\.hero-note \{[^}]*font-size:\s*([.\d]+)rem/);
-  assert.ok(rule, 'the hero note size is explicit');
-  assert.ok(parseFloat(rule[1]) * 16 >= 11, 'hero note is at least 11px');
-  const body = css.match(/--step-body:\s*clamp\(([\d.]+)rem/);
-  assert.ok(body && parseFloat(body[1]) >= 1.0625, 'body step starts at 17px');
+test('focus is visible and reduced motion is honoured', () => {
+  assert.match(css, /:focus-visible \{[^}]*outline:\s*2px solid var\(--focus\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration:\s*\.01ms/);
 });

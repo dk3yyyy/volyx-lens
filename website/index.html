@@ -3,22 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#eef0ea">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eceee7">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101411">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Volyx Lens is a private desktop assistant for macOS, Windows, and Linux that sends only the screen, microphone, and system-audio context you choose to the AI provider you configure.">
+  <meta name="description" content="Volyx Lens is a private desktop assistant for macOS, Windows and Linux. Choose the screen, microphone and meeting audio it can use, then send it straight to the provider you configured.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vdu1mkBtPj4jSI7Qn/t3Za7dntLpf7U6DAMMy5QREGw='; style-src 'self'; img-src 'self'; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <link rel="preload" href="assets/fonts/chillax-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/chillax-600.woff2" as="font" type="font/woff2" crossorigin>
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://volyxlens.pages.dev/">
-  <meta property="og:title" content="Volyx Lens — Choose what your AI sees">
-  <meta property="og:description" content="A private assistant for your desktop. You choose the context, the response provider, and the transcription provider.">
-  <meta property="og:image" content="https://volyxlens.pages.dev/assets/volyx-lens-onboarding.png">
+  <meta property="og:title" content="Volyx Lens — Choose what your AI sees and hears">
+  <meta property="og:description" content="A desktop AI panel for your screen, voice and meetings. Pick the context, pick the provider, send it straight there.">
+  <meta property="og:image" content="https://volyxlens.pages.dev/assets/volyx-lens-settings.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Volyx Lens — Choose what your AI sees">
-  <meta name="twitter:description" content="A private assistant for your desktop. You choose the context, the response provider, and the transcription provider.">
-  <meta name="twitter:image" content="https://volyxlens.pages.dev/assets/volyx-lens-onboarding.png">
-  <title>Volyx Lens — Choose what your AI sees</title>
+  <meta name="twitter:title" content="Volyx Lens — Choose what your AI sees and hears">
+  <meta name="twitter:description" content="A desktop AI panel for your screen, voice and meetings. Pick the context, pick the provider, send it straight there.">
+  <meta name="twitter:image" content="https://volyxlens.pages.dev/assets/volyx-lens-settings.png">
+  <title>Volyx Lens — Choose what your AI sees and hears</title>
   <link rel="canonical" href="https://volyxlens.pages.dev/">
   <link rel="icon" href="assets/volyx-lens-logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
@@ -42,403 +43,300 @@
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <div class="release-ribbon">
-    <span>Release <strong>v0.7.7</strong></span>
-    <span>Windows · Linux · macOS (unsigned)</span>
-  </div>
-
   <header class="site-header">
     <a class="brand" href="#top" aria-label="Volyx Lens home">
-      <img src="assets/volyx-lens-logo.svg" width="40" height="40" alt="">
+      <img src="assets/volyx-lens-logo.svg" width="32" height="32" alt="">
       <span>Volyx Lens</span>
     </a>
-
     <nav class="site-nav" id="site-nav" aria-label="Main navigation">
-      <a href="#how-it-works">How it works</a>
-      <a href="#privacy">Privacy</a>
-      <a href="#capabilities">Capabilities</a>
+      <a href="#route">How it works</a>
+      <a href="#work">What it does</a>
       <a href="#providers">Providers</a>
-      <a href="#release">Download</a>
-      <a class="nav-github" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub</a>
+      <a href="#install">Install</a>
     </nav>
-
     <div class="header-tools">
-      <button class="theme-toggle" type="button" aria-label="Switch theme" data-theme-toggle>
+      <button class="theme-toggle" type="button" aria-label="Switch to dark mode" data-theme-toggle>
         <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/></svg>
         <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg>
       </button>
+      <a class="header-github" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub<span class="sr-only"> (opens in a new tab)</span></a>
       <button class="nav-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Open navigation">
         <span></span><span></span>
       </button>
     </div>
   </header>
 
+  <noscript>
+    <nav class="nojs-nav" aria-label="Sections">
+      <a href="#route">How it works</a>
+      <a href="#work">What it does</a>
+      <a href="#providers">Providers</a>
+      <a href="#install">Install</a>
+    </nav>
+  </noscript>
+
   <main id="main" tabindex="-1">
     <section class="hero" id="top" aria-labelledby="hero-title">
-      <div class="hero-copy" data-reveal>
-        <h1 id="hero-title">A private assistant for your desktop.</h1>
-        <p class="hero-lede">One AI panel for your screen, your voice, and the meeting audio you choose. The context goes to your provider, not through ours.</p>
-        <div class="hero-actions">
-          <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7" id="dl-hero"><span>Download v0.7.7</span></a>
-          <a class="button button-star" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            <span>Star on GitHub</span>
-          </a>
-          <a class="hero-link" href="#how-it-works">See the route</a>
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Desktop AI · macOS · Windows · Linux (experimental)</p>
+          <h1 id="hero-title">Choose what your AI sees and hears.</h1>
+          <p class="hero-lede">Volyx Lens is a desktop AI panel for your screen, microphone and meeting audio. Choose what it can see and hear, then send that to the provider you configured. No Volyx Lens server sits in between.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7" data-download><span>Download Volyx Lens</span></a>
+            <a class="button button-quiet" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">View source<span class="sr-only"> (opens in a new tab)</span></a>
+          </div>
+          <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.7.7</p>
         </div>
-        <ul class="hero-trust">
-          <li>Open source</li>
-          <li>0 relay servers</li>
-          <li>Keys in your OS keychain</li>
-          <li>No analytics</li>
+
+        <div class="hero-panel">
+          <div class="app-window" role="group" aria-label="Interface preview of Volyx Lens with selectable context">
+            <div class="app-bar">
+              <span class="app-title">Volyx Lens</span>
+              <span class="app-state"><i aria-hidden="true"></i> Ready</span>
+              <button class="app-provider" type="button" aria-expanded="false" aria-controls="provider-menu">
+                <span data-provider-label>OpenAI</span> <i aria-hidden="true">▾</i>
+              </button>
+              <div class="provider-menu" id="provider-menu" hidden>
+                <button type="button" data-provider-option="OpenAI" aria-pressed="true">OpenAI<small>Responses, transcription</small></button>
+                <button type="button" data-provider-option="Anthropic" aria-pressed="false">Anthropic<small>Responses</small></button>
+                <button type="button" data-provider-option="Gemini" aria-pressed="false">Google Gemini<small>Responses, batch transcription</small></button>
+                <button type="button" data-provider-option="Groq" aria-pressed="false">Groq<small>Responses, Whisper</small></button>
+              </div>
+            </div>
+            <div class="app-context" role="group" aria-label="Choose context sources">
+              <button class="source is-on" type="button" data-source="screen" aria-pressed="true">
+                <span class="source-dot" aria-hidden="true"></span>
+                <span class="toggle" aria-hidden="true"><i></i></span>
+                <strong>Screen</strong>
+                <small aria-hidden="true">Display 1 · On</small>
+              </button>
+              <button class="source is-on" type="button" data-source="mic" aria-pressed="true">
+                <span class="source-dot" aria-hidden="true"></span>
+                <span class="toggle" aria-hidden="true"><i></i></span>
+                <strong>Microphone</strong>
+                <small aria-hidden="true">Built-in · On</small>
+              </button>
+              <button class="source" type="button" data-source="system" aria-pressed="false">
+                <span class="source-dot" aria-hidden="true"></span>
+                <span class="toggle" aria-hidden="true"><i></i></span>
+                <strong>Meeting audio</strong>
+                <small aria-hidden="true">System · Off</small>
+              </button>
+            </div>
+            <div class="app-main">
+              <div class="app-thread">
+                <p class="bubble bubble-user">Why is the native build failing?<span>Screen attached</span></p>
+                <div class="bubble bubble-answer">
+                  <p class="answer-meta">Volyx Lens <span>·</span> <b data-provider>OpenAI</b></p>
+                  <p>The Swift helper is linking against the wrong SDK. Rebuild it with the current Xcode toolchain, then rerun packaging.</p>
+                  <pre><code>npm run build:native</code></pre>
+                  <p class="answer-foot"><span data-context-count aria-live="polite">2 of 3 sources</span></p>
+                </div>
+              </div>
+              <form class="composer" aria-label="Ask a question">
+                <label class="sr-only" for="ask">Ask about what you see</label>
+                <input id="ask" type="text" placeholder="Ask about this error" autocomplete="off">
+                <span class="composer-key" aria-hidden="true">⌘↵</span>
+                <button type="submit" aria-label="Send question">Send</button>
+              </form>
+              <p class="preview-status" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+          <p class="panel-caption">Interface preview. This page captures nothing.</p>
+        </div>
+
+        <div class="hero-meta">
+          <ul class="trust-row">
+            <li><strong>0</strong> relay servers</li>
+            <li><strong>12</strong> response providers</li>
+            <li><strong>3</strong> capture sources</li>
+          </ul>
+          <p class="hero-note">Free and open source under Apache License 2.0. Bring a key for hosted providers, or point it at a local model.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band band-route" id="route" aria-labelledby="route-title">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">01 · The route</p>
+          <h2 id="route-title">Your context goes straight to your provider.</h2>
+          <p>Selected context goes to the provider you configured. Volyx Lens runs no relay, and no Volyx Lens server receives it. Session media stays in memory; saved transcripts stay on this device.</p>
+        </div>
+        <div class="route" role="img" aria-label="Your device sends selected context to the local Volyx Lens app, which sends it directly to the AI provider you configured. No Volyx Lens server sits in the path.">
+          <div class="route-node">
+            <span class="route-label">Your device</span>
+            <strong>Screen · Microphone · Meeting audio</strong>
+            <small>Only the sources you turn on</small>
+          </div>
+          <div class="route-link" aria-hidden="true"><i></i></div>
+          <div class="route-node route-node-app">
+            <span class="route-label">Local app</span>
+            <strong>Volyx Lens</strong>
+            <small>Runs on your machine</small>
+          </div>
+          <div class="route-link" aria-hidden="true"><i></i></div>
+          <div class="route-node">
+            <span class="route-label">Your choice</span>
+            <strong>AI provider</strong>
+            <small>Your key · your account</small>
+          </div>
+        </div>
+        <dl class="fact-row">
+          <div><dt>Relay servers</dt><dd>0</dd></div>
+          <div><dt>Keys stored</dt><dd>OS secure storage</dd></div>
+          <div><dt>Analytics SDK</dt><dd>None</dd></div>
+          <div><dt>Source license</dt><dd>Apache 2.0</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="work" id="work" aria-labelledby="work-title">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">02 · What it does</p>
+          <h2 id="work-title">Screen help, meeting capture, Task Context.</h2>
+          <p>Auto-assist, meeting detection and slide tracking are off by default.</p>
+        </div>
+        <div class="work-grid">
+          <article class="work-card work-card-wide">
+            <img class="work-shot" src="assets/volyx-lens-stage.png" width="1184" height="752" alt="Volyx Lens with screen and microphone context switched on, answering a question about a failing native build." loading="lazy" decoding="async">
+            <div class="work-copy">
+              <h3>Debug what is on screen</h3>
+              <p>Ask about an error, a diff or a dense document without restating what is visible.</p>
+              <a class="work-link" href="#route">How context is sent</a>
+            </div>
+          </article>
+          <article class="work-card">
+            <div class="work-ui" aria-hidden="true">
+              <p class="ui-line"><span>You</span><b>Speaking</b></p>
+              <p class="ui-line"><span>Them</span><b>Listening</b></p>
+            </div>
+            <h3>Meeting transcripts, split by speaker</h3>
+            <p>Separate You and Them channels, searchable history on your device, and notes only when you ask for them.</p>
+          </article>
+          <article class="work-card">
+            <div class="work-ui" aria-hidden="true">
+              <p class="ui-line"><span>Task Context</span><b>4 of 6</b></p>
+              <p class="ui-line"><span>Omitted</span><b>2 screens</b></p>
+            </div>
+            <h3>Several screens in Task Context</h3>
+            <p>Task Context keeps a small set of screens in local memory and tells you what it left out.</p>
+          </article>
+          <article class="work-card">
+            <div class="work-ui" aria-hidden="true">
+              <p class="ui-line"><span>Default</span><b>OpenAI</b></p>
+              <p class="ui-line"><span>Fallback</span><b>Groq</b></p>
+            </div>
+            <h3>One default. One fallback.</h3>
+            <p>A default and one fallback. The fallback is tried before any text arrives, so two answers are never blended.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="band band-providers" id="providers" aria-labelledby="providers-title">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">03 · Providers</p>
+          <h2 id="providers-title">Twelve response providers.</h2>
+          <p>Bring a key for hosted providers. Model availability and charges come from the provider, not from us.</p>
+        </div>
+        <ul class="provider-grid">
+          <li><strong>OpenAI</strong><span>Responses + transcription</span></li>
+          <li><strong>Anthropic</strong><span>Responses</span></li>
+          <li><strong>Google Gemini</strong><span>Responses + batch transcription</span></li>
+          <li><strong>Azure Foundry</strong><span>Responses + realtime transcription</span></li>
+          <li><strong>DeepSeek</strong><span>Responses</span></li>
+          <li><strong>Groq</strong><span>Responses + Whisper</span></li>
+          <li><strong>OpenRouter</strong><span>Responses</span></li>
+          <li><strong>NVIDIA</strong><span>Responses</span></li>
+          <li><strong>Ollama</strong><span>Local responses</span></li>
+          <li><strong>Opencode</strong><span>Local responses</span></li>
+          <li><strong>Opencode Go</strong><span>Hosted responses</span></li>
+          <li><strong>Custom (OpenAI-compatible)</strong><span>Custom endpoint</span></li>
         </ul>
-        <p class="hero-note">Free and open source under <a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md" target="_blank" rel="noreferrer">Apache License 2.0</a>. Bring your own provider key.</p>
+        <p class="providers-note">Realtime transcription runs on OpenAI, Azure Foundry, Deepgram or Azure AI Speech. Batch falls back to OpenAI, Gemini or Groq Whisper. Local Whisper ships in the Windows and Linux packages, off by default; the model downloads on first use.</p>
       </div>
+    </section>
 
-      <div class="hero-motif" data-reveal>
-        <div class="motif-disc" aria-hidden="true"></div>
-        <div class="aperture-wrap" role="group" aria-label="Interactive example of Volyx Lens context selection">
-          <div class="aperture" data-aperture data-ui>
-            <div class="aperture-head">
-              <span>Context aperture</span>
-              <span class="aperture-live"><i aria-hidden="true"></i> Ready</span>
-            </div>
-
-            <div class="aperture-visual" aria-hidden="true">
-              <div class="aperture-ring ring-one"></div>
-              <div class="aperture-ring ring-two"></div>
-              <div class="aperture-beam beam-screen" data-beam="screen"></div>
-              <div class="aperture-beam beam-you" data-beam="you"></div>
-              <div class="aperture-beam beam-them" data-beam="them"></div>
-              <div class="aperture-core"><img src="assets/volyx-lens-logo.svg" width="72" height="72" alt=""></div>
-              <span class="aperture-label label-screen" data-label="screen">Screen</span>
-              <span class="aperture-label label-you" data-label="you">You</span>
-              <span class="aperture-label label-them" data-label="them">Them</span>
-            </div>
-
-            <div class="context-controls" role="group" aria-label="Choose example context inputs">
-              <button type="button" class="context-control is-active" data-context="screen" aria-pressed="true"><strong>Screen</strong><small>Selected display</small></button>
-              <button type="button" class="context-control is-active" data-context="you" aria-pressed="true"><strong>You</strong><small>Microphone</small></button>
-              <button type="button" class="context-control" data-context="them" aria-pressed="false"><strong>Them</strong><small>System audio</small></button>
-            </div>
-
-            <div class="aperture-readout" aria-live="polite">
-              <span>Selected context</span>
-              <strong data-context-summary>Screen + microphone</strong>
-              <span aria-hidden="true">→</span>
-              <span>Your provider</span>
-            </div>
-            <p class="aperture-note">An example control. This page captures nothing.</p>
+    <section class="install" id="install" aria-labelledby="install-title">
+      <div class="wrap install-grid">
+        <div class="install-copy">
+          <p class="eyebrow">04 · Install</p>
+          <h2 id="install-title">Install v0.7.7.</h2>
+          <p>Install it, add a provider, and change providers whenever you want.</p>
+          <div class="install-actions">
+            <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7" data-download><span>Download Volyx Lens</span></a>
+            <a class="button button-quiet" href="https://github.com/dk3yyyy/volyx-lens#download" target="_blank" rel="noreferrer">Installation steps<span class="sr-only"> (opens in a new tab)</span></a>
           </div>
+          <p class="detected" data-detected hidden>Detected Linux x64 · AppImage · v0.7.7</p>
+        </div>
+        <p class="platform-note">macOS 13 Ventura or later. Windows and Linux builds ship unsigned; every file has a .sha256 checksum and a CycloneDX SBOM. The macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured.</p>
+        <div class="platforms" role="group" aria-label="Download for another platform">
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-win-x64.exe"><strong>Windows</strong><span>x64 installer · unsigned · v0.7.7</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg"><strong>macOS · Apple Silicon</strong><span>Unsigned DMG · v0.7.7</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-x64-unsigned.dmg"><strong>macOS · Intel</strong><span>Unsigned DMG · v0.7.7</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-linux-x86_64.AppImage"><strong>Linux · x64 (experimental)</strong><span>AppImage · v0.7.7</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-linux-arm64.AppImage"><strong>Linux · arm64 (experimental)</strong><span>AppImage · v0.7.7</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7"><strong>All files</strong><span>Checksums and SBOMs</span></a>
         </div>
       </div>
     </section>
 
-    <section class="how-section" id="how-it-works" aria-labelledby="context-heading">
-      <div class="fields">
-        <article class="field field-slate" data-reveal>
-          <h2 id="context-heading">Three inputs. One send.</h2>
-          <div class="field-card" data-ui>
-            <span class="context-label">Screen</span>
-            <strong>Selected display</strong>
-            <span class="field-state">On</span>
-          </div>
-          <p>Pick the display holding the work. A screenshot is attached only when the request needs one.</p>
-        </article>
-        <article class="field field-sage" data-reveal>
-          <span class="context-label">You</span>
-          <div class="field-card" data-ui>
-            <span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-            <strong>Microphone live</strong>
-            <span class="field-state">On</span>
-          </div>
-          <p>Your microphone is its own channel, so the app never confuses you with the other side of the call.</p>
-        </article>
-        <article class="field field-blush" data-reveal>
-          <span class="context-label">Them</span>
-          <div class="field-card" data-ui>
-            <span class="context-label">System audio</span>
-            <strong>Optional channel</strong>
-            <span class="field-state is-off">Off</span>
-          </div>
-          <p>System audio is optional and independent. Turn it on for a meeting, leave it off for a quiet task.</p>
-        </article>
-        <article class="field field-olive" data-reveal>
-          <span class="context-label">Provider</span>
-          <div class="field-card field-card-dark" data-ui>
-            <span class="context-label">Direct route</span>
-            <strong>Your key, your terms</strong>
-            <span class="field-state is-light">Sent</span>
-          </div>
-          <p>Selected context goes directly to the provider you configured. There is no Volyx Lens-operated intermediary server in that request path.</p>
-        </article>
-      </div>
-
-      <div class="route-map" role="img" aria-label="Data route: selected screen, microphone and system audio move from your computer through the local Volyx Lens app directly to the AI provider you configure, with no Volyx Lens cloud relay.">
-        <div class="route-node">
-          <span>Your computer</span>
-          <strong>Selected context</strong>
-          <small>Screen · You · Them</small>
+    <section class="band band-notes" aria-labelledby="notes-title">
+      <div class="wrap notes-grid">
+        <div>
+          <p class="eyebrow">05 · Before you install</p>
+          <h2 id="notes-title">Unsigned builds, keys, offline limits.</h2>
         </div>
-        <div class="route-arrow" aria-hidden="true"><span></span></div>
-        <div class="route-node route-node-app">
-          <img src="assets/volyx-lens-logo.svg" width="48" height="48" alt="">
-          <strong>Volyx Lens</strong>
-          <small>Local app</small>
-        </div>
-        <div class="route-arrow" aria-hidden="true"><span></span></div>
-        <div class="route-node">
-          <span>Your choice</span>
-          <strong>AI provider</strong>
-          <small>Your key · your terms</small>
-        </div>
-      </div>
-
-      <div class="how-copy" data-reveal>
-        <p>Task Context holds multiple selected screens in local memory. A later request uses a bounded visual window and discloses omitted screens.</p>
-        <p>The live transcript and Task Context are memory-only, within fixed size limits, and cleared when the session ends.</p>
-      </div>
-    </section>
-
-    <section class="proof-section" id="privacy" aria-labelledby="privacy-heading">
-      <div class="tile-board">
-        <div class="tile tile-heading" data-reveal>
-          <h2 id="privacy-heading">A short route, on the record.</h2>
-        </div>
-        <div class="tile tile-accent" data-reveal><strong>12</strong><span>response providers</span></div>
-        <div class="tile" data-reveal><strong>0</strong><span>Volyx Lens relay servers</span></div>
-        <div class="tile tile-sage" data-reveal><strong>3</strong><span>separate context inputs</span></div>
-        <div class="tile" data-reveal><strong>1</strong><span>compact desktop rail</span></div>
-        <div class="tile tile-wide" data-reveal>
-          <strong>Keys stay local</strong>
-          <p>Provider credentials use Electron secure storage backed by the operating system: macOS Keychain, Windows DPAPI, Linux libsecret. If secure storage is unavailable, keys are kept in memory for the session only and are never written to disk; Settings says so.</p>
-        </div>
-        <div class="tile tile-wide tile-blush" data-reveal>
-          <strong>No analytics SDK</strong>
-          <p>There is no advertising or analytics SDK in the app. The only network calls are the provider and transcription requests you configure.</p>
-        </div>
-      </div>
-      <p class="privacy-detail">The only periodic request is the update check: while notifications are on, the app asks GitHub Releases for the newest version shortly after launch, every six hours, and once shortly after the machine wakes if six hours passed while it slept. Those requests necessarily carry your IP address, the updater's user agent, a random updater ID stored on this device, and the platform-specific update channel. Turning notifications off in Settings → Updates stops the scheduled check.</p>
-    </section>
-
-    <figure class="product-band" data-reveal>
-      <img src="assets/provider-detail.png" width="900" height="430" alt="Volyx Lens provider panel showing twelve response providers, the current default, and the fallback">
-      <figcaption>Twelve providers, one default, one fallback. The fallback is tried before any text arrives, so two partial answers are never blended.</figcaption>
-    </figure>
-
-    <section class="showcase-section" aria-labelledby="product-heading">
-      <div class="disc-stage" data-reveal>
-        <div class="disc" aria-hidden="true"></div>
-        <img class="disc-shot" src="assets/volyx-lens-settings.png" width="1280" height="970" alt="Volyx Lens provider settings showing the response provider list, the current default, and its fallback">
-      </div>
-      <div class="showcase-copy" data-reveal>
-        <h2 id="product-heading">At the edge until you need it.</h2>
-        <p class="lead">The panel docks anywhere, expands into the conversation, and collapses to a rail when the task is done.</p>
-        <ul class="showcase-list">
-          <li><strong>Task Context</strong><span>multiple selected screens in local memory, a bounded visual window, and omitted screens disclosed</span></li>
-          <li><strong>Meeting history</strong><span>saved on this device, searchable, exportable</span></li>
-          <li><strong>Notes and recaps</strong><span>generated from a saved transcript only when you ask</span></li>
-          <li><strong>Providers</strong><span>a default and one fallback, never a blended answer</span></li>
-        </ul>
-        <p class="showcase-note">A failed primary falls through before it has produced text. Choose a provider and a fallback once; the rail shows what is listening and which context is armed.</p>
-      </div>
-    </section>
-
-    <section class="features-section" id="capabilities" aria-labelledby="use-heading">
-      <div class="features-head" data-reveal>
-        <h2 id="use-heading">What it does with the context you give it.</h2>
-        <p class="lead">Five explicit actions. No background prompts, no automatic answers, no hidden watcher.</p>
-      </div>
-      <div class="feature-board">
-        <article class="feature feature-wide feature-slate" data-reveal>
-          <div class="feature-ui" data-ui>
-            <span class="ui-label">Answer context</span>
-            <div class="ui-row"><span>Screen</span><b>Selected</b></div>
-            <div class="ui-row"><span>Task Context</span><b>4 screens</b></div>
-            <div class="ui-row"><span>Transcript</span><b>You + Them</b></div>
-          </div>
-          <h3>Screen and coding help</h3>
-          <p>Ask about an error, code, a dense document, or an unfamiliar interface without restating what is visible.</p>
-        </article>
-        <article class="feature feature-tall" data-reveal>
-          <div class="feature-ui" data-ui>
-            <span class="ui-label">Task Context</span>
-            <span class="chip-row"><i>notes.txt</i><i>error.png</i><i>test output</i></span>
-          </div>
-          <h3>Multiple screens, one bounded window</h3>
-          <p>Saved screens stay in local memory, capped, and the request discloses what it left out.</p>
-        </article>
-        <article class="feature feature-blush" data-reveal>
-          <div class="feature-ui" data-ui>
-            <span class="ui-label">Live transcript</span>
-            <div class="ui-row"><span>You</span><b>speaking</b></div>
-            <div class="ui-row"><span>Them</span><b>listening</b></div>
-          </div>
-          <h3>You/Them conversation help</h3>
-          <p>Separate channels power reply suggestions and follow-up questions during a permitted meeting.</p>
-        </article>
-        <article class="feature" data-reveal>
-          <div class="feature-ui" data-ui>
-            <span class="ui-label">Meeting notes</span>
-            <div class="ui-row"><span>Summary</span><b>saved</b></div>
-            <div class="ui-row"><span>Action items</span><b>3</b></div>
-          </div>
-          <h3>Meeting recaps and history</h3>
-          <p>Save a meeting on this device, search it later, export it, and generate structured notes on request.</p>
-        </article>
-        <article class="feature feature-olive" data-reveal>
-          <div class="feature-ui feature-ui-dark" data-ui>
-            <span class="ui-label">Rail</span>
-            <div class="ui-row"><span>State</span><b>Listening</b></div>
-            <div class="ui-row"><span>Context</span><b>Screen + You</b></div>
-          </div>
-          <h3>One compact rail</h3>
-          <p>Expand for a conversation, collapse to a rail, and hide it without stopping the session.</p>
-        </article>
-        <article class="feature feature-shot" data-reveal>
-          <img src="assets/volyx-lens-onboarding.png" width="700" height="573" alt="Volyx Lens onboarding explaining the first-run setup and permissions">
-          <h3>First launch is explicit</h3>
-          <p>Permissions and provider setup are explained before anything listens.</p>
-        </article>
-      </div>
-    </section>
-
-    <section class="providers-section" id="providers" aria-labelledby="provider-heading">
-      <div class="providers-head" data-reveal>
-        <h2 id="provider-heading">Twelve response providers.</h2>
-        <p class="lead">No forced route. Model availability and charges come from those providers, not Volyx Lens.</p>
-      </div>
-      <ul class="provider-poster">
-        <li data-reveal><strong>OpenAI</strong><span>responses + transcription</span></li>
-        <li data-reveal><strong>Anthropic</strong><span>responses</span></li>
-        <li data-reveal><strong>Google Gemini</strong><span>responses + batch transcription</span></li>
-        <li data-reveal><strong>Azure Foundry</strong><span>responses + realtime transcription</span></li>
-        <li data-reveal><strong>DeepSeek</strong><span>responses</span></li>
-        <li data-reveal><strong>Groq</strong><span>responses + Whisper</span></li>
-        <li data-reveal><strong>OpenRouter</strong><span>responses</span></li>
-        <li data-reveal><strong>NVIDIA</strong><span>responses</span></li>
-        <li data-reveal><strong>Ollama</strong><span>local responses</span></li>
-        <li data-reveal><strong>Opencode</strong><span>local responses</span></li>
-        <li data-reveal><strong>Opencode Go</strong><span>hosted responses</span></li>
-        <li data-reveal><strong>Custom (OpenAI-compatible)</strong><span>any compatible endpoint</span></li>
-      </ul>
-      <div class="transcription-copy" data-reveal>
-        <ul class="transcription-list">
-          <li><strong>Deepgram</strong><span>realtime</span></li>
-          <li><strong>Azure AI Speech</strong><span>realtime</span></li>
-        </ul>
-        <p>Realtime transcription runs on OpenAI, Azure Foundry, Deepgram, or Azure AI Speech. Batch transcription falls back to OpenAI, Google Gemini, or Groq Whisper. Local Whisper ships in the Windows and Linux packages (macOS packages cannot bundle one, so there it works only when a whisper-server binary is configured). Automatic cloud fallback remains off by default.</p>
-      </div>
-    </section>
-
-    <section class="release-section" id="release" aria-labelledby="release-heading">
-      <div class="action-tile" data-reveal>
-        <h2 id="release-heading">Put the lens on your desktop.</h2>
-        <p>Bring your own key. Keep the context. Switch providers whenever you want.</p>
-        <div class="release-actions">
-          <a class="button button-light" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7" id="dl-primary"><span>Download v0.7.7</span></a>
-          <a class="button button-ghost" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            <span>Star on GitHub</span>
-          </a>
-        </div>
-        <p class="dl-note" id="dl-note" aria-live="polite">Choose your operating system below; every build is served from GitHub Releases with its SHA-256 checksum attached.</p>
-        <a class="release-link" href="https://github.com/dk3yyyy/volyx-lens#download" target="_blank" rel="noreferrer">Installation steps</a>
-      </div>
-
-      <div class="release-panel">
-        <div class="dl-grid" role="group" aria-label="Download for a different operating system" data-reveal>
-          <a class="dl-card" data-os="win" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-win-x64.exe"><strong>Windows</strong><span>x64 NSIS installer · v0.7.7</span><i class="dl-tag">Recommended for this device</i></a>
-          <a class="dl-card" data-os="mac" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7"><strong>macOS</strong><span>Unsigned v0.7.7 · choose your chip</span></a>
-          <a class="dl-card" data-os="mac-arm64" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg"><strong>macOS · Apple Silicon</strong><span>Unsigned v0.7.7 DMG</span></a>
-          <a class="dl-card" data-os="mac-x64" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-x64-unsigned.dmg"><strong>macOS · Intel</strong><span>Unsigned v0.7.7 DMG</span></a>
-          <a class="dl-card" data-os="linux-x64" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-linux-x86_64.AppImage"><strong>Linux · x64</strong><span>AppImage · v0.7.7</span></a>
-          <a class="dl-card" data-os="linux-arm64" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-linux-arm64.AppImage"><strong>Linux · arm64</strong><span>AppImage · v0.7.7</span></a>
-        </div>
-        <div class="release-notes" data-reveal>
-          <p class="release-caveat">Windows and Linux builds are live in v0.7.7, and <a href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7" target="_blank" rel="noreferrer">unsigned macOS DMGs</a> are attached to the release; the README gives the first-launch steps. The macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured.</p>
-          <p class="install-hint">macOS says the app is damaged? Run <code>xattr -cr "/Applications/Volyx Lens.app"</code> once, or right-click → Open.</p>
-          <p>Version 0.7.7 publishes the Windows installer, Linux AppImages, and unsigned macOS DMGs for Apple Silicon and Intel. Windows and Linux builds ship unsigned; every file has a .sha256 checksum, a CycloneDX SBOM is attached per platform and architecture. On macOS, clear the quarantine flag with the xattr command in the installation steps; right-click → Open also works on most versions.</p>
+        <div class="notes-list">
           <details>
-            <summary>What's new in v0.7.7</summary>
-            <ul>
-              <li>Opencode, Opencode Go, and custom OpenAI-compatible endpoints are available as response providers.</li>
-              <li>Meeting history starts on for new installs; existing profiles keep their current setting.</li>
-              <li>The update button opens the latest release when this build cannot update in place.</li>
-              <li>Helper binaries are validated before launch, and the audit and test gates are hardened.</li>
-            </ul>
+            <summary>macOS builds are unsigned</summary>
+            <p>Drag the app into Applications and try to open it once. On macOS 15 and later, go to System Settings → Privacy &amp; Security and choose <strong>Open Anyway</strong>. On macOS 13–14, right-click the app and choose Open. <code>xattr -cr "/Applications/Volyx Lens.app"</code> is an advanced fallback. It runs as a panel rather than a Dock app, so there may be no Dock icon; reopen it from Applications. The build is not notarised, so macOS may ask for Screen Recording permission again after an update.</p>
+          </details>
+          <details>
+            <summary>Windows shows an unknown publisher warning</summary>
+            <p>The Windows installer is unsigned. SmartScreen may say "Windows protected your PC"; choose <strong>More info</strong> and then <strong>Run anyway</strong>.</p>
+          </details>
+          <details>
+            <summary>Updates check GitHub every six hours</summary>
+            <p>Volyx Lens asks api.github.com for the latest release. That request includes your IP address, a user agent, and on signed builds an updater ID. Turn update checks off in Settings → Updates.</p>
+          </details>
+          <details>
+            <summary>Keys are stored on your machine, not on a Volyx server</summary>
+            <p>Credentials use macOS Keychain, Windows DPAPI, or Linux libsecret/KWallet. If secure storage is unavailable, keys stay in memory for the session and are never written to disk.</p>
+          </details>
+          <details>
+            <summary>What works offline</summary>
+            <p>With a local Ollama server, responses run offline. Local Whisper covers offline batch transcription on Windows and Linux after you enable it and download a model; macOS supports offline batch transcription when a whisper-server binary is configured.</p>
+          </details>
+          <details>
+            <summary>Recording law is still yours</summary>
+            <p>Capture permissions are explicit, but local consent and recording laws still apply. Do not capture private conversations, protected work, exams or interviews without permission. Capture exclusion is best-effort and never guaranteed.</p>
           </details>
         </div>
-      </div>
-    </section>
-
-    <section class="responsibility-section" aria-labelledby="responsibility-heading">
-      <h2 id="responsibility-heading" data-reveal>Useful context still needs judgment.</h2>
-      <figure class="responsibility-shot" data-reveal>
-        <img src="assets/onboarding-detail.png" width="430" height="290" alt="Volyx Lens onboarding panel explaining See, Hear, and Assist">
-      </figure>
-      <div class="responsibility-copy" data-reveal>
-        <p>Capture permissions are explicit, but local consent and recording laws still apply. Do not capture private conversations, protected work, exams, or interviews when you lack permission.</p>
-        <p>Capture exclusion is best-effort. On macOS the app asks the system to keep its window out of captures; on Windows 10 2004 or later it uses WDA_EXCLUDEFROMCAPTURE. Linux has no capture-exclusion API, so the window can appear in screen shares there, and newer macOS capture paths or a physical camera can still record it anywhere. Never rely on it to bypass disclosure, supervision, proctoring, or security controls.</p>
-        <p>Source code is available under the <a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md" target="_blank" rel="noreferrer">Apache License 2.0</a>.</p>
-      </div>
-    </section>
-
-    <section class="faq-section" aria-labelledby="faq-heading">
-      <div class="faq-head" data-reveal>
-        <h2 id="faq-heading">A few direct answers.</h2>
-        <p class="lead">The parts people ask before installing: storage, signatures, offline use, and what the app keeps.</p>
-      </div>
-      <div class="faq-list">
-        <details name="faq">
-          <summary>Does Volyx Lens operate its own AI backend?<span aria-hidden="true"></span></summary>
-          <p>No. You configure your own supported provider. Requests travel from the desktop app to that provider, and the provider's own data terms apply.</p>
-        </details>
-        <details name="faq">
-          <summary>Where are API keys stored?<span aria-hidden="true"></span></summary>
-          <p>The app uses Electron secure storage backed by the operating system (macOS Keychain, Windows DPAPI, Linux libsecret) when available. If secure storage is unavailable, keys are kept in memory for the session only and are never written to disk; Settings says so and lets you update or remove them. They must be entered again after a restart.</p>
-        </details>
-        <details name="faq">
-          <summary>Is the release notarized?<span aria-hidden="true"></span></summary>
-          <p>The v0.7.7 macOS DMGs attached to the release are unsigned, so macOS blocks a plain double-click. Drag Volyx Lens into Applications, then run <code>xattr -cr "/Applications/Volyx Lens.app"</code> once in Terminal, or right-click the app and choose Open. If macOS says the app is damaged, that Terminal command is what clears it. The macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured. The Windows and Linux builds ship unsigned; every file has a .sha256 checksum, a CycloneDX SBOM is attached per platform and architecture, and Windows shows a SmartScreen "Unknown publisher" warning.</p>
-        </details>
-        <details name="faq">
-          <summary>What works offline?<span aria-hidden="true"></span></summary>
-          <p>AI responses require a configured provider; with a local Ollama server they run fully offline. Realtime transcription uses your configured provider (OpenAI, Azure Foundry, Deepgram, or Azure AI Speech), and Local Whisper covers offline batch transcription and ships in the Windows and Linux packages (macOS packages cannot bundle one, so there it works only when a whisper-server binary is configured); automatic cloud fallback remains off by default.</p>
-        </details>
-        <details name="faq">
-          <summary>Can Volyx Lens detect and save meetings?<span aria-hidden="true"></span></summary>
-          <p>Yes. Meeting detection is opt-in; meeting history is on by default for new installs. While listening, meeting detection looks for a sustained two-sided conversation between the Mic and System channels, then tags the session locally with a "Meeting in progress" indicator. With meeting history on, saved meetings get a meeting badge and stay searchable; you can export records, transcripts, or generated meeting notes. Detection runs in-session. Saved history stays on this device and Volyx Lens never uploads it; generating notes or cleaning a saved transcript does send that transcript to the provider you configured.</p>
-        </details>
-        <details name="faq">
-          <summary>Can I choose the transcription language?<span aria-hidden="true"></span></summary>
-          <p>Yes. The settings screen lets you pick a language for transcription or leave it on auto-detect. Language selection is honored per job and normalized for both cloud providers and the optional local Whisper provider.</p>
-        </details>
-        <details name="faq">
-          <summary>Can I use it commercially?<span aria-hidden="true"></span></summary>
-          <p>Yes. The public source is licensed under the Apache License 2.0, which permits commercial use, modification, and redistribution.</p>
-        </details>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div class="footer-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-    <div class="footer-top">
+    <div class="wrap footer-grid">
       <div class="footer-brand">
-        <img src="assets/volyx-lens-logo.svg" width="40" height="40" alt="">
+        <img src="assets/volyx-lens-logo.svg" width="32" height="32" alt="">
         <strong>Volyx Lens</strong>
         <p>Context you choose. Providers you control.</p>
       </div>
       <div class="footer-links">
-        <div><span>Product</span><a href="#how-it-works">How it works</a><a href="#privacy">Privacy</a><a href="#release">Download</a></div>
-        <div><span>Project</span><a href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/dk3yyyy/volyx-lens/releases" target="_blank" rel="noreferrer">Releases</a><a href="https://github.com/dk3yyyy/volyx-lens/issues" target="_blank" rel="noreferrer">Issues</a></div>
-        <div><span>Terms</span><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md" target="_blank" rel="noreferrer">License</a><a href="https://github.com/dk3yyyy/volyx-lens/security/policy" target="_blank" rel="noreferrer">Security</a><a href="https://github.com/dk3yyyy/volyx-lens/issues/new" target="_blank" rel="noreferrer">Report an issue</a></div>
+        <div><span>Product</span><a href="#route">How it works</a><a href="#work">What it does</a><a href="#install">Install</a></div>
+        <div><span>Project</span><a href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/releases" target="_blank" rel="noreferrer">Releases<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/issues" target="_blank" rel="noreferrer">Issues<span class="sr-only"> (opens in a new tab)</span></a></div>
+        <div><span>Terms</span><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md" target="_blank" rel="noreferrer">License<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/security/policy" target="_blank" rel="noreferrer">Security<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/issues/new" target="_blank" rel="noreferrer">Report an issue<span class="sr-only"> (opens in a new tab)</span></a></div>
       </div>
     </div>
-    <div class="footer-bottom">
+    <div class="wrap footer-bottom">
       <span>© <span data-year>2026</span> Joshua Nwachinemere</span>
-      <span>Open source · Apache License 2.0</span>
+      <span>Open source · Apache 2.0</span>
     </div>
   </footer>
 </body>
