@@ -37,14 +37,14 @@ test('the boot script trusts the store on a cold start and the hint on a reload'
   assert.deepEqual(runBoot({ hint: 'sage', arg: 'ember' }), { theme: 'ember', source: 'argv' });
   assert.deepEqual(runBoot({ hint: 'ember', arg: 'indigo', reloaded: true }), { theme: 'ember', source: 'hint' });
   assert.deepEqual(runBoot({ arg: 'sage' }), { theme: 'sage', source: 'argv' });
-  assert.deepEqual(runBoot({ hint: 'neon', arg: 'neon' }), { theme: 'indigo', source: 'default' });
-  assert.deepEqual(runBoot({}), { theme: 'indigo', source: 'default' });
-  assert.deepEqual(runBoot({ hint: 'Indigo' }), { theme: 'indigo', source: 'default' });
+  assert.deepEqual(runBoot({ hint: 'neon', arg: 'neon' }), { theme: 'sage', source: 'default' });
+  assert.deepEqual(runBoot({}), { theme: 'sage', source: 'default' });
+  assert.deepEqual(runBoot({ hint: 'Indigo' }), { theme: 'sage', source: 'default' });
 });
 
 test('prototype keys are not theme ids', () => {
   for (const value of ['__proto__', 'constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
-    assert.deepEqual(runBoot({ hint: value }), { theme: 'indigo', source: 'default' }, value);
+    assert.deepEqual(runBoot({ hint: value }), { theme: 'sage', source: 'default' }, value);
   }
 });
 

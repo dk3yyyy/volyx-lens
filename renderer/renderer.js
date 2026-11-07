@@ -2262,9 +2262,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   let themeSaveToken = 0;
   // The last theme the store confirmed. Optimistic radio changes must never
   // become the value a failed save reverts to.
-  let persistedTheme = 'indigo';
+  let persistedTheme = 'sage';
   function normaliseAccentTheme(value) {
-    return ACCENT_THEMES.includes(value) ? value : 'indigo';
+    return ACCENT_THEMES.includes(value) ? value : 'sage';
   }
   function applyAccentTheme(theme, { persistHint = false } = {}) {
     const id = normaliseAccentTheme(theme);

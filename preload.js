@@ -6,7 +6,7 @@ const ACCENT_ARG = '--volyx-accent=';
 function initialAccentTheme() {
   const argument = (process.argv || []).find((value) => value.startsWith(ACCENT_ARG));
   const id = argument ? argument.slice(ACCENT_ARG.length) : '';
-  return ACCENT_IDS.has(id) ? id : 'indigo';
+  return ACCENT_IDS.has(id) ? id : 'sage';
 }
 
 contextBridge.exposeInMainWorld('volyxLens', {
