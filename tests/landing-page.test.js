@@ -27,7 +27,7 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, /No Volyx Lens server sits in between/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /Apache License 2\.0/i);
-  assert.match(html, /Windows and Linux builds ship unsigned; every file has a \.sha256 checksum and a CycloneDX SBOM/i);
+  assert.match(html, /Every build ships unsigned; each file has a \.sha256 checksum and a CycloneDX SBOM/i);
   assert.match(html, /Developer ID and notarized once release signing credentials are configured/i);
   assert.doesNotMatch(html, /VolyxAI/i);
   assert.doesNotMatch(html, /customer(s)?|trusted by|SOC\s?2|guaranteed invisible/i);

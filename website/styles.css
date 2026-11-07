@@ -509,6 +509,7 @@ section[id], main[id] { scroll-margin-top: 80px; }
 @media (max-width: 1000px) {
   .hero-grid { grid-template-columns: 1fr; row-gap: 24px; align-items: start; }
   .hero-panel .app-window { max-height: 430px; }
+  .app-window .composer, .app-window .preview-status { display: none; }
   .hero-copy { grid-column: auto; max-width: 680px; }
   .hero h1 { max-width: 13ch; font-size: clamp(2.7rem, 6vw, 3.8rem); }
   .hero-panel { grid-column: auto; }
@@ -572,7 +573,7 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .hero-source { display: none; }
   .hero-detect { margin-top: 6px; font-size: 10px; }
   .hero-grid { row-gap: 14px; }
-  .hero-panel .app-window { max-height: 370px; }
+  .hero-panel .app-window { max-height: 405px; }
   .app-bar { min-height: 44px; padding: 0 12px; gap: 7px; }
   .app-local { display: none; }
   .app-state { font-size: 8.5px; }
@@ -629,6 +630,9 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .footer-grid { gap: 30px; }
   .footer-links a { display: inline-flex; align-items: center; min-height: 44px; }
   .footer-bottom { flex-direction: column; gap: 6px; }
+}
+@media (max-width: 360px) {
+  .hero-panel .app-window { max-height: 330px; }
 }
 @media (forced-colors: active) {
   .nav-toggle span { background: CanvasText; }
