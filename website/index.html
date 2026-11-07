@@ -65,6 +65,15 @@
     </div>
   </header>
 
+  <noscript>
+    <nav class="nojs-nav" aria-label="Sections">
+      <a href="#route">How it works</a>
+      <a href="#work">What it does</a>
+      <a href="#providers">Providers</a>
+      <a href="#install">Install</a>
+    </nav>
+  </noscript>
+
   <main id="main" tabindex="-1">
     <section class="hero" id="top" aria-labelledby="hero-title">
       <div class="wrap hero-grid">
@@ -76,7 +85,7 @@
             <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7" data-download><span>Download Volyx Lens</span></a>
             <a class="button button-quiet" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">View source</a>
           </div>
-          <p class="hero-detect" data-detected>Detected Linux x64 · AppImage · v0.7.7</p>
+          <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.7.7</p>
           <ul class="trust-row">
             <li><strong>0</strong> relay servers</li>
             <li><strong>12</strong> response providers</li>
@@ -88,9 +97,17 @@
         <div class="hero-panel">
           <div class="app-window" role="group" aria-label="Interface preview of Volyx Lens with selectable context">
             <div class="app-bar">
-              <span class="app-dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <span class="app-title">Volyx Lens</span>
-              <span class="app-provider">OpenAI <span aria-hidden="true">▾</span></span><span class="app-state"><i aria-hidden="true"></i> Ready</span>
+              <span class="app-state"><i aria-hidden="true"></i> Ready</span>
+              <button class="app-provider" type="button" aria-expanded="false" aria-controls="provider-menu">
+                <span data-provider-label>OpenAI</span> <i aria-hidden="true">▾</i>
+              </button>
+              <div class="provider-menu" id="provider-menu" hidden>
+                <button type="button" data-provider-option="OpenAI" aria-pressed="true">OpenAI<small>Responses, transcription</small></button>
+                <button type="button" data-provider-option="Anthropic" aria-pressed="false">Anthropic<small>Responses</small></button>
+                <button type="button" data-provider-option="Gemini" aria-pressed="false">Google Gemini<small>Responses, batch transcription</small></button>
+                <button type="button" data-provider-option="Groq" aria-pressed="false">Groq<small>Responses, Whisper</small></button>
+              </div>
             </div>
             <div class="app-context" role="group" aria-label="Choose context sources">
               <button class="source is-on" type="button" data-source="screen" aria-pressed="true">
@@ -109,7 +126,7 @@
                 <span class="source-dot" aria-hidden="true"></span>
                 <span class="toggle" aria-hidden="true"><i></i></span>
                 <strong>Meeting audio</strong>
-                <small>System channel · Off</small>
+                <small>System · Off</small>
               </button>
             </div>
             <div class="app-main">
@@ -125,8 +142,10 @@
               <form class="composer" aria-label="Ask a question">
                 <label class="sr-only" for="ask">Ask about what you see</label>
                 <input id="ask" type="text" placeholder="Ask about what you see" autocomplete="off">
+                <span class="composer-key" aria-hidden="true">⌘↵</span>
                 <button type="submit" aria-label="Send question">Send</button>
               </form>
+              <p class="preview-status" role="status" aria-live="polite"></p>
             </div>
           </div>
           <p class="panel-caption">Interface preview. This page captures nothing.</p>
@@ -139,13 +158,13 @@
         <div class="section-head">
           <p class="eyebrow">01 · The route</p>
           <h2 id="route-title">The route is short.</h2>
-          <p>Selected context leaves your machine once, for the provider you configured. Volyx Lens runs no relay and keeps no copy.</p>
+          <p>Selected context leaves your machine once, for the provider you configured. Volyx Lens runs no relay. Requests go straight from this machine to your provider.</p>
         </div>
         <div class="route" role="img" aria-label="Your device sends selected context to the local Volyx Lens app, which sends it directly to the AI provider you configured. No Volyx Lens server sits in the path.">
           <div class="route-node">
             <span class="route-label">Your device</span>
             <strong>Screen · Mic · System audio</strong>
-            <small>Only the switches you arm</small>
+            <small>Only the sources you turn on</small>
           </div>
           <div class="route-link" aria-hidden="true"><i></i></div>
           <div class="route-node route-node-app">
@@ -157,7 +176,7 @@
           <div class="route-node">
             <span class="route-label">Your choice</span>
             <strong>AI provider</strong>
-            <small>Your key · your terms</small>
+            <small>Your key · your account</small>
           </div>
         </div>
         <dl class="fact-row">
@@ -198,7 +217,7 @@
               <p class="ui-line"><span>Omitted</span><b>2 screens</b></p>
             </div>
             <h3>Hold several screens</h3>
-            <p>Task Context keeps a bounded set in local memory and tells you what it left out.</p>
+            <p>Task Context keeps a small set of screens in local memory and tells you what it left out.</p>
           </article>
           <article class="work-card">
             <div class="work-ui" aria-hidden="true">
@@ -233,7 +252,7 @@
           <li><strong>Opencode Go</strong><span>Hosted responses</span></li>
           <li><strong>Custom</strong><span>OpenAI-compatible endpoint</span></li>
         </ul>
-        <p class="providers-note">Realtime transcription runs on OpenAI, Azure Foundry, Deepgram or Azure AI Speech. Batch falls back to OpenAI, Gemini or Groq Whisper. Local Whisper ships in the Windows and Linux packages.</p>
+        <p class="providers-note">Realtime transcription runs on OpenAI, Azure Foundry, Deepgram or Azure AI Speech. Batch falls back to OpenAI, Gemini or Groq Whisper. Local Whisper ships in the Windows and Linux packages, off by default; the model downloads on first use.</p>
       </div>
     </section>
 
@@ -247,8 +266,9 @@
             <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7" data-download><span>Download Volyx Lens</span></a>
             <a class="button button-quiet" href="https://github.com/dk3yyyy/volyx-lens#download" target="_blank" rel="noreferrer">Installation steps</a>
           </div>
-          <p class="detected" data-detected>Detected Linux x64 · AppImage · v0.7.7</p>
+          <p class="detected" data-detected hidden>Detected Linux x64 · AppImage · v0.7.7</p>
         </div>
+        <p class="platform-note">macOS 13 Ventura or later. Unsigned builds; the macOS steps below explain the first launch.</p>
         <div class="platforms" role="group" aria-label="Download for another platform">
           <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-win-x64.exe"><strong>Windows</strong><span>x64 installer · v0.7.7</span></a>
           <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg"><strong>macOS · Apple Silicon</strong><span>Unsigned DMG · v0.7.7</span></a>
@@ -269,7 +289,7 @@
         <div class="notes-list">
           <details>
             <summary>macOS builds are unsigned</summary>
-            <p>Drag the app into Applications, then run <code>xattr -cr "/Applications/Volyx Lens.app"</code> once, or right-click and choose Open. Signing and notarization follow when release credentials are configured.</p>
+            <p>Drag the app into Applications and try to open it once. On macOS 15 and later, go to System Settings → Privacy &amp; Security and choose <strong>Open Anyway</strong>. On macOS 13–14, right-click the app and choose Open. <code>xattr -cr "/Applications/Volyx Lens.app"</code> is an advanced fallback. It runs as a panel rather than a Dock app, so there may be no Dock icon; reopen it from Applications. The build is not notarised, so macOS may ask for Screen Recording permission again after an update.</p>
           </details>
           <details>
             <summary>Keys stay on your machine</summary>
@@ -277,7 +297,7 @@
           </details>
           <details>
             <summary>What works offline</summary>
-            <p>With a local Ollama server, responses run offline. Local Whisper covers offline batch transcription on Windows and Linux; macOS needs a configured whisper-server binary.</p>
+            <p>With a local Ollama server, responses run offline. Local Whisper covers offline batch transcription on Windows and Linux after you enable it and download a model; macOS needs a configured whisper-server binary.</p>
           </details>
           <details>
             <summary>Recording law is still yours</summary>

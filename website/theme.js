@@ -1,6 +1,7 @@
 // Apply the saved/system theme before the body renders, so there is no flash
 // of the wrong theme while the page is painting. Run inline in <head>.
 (function () {
+  document.documentElement.classList.add('js');
   var KEY = 'volyx-lens-theme';
   var saved = null;
   try { saved = localStorage.getItem(KEY); } catch (e) {}

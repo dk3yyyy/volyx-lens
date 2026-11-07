@@ -103,13 +103,63 @@ sources.forEach((button) => {
 });
 updateContext();
 
+/* Provider menu in the interface preview */
+const providerButton = document.querySelector('.app-provider');
+const providerMenu = document.querySelector('#provider-menu');
+const providerLabels = document.querySelectorAll('[data-provider-label], [data-provider]');
+
+function setProviderMenu(open) {
+  if (!providerButton || !providerMenu) return;
+  providerMenu.hidden = !open;
+  providerButton.setAttribute('aria-expanded', String(open));
+}
+
+if (providerButton && providerMenu) {
+  providerButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setProviderMenu(providerMenu.hidden);
+  });
+  providerMenu.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-provider-option]');
+    if (!option) return;
+    const value = option.dataset.providerOption;
+    providerLabels.forEach((label) => { label.textContent = value; });
+    providerMenu.querySelectorAll('[data-provider-option]').forEach((item) => {
+      item.setAttribute('aria-pressed', String(item === option));
+    });
+    setProviderMenu(false);
+    providerButton.focus();
+  });
+  document.addEventListener('click', (event) => {
+    if (!providerMenu.hidden && !event.target.closest('.app-provider, #provider-menu')) setProviderMenu(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !providerMenu.hidden) {
+      setProviderMenu(false);
+      providerButton.focus();
+    }
+  });
+}
+
+/* The hero composer is a preview, not a live request */
+const previewForm = document.querySelector('.composer');
+const previewStatus = document.querySelector('.preview-status');
+if (previewForm && previewStatus) {
+  previewForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    previewStatus.textContent = 'Preview only. Install Volyx Lens to ask real questions.';
+    window.clearTimeout(previewStatus._timer);
+    previewStatus._timer = window.setTimeout(() => { previewStatus.textContent = ''; }, 5000);
+  });
+}
+
 /* OS-aware download buttons */
 const RELEASE = 'https://github.com/dk3yyyy/volyx-lens/releases';
 const ASSETS = {
   win: { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-win-x64.exe`, label: 'Windows', detail: 'x64 installer' },
   'mac-arm64': { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg`, label: 'macOS Apple Silicon', detail: 'Unsigned DMG' },
   'mac-x64': { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-mac-x64-unsigned.dmg`, label: 'macOS Intel', detail: 'Unsigned DMG' },
-  mac: { href: `${RELEASE}/tag/v0.7.7`, label: 'macOS', detail: 'Choose your chip on the release page' },
+  mac: { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg`, label: 'macOS', detail: 'Apple silicon · unsigned DMG' },
   'linux-x64': { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-linux-x86_64.AppImage`, label: 'Linux x64', detail: 'AppImage' },
   'linux-arm64': { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-linux-arm64.AppImage`, label: 'Linux arm64', detail: 'AppImage' }
 };
@@ -138,7 +188,10 @@ async function detectOS() {
 async function initDownloads() {
   const os = await detectOS();
   const asset = os ? ASSETS[os] : null;
-  if (!asset) return;
+  if (!asset) {
+    document.querySelectorAll('[data-detected]').forEach((note) => { note.hidden = true; });
+    return;
+  }
   document.querySelectorAll('[data-download]').forEach((link) => {
     link.href = asset.href;
     const label = link.querySelector('span');
@@ -146,7 +199,10 @@ async function initDownloads() {
   });
   document.querySelectorAll('[data-detected]').forEach((note) => {
     note.textContent = `Detected ${asset.label} · ${asset.detail} · v0.7.7`;
+    note.hidden = false;
   });
+  const key = document.querySelector('.composer-key');
+  if (key) key.textContent = os.startsWith('mac') ? '⌘↵' : 'Ctrl↵';
 }
 
 initDownloads();
