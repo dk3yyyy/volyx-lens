@@ -14,6 +14,9 @@
   --accent-muted-fill: #646E9E;
   --accent-muted-hi: #7E89D0;
   --accent-muted-soft: #ACB0CC;
+  --theme-indigo: #6677FF;
+  --theme-sage: #B3CEB7;
+  --theme-ember: #FFA477;
   --cyan: #42CFE8;
   --live: #4FD19B;
   --warning: #F3B84B;
@@ -674,6 +677,20 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .s-field { display: flex; align-items: center; gap: 10px; }
 .s-field > label { width: 110px; flex: 0 0 110px; color: var(--tx-mut); font-size: 12px; line-height: 1.25; }
 .s-field input, .s-field select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: var(--r-8); border: 1px solid var(--accent-muted); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
+.s-theme-group { border: 1px solid var(--bd-hair); border-radius: var(--r-control); padding: 12px; margin: 0; display: grid; gap: 6px; }
+.s-theme-group legend { padding: 0 4px; color: var(--tx-mut); font-size: 11px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
+.s-theme-option { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid transparent; border-radius: var(--r-control); cursor: pointer; }
+.s-theme-option:hover { background: rgba(255,255,255,0.045); }
+.s-theme-option:has(input:checked) { border-color: var(--accent-muted); background: var(--accent-wash); }
+.s-theme-option input { accent-color: var(--accent-fill); }
+.s-theme-option > span:last-child { display: grid; gap: 1px; }
+.s-theme-option strong { color: var(--tx-1); font-size: 12px; font-weight: 650; }
+.s-theme-option small { color: var(--tx-mut); font-size: 10.5px; }
+.s-theme-swatch { width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22); box-shadow: inset 0 1px 0 rgba(255,255,255,0.18); }
+.s-theme-swatch[data-theme-swatch="indigo"] { background: var(--theme-indigo); }
+.s-theme-swatch[data-theme-swatch="sage"] { background: var(--theme-sage); }
+.s-theme-swatch[data-theme-swatch="ember"] { background: var(--theme-ember); }
+
 .s-field input:focus, .s-field select:focus { border-color: var(--accent); }
 .s-field input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px; margin-left: auto; padding: 0; accent-color: var(--accent); cursor: pointer; }
 .key-field .key-clear { width: auto; flex: 0 0 auto; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--tx-mut); border-radius: 7px; padding: 7px 8px; font-size: 10px; cursor: pointer; }

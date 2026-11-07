@@ -15,7 +15,7 @@ const MAX_DEEP_LINK_LENGTH = 2048;
 // Mirrors the data-settings-section values in renderer/index.html. A pane id is
 // an allowlist entry, never a selector or a URL, so it cannot widen the surface
 // if a link is hostile.
-const SETTINGS_PANES = Object.freeze(['providers', 'listening', 'context', 'shortcuts', 'updates', 'help']);
+const SETTINGS_PANES = Object.freeze(['providers', 'listening', 'context', 'appearance', 'shortcuts', 'updates', 'help']);
 
 // Host -> canonical route. `update` is an accepted spelling alias because
 // release notes and support replies naturally say either word; the parser always

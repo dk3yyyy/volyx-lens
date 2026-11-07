@@ -16,6 +16,7 @@ const root = path.join(__dirname, '..');
 const screenshotDir = process.env.VOLYX_LENS_SETTINGS_SCREENSHOT_DIR || '';
 const { STT_MODELS } = require('../src/provider-config');
 const settings = {
+  appearance: { theme: 'indigo' },
   provider: 'azure', fallbackProvider: 'openai', smart: true, onboarded: true, questionDetection: true, assistContext: 'both',
   credentialStatus: { present: { azure: true }, secure: true, backend: 'safeStorage' },
   models: { openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }, anthropic: { fast: '', smart: '' }, gemini: { fast: '', smart: '' }, azure: { fast: 'gpt-5.6-sol', smart: 'gpt-5.6-sol' }, deepseek: { fast: '', smart: '' }, groq: { fast: '', smart: '' }, openrouter: { fast: '', smart: '' }, ollama: { fast: '', smart: '' } },
@@ -95,7 +96,7 @@ app.whenReady().then(async () => {
   await win.webContents.executeJavaScript("document.querySelector('#more-btn').click()");
   await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'Settings to open');
 
-  const sections = ['providers', 'listening', 'context', 'shortcuts', 'updates'];
+  const sections = ['providers', 'listening', 'context', 'appearance', 'shortcuts', 'updates'];
   const heights = new Set();
   for (const section of sections) {
     await win.webContents.executeJavaScript(`document.querySelector('[data-settings-section="${section}"]').click()`);
@@ -125,6 +126,28 @@ app.whenReady().then(async () => {
     await capture(win, section);
   }
   assert.equal(heights.size, 1, 'settings shell height should remain stable');
+
+  await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"appearance\"]').click()");
+  await waitFor(win, "document.activeElement && document.activeElement.id === 'settings-appearance-title'", 'appearance heading focus');
+  const radioState = await win.webContents.executeJavaScript(`(() => {
+    const radios = [...document.querySelectorAll('input[name="accent-theme"]')];
+    return { count: radios.length, checked: radios.filter((radio) => radio.checked).map((radio) => radio.value), legend: document.querySelector('.s-theme-group legend').textContent, name: radios[0].name };
+  })()`);
+  assert.equal(radioState.count, 3, 'all three accent themes are exposed as radios');
+  assert.deepEqual(radioState.checked, ['indigo'], 'indigo is the initial checked theme');
+  assert.equal(radioState.name, 'accent-theme', 'the radios share one native group');
+  assert.equal(radioState.legend, 'Accent theme');
+  await win.webContents.executeJavaScript("document.querySelector('input[name=\"accent-theme\"][value=\"sage\"]').click()");
+  await waitFor(win, "document.documentElement.dataset.accentTheme === 'sage'", 'sage theme applies');
+  const themeState = await win.webContents.executeJavaScript(`({
+    attr: document.documentElement.dataset.accentTheme,
+    accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+    hint: localStorage.getItem('volyx.accentTheme')
+  })`);
+  assert.equal(themeState.attr, 'sage');
+  assert.equal(themeState.accent, '#B3CEB7');
+  assert.equal(themeState.hint, 'sage');
+  assert.equal(settings.appearance.theme, 'sage', 'the theme is persisted through settings');
 
   await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"listening\"]').click(); document.querySelector('#test-live-transcription-btn').click()");
   await waitFor(win, "document.querySelector('#realtime-test-result').textContent.includes('permission_client_mismatch')", 'development permission identity guidance');
@@ -257,7 +280,7 @@ app.whenReady().then(async () => {
   })()`);
   assert.equal(compact.overflowX, false, 'compact Settings must not overflow horizontally');
   assert.ok(compact.dialogRight <= compact.width, 'compact Settings dialog must fit');
-  assert.equal(compact.tabs, 6, 'all six settings sections are present at the minimum width');
+  assert.equal(compact.tabs, 7, 'all seven settings sections are present at the minimum width');
   assert.equal(compact.navOverflow, 0, `the settings nav must not scroll horizontally at 500px (overflowed by ${compact.navOverflow}px)`);
   assert.equal(compact.clippedTabs, 0, 'every settings tab must sit fully inside the nav at 500px');
   await capture(win, 'compact');
@@ -282,7 +305,7 @@ app.whenReady().then(async () => {
   await waitForHost(() => modalReports[modalReports.length - 1] === false, 'the recovery dialog to clear the modal state');
   assert.equal(modalReports[modalReports.length - 1], false, 'closing the recovery dialog should clear modal state');
 
-  console.log('Settings UI behavior passed: 5 simple pages, stable layout, focus containment/restoration, compact fit, and recovery dialog modal state.');
+  console.log('Settings UI behavior passed: 7 simple pages, stable layout, focus containment/restoration, compact fit, and recovery dialog modal state.');
   await guards.finish(0);
 }).catch(async (error) => {
   await guards.finish(1, error);

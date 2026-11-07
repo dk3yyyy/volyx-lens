@@ -2258,6 +2258,17 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
+  const ACCENT_THEMES = ['indigo', 'sage', 'ember'];
+  function normaliseAccentTheme(value) {
+    return ACCENT_THEMES.includes(value) ? value : 'indigo';
+  }
+  function applyAccentTheme(theme, { persistHint = false } = {}) {
+    const id = normaliseAccentTheme(theme);
+    document.documentElement.setAttribute('data-accent-theme', id);
+    if (persistHint) {
+      try { localStorage.setItem('volyx.accentTheme', id); } catch (error) { /* private mode or blocked storage */ }
+    }
+  }
   async function refreshAudioDevices() {
     const select = $('#audio-input-device');
     const selected = (settings.audio && settings.audio.inputDeviceId) || select.value || '';
@@ -2497,6 +2508,30 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   }
   document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', () => {
     selectSettingsSection(button.dataset.settingsSection, { focus: true });
+  }));
+
+  document.querySelectorAll('input[name="accent-theme"]').forEach((radio) => radio.addEventListener('change', async () => {
+    const previous = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
+    const theme = radio.value;
+    if (!ACCENT_THEMES.includes(theme)) return;
+    settings.appearance = { ...(settings.appearance || {}), theme };
+    applyAccentTheme(theme);
+    try {
+      settings = await volyxLens.settingsSet({ appearance: { theme } });
+      const saved = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
+      settings.appearance = { ...(settings.appearance || {}), theme: saved };
+      applyAccentTheme(saved, { persistHint: true });
+      if (saved !== theme) {
+        const savedRadio = document.querySelector(`input[name="accent-theme"][value="${saved}"]`);
+        if (savedRadio) savedRadio.checked = true;
+      }
+    } catch (error) {
+      settings.appearance = { ...(settings.appearance || {}), theme: previous };
+      applyAccentTheme(previous);
+      const restoreThemeRadio = document.querySelector(`input[name="accent-theme"][value="${previous}"]`);
+      if (restoreThemeRadio) restoreThemeRadio.checked = true;
+      showStatus(error && error.message ? error.message : 'The accent theme could not be saved.');
+    }
   }));
 
   let settingsPreviousFocus = null;
@@ -2818,6 +2853,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     renderProviderConfig();
     const storageState = settings.credentialStatus || {};
     $('#s-storage-warning').classList.toggle('hidden', !(storageState.secure === false && storageState.backend === 'plaintext-fallback'));
+    const theme = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
+    document.querySelectorAll('input[name="accent-theme"]').forEach((radio) => { radio.checked = radio.value === theme; });
+    applyAccentTheme(theme);
     $('#s-status').textContent = statusText();
   }
   function statusText() {
@@ -3563,6 +3601,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     renderTranscriptWorkspace();
     $('#live-dot').classList.toggle('off', !st.active);
     updateListeningButton(st.active);
+    applyAccentTheme(settings.appearance && settings.appearance.theme, { persistHint: true });
     if (!settings.onboarded) showOnboard();
     else volyxLens.setModalState(false);
     if (recovery && !recovery.unavailable) {

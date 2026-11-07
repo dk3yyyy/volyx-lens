@@ -8,7 +8,7 @@ const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
 const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
 const harness = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'check-settings-ui.js'), 'utf8');
-const sections = ['providers', 'listening', 'context', 'shortcuts', 'updates', 'help'];
+const sections = ['providers', 'listening', 'context', 'appearance', 'shortcuts', 'updates', 'help'];
 
 test('each settings section button names the page it controls', () => {
   for (const section of sections) {

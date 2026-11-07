@@ -213,6 +213,7 @@
           <button type="button" class="on" data-settings-section="providers" aria-controls="settings-page-providers"><strong>Providers</strong><span>Models and keys</span></button>
           <button type="button" data-settings-section="listening" aria-controls="settings-page-listening"><strong>Listening</strong><span>Audio and transcript</span></button>
           <button type="button" data-settings-section="context" aria-controls="settings-page-context"><strong>Context</strong><span>Resume and role</span></button>
+          <button type="button" data-settings-section="appearance" aria-controls="settings-page-appearance"><strong>Appearance</strong><span>Accent theme</span></button>
           <button type="button" data-settings-section="shortcuts" aria-controls="settings-page-shortcuts"><strong>Shortcuts</strong><span>Keyboard status</span></button>
           <button type="button" data-settings-section="updates" aria-controls="settings-page-updates"><strong>Updates</strong><span>Version and releases</span></button>
           <button type="button" data-settings-section="help" aria-controls="settings-page-help"><strong>Help</strong><span>Guide and support</span></button>
@@ -322,6 +323,17 @@
           <div class="context-actions"><button class="context-import" data-kind="jobDescription" type="button">Import Job Description</button><button class="context-remove hidden" data-kind="jobDescription" type="button">Remove</button></div>
         </div>
         <div id="context-storage-status" class="s-note">PDF, DOCX, TXT, or Markdown · 5 MB maximum. Extracted text is stored locally and protected by safeStorage/Keychain where available. Relevant excerpts are sent only when you request an answer.</div>
+          </section>
+
+          <section class="s-page" id="settings-page-appearance" data-settings-page="appearance" aria-labelledby="settings-appearance-title" hidden>
+            <div class="s-page-head"><h2 tabindex="-1" id="settings-appearance-title">Appearance</h2><p>The panel stays dark graphite. Only the accent changes, so status colours keep their meaning.</p></div>
+            <fieldset class="s-theme-group">
+              <legend>Accent theme</legend>
+              <label class="s-theme-option"><input type="radio" name="accent-theme" value="indigo" checked /><span class="s-theme-swatch" data-theme-swatch="indigo" aria-hidden="true"></span><span><strong>Indigo</strong><small>Default</small></span></label>
+              <label class="s-theme-option"><input type="radio" name="accent-theme" value="sage" /><span class="s-theme-swatch" data-theme-swatch="sage" aria-hidden="true"></span><span><strong>Sage</strong><small>Soft green</small></span></label>
+              <label class="s-theme-option"><input type="radio" name="accent-theme" value="ember" /><span class="s-theme-swatch" data-theme-swatch="ember" aria-hidden="true"></span><span><strong>Ember</strong><small>Warm amber</small></span></label>
+            </fieldset>
+            <div class="s-note">Changes apply immediately and persist across restarts. Every theme keeps white text on filled controls above 4.5:1 contrast.</div>
           </section>
 
           <section class="s-page" id="settings-page-listening" data-settings-page="listening" aria-labelledby="settings-listening-title" hidden>
