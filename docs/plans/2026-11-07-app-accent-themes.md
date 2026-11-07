@@ -113,7 +113,7 @@ git commit -m "feat: persist the accent theme setting"
 
 - [ ] **Step 1: Write the failing token test**
 
-Assert `:root` declares all ten accent tokens; `--accent` remains `#6677FF`; `--accent-fill` is `#505BDF`; `--accent-ink` is `#FFFFFF`; and no rule besides the declaration block uses `var(--accent)` as `background`/`background-color` for a control that carries white text. Add a static check for the existing focus rule still using `var(--accent-soft)`.
+Assert `:root` declares every accent token in the Design Contract; `--accent` remains `#6677FF`; `--accent-fill` is `#505BDF`; `--accent-ink` is `#FFFFFF`; and no rule besides the declaration block uses `var(--accent)` as `background`/`background-color` for a control that carries white text. Add a static check for the existing focus rule still using `var(--accent-soft)`.
 
 - [ ] **Step 2: Run the test**
 
@@ -122,7 +122,7 @@ Expected: FAIL on missing tokens/fill separation.
 
 - [ ] **Step 3: Implement the token split**
 
-Add the Indigo values from the table. Change filled controls to `background: var(--accent-fill)` / `color: var(--accent-ink)`, and gradients to `var(--accent-fill-hi)` → `var(--accent-fill)`. Keep `--accent` for text, icons and borders; keep `--accent-hi` for hover text and tinted selection surfaces; keep `--accent-soft` for focus. Replace accent-tinted rgba literals with `color-mix(in srgb, var(--accent) N%, transparent)` or the new hair/wash tokens.
+Add the Indigo values from the table. Change filled controls to `background: var(--accent-fill)` / `color: var(--accent-ink)`, and gradients to `var(--accent-fill-hi)` → `var(--accent-fill)`. Keep `--accent` for text, icons and borders; keep `--accent-hi` for hover text and tinted selection surfaces; keep `--accent-soft` for focus. Replace accent-tinted rgba literals with `color-mix(in srgb, var(--accent) N%, transparent)` or the new hair/wash tokens. Keep the cool glass structure (`--bd-hair`, `--bd-strong`, `--fill-1`, `--fill-2`, `rgba(199,206,255,…)`) shared and neutral: it is the glass, not the accent. Do not tint it per theme.
 
 - [ ] **Step 4: Verify the default is visually stable except for the fill correction**
 
@@ -182,7 +182,7 @@ git commit -m "refactor: move accent tints onto theme tokens"
 
 - [ ] **Step 1: Write the failing palette tests**
 
-For every id, resolve all ten tokens and assert: `--accent`, `--accent-hi`, `--accent-soft` ≥4.5:1 on `#0B1020` and `#131A2B`; `--accent-ink` on `--accent-fill` and on `--accent-fill-hi` ≥4.5:1; `--accent-soft` on both surfaces ≥3:1; `--accent-muted` ≥4.5:1; white on `--accent-muted-fill` ≥4.5:1; accent hue differs from cyan by ≥30°. Assert Sage/Ember status tokens are untouched.
+For every id, resolve all accent tokens and assert: `--accent`, `--accent-hi`, `--accent-soft` ≥4.5:1 on `#0B1020` and `#131A2B`; `--accent-ink` on `--accent-fill` and on `--accent-fill-hi` ≥4.5:1; `--accent-soft` on both surfaces ≥3:1; `--accent-muted` ≥4.5:1; white on `--accent-muted-fill` ≥4.5:1; accent hue differs from cyan by ≥30°. Assert Sage/Ember status tokens are untouched. Assert the warning-chip text rule resolves to `var(--warning)`, not a fixed amber that collides with Ember soft.
 
 - [ ] **Step 2: Run tests**
 
@@ -191,7 +191,7 @@ Expected: FAIL because the two theme blocks are absent.
 
 - [ ] **Step 3: Add the two blocks**
 
-Use the Design Contract values exactly. Do not change surfaces, text, status, glass, radii or layout.
+Also fix the focused-input boundary: today `rgba(255,255,255,.14)` is 1.53:1 on the panel. Use `var(--accent)` or `var(--accent-soft)` so every theme clears 3:1. Use the Design Contract values exactly. Do not change surfaces, text, status, glass, radii or layout. One exception: the hardcoded warning chip text `#FFD49A` is nearly identical to Ember’s `--accent-soft` (#FFD4BE); change that chip to `var(--warning)` so warning stays semantically distinct.
 
 - [ ] **Step 4: Verify**
 
@@ -210,30 +210,33 @@ git commit -m "feat: add sage and ember accent palettes"
 **Files:**
 - Create: `renderer/theme-boot.js`
 - Modify: `renderer/index.html:5-7` (script before stylesheet)
-- Modify: `preload.js:3-8` (one `initialAccentTheme` value)
-- Modify: `main.js:2821-2855` (trusted sync handler)
+- Modify: `preload.js:3-8` (`initialAccentTheme` from argv, no new IPC)
+- Modify: `main.js:1263-1291` (window `additionalArguments`)
 - Test: `tests/theme-boot.test.js`
 
 **Interfaces:**
-- Produces: `window.volyxLens.initialAccentTheme: string` (validated id, never the settings object).
-- Produces: `document.documentElement.dataset.accentTheme` before the first stylesheet paint.
+- Produces: `window.volyxLens.initialAccentTheme: string` (validated id, extracted from `process.argv`, never the settings object).
+- Produces: `document.documentElement.dataset.accentTheme` before the stylesheet resolves.
+- Produces: `localStorage['volyx.accentTheme']`, a non-sensitive paint hint written after a successful save.
 
 - [ ] **Step 1: Write the failing boot tests**
 
-Assert the head script appears before `styles.css`; it is external, not inline; it accepts only the three ids and defaults to Indigo; preload exposes exactly one string; the main handler uses `isTrustedRenderer(event.sender, event.senderFrame)` and returns Indigo for untrusted senders.
+Assert the head script appears before `styles.css`; it is external, not inline; it accepts only the three ids and defaults to Indigo; preload exposes exactly one string and extracts only the `--volyx-accent=` argument; no new IPC channel exists; the main process adds `additionalArguments` before `new BrowserWindow`; a missing/unknown argv value gives Indigo.
 
 - [ ] **Step 2: Run tests**
 
 Run: `node --test tests/theme-boot.test.js`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement the sync read and bootstrap**
+- [ ] **Step 3: Implement the argument path and bootstrap**
 
-Preload calls `ipcRenderer.sendSync('appearance:initial-theme')`. Main registers `ipcMain.on` before window creation, returns `store.getPublicSettings().appearance.theme` for trusted senders and `'indigo'` otherwise. `theme-boot.js` validates against the three ids and sets `document.documentElement.dataset.accentTheme`; if `window.volyxLens` is absent it sets Indigo.
+At window creation, read `store.getPublicSettings().appearance.theme`, normalise it, and add `additionalArguments: ['--volyx-accent=<id>']` to `webPreferences`. In preload, parse only the argument with that prefix, validate it against the three ids, and expose `initialAccentTheme`. In `theme-boot.js`, read the localStorage hint first, then `window.volyxLens.initialAccentTheme`, validate, and set `data-accent-theme`; default Indigo if neither is valid. After a successful theme save, write the hint. After `settingsGet` resolves, reconcile from the store as the authority.
 
-- [ ] **Step 4: Verify cold start per theme**
+Do **not** use `sendSync` IPC: the trusted-sender check depends on `frame.url`, which is not reliable during preload, and a synchronous main-process read is unnecessary. The argv value is produced by main after the store is loaded, so a cold start is correct. The localStorage hint covers a renderer-crash reload, where Electron reuses the original argv.
 
-Run the settings harness with each theme seeded; assert the first animation frame and `dom-ready` computed `--accent` equal the seeded theme, not Indigo. Reload and repeat.
+- [ ] **Step 4: Verify cold start, reload and first frame**
+
+Run the settings harness with each theme seeded and with `additionalArguments` set the same way production does. Assert `dom-ready` and the first animation-frame computed `--accent` equal the seeded theme, not Indigo. Reload after a theme change and repeat; assert the hint prevents a stale frame and the store value wins after boot.
 
 - [ ] **Step 5: Commit**
 
