@@ -5,10 +5,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const css = fs.readFileSync(path.join(__dirname, '..', 'website', 'styles.css'), 'utf8');
+const root = path.join(__dirname, '..');
+const css = fs.readFileSync(path.join(root, 'website', 'styles.css'), 'utf8');
+const theme = fs.readFileSync(path.join(root, 'website', 'theme.js'), 'utf8');
+const script = fs.readFileSync(path.join(root, 'website', 'script.js'), 'utf8');
 
 function hex(value) {
-  const m = value.trim().match(/^#([0-9a-f]{6})$/i);
+  const m = String(value).trim().match(/^#([0-9a-f]{6})$/i);
   assert.ok(m, `expected a six digit hex colour, got ${value}`);
   return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
 }
@@ -27,62 +30,69 @@ function contrast(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-function token(blockPattern, name) {
-  const block = css.match(blockPattern);
-  assert.ok(block, `expected a theme block matching ${blockPattern}`);
-  const value = block[1].match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i'));
-  assert.ok(value, `--${name} is defined`);
-  return value[1];
+function block(pattern, label) {
+  const match = css.match(pattern);
+  assert.ok(match, `expected ${label}`);
+  return match[1];
 }
 
-function rootToken(name) {
-  return token(/:root \{([\s\S]*?)\n\}/, name);
+function token(scope, name) {
+  const match = scope.match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i'));
+  assert.ok(match, `--${name} is defined`);
+  return match[1];
 }
 
-function releaseToken(name) {
-  return token(/\.release-section \{([\s\S]*?)\n\}/, name);
-}
+const light = block(/:root \{([\s\S]*?)\n\}/, 'the light token block');
+const dark = block(/\[data-theme="dark"\] \{([\s\S]*?)\n\}/, 'the dark token block');
 
-test('muted text keeps 4.5:1 on the page ground', () => {
-  const ratio = contrast(hex(rootToken('muted')), hex(rootToken('bg')));
-  assert.ok(ratio >= 4.5, `muted-on-background contrast is ${ratio.toFixed(2)}`);
+test('light and dark themes both define the same core roles', () => {
+  for (const name of ['bg', 'surface', 'ink', 'muted', 'accent', 'accent-ink', 'field-slate', 'field-sage', 'field-blush', 'field-olive']) {
+    assert.ok(token(light, name), `light --${name}`);
+    assert.ok(token(dark, name), `dark --${name}`);
+  }
 });
 
-test('hero note keeps 4.5:1 on the dark hero', () => {
-  const ratio = contrast(hex(rootToken('deep-muted')), hex(rootToken('deep')));
-  assert.ok(ratio >= 4.5, `hero note contrast is ${ratio.toFixed(2)}`);
+test('muted text keeps 4.5:1 in both themes', () => {
+  for (const [name, scope] of [['light', light], ['dark', dark]]) {
+    const ratio = contrast(hex(token(scope, 'muted')), hex(token(scope, 'bg')));
+    assert.ok(ratio >= 4.5, `${name} muted-on-background contrast is ${ratio.toFixed(2)}`);
+  }
 });
 
-test('the release section keeps its own dark ink on the mint field', () => {
-  const ink = hex(releaseToken('ink'));
-  const muted = hex(releaseToken('muted'));
-  const background = hex(rootToken('accent'));
-  assert.ok(contrast(ink, background) >= 4.5, 'release ink contrast');
-  assert.ok(contrast(muted, background) >= 4.5, 'release muted contrast');
+test('accent buttons keep 4.5:1 in both themes', () => {
+  for (const [name, scope] of [['light', light], ['dark', dark]]) {
+    const ratio = contrast(hex(token(scope, 'accent')), hex(token(scope, 'accent-ink')));
+    assert.ok(ratio >= 4.5, `${name} accent contrast is ${ratio.toFixed(2)}`);
+  }
 });
 
-test('the release section does not inherit the dark-theme ink', () => {
-  assert.match(css, /\.release-section \{[\s\S]*?--ink: #232323/i);
-});
-
-test('the aperture fragment keeps 4.5:1 on its light panel', () => {
-  const ratio = contrast(hex('#5f5f5f'), hex('#f3f3f3'));
-  assert.ok(ratio >= 4.5, `aperture note contrast is ${ratio.toFixed(2)}`);
+test('the olive field keeps its pale ink in both themes', () => {
+  for (const [name, scope] of [['light', light], ['dark', dark]]) {
+    const ratio = contrast(hex(token(scope, 'field-olive')), hex(token(scope, 'olive-ink')));
+    assert.ok(ratio >= 4.5, `${name} olive field contrast is ${ratio.toFixed(2)}`);
+  }
 });
 
 test('the release ribbon keeps 4.5:1 and wraps instead of clipping', () => {
   const rule = css.match(/\.release-ribbon \{([\s\S]*?)\n\}/);
   assert.ok(rule, 'the ribbon rule exists');
-  assert.match(rule[1], /background:\s*var\(--deep\)/);
-  assert.match(rule[1], /color:\s*var\(--deep-muted\)/);
-  const ratio = contrast(hex(rootToken('deep')), hex(rootToken('deep-muted')));
-  assert.ok(ratio >= 4.5, `ribbon contrast is ${ratio.toFixed(2)}`);
-  assert.match(rule[1], /flex-wrap:\s*wrap/, 'the ribbon wraps at narrow widths');
-  assert.doesNotMatch(rule[1], /white-space:\s*nowrap/, 'the ribbon never clips');
+  assert.match(rule[1], /background:\s*var\(--accent\)/);
+  assert.match(rule[1], /color:\s*var\(--accent-ink\)/);
+  assert.match(rule[1], /flex-wrap:\s*wrap/);
+  assert.doesNotMatch(rule[1], /white-space:\s*nowrap/);
 });
 
-test('the hero note does not fall below 11px', () => {
+test('the page follows the operating system until a choice is stored', () => {
+  assert.match(theme, /prefers-color-scheme: dark/);
+  assert.match(script, /prefers-color-scheme: dark/);
+  assert.match(script, /systemTheme\.addEventListener\('change'/);
+  assert.match(script, /saved !== 'light' && saved !== 'dark'/);
+});
+
+test('the hero note and body text stay above the floor', () => {
   const rule = css.match(/\.hero-note \{[^}]*font-size:\s*([.\d]+)rem/);
   assert.ok(rule, 'the hero note size is explicit');
   assert.ok(parseFloat(rule[1]) * 16 >= 11, 'hero note is at least 11px');
+  const body = css.match(/--step-body:\s*clamp\(([\d.]+)rem/);
+  assert.ok(body && parseFloat(body[1]) >= 1.0625, 'body step starts at 17px');
 });

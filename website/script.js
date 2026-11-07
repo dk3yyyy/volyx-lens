@@ -118,7 +118,7 @@ function applyTheme(theme, { persist = false } = {}) {
   const isLight = theme === 'light';
   document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
   if (themeColorMeta) {
-    themeColorMeta.setAttribute('content', isLight ? '#f3f3f3' : '#161616');
+    themeColorMeta.setAttribute('content', isLight ? '#eef0ea' : '#141816');
   }
   if (themeToggle) {
     themeToggle.setAttribute('aria-label', isLight ? 'Switch to dark mode' : 'Switch to light mode');
@@ -140,7 +140,7 @@ function currentTheme() {
     // ignore storage failures
   }
   if (saved === 'light' || saved === 'dark') return saved;
-  return 'light';
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
 // The theme is already set by the inline script in <head> to avoid a flash.
@@ -149,7 +149,7 @@ function currentTheme() {
 const initialTheme = currentTheme();
 document.documentElement.setAttribute('data-theme', initialTheme === 'light' ? 'light' : 'dark');
 if (themeColorMeta) {
-  themeColorMeta.setAttribute('content', initialTheme === 'light' ? '#f3f3f3' : '#161616');
+  themeColorMeta.setAttribute('content', initialTheme === 'light' ? '#eef0ea' : '#141816');
 }
 if (themeToggle) {
   themeToggle.setAttribute('aria-label', initialTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
@@ -162,6 +162,17 @@ if (themeToggle) {
 window.addEventListener('storage', (event) => {
   if (event.key === THEME_KEY && event.newValue) applyTheme(event.newValue);
 });
+
+const systemTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+if (systemTheme && typeof systemTheme.addEventListener === 'function') {
+  systemTheme.addEventListener('change', () => {
+    let saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (error) { /* storage unavailable */ }
+    if (saved !== 'light' && saved !== 'dark') {
+      applyTheme(systemTheme.matches ? 'dark' : 'light');
+    }
+  });
+}
 
 const RELEASE = 'https://github.com/dk3yyyy/volyx-lens/releases';
 const DL_ASSETS = {

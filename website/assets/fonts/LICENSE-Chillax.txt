@@ -1,0 +1,8 @@
+Chillax is by Indian Type Foundry, distributed by Fontshare.
+Licensed under the ITF Free Font License (FFL), free for personal and commercial use.
+https://www.fontshare.com/fonts/chillax
+https://www.fontshare.com/licenses/itf-ffl
+
+The three WOFF2 files in this folder are the 400, 500 and 600 weights served by
+cdn.fontshare.com for the Chillax family. They are self-hosted so the page keeps
+its no-third-party-request policy.
