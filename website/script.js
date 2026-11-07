@@ -53,7 +53,7 @@ const themeColor = document.querySelector('meta[name="theme-color"]');
 function applyTheme(theme, { persist = false } = {}) {
   const light = theme === 'light';
   document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
-  if (themeColor) themeColor.setAttribute('content', light ? '#eceee7' : '#101411');
+  if (themeColor) themeColor.setAttribute('content', light ? '#efeee6' : '#0f1310');
   if (themeToggle) {
     themeToggle.setAttribute('aria-label', light ? 'Switch to dark mode (currently light)' : 'Switch to light mode (currently dark)');
   }
@@ -106,6 +106,8 @@ function updateContext() {
       const base = key === 'screen' ? 'Display 1' : key === 'mic' ? 'Built-in' : 'System';
       small.textContent = `${base} · ${on ? 'On' : 'Off'}`;
     }
+    const flag = button.querySelector('.src-flag');
+    if (flag) flag.hidden = on;
   });
   if (contextCount) contextCount.textContent = `${active.length} of 3 sources`;
 }
@@ -212,8 +214,8 @@ async function initDownloads() {
   }
   document.querySelectorAll('[data-download]').forEach((link) => {
     link.href = asset.href;
-    const label = link.querySelector('span');
-    if (label) label.textContent = `Download for ${asset.label}`;
+    // The label stays universal; the detected platform is secondary metadata.
+    link.setAttribute('aria-label', `Download Volyx Lens for ${asset.label}`);
   });
   document.querySelectorAll('[data-detected]').forEach((note) => {
     note.textContent = `Detected ${asset.label} · ${asset.detail} · v0.8.0`;

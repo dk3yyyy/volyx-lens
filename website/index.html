@@ -3,9 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eceee7">
-  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101411">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#efeee6">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1310">
   <meta name="color-scheme" content="light dark">
+  <meta name="page-type" content="software">
+  <meta name="site-kind" content="software">
   <meta name="description" content="Volyx Lens is a private desktop assistant for macOS, Windows and Linux. Choose the screen, microphone and meeting audio it can use, then send it straight to the provider you configured.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vdu1mkBtPj4jSI7Qn/t3Za7dntLpf7U6DAMMy5QREGw='; style-src 'self'; img-src 'self'; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <link rel="preload" href="assets/fonts/chillax-400.woff2" as="font" type="font/woff2" crossorigin>
@@ -41,6 +43,7 @@
   </script>
 </head>
 <body>
+  <!-- Plan: software. Hero split 5/7 with a live app object; dark route map with a machine/provider boundary; three native work scenes; provider ledger; install table; disclosure notes. -->
   <a class="skip-link" href="#main">Skip to content</a>
 
   <header class="site-header">
@@ -79,110 +82,134 @@
     <section class="hero" id="top" aria-labelledby="hero-title">
       <div class="wrap hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow">Desktop AI · macOS · Windows · Linux (experimental)</p>
+          <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span>Desktop context panel</p>
           <h1 id="hero-title">Choose what your AI sees and hears.</h1>
-          <p class="hero-lede">Volyx Lens is a desktop AI panel for your screen, microphone and meeting audio. Choose what it can see and hear, then send that to the provider you configured. No Volyx Lens server sits in between.</p>
+          <p class="hero-lede">Volyx Lens is a desktop AI panel for your screen, microphone and meeting audio. Pick the sources, then send them to the provider you configured.</p>
           <div class="hero-actions">
-            <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.0" data-download><span>Download Volyx Lens</span></a>
-            <a class="button button-quiet" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">View source<span class="sr-only"> (opens in a new tab)</span></a>
+            <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.9" data-download>
+              <span>Download Volyx Lens</span>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg>
+            </a>
+            <a class="text-link hero-source" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">View source<span class="sr-only"> (opens in a new tab)</span></a>
           </div>
-          <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.8.0</p>
+          <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.7.9</p>
+          <ul class="trust-row">
+            <li><strong>0</strong><span>relay servers</span></li>
+            <li><strong>12</strong><span>response providers</span></li>
+            <li><strong>3</strong><span>capture sources</span></li>
+          </ul>
+          <p class="hero-note">Free and open source under Apache License 2.0. This page is a preview and captures nothing.</p>
         </div>
 
         <div class="hero-panel">
-          <div class="app-window" role="group" aria-label="Interface preview of Volyx Lens with selectable context">
+          <div class="app-window" role="group" aria-label="Volyx Lens interface preview with three capture sources, a provider choice and one answer">
             <div class="app-bar">
+              <span class="app-mark" aria-hidden="true"><i></i></span>
               <span class="app-title">Volyx Lens</span>
+              <span class="app-local">local</span>
               <span class="app-state"><i aria-hidden="true"></i> Ready</span>
               <button class="app-provider" type="button" aria-expanded="false" aria-controls="provider-menu">
-                <span data-provider-label>OpenAI</span> <i aria-hidden="true">▾</i>
+                <span data-provider-label>OpenAI</span>
+                <svg viewBox="0 0 10 6" aria-hidden="true"><path d="m1 1 4 4 4-4"/></svg>
               </button>
               <div class="provider-menu" id="provider-menu" hidden>
                 <button type="button" data-provider-option="OpenAI" aria-pressed="true">OpenAI<small>Responses, transcription</small></button>
                 <button type="button" data-provider-option="Anthropic" aria-pressed="false">Anthropic<small>Responses</small></button>
-                <button type="button" data-provider-option="Gemini" aria-pressed="false">Google Gemini<small>Responses, batch transcription</small></button>
+                <button type="button" data-provider-option="Google Gemini" aria-pressed="false">Gemini<small>Responses, batch transcription</small></button>
                 <button type="button" data-provider-option="Groq" aria-pressed="false">Groq<small>Responses, Whisper</small></button>
               </div>
             </div>
-            <div class="app-context" role="group" aria-label="Choose context sources">
+
+            <div class="app-sources">
+              <div class="sources-head">
+                <span>Capture sources</span>
+                <span data-context-count aria-live="polite">2 of 3 sources</span>
+              </div>
               <button class="source is-on" type="button" data-source="screen" aria-pressed="true">
-                <span class="source-dot" aria-hidden="true"></span>
+                <span class="src-num" aria-hidden="true">01</span>
+                <span class="src-copy"><strong>Screen</strong><small>Display 1 · On</small></span>
                 <span class="toggle" aria-hidden="true"><i></i></span>
-                <strong>Screen</strong>
-                <small aria-hidden="true">Display 1 · On</small>
               </button>
               <button class="source is-on" type="button" data-source="mic" aria-pressed="true">
-                <span class="source-dot" aria-hidden="true"></span>
+                <span class="src-num" aria-hidden="true">02</span>
+                <span class="src-copy"><strong>Microphone</strong><small>Built-in · On</small></span>
                 <span class="toggle" aria-hidden="true"><i></i></span>
-                <strong>Microphone</strong>
-                <small aria-hidden="true">Built-in · On</small>
               </button>
               <button class="source" type="button" data-source="system" aria-pressed="false">
-                <span class="source-dot" aria-hidden="true"></span>
+                <span class="src-num" aria-hidden="true">03</span>
+                <span class="src-copy"><strong>Meeting audio</strong><small>System · Off</small><span class="src-flag">off by default</span></span>
                 <span class="toggle" aria-hidden="true"><i></i></span>
-                <strong>Meeting audio</strong>
-                <small aria-hidden="true">System · Off</small>
               </button>
             </div>
+
             <div class="app-main">
-              <div class="app-thread">
-                <p class="bubble bubble-user">Why is the native build failing?<span>Screen attached</span></p>
-                <div class="bubble bubble-answer">
-                  <p class="answer-meta">Volyx Lens <span>·</span> <b data-provider>OpenAI</b></p>
-                  <p>The Swift helper is linking against the wrong SDK. Rebuild it with the current Xcode toolchain, then rerun packaging.</p>
-                  <pre><code>npm run build:native</code></pre>
-                  <p class="answer-foot"><span data-context-count aria-live="polite">2 of 3 sources</span></p>
+              <p class="thread-label">Question with screen context</p>
+              <div class="thread">
+                <p class="thread-q">What changed in this diff?</p>
+                <div class="thread-a">
+                  <p class="answer-meta"><b>Volyx Lens</b><span>via <b data-provider>OpenAI</b> · 2 of 3 sources</span></p>
+                  <p>The retry limit moved into <code>config.js</code>. Two callers still read the old constant, so the backoff never resets.</p>
+                  <pre><code>src/retry.js:42</code></pre>
                 </div>
               </div>
               <form class="composer" aria-label="Ask a question">
                 <label class="sr-only" for="ask">Ask about what you see</label>
-                <input id="ask" type="text" placeholder="Ask about this error" autocomplete="off">
-                <span class="composer-key" aria-hidden="true">⌘↵</span>
+                <input id="ask" type="text" placeholder="Ask about this diff" autocomplete="off">
+                <span class="composer-key" aria-hidden="true">Ctrl↵</span>
                 <button type="submit" aria-label="Send question">Send</button>
               </form>
               <p class="preview-status" role="status" aria-live="polite"></p>
             </div>
           </div>
-          <p class="panel-caption">Interface preview. This page captures nothing.</p>
-        </div>
-
-        <div class="hero-meta">
-          <ul class="trust-row">
-            <li><strong>0</strong> relay servers</li>
-            <li><strong>12</strong> response providers</li>
-            <li><strong>3</strong> capture sources</li>
-          </ul>
-          <p class="hero-note">Free and open source under Apache License 2.0. Bring a key for hosted providers, or point it at a local model.</p>
         </div>
       </div>
     </section>
 
-    <section class="band band-route" id="route" aria-labelledby="route-title">
+    <section class="route" id="route" aria-labelledby="route-title">
       <div class="wrap">
-        <div class="section-head">
-          <p class="eyebrow">01 · The route</p>
-          <h2 id="route-title">Your context goes straight to your provider.</h2>
-          <p>Selected context goes to the provider you configured. Volyx Lens runs no relay, and no Volyx Lens server receives it. Session media stays in memory; saved transcripts stay on this device.</p>
+        <div class="route-head">
+          <div>
+            <p class="eyebrow">01 — The route</p>
+            <h2 id="route-title">Your context goes straight to your provider.</h2>
+          </div>
+          <p class="route-intro">Selected context goes to the provider you configured. Volyx Lens runs no relay, and no Volyx Lens server sits in between. Session media stays in memory; saved transcripts stay on this device.</p>
         </div>
-        <div class="route" role="img" aria-label="Your device sends selected context to the local Volyx Lens app, which sends it directly to the AI provider you configured. No Volyx Lens server sits in the path.">
-          <div class="route-node">
-            <span class="route-label">Your device</span>
-            <strong>Screen · Microphone · Meeting audio</strong>
-            <small>Only the sources you turn on</small>
+
+        <div class="route-map" role="img" aria-label="Your machine holds the sources and the Volyx Lens app. One direct, encrypted line leaves it for the AI provider you configured. No relay and no Volyx Lens server sit on that line.">
+          <div class="route-zone route-zone-local">
+            <p class="zone-label">Your machine</p>
+            <div class="route-node route-node-sources">
+              <span class="node-kicker">Sources</span>
+              <strong>Screen · Microphone · Meeting audio</strong>
+              <small>Only the sources you switch on</small>
+            </div>
+            <div class="route-join" aria-hidden="true"><i></i></div>
+            <div class="route-node route-node-app">
+              <span class="node-kicker">Local app</span>
+              <strong>Volyx Lens</strong>
+              <small>Runs on your machine · keys in OS secure storage</small>
+            </div>
           </div>
-          <div class="route-link" aria-hidden="true"><i></i></div>
-          <div class="route-node route-node-app">
-            <span class="route-label">Local app</span>
-            <strong>Volyx Lens</strong>
-            <small>Runs on your machine</small>
+
+          <div class="route-cross" aria-hidden="true">
+            <span class="cross-kicker">Direct request</span>
+            <span class="cross-line"><i class="cross-pulse"></i></span>
+            <span class="no-relay">No relay</span>
+            <span class="cross-proto">TLS · your key</span>
+            <span class="ghost-node">Volyx server <b>none</b></span>
           </div>
-          <div class="route-link" aria-hidden="true"><i></i></div>
-          <div class="route-node">
-            <span class="route-label">Your choice</span>
-            <strong>AI provider</strong>
-            <small>Your key · your account</small>
+
+          <div class="route-zone route-zone-provider">
+            <p class="zone-label">Provider</p>
+            <div class="route-node route-node-provider">
+              <span class="node-kicker">Your account</span>
+              <strong>AI provider</strong>
+              <small>OpenAI · Anthropic · Ollama · your endpoint</small>
+            </div>
+            <p class="provider-foot">Your model · your bill</p>
           </div>
         </div>
+
         <dl class="fact-row">
           <div><dt>Relay servers</dt><dd>0</dd></div>
           <div><dt>Keys stored</dt><dd>OS secure storage</dd></div>
@@ -195,101 +222,223 @@
     <section class="work" id="work" aria-labelledby="work-title">
       <div class="wrap">
         <div class="section-head">
-          <p class="eyebrow">02 · What it does</p>
-          <h2 id="work-title">Screen help, meeting capture, Task Context.</h2>
-          <p>Auto-assist, meeting detection and slide tracking are off by default.</p>
+          <div>
+            <p class="eyebrow">02 — What it does</p>
+            <h2 id="work-title">Screen help, meeting capture, Task Context.</h2>
+          </div>
+          <p>Three ways to give the panel context. Auto-assist, meeting detection and slide tracking are off by default.</p>
         </div>
-        <div class="work-grid">
-          <article class="work-card work-card-wide">
-            <img class="work-shot" src="assets/volyx-lens-stage.png" width="1184" height="752" alt="Volyx Lens with screen and microphone context switched on, answering a question about a failing native build." loading="lazy" decoding="async">
-            <div class="work-copy">
-              <h3>Debug what is on screen</h3>
-              <p>Ask about an error, a diff or a dense document without restating what is visible.</p>
-              <a class="work-link" href="#route">How context is sent</a>
+
+        <article class="work-row work-row-screen">
+          <div class="work-copy">
+            <p class="row-index">01 / Screen help</p>
+            <h3>Ask about what is already on screen</h3>
+            <p>Point at an error, a diff or a dense document without retyping it. The screen stays on your machine until you send the question.</p>
+            <p class="row-detail">Screen + microphone · 2 of 3 sources</p>
+          </div>
+          <figure class="work-shot">
+            <img src="assets/volyx-lens-stage.png" width="1184" height="752" alt="Volyx Lens with screen and microphone context switched on, answering a question about a failing native build." loading="lazy" decoding="async">
+          </figure>
+        </article>
+
+        <article class="work-row work-row-meeting">
+          <div class="meeting-head">
+            <div>
+              <p class="row-index">02 / Meeting capture</p>
+              <h3>Meeting transcripts, split by speaker</h3>
             </div>
-          </article>
-          <article class="work-card">
-            <div class="work-ui" aria-hidden="true">
-              <p class="ui-line"><span>You</span><b>Speaking</b></p>
-              <p class="ui-line"><span>Them</span><b>Listening</b></p>
-            </div>
-            <h3>Meeting transcripts, split by speaker</h3>
             <p>Separate You and Them channels, searchable history on your device, and notes only when you ask for them.</p>
-          </article>
-          <article class="work-card">
-            <div class="work-ui" aria-hidden="true">
-              <p class="ui-line"><span>Task Context</span><b>4 of 6</b></p>
-              <p class="ui-line"><span>Omitted</span><b>2 screens</b></p>
+          </div>
+
+          <div class="transcript" aria-hidden="true">
+            <div class="tr-bar">
+              <span class="tr-live"><i></i>Recording</span>
+              <span>Design review</span>
+              <span class="tr-clock">24:18</span>
+              <span class="tr-right">System audio · on this device</span>
             </div>
+            <div class="tr-cols">
+              <div class="tr-col">
+                <p class="tr-who">You <span>Local microphone</span></p>
+                <p class="tr-line"><span class="tr-time">00:42</span><span>Let’s keep the settings pane to one screen.</span></p>
+                <p class="tr-line"><span class="tr-time">01:05</span><span>The provider list is the part people scan first.</span></p>
+                <p class="tr-line"><span class="tr-time">02:11</span><span>Move the fallback under the default, not beside it.</span></p>
+                <p class="tr-line"><span class="tr-time">03:24</span><span>I’ll write the notes after we agree on scope.</span></p>
+              </div>
+              <div class="tr-col">
+                <p class="tr-who">Them <span>System audio</span></p>
+                <p class="tr-line"><span class="tr-time">00:48</span><span>Agreed. One screen, with the toggles at the top.</span></p>
+                <p class="tr-line"><span class="tr-time">01:19</span><span>Can we keep the custom endpoint at the end?</span></p>
+                <p class="tr-line"><span class="tr-time">02:16</span><span>Yes, and show what was left out of context.</span></p>
+                <p class="tr-line"><span class="tr-time">03:31</span><span>Send the transcript round when it’s done.</span></p>
+              </div>
+            </div>
+            <div class="tr-foot">
+              <span>Two channels · searchable history</span>
+              <span class="tr-notes">Notes: off · ask when you need them</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="work-row work-row-task">
+          <div class="work-copy">
+            <p class="row-index">03 / Task Context</p>
             <h3>Several screens in Task Context</h3>
             <p>Task Context keeps a small set of screens in local memory and tells you what it left out.</p>
-          </article>
-          <article class="work-card">
-            <div class="work-ui" aria-hidden="true">
-              <p class="ui-line"><span>Default</span><b>OpenAI</b></p>
-              <p class="ui-line"><span>Fallback</span><b>Groq</b></p>
+            <p class="row-detail">4 kept · 2 omitted · nothing sent until you ask</p>
+          </div>
+
+          <div class="manifest" aria-hidden="true">
+            <div class="manifest-head">
+              <span>Task Context</span>
+              <span>6 screens seen</span>
             </div>
-            <h3>One default. One fallback.</h3>
-            <p>A default and one fallback. The fallback is tried before any text arrives, so two answers are never blended.</p>
-          </article>
-        </div>
+            <div class="manifest-row">
+              <span class="m-num">01</span>
+              <span class="m-thumb" aria-hidden="true"></span>
+              <span class="m-name">Editor</span>
+              <span class="m-state">Kept</span>
+            </div>
+            <div class="manifest-row">
+              <span class="m-num">02</span>
+              <span class="m-thumb" aria-hidden="true"></span>
+              <span class="m-name">Docs</span>
+              <span class="m-state">Kept</span>
+            </div>
+            <div class="manifest-row">
+              <span class="m-num">03</span>
+              <span class="m-thumb" aria-hidden="true"></span>
+              <span class="m-name">Terminal</span>
+              <span class="m-state">Kept</span>
+            </div>
+            <div class="manifest-row">
+              <span class="m-num">04</span>
+              <span class="m-thumb" aria-hidden="true"></span>
+              <span class="m-name">Pull request</span>
+              <span class="m-state">Kept</span>
+            </div>
+            <div class="manifest-row is-out">
+              <span class="m-num">05</span>
+              <span class="m-thumb" aria-hidden="true"></span>
+              <span class="m-name">Mail</span>
+              <span class="m-state">Omitted</span>
+            </div>
+            <div class="manifest-row is-out">
+              <span class="m-num">06</span>
+              <span class="m-thumb" aria-hidden="true"></span>
+              <span class="m-name">Calendar</span>
+              <span class="m-state">Omitted</span>
+            </div>
+            <div class="manifest-foot">
+              <span>4 of 6 kept in local memory</span>
+              <span>2 omitted</span>
+            </div>
+          </div>
+        </article>
       </div>
     </section>
 
-    <section class="band band-providers" id="providers" aria-labelledby="providers-title">
+    <section class="providers" id="providers" aria-labelledby="providers-title">
       <div class="wrap">
-        <div class="section-head">
-          <p class="eyebrow">03 · Providers</p>
-          <h2 id="providers-title">Twelve response providers.</h2>
-          <p>Bring a key for hosted providers. Model availability and charges come from the provider, not from us.</p>
+        <div class="section-head section-head-providers">
+          <div>
+            <p class="eyebrow">03 — Providers</p>
+            <h2 id="providers-title">Twelve response providers.</h2>
+          </div>
+          <p>Hosted, local or your own endpoint. Bring a key for hosted providers. Model availability and charges come from the provider, not from us.</p>
         </div>
-        <ul class="provider-grid">
-          <li><strong>OpenAI</strong><span>Responses + transcription</span></li>
-          <li><strong>Anthropic</strong><span>Responses</span></li>
-          <li><strong>Google Gemini</strong><span>Responses + batch transcription</span></li>
-          <li><strong>Azure Foundry</strong><span>Responses + realtime transcription</span></li>
-          <li><strong>DeepSeek</strong><span>Responses</span></li>
-          <li><strong>Groq</strong><span>Responses + Whisper</span></li>
-          <li><strong>OpenRouter</strong><span>Responses</span></li>
-          <li><strong>NVIDIA</strong><span>Responses</span></li>
-          <li><strong>Ollama</strong><span>Local responses</span></li>
-          <li><strong>Opencode</strong><span>Local responses</span></li>
-          <li><strong>Opencode Go</strong><span>Hosted responses</span></li>
-          <li><strong>Custom (OpenAI-compatible)</strong><span>Custom endpoint</span></li>
-        </ul>
-        <p class="providers-note">Realtime transcription runs on OpenAI, Azure Foundry, Deepgram or Azure AI Speech. Batch falls back to OpenAI, Gemini or Groq Whisper. Local Whisper ships in the Windows and Linux packages, off by default; the model downloads on first use.</p>
+
+        <div class="provider-groups">
+          <div class="provider-group provider-group-hosted">
+            <div class="group-head"><h3>Hosted</h3><span>9 providers</span></div>
+            <div class="group-lists">
+              <ul>
+                <li><strong>OpenAI</strong><span>Responses + transcription</span></li>
+                <li><strong>Anthropic</strong><span>Responses</span></li>
+                <li><strong>Google Gemini</strong><span>Responses + batch transcription</span></li>
+                <li><strong>Azure Foundry</strong><span>Responses + realtime transcription</span></li>
+                <li><strong>DeepSeek</strong><span>Responses</span></li>
+              </ul>
+              <ul>
+                <li><strong>Groq</strong><span>Responses + Whisper</span></li>
+                <li><strong>OpenRouter</strong><span>Responses</span></li>
+                <li><strong>NVIDIA</strong><span>Responses</span></li>
+                <li><strong>Opencode Go</strong><span>Hosted responses</span></li>
+              </ul>
+            </div>
+          </div>
+          <div class="provider-group provider-group-local">
+            <div class="group-head"><h3>Local</h3><span>2</span></div>
+            <ul>
+              <li><strong>Ollama</strong><span>Local responses</span></li>
+              <li><strong>Opencode</strong><span>Local responses</span></li>
+            </ul>
+          </div>
+          <div class="provider-group provider-group-custom">
+            <div class="group-head"><h3>Custom</h3><span>1</span></div>
+            <ul>
+              <li><strong>Custom (OpenAI-compatible)</strong><span>Custom endpoint</span></li>
+            </ul>
+            <p class="group-note">Any base URL that speaks the OpenAI API, including a server on your network.</p>
+          </div>
+        </div>
+
+        <dl class="transcription">
+          <div>
+            <dt>Realtime transcription</dt>
+            <dd>OpenAI, Azure Foundry, Deepgram or Azure AI Speech.</dd>
+          </div>
+          <div>
+            <dt>Batch transcription</dt>
+            <dd>OpenAI, Google Gemini or Groq Whisper.</dd>
+          </div>
+          <div>
+            <dt>Local transcription</dt>
+            <dd>Local Whisper ships in the Windows and Linux packages, off by default; the model downloads on first use.</dd>
+          </div>
+        </dl>
       </div>
     </section>
 
     <section class="install" id="install" aria-labelledby="install-title">
       <div class="wrap install-grid">
-        <div class="install-copy">
-          <p class="eyebrow">04 · Install</p>
-          <h2 id="install-title">Install v0.8.0.</h2>
-          <p>Install it, add a provider, and change providers whenever you want.</p>
+        <div class="install-lead">
+          <p class="eyebrow">04 — Install</p>
+          <h2 id="install-title">Install Volyx Lens.</h2>
+          <p>One app for macOS 13 or later, Windows 10/11, or Linux. Add a provider key when you first open it, and change providers whenever you want.</p>
           <div class="install-actions">
-            <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.0" data-download><span>Download Volyx Lens</span></a>
-            <a class="button button-quiet" href="https://github.com/dk3yyyy/volyx-lens#download" target="_blank" rel="noreferrer">Installation steps<span class="sr-only"> (opens in a new tab)</span></a>
+            <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.9" data-download>
+              <span>Download Volyx Lens</span>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg>
+            </a>
+            <a class="text-link" href="https://github.com/dk3yyyy/volyx-lens#download" target="_blank" rel="noreferrer">Installation steps<span class="sr-only"> (opens in a new tab)</span></a>
           </div>
-          <p class="detected" data-detected hidden>Detected Linux x64 · AppImage · v0.8.0</p>
+          <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.7.9</p>
         </div>
+
+        <div class="install-files">
+          <div class="files-head"><span>Builds</span><span>v0.7.9</span></div>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.9/volyx-lens-0.7.9-win-x64.exe"><strong>Windows</strong><span>x64 installer · unsigned</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.9/volyx-lens-0.7.9-mac-arm64-unsigned.dmg"><strong>macOS · Apple Silicon</strong><span>Unsigned DMG</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.9/volyx-lens-0.7.9-mac-x64-unsigned.dmg"><strong>macOS · Intel</strong><span>Unsigned DMG</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.9/volyx-lens-0.7.9-linux-x86_64.AppImage"><strong>Linux · x64</strong><span>AppImage · experimental</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.9/volyx-lens-0.7.9-linux-arm64.AppImage"><strong>Linux · arm64</strong><span>AppImage · experimental</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.9"><strong>All files</strong><span>Checksums and SBOMs</span></a>
+        </div>
+      </div>
+
+      <div class="wrap install-disclosures">
         <p class="platform-note">macOS 13 Ventura or later. Windows and Linux builds ship unsigned; every file has a .sha256 checksum and a CycloneDX SBOM. The macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured.</p>
-        <div class="platforms" role="group" aria-label="Download for another platform">
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-win-x64.exe"><strong>Windows</strong><span>x64 installer · unsigned · v0.8.0</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-mac-arm64-unsigned.dmg"><strong>macOS · Apple Silicon</strong><span>Unsigned DMG · v0.8.0</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-mac-x64-unsigned.dmg"><strong>macOS · Intel</strong><span>Unsigned DMG · v0.8.0</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-linux-x86_64.AppImage"><strong>Linux · x64 (experimental)</strong><span>AppImage · v0.8.0</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-linux-arm64.AppImage"><strong>Linux · arm64 (experimental)</strong><span>AppImage · v0.8.0</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.0"><strong>All files</strong><span>Checksums and SBOMs</span></a>
-        </div>
+        <p class="install-license">Apache 2.0 · no relay · no analytics SDK</p>
       </div>
     </section>
 
-    <section class="band band-notes" aria-labelledby="notes-title">
+    <section class="notes" aria-labelledby="notes-title">
       <div class="wrap notes-grid">
-        <div>
-          <p class="eyebrow">05 · Before you install</p>
+        <div class="notes-head">
+          <p class="eyebrow">05 — Before you install</p>
           <h2 id="notes-title">Unsigned builds, keys, offline limits.</h2>
+          <p>What the installer does not tell you, in six answers.</p>
         </div>
         <div class="notes-list">
           <details>
@@ -324,8 +473,10 @@
   <footer class="site-footer">
     <div class="wrap footer-grid">
       <div class="footer-brand">
-        <img src="assets/volyx-lens-logo.svg" width="32" height="32" alt="">
-        <strong>Volyx Lens</strong>
+        <a class="footer-mark" href="#top" aria-label="Volyx Lens home">
+          <img src="assets/volyx-lens-logo.svg" width="32" height="32" alt="">
+          <strong>Volyx Lens</strong>
+        </a>
         <p>Context you choose. Providers you control.</p>
       </div>
       <div class="footer-links">
@@ -336,7 +487,7 @@
     </div>
     <div class="wrap footer-bottom">
       <span>© <span data-year>2026</span> Joshua Nwachinemere</span>
-      <span>Open source · Apache 2.0</span>
+      <span>Open source · Apache 2.0 · 0 relay servers</span>
     </div>
   </footer>
 </body>
