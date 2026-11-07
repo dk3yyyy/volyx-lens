@@ -76,40 +76,38 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.7.7
+### Current release: v0.7.8
 
 What changed in this release:
 
-- **Local transcription actually ships.** The Windows and Linux packages now contain a pinned whisper.cpp server with its shared libraries, checksum-verified at build time, so the offline toggle is no longer a promise the build cannot keep. macOS packages cannot bundle one, so there it stays off unless you point it at your own server.
-- **The overlay recovers instead of dying.** A renderer crash used to leave an invisible always-on-top panel that swallowed clicks until you force-quit. It now lets clicks through, reloads itself at most twice a minute, and quits cleanly rather than looping.
-- **Links can open a view.** The installed app registers `volyxlens://`: `volyxlens://updates`, `volyxlens://release`, `volyxlens://settings?pane=listening`, `volyxlens://open`. Other schemes and arbitrary URLs are refused.
-- **Answers are cleaned while they stream**, so the text no longer rewrites itself at the end, and a cancelled answer no longer keeps the dashes a finished one would have lost.
-- **Updates behave better.** A version is announced once rather than on every launch, the app catches up after the machine wakes instead of waiting out another six hours, and the pane tells you when it last checked.
-- **Old plaintext keys are scrubbed.** A profile that once ran without a keyring used to keep its API keys in cleartext forever; the record is now rewritten on first load, sealed when a keyring exists and memory-only when it does not.
-- **Stopping shows what it lost.** Audio the provider kept rejecting now leaves a visible transcript gap, and an unavailable OCR helper says why instead of only "Unavailable".
-- **Release assets are verified** before upload, so an unsigned or stale artifact cannot overwrite a good one.
+- **Three accent themes.** Indigo, Sage and Ember join the neutral palette in Settings → Appearance, and every accent is a token pair rather than a hardcoded colour, so light and dark both stay readable.
+- **Saving a theme no longer discards edits.** Changing the accent while other settings were open used to overwrite the unsaved form; the theme now saves on its own without touching the rest of the pane.
+- **Credentials survive a missing keyring.** If secure storage disappears between launches, the sealed credential record is kept intact instead of being replaced, so keys return when the keyring does.
+- **Settings borders are neutral.** Field outlines use one quiet line token instead of the accent, so form controls no longer change colour with the theme accent.
+- **The landing page is rebuilt around the product.** A working interface preview replaces the abstract hero, the page is roughly half as long, and the privacy, provider, install and unsigned-build details are easier to scan.
+- **macOS CI runs on current runners**, so release and test jobs stop depending on retired images.
 
-v0.7.7 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
+v0.7.8 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.7 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg) · right-click Open |
-| **Intel** | [v0.7.7 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.7/volyx-lens-0.7.7-mac-x64-unsigned.dmg) · right-click Open |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.8 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.8/volyx-lens-0.7.8-mac-arm64-unsigned.dmg) · right-click Open |
+| **Intel** | [v0.7.8 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.8/volyx-lens-0.7.8-mac-x64-unsigned.dmg) · right-click Open |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.7.7-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.7.7-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.7.7-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.7.8-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.7.8-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.7.8-linux-arm64.AppImage` |
 
-**[Open the v0.7.7 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.7)**
+**[Open the v0.7.8 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.8)**
 
 The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. Later tag-triggered releases publish per-file checksum and SBOM files alongside the installers. Signed and notarized builds will replace them once release signing credentials are configured.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.7.7-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.7-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.7.8-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.8-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 
