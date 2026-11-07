@@ -27,7 +27,7 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.match(html, /No Volyx Lens server sits in between/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /Apache License 2\.0/i);
-  assert.match(html, /Windows and Linux builds ship unsigned; every file has a \.sha256 checksum and a CycloneDX SBOM/i);
+  assert.match(html, /Every build ships unsigned; each file has a \.sha256 checksum and a CycloneDX SBOM/i);
   assert.match(html, /Developer ID and notarized once release signing credentials are configured/i);
   assert.doesNotMatch(html, /VolyxAI/i);
   assert.doesNotMatch(html, /customer(s)?|trusted by|SOC\s?2|guaranteed invisible/i);
@@ -48,7 +48,7 @@ test('landing page presents the response providers the app actually supports', (
   for (const provider of ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'NVIDIA', 'Ollama', 'Opencode', 'Opencode Go', 'Custom (OpenAI-compatible)']) {
     assert.match(html, new RegExp(`>${escapeRegExp(provider)}<`), `${provider} missing`);
   }
-  assert.match(html, /Twelve response providers/i);
+  assert.match(html, /12 response providers/i);
   assert.match(html, /Groq Whisper/i);
   assert.match(html, /Local Whisper/i);
   assert.doesNotMatch(html, /Azure OpenAI/i);
