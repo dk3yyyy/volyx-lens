@@ -506,6 +506,9 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .hero h1 { font-size: clamp(2.6rem, 4.4vw, 3.6rem); }
   .app-main { padding: 12px 14px 14px; }
 }
+@media (min-width: 1001px) {
+  .route-cross, .route-zone-provider { transform: translateY(56px); }
+}
 @media (max-width: 1000px) {
   .hero-grid { grid-template-columns: 1fr; row-gap: 24px; align-items: start; }
   .hero-panel .app-window { max-height: 430px; }
