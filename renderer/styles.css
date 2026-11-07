@@ -1166,6 +1166,18 @@ html[data-theme='light'] .history-cleaned-badge {
     outline: 2px solid #FFFFFF;
     outline-offset: 2px;
   }
+  /* The base focus rule is more specific than :focus-visible alone, so repeat
+     the control selectors here or the high-contrast ring never applies. */
+  .s-field input:focus-visible,
+  .s-field select:focus-visible,
+  .s-theme-option input:focus-visible,
+  button:focus-visible:focus-visible,
+  select:focus-visible:focus-visible,
+  input:focus-visible:focus-visible,
+  textarea:focus-visible:focus-visible {
+    outline: 2px solid #FFFFFF;
+    outline-offset: 2px;
+  }
 }
 
 /* A failed answer is marked next to what already arrived, never instead of it. */

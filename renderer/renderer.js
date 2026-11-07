@@ -2260,6 +2260,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   const scrim = $('#settings-scrim');
   const ACCENT_THEMES = ['indigo', 'sage', 'ember'];
   let themeSaveToken = 0;
+  // The last theme the store confirmed. Optimistic radio changes must never
+  // become the value a failed save reverts to.
+  let persistedTheme = 'indigo';
   function normaliseAccentTheme(value) {
     return ACCENT_THEMES.includes(value) ? value : 'indigo';
   }
@@ -2512,7 +2515,6 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   }));
 
   document.querySelectorAll('input[name="accent-theme"]').forEach((radio) => radio.addEventListener('change', async () => {
-    const previous = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
     const theme = radio.value;
     if (!ACCENT_THEMES.includes(theme)) return;
     const token = ++themeSaveToken;
@@ -2520,10 +2522,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     applyAccentTheme(theme);
     try {
       const savedSettings = await volyxLens.settingsSet({ appearance: { theme } });
+      const saved = normaliseAccentTheme(savedSettings && savedSettings.appearance && savedSettings.appearance.theme);
+      // Remember every confirmed save, including one a newer choice supersedes.
+      // The newest request still owns the UI if it is the current token.
+      persistedTheme = saved;
       if (token !== themeSaveToken) return;
-      settings = savedSettings;
-      const saved = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
-      settings.appearance = { ...(settings.appearance || {}), theme: saved };
+      // Merge only the setting this request owns. Replacing the whole object
+      // would discard other edits the user has typed but not saved yet.
+      settings = { ...settings, appearance: { theme: saved } };
       applyAccentTheme(saved, { persistHint: true });
       if (saved !== theme) {
         const savedRadio = document.querySelector(`input[name="accent-theme"][value="${saved}"]`);
@@ -2531,11 +2537,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       }
     } catch (error) {
       if (token !== themeSaveToken) return;
-      settings.appearance = { ...(settings.appearance || {}), theme: previous };
-      applyAccentTheme(previous);
-      const restoreThemeRadio = document.querySelector(`input[name="accent-theme"][value="${previous}"]`);
+      settings = { ...settings, appearance: { theme: persistedTheme } };
+      applyAccentTheme(persistedTheme);
+      const restoreThemeRadio = document.querySelector(`input[name="accent-theme"][value="${persistedTheme}"]`);
       if (restoreThemeRadio) restoreThemeRadio.checked = true;
-      showStatus(error && error.message ? error.message : 'The accent theme could not be saved.');
+      const message = error && error.message ? error.message : '';
+      showStatus(/^Error invoking remote method/.test(message) ? 'The accent theme could not be saved.' : (message || 'The accent theme could not be saved.'));
     }
   }));
 
@@ -2554,7 +2561,13 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const current = focusable.indexOf(document.activeElement);
     if (current === -1) {
       event.preventDefault();
-      focusable[event.shiftKey ? focusable.length - 1 : 0].focus();
+      const active = document.activeElement;
+      if (event.shiftKey || !active || !active.compareDocumentPosition) {
+        focusable[event.shiftKey ? focusable.length - 1 : 0].focus();
+        return;
+      }
+      const candidate = focusable.find((element) => active.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
+      (candidate || focusable[0]).focus();
     } else if (!event.shiftKey && current === focusable.length - 1) {
       event.preventDefault();
       focusable[0].focus();
@@ -3045,6 +3058,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     stashCurrentModels();
     stashCurrentEndpoints();
     settings = await volyxLens.settingsSet({ ...settings, apiKeyUpdates });
+    persistedTheme = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
     applyAccentTheme(settings.appearance && settings.appearance.theme, { persistHint: true });
     fillSettings();
     updateSmartToggleModelIds();
@@ -3609,6 +3623,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     renderTranscriptWorkspace();
     $('#live-dot').classList.toggle('off', !st.active);
     updateListeningButton(st.active);
+    persistedTheme = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
     applyAccentTheme(settings.appearance && settings.appearance.theme, { persistHint: true });
     if (!settings.onboarded) showOnboard();
     else volyxLens.setModalState(false);

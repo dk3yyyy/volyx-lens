@@ -61,6 +61,7 @@ function load() {
   if (data) return data;
   let raw = {};
   try { raw = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {};
   const legacyKeys = raw.apiKeys && typeof raw.apiKeys === 'object' ? raw.apiKeys : {};
   // Read before the merge: the on-disk value is user-writable and may be any
   // shape, so it is validated separately instead of being deep-merged.
