@@ -61,8 +61,8 @@ test('empty and disabled rules produce no block', () => {
 
 test('the block is bounded and idempotent', () => {
   const block = buildRulesBlock({ text: 'Answer in British English.', enabled: true });
-  assert.match(block, new RegExp(RULES_BEGIN.replace(/[\[\]]/g, '\\$&')));
-  assert.match(block, new RegExp(RULES_END.replace(/[\[\]]/g, '\\$&')));
+  assert.ok(block.includes(RULES_BEGIN));
+  assert.ok(block.includes(RULES_END));
   assert.equal(applyAiRules('base', { text: 'Be brief' }), applyAiRules('base', { text: 'Be brief' }));
   assert.equal(applyAiRules('base', { text: '' }), 'base');
 });
