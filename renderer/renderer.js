@@ -2259,6 +2259,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
   const ACCENT_THEMES = ['indigo', 'sage', 'ember'];
+  let themeSaveToken = 0;
   function normaliseAccentTheme(value) {
     return ACCENT_THEMES.includes(value) ? value : 'indigo';
   }
@@ -2514,10 +2515,13 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const previous = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
     const theme = radio.value;
     if (!ACCENT_THEMES.includes(theme)) return;
+    const token = ++themeSaveToken;
     settings.appearance = { ...(settings.appearance || {}), theme };
     applyAccentTheme(theme);
     try {
-      settings = await volyxLens.settingsSet({ appearance: { theme } });
+      const savedSettings = await volyxLens.settingsSet({ appearance: { theme } });
+      if (token !== themeSaveToken) return;
+      settings = savedSettings;
       const saved = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
       settings.appearance = { ...(settings.appearance || {}), theme: saved };
       applyAccentTheme(saved, { persistHint: true });
@@ -2526,6 +2530,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         if (savedRadio) savedRadio.checked = true;
       }
     } catch (error) {
+      if (token !== themeSaveToken) return;
       settings.appearance = { ...(settings.appearance || {}), theme: previous };
       applyAccentTheme(previous);
       const restoreThemeRadio = document.querySelector(`input[name="accent-theme"][value="${previous}"]`);
@@ -3038,6 +3043,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     stashCurrentModels();
     stashCurrentEndpoints();
     settings = await volyxLens.settingsSet({ ...settings, apiKeyUpdates });
+    applyAccentTheme(settings.appearance && settings.appearance.theme, { persistHint: true });
     fillSettings();
     updateSmartToggleModelIds();
   }
