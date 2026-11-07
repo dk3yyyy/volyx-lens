@@ -10,14 +10,19 @@ const bootPath = path.join(root, 'renderer', 'theme-boot.js');
 const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 
-function runBoot({ hint, arg } = {}) {
+function runBoot({ hint, arg, reloaded = false } = {}) {
   const source = fs.readFileSync(bootPath, 'utf8');
   const attrs = {};
-  const window = { volyxLens: arg === undefined ? undefined : { initialAccentTheme: arg }, localStorage: { getItem: () => hint } };
+  const window = {
+    volyxLens: arg === undefined ? undefined : { initialAccentTheme: arg },
+    localStorage: { getItem: () => hint },
+    sessionStorage: { getItem: () => (reloaded ? '1' : null), setItem: () => {} },
+  };
   const document = { documentElement: { setAttribute: (name, value) => { attrs[name] = value; } } };
   const localStorage = window.localStorage;
-  vm.runInNewContext(source, { window, document, localStorage });
-  return attrs['data-accent-theme'];
+  const sessionStorage = window.sessionStorage;
+  vm.runInNewContext(source, { window, document, localStorage, sessionStorage });
+  return { theme: attrs['data-accent-theme'], source: window.__volyxThemeBoot && window.__volyxThemeBoot.source };
 }
 
 test('the boot script runs before the stylesheet and is self-hosted', () => {
@@ -28,13 +33,19 @@ test('the boot script runs before the stylesheet and is self-hosted', () => {
   assert.doesNotMatch(html.slice(script, html.indexOf('</script>', script)), /\n\s*[^<\s]/);
 });
 
-test('the boot script accepts only known ids, and prefers the saved hint', () => {
-  assert.equal(runBoot({ hint: 'sage', arg: 'ember' }), 'sage');
-  assert.equal(runBoot({ hint: 'ember' }), 'ember');
-  assert.equal(runBoot({ hint: 'neon', arg: 'sage' }), 'sage');
-  assert.equal(runBoot({ hint: 'neon', arg: 'neon' }), 'indigo');
-  assert.equal(runBoot({}), 'indigo');
-  assert.equal(runBoot({ hint: 'Indigo' }), 'indigo');
+test('the boot script trusts the store on a cold start and the hint on a reload', () => {
+  assert.deepEqual(runBoot({ hint: 'sage', arg: 'ember' }), { theme: 'ember', source: 'argv' });
+  assert.deepEqual(runBoot({ hint: 'ember', arg: 'indigo', reloaded: true }), { theme: 'ember', source: 'hint' });
+  assert.deepEqual(runBoot({ arg: 'sage' }), { theme: 'sage', source: 'argv' });
+  assert.deepEqual(runBoot({ hint: 'neon', arg: 'neon' }), { theme: 'indigo', source: 'default' });
+  assert.deepEqual(runBoot({}), { theme: 'indigo', source: 'default' });
+  assert.deepEqual(runBoot({ hint: 'Indigo' }), { theme: 'indigo', source: 'default' });
+});
+
+test('prototype keys are not theme ids', () => {
+  for (const value of ['__proto__', 'constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+    assert.deepEqual(runBoot({ hint: value }), { theme: 'indigo', source: 'default' }, value);
+  }
 });
 
 test('preload exposes one validated accent value from the appended argument', () => {

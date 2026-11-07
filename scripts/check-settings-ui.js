@@ -93,14 +93,18 @@ app.whenReady().then(async () => {
   // precondition; wait for it, with a generous first-paint budget.
   const booted = waitForRendererReady(ipcMain);
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
-  await booted;
+  // Read before rendererReady: the boot script, not the later settingsGet
+  // reconciliation, has to be the thing that put the theme on <html>.
   const firstFrame = await win.webContents.executeJavaScript(`({
     theme: document.documentElement.dataset.accentTheme,
+    source: window.__volyxThemeBoot && window.__volyxThemeBoot.source,
     accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
   })`);
   const expectedAccent = { indigo: '#6677FF', sage: '#B3CEB7', ember: '#FFA477' }[accentTheme];
-  assert.equal(firstFrame.theme, accentTheme, 'the seeded theme is in the first frame');
+  assert.equal(firstFrame.theme, accentTheme, 'the boot script set the seeded theme');
+  assert.equal(firstFrame.source, 'argv', 'a cold start reads the store argument');
   assert.equal(firstFrame.accent, expectedAccent, 'the first frame uses the seeded accent');
+  await booted;
   win.show();
   await win.webContents.executeJavaScript("document.querySelector('#more-btn').click()");
   await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'Settings to open');
@@ -137,6 +141,15 @@ app.whenReady().then(async () => {
   }
   assert.equal(heights.size, 1, 'settings shell height should remain stable');
 
+  await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"providers\"]').click(); document.querySelector('#endpoint-azure').focus()");
+  const fieldFocus = await win.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#endpoint-azure');
+    const style = getComputedStyle(input);
+    return { focused: document.activeElement === input, outline: style.outlineStyle, width: style.outlineWidth, color: style.outlineColor };
+  })()`);
+  assert.equal(fieldFocus.focused, true, 'the settings field can receive focus');
+  assert.equal(fieldFocus.outline, 'solid', 'a focused settings field draws an outline');
+  assert.equal(fieldFocus.width, '2px', 'the focus outline is 2px');
   await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"appearance\"]').click()");
   await waitFor(win, "document.activeElement && document.activeElement.id === 'settings-appearance-title'", 'appearance heading focus');
   const radioState = await win.webContents.executeJavaScript(`(() => {
@@ -147,6 +160,13 @@ app.whenReady().then(async () => {
   assert.deepEqual(radioState.checked, [accentTheme], 'the seeded theme is the initial checked theme');
   assert.equal(radioState.name, 'accent-theme', 'the radios share one native group');
   assert.equal(radioState.legend, 'Accent theme');
+  // The native radio group is one tab stop; Tab must not escape to the hidden app.
+  await win.webContents.executeJavaScript("document.querySelector('input[name=\"accent-theme\"]:checked').focus()");
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+  await waitFor(win, "document.activeElement && document.activeElement.closest('#settings') !== null", 'focus to stay inside Settings after Tab');
+  const trapped = await win.webContents.executeJavaScript("document.activeElement.closest('#settings') !== null");
+  assert.equal(trapped, true, 'Tab from the selected theme stays inside Settings');
   await win.webContents.executeJavaScript("document.querySelector('input[name=\"accent-theme\"][value=\"sage\"]').click()");
   await waitFor(win, "document.documentElement.dataset.accentTheme === 'sage'", 'sage theme applies');
   const themeState = await win.webContents.executeJavaScript(`({
@@ -158,6 +178,13 @@ app.whenReady().then(async () => {
   assert.equal(themeState.accent, '#B3CEB7');
   assert.equal(themeState.hint, 'sage');
   assert.equal(settings.appearance.theme, 'sage', 'the theme is persisted through settings');
+  const inactiveAccent = await win.webContents.executeJavaScript(`(() => {
+    window.dispatchEvent(new Event('blur'));
+    const value = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+    window.dispatchEvent(new Event('focus'));
+    return value;
+  })()`);
+  assert.equal(inactiveAccent, '#8FA891', 'the inactive palette follows the selected theme');
 
   await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"listening\"]').click(); document.querySelector('#test-live-transcription-btn').click()");
   await waitFor(win, "document.querySelector('#realtime-test-result').textContent.includes('permission_client_mismatch')", 'development permission identity guidance');

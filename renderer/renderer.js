@@ -2542,7 +2542,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   let settingsPreviousFocus = null;
   function settingsFocusable() {
     return [...$('#settings').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
-      .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden');
+      .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden')
+      // A native radio group is one tab stop: only the checked radio participates.
+      .filter((element) => element.type !== 'radio' || element.checked);
   }
   function handleSettingsKeydown(event) {
     if (event.key === 'Escape') { event.preventDefault(); closeSettings(); return; }
