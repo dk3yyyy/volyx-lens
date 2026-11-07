@@ -108,6 +108,14 @@ test('a missing appearance key migrates silently to indigo', () => {
   assert.deepEqual(store.getSettings().appearance, { theme: 'indigo' });
 });
 
+test('a null settings root cannot crash startup', () => {
+  const userData = temporaryUserData();
+  writeData(userData, null);
+  const store = loadStore(userData);
+  assert.deepEqual(store.getSettings().appearance, { theme: 'indigo' });
+  assert.equal(store.getSettings().provider, 'openai');
+});
+
 test('unknown appearance subkeys are stripped from the public projection', () => {
   const store = loadStore(temporaryUserData());
   store.setSettings({ appearance: { theme: 'sage', css: 'body{}' } });

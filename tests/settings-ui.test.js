@@ -36,6 +36,9 @@ test('the appearance pane exposes a native radio group and persists through the 
   assert.match(html, /value="indigo" checked/);
   assert.match(html, /value="indigo"[\s\S]*<small>Default<\/small>/);
   assert.match(renderer, /settingsSet\(\{ appearance: \{ theme \} \}\)/);
+  assert.match(renderer, /persistedTheme/);
+  assert.match(renderer, /settings = \{ \.\.\.settings, appearance: \{ theme: saved \} \}/);
+  assert.doesNotMatch(renderer, /settings = savedSettings;/);
   assert.match(renderer, /data-accent-theme/);
   assert.match(renderer, /localStorage\.setItem\('volyx\.accentTheme'/);
   assert.match(renderer, /restoreThemeRadio\.checked = true/);

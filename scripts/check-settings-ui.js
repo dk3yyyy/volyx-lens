@@ -160,6 +160,17 @@ app.whenReady().then(async () => {
   assert.deepEqual(radioState.checked, [accentTheme], 'the seeded theme is the initial checked theme');
   assert.equal(radioState.name, 'accent-theme', 'the radios share one native group');
   assert.equal(radioState.legend, 'Accent theme');
+  // A sidebar click focuses the section heading, which is outside the trap's
+  // focusable list. Tab must move forward into that section, not wrap to Done.
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+  const headingTab = await win.webContents.executeJavaScript(`({
+    inside: document.activeElement.closest('#settings') !== null,
+    id: document.activeElement.id,
+    value: document.activeElement.value || ''
+  })`);
+  assert.equal(headingTab.inside, true, 'Tab from a section heading stays inside Settings');
+  assert.notEqual(headingTab.id, 's-close', 'Tab from a section heading moves into the section, not back to Done');
   // The native radio group is one tab stop; Tab must not escape to the hidden app.
   await win.webContents.executeJavaScript("document.querySelector('input[name=\"accent-theme\"]:checked').focus()");
   win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
