@@ -56,6 +56,7 @@
       <a href="#work">What it does</a>
       <a href="#providers">Providers</a>
       <a href="#install">Install</a>
+      <a href="#notes">Notes</a>
     </nav>
     <div class="header-tools">
       <button class="theme-toggle" type="button" aria-label="Switch to dark mode" data-theme-toggle>
@@ -75,6 +76,7 @@
       <a href="#work">What it does</a>
       <a href="#providers">Providers</a>
       <a href="#install">Install</a>
+      <a href="#notes">Notes</a>
     </nav>
   </noscript>
 
@@ -93,12 +95,6 @@
             <a class="text-link hero-source" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">View source<span class="sr-only"> (opens in a new tab)</span></a>
           </div>
           <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.7.9</p>
-          <ul class="trust-row">
-            <li><strong>0</strong><span>relay servers</span></li>
-            <li><strong>12</strong><span>response providers</span></li>
-            <li><strong>3</strong><span>capture sources</span></li>
-          </ul>
-          <p class="hero-note">Free and open source under Apache License 2.0. This page is a preview and captures nothing.</p>
         </div>
 
         <div class="hero-panel">
@@ -137,7 +133,7 @@
               </button>
               <button class="source" type="button" data-source="system" aria-pressed="false">
                 <span class="src-num" aria-hidden="true">03</span>
-                <span class="src-copy"><strong>Meeting audio</strong><small>System · Off</small><span class="src-flag">off by default</span></span>
+                <span class="src-copy"><strong>Meeting audio</strong><small>System · Off by default</small></span>
                 <span class="toggle" aria-hidden="true"><i></i></span>
               </button>
             </div>
@@ -172,7 +168,7 @@
             <p class="eyebrow">01 — The route</p>
             <h2 id="route-title">Your context goes straight to your provider.</h2>
           </div>
-          <p class="route-intro">Selected context goes to the provider you configured. Volyx Lens runs no relay, and no Volyx Lens server sits in between. Session media stays in memory; saved transcripts stay on this device.</p>
+          <p class="route-intro">Selected context goes to the provider you configured. Volyx Lens has no relay: no Volyx Lens server sits in between. Session media stays in memory; saved transcripts stay on this device.</p>
         </div>
 
         <div class="route-map" role="img" aria-label="Your machine holds the sources and the Volyx Lens app. One direct, encrypted line leaves it for the AI provider you configured. No relay and no Volyx Lens server sit on that line.">
@@ -195,8 +191,7 @@
             <span class="cross-kicker">Direct request</span>
             <span class="cross-line"><i class="cross-pulse"></i></span>
             <span class="no-relay">No relay</span>
-            <span class="cross-proto">TLS · your key</span>
-            <span class="ghost-node">Volyx server <b>none</b></span>
+            <span class="cross-proto">TLS · your API key</span>
           </div>
 
           <div class="route-zone route-zone-provider">
@@ -206,7 +201,7 @@
               <strong>AI provider</strong>
               <small>OpenAI · Anthropic · Ollama · your endpoint</small>
             </div>
-            <p class="provider-foot">Your model · your bill</p>
+            <p class="provider-foot">Your model, billed by your provider.</p>
           </div>
         </div>
 
@@ -343,9 +338,9 @@
         <div class="section-head section-head-providers">
           <div>
             <p class="eyebrow">03 — Providers</p>
-            <h2 id="providers-title">Twelve response providers.</h2>
+            <h2 id="providers-title">Use the provider you already pay for.</h2>
           </div>
-          <p>Hosted, local or your own endpoint. Bring a key for hosted providers. Model availability and charges come from the provider, not from us.</p>
+          <p>12 response providers, hosted or local, plus any OpenAI-compatible endpoint. Bring a key for hosted providers. Model availability and charges are set by the provider.</p>
         </div>
 
         <div class="provider-groups">
@@ -429,11 +424,11 @@
 
       <div class="wrap install-disclosures">
         <p class="platform-note">macOS 13 Ventura or later. Windows and Linux builds ship unsigned; every file has a .sha256 checksum and a CycloneDX SBOM. The macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured.</p>
-        <p class="install-license">Apache 2.0 · no relay · no analytics SDK</p>
+        <p class="install-license">Apache License 2.0 · no relay · no analytics SDK</p>
       </div>
     </section>
 
-    <section class="notes" aria-labelledby="notes-title">
+    <section class="notes" id="notes" aria-labelledby="notes-title">
       <div class="wrap notes-grid">
         <div class="notes-head">
           <p class="eyebrow">05 — Before you install</p>
@@ -477,10 +472,10 @@
           <img src="assets/volyx-lens-logo.svg" width="32" height="32" alt="">
           <strong>Volyx Lens</strong>
         </a>
-        <p>Context you choose. Providers you control.</p>
+        <p>Your context stays on your machine until you send it.</p>
       </div>
       <div class="footer-links">
-        <div><span>Product</span><a href="#route">How it works</a><a href="#work">What it does</a><a href="#install">Install</a></div>
+        <div><span>Product</span><a href="#route">How it works</a><a href="#work">What it does</a><a href="#install">Install</a><a href="#notes">Before you install</a></div>
         <div><span>Project</span><a href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/releases" target="_blank" rel="noreferrer">Releases<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/issues" target="_blank" rel="noreferrer">Issues<span class="sr-only"> (opens in a new tab)</span></a></div>
         <div><span>Terms</span><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md" target="_blank" rel="noreferrer">License<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/security/policy" target="_blank" rel="noreferrer">Security<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/issues/new" target="_blank" rel="noreferrer">Report an issue<span class="sr-only"> (opens in a new tab)</span></a></div>
       </div>

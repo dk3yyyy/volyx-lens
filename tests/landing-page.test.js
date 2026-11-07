@@ -48,7 +48,7 @@ test('landing page presents the response providers the app actually supports', (
   for (const provider of ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure Foundry', 'DeepSeek', 'Groq', 'OpenRouter', 'NVIDIA', 'Ollama', 'Opencode', 'Opencode Go', 'Custom (OpenAI-compatible)']) {
     assert.match(html, new RegExp(`>${escapeRegExp(provider)}<`), `${provider} missing`);
   }
-  assert.match(html, /Twelve response providers/i);
+  assert.match(html, /12 response providers/i);
   assert.match(html, /Groq Whisper/i);
   assert.match(html, /Local Whisper/i);
   assert.doesNotMatch(html, /Azure OpenAI/i);
