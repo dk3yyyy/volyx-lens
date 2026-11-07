@@ -39,7 +39,7 @@ test('the Intel build runs on an Intel runner instead of relying on a cross-comp
   const workflow = yaml.load(fs.readFileSync(path.join(root, '.github', 'workflows', 'build-macos-unsigned.yml'), 'utf8'));
   assert.equal(workflow.jobs.build['runs-on'], '${{ matrix.runner }}', 'the job follows the matrix runner');
   const byArch = Object.fromEntries(workflow.jobs.build.strategy.matrix.include.map((entry) => [entry.arch, entry.runner]));
-  assert.equal(byArch.arm64, 'macos-14');
+  assert.equal(byArch.arm64, 'macos-15');
   assert.equal(byArch.x64, 'macos-15-intel', 'the x64 DMG is built on an Intel runner');
 });
 
