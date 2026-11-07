@@ -91,6 +91,22 @@ What changed in this release:
 
 v0.8.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
 
+### Install with one command
+
+macOS and Linux:
+
+```sh
+curl -fsSL https://volyxlens.pages.dev/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://volyxlens.pages.dev/install.ps1 | iex
+```
+
+The installer resolves the newest release, downloads the asset for your OS and architecture, verifies the published SHA-256, and installs it — `/Applications` on macOS (or `~/Applications` with `--user`), `~/.local/bin` plus a desktop entry on Linux, and the per-user installer on Windows. It needs no Node or package manager. Pass `--version v0.8.0` to install a specific release, `--dry-run` to see the URL, or `--no-launch` to skip opening the app.
+
 | Mac | Installer |
 |---|---|
 | **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.8.0 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-mac-arm64-unsigned.dmg) · right-click Open |
