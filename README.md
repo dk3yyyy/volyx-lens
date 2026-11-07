@@ -187,6 +187,8 @@ If access was previously denied, enable Volyx Lens in System Settings, then full
 
 Open Settings with `⌘` `,` or the `…` button. Choose a response provider, enter its key and model/deployment names, then select **Use as default**. An optional fallback provider is used only when it is capable of the request and the default fails before producing answer text.
 
+**Settings → Appearance** changes the accent without changing the dark graphite surfaces, text, or status colours. The three curated themes are **Indigo** (default), **Sage**, and **Ember**; the choice applies immediately and persists across restarts. A native radio group and text labels distinguish the options, so the setting does not depend on colour alone. ![Appearance settings showing the Indigo, Sage, and Ember options](docs/settings-appearance.png)
+
 Each provider stores separate **Fast** and **Smart** model/deployment names, so the Smart toggle switches tiers without extra configuration. If your fast and smart models live on different APIs, the per-provider **Tier API keys** fields (Fast key / Smart key) let each tier use its own key, and the **Endpoint overrides** fields (Fast URL / Smart URL) route each tier to its own OpenAI-compatible base URL; leaving either blank uses the shared provider key / default endpoint. Tier keys apply to Azure, DeepSeek, Groq, NVIDIA, OpenRouter, Opencode, Opencode Go, and Custom. Azure endpoint overrides still pass through official-endpoint validation.
 
 | Provider | Role | Configuration notes |
@@ -221,7 +223,7 @@ Capture behavior depends on your operating system and the app being used to shar
 
 The installed app registers `volyxlens://`, so a link can open a specific view instead of only bringing the window forward:
 
-- `volyxlens://settings?pane=listening` opens Settings on a pane. The pane values are `providers`, `listening`, `context`, `shortcuts`, `updates`, and `help`.
+- `volyxlens://settings?pane=listening` opens Settings on a pane. The pane values are `providers`, `listening`, `context`, `appearance`, `shortcuts`, `updates`, and `help`.
 - `volyxlens://updates`, or `volyxlens://update`, opens the Updates pane and refreshes its state.
 - `volyxlens://release` opens the Updates pane.
 - `volyxlens://open` brings the app forward and focuses the prompt.

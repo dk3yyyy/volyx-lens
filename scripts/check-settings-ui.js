@@ -13,10 +13,12 @@ const {
 } = require('./ui-harness-helpers');
 
 const root = path.join(__dirname, '..');
+const requestedTheme = process.env.VOLYX_LENS_ACCENT_THEME;
+const accentTheme = ['indigo', 'sage', 'ember'].includes(requestedTheme) ? requestedTheme : 'indigo';
 const screenshotDir = process.env.VOLYX_LENS_SETTINGS_SCREENSHOT_DIR || '';
 const { STT_MODELS } = require('../src/provider-config');
 const settings = {
-  appearance: { theme: 'indigo' },
+  appearance: { theme: accentTheme },
   provider: 'azure', fallbackProvider: 'openai', smart: true, onboarded: true, questionDetection: true, assistContext: 'both',
   credentialStatus: { present: { azure: true }, secure: true, backend: 'safeStorage' },
   models: { openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }, anthropic: { fast: '', smart: '' }, gemini: { fast: '', smart: '' }, azure: { fast: 'gpt-5.6-sol', smart: 'gpt-5.6-sol' }, deepseek: { fast: '', smart: '' }, groq: { fast: '', smart: '' }, openrouter: { fast: '', smart: '' }, ollama: { fast: '', smart: '' } },
@@ -82,7 +84,7 @@ app.whenReady().then(async () => {
   win = new BrowserWindow({
     width: 700, height: 600, minWidth: 500, minHeight: 480, show: false,
     backgroundColor: '#151827',
-    webPreferences: { preload: path.join(root, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+    webPreferences: { preload: path.join(root, 'preload.js'), additionalArguments: [`--volyx-accent=${accentTheme}`], contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   trackRendererConsole(win, { lines: consoleLines });
   // Opening Settings before the renderer's boot IIFE has loaded `settings`
@@ -92,11 +94,19 @@ app.whenReady().then(async () => {
   const booted = waitForRendererReady(ipcMain);
   await win.loadFile(path.join(root, 'renderer', 'index.html'));
   await booted;
+  const firstFrame = await win.webContents.executeJavaScript(`({
+    theme: document.documentElement.dataset.accentTheme,
+    accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+  })`);
+  const expectedAccent = { indigo: '#6677FF', sage: '#B3CEB7', ember: '#FFA477' }[accentTheme];
+  assert.equal(firstFrame.theme, accentTheme, 'the seeded theme is in the first frame');
+  assert.equal(firstFrame.accent, expectedAccent, 'the first frame uses the seeded accent');
   win.show();
   await win.webContents.executeJavaScript("document.querySelector('#more-btn').click()");
   await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'Settings to open');
 
   const sections = ['providers', 'listening', 'context', 'appearance', 'shortcuts', 'updates'];
+  const expectedSectionCount = sections.length + 1;
   const heights = new Set();
   for (const section of sections) {
     await win.webContents.executeJavaScript(`document.querySelector('[data-settings-section="${section}"]').click()`);
@@ -134,7 +144,7 @@ app.whenReady().then(async () => {
     return { count: radios.length, checked: radios.filter((radio) => radio.checked).map((radio) => radio.value), legend: document.querySelector('.s-theme-group legend').textContent, name: radios[0].name };
   })()`);
   assert.equal(radioState.count, 3, 'all three accent themes are exposed as radios');
-  assert.deepEqual(radioState.checked, ['indigo'], 'indigo is the initial checked theme');
+  assert.deepEqual(radioState.checked, [accentTheme], 'the seeded theme is the initial checked theme');
   assert.equal(radioState.name, 'accent-theme', 'the radios share one native group');
   assert.equal(radioState.legend, 'Accent theme');
   await win.webContents.executeJavaScript("document.querySelector('input[name=\"accent-theme\"][value=\"sage\"]').click()");
@@ -280,7 +290,7 @@ app.whenReady().then(async () => {
   })()`);
   assert.equal(compact.overflowX, false, 'compact Settings must not overflow horizontally');
   assert.ok(compact.dialogRight <= compact.width, 'compact Settings dialog must fit');
-  assert.equal(compact.tabs, 7, 'all seven settings sections are present at the minimum width');
+  assert.equal(compact.tabs, expectedSectionCount, 'all settings sections are present at the minimum width');
   assert.equal(compact.navOverflow, 0, `the settings nav must not scroll horizontally at 500px (overflowed by ${compact.navOverflow}px)`);
   assert.equal(compact.clippedTabs, 0, 'every settings tab must sit fully inside the nav at 500px');
   await capture(win, 'compact');
@@ -292,6 +302,12 @@ app.whenReady().then(async () => {
   const rebooting = waitForRendererReady(ipcMain);
   win.reload();
   await rebooting;
+  const reloadFrame = await win.webContents.executeJavaScript(`({
+    theme: document.documentElement.dataset.accentTheme,
+    accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+  })`);
+  assert.equal(reloadFrame.theme, 'sage', 'a reload keeps the last selected theme, not the launch argument');
+  assert.equal(reloadFrame.accent, '#B3CEB7', 'the reloaded first frame uses the saved accent');
   await waitFor(win, "document.querySelector('#meeting-recovery-dialog').open === true", 'meeting recovery dialog to open after reload');
   const recoverySummary = await win.webContents.executeJavaScript("document.querySelector('#meeting-recovery-summary').textContent");
   assert.equal(modalReports[modalReports.length - 1], true, 'recovery dialog should report an open modal');

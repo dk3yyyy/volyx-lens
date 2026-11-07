@@ -63,9 +63,17 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Lifecycle | `rendererReady`, `quit`, `relaunch`, `log` |
 | Events | `on(channel, cb)`, a filtered allowlist of 32 IPC channels, including `update:open` and `deeplink:open` |
 
-The bridge exposes 84 members in total: 82 methods plus the `platform` and `audioConfig` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
+The bridge exposes 85 members in total: 82 methods plus the `platform`, `audioConfig`, and `initialAccentTheme` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
 
 The `on()` listener uses a strict allowlist of event channels. Any channel not in the allowlist is silently ignored, preventing the renderer from subscribing to unintended IPC traffic.
+
+## Settings and appearance
+
+Settings live in `src/store.js` and reach the renderer through `settingsGet` / `settingsSet`. `appearance.theme` is a closed enum (`indigo`, `sage`, `ember`) owned by `src/appearance-themes.js`; `load()` normalises a missing, corrupt, or unknown value to `indigo` after the defaults merge, and `sanitizeSettingsPatch` accepts only the three ids. No arbitrary theme name or CSS can be written through IPC.
+
+The accent is applied by a data attribute on `<html>`, which every theme block in `renderer/styles.css` keys off. To avoid a first-frame flash of Indigo on a Sage or Ember install, the main process reads the stored id before creating the window and appends `--volyx-accent=<id>` to `additionalArguments`. The sandboxed preload re-validates that argument and exposes only the resulting string as `initialAccentTheme`; `renderer/theme-boot.js` runs in the head before the stylesheet, reads the argument (or the non-sensitive `volyx.accentTheme` paint hint used after a renderer-crash reload), and sets the attribute. Nothing blocks on a synchronous IPC call. Once `settingsGet` resolves, the renderer reconciles the attribute from the store, which is the authority, and writes the hint for the next reload.
+
+Changing the radio in **Settings → Appearance** applies the attribute immediately, calls `settingsSet({ appearance: { theme } })`, and restores the previous radio, attribute, and status message if the save is rejected.
 
 ## Provider routing
 
