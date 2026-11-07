@@ -78,6 +78,7 @@ const {
   UNTRUSTED_INPUT_RULE,
   PLAIN_TEXT_OUTPUT_RULE,
 } = require('./src/response-context');
+const { buildRulesBlock } = require('./src/ai-rules');
 
 const chatHistory = createChatHistory();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
@@ -2369,7 +2370,8 @@ async function runFeature(mode, userText, {
       const previousMeetings = previousMeetingsContext();
       if (previousMeetings) built += `\n\n${PREVIOUS_MEETINGS_NOTE}\n\n${previousMeetings}`;
     }
-    const baseSystem = personalContext.systemRules ? `${def.system}\n\n${personalContext.systemRules}` : def.system;
+    const rulesBlock = def.usesAiRules ? buildRulesBlock(settings.aiRules) : '';
+    const baseSystem = [def.system, rulesBlock, personalContext.systemRules].filter(Boolean).join('\n\n');
     const system = `${baseSystem}\n\n${SOURCE_UNCERTAINTY_RULE}\n\n${UNTRUSTED_INPUT_RULE}\n\n${PLAIN_TEXT_OUTPUT_RULE}`;
     // Assist, Say, and a typed question are one conversation. Sending history only
     // for `ask` meant pressing Assist and then asking a follow-up started the model

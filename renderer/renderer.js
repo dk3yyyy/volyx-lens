@@ -2258,6 +2258,37 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
+  const AI_RULES_MAX = 2000;
+  function readAiRulesForm() {
+    const text = $('#ai-rules-text');
+    const enabled = $('#ai-rules-enabled');
+    return { text: text ? text.value : '', enabled: enabled ? enabled.checked : true };
+  }
+  function aiRulesWarning(text) {
+    const warning = $('#ai-rules-warning');
+    if (!warning) return;
+    const looksSecret = /(?:sk-(?:ant-|or-v1-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/.test(text);
+    warning.textContent = looksSecret ? 'This looks like it contains a credential. Rules are stored locally and sent to your provider with every live answer.' : '';
+    warning.classList.toggle('hidden', !looksSecret);
+  }
+  function renderAiRules() {
+    const text = $('#ai-rules-text');
+    const enabled = $('#ai-rules-enabled');
+    const count = $('#ai-rules-count');
+    if (!text || !enabled || !count) return;
+    const value = (settings.aiRules && settings.aiRules.text) || '';
+    text.value = value;
+    enabled.checked = !(settings.aiRules && settings.aiRules.enabled === false);
+    count.textContent = `${value.length} / ${AI_RULES_MAX}`;
+    aiRulesWarning(value);
+  }
+  async function saveAiRules() {
+    const aiRules = readAiRulesForm();
+    const saved = await volyxLens.settingsSet({ aiRules });
+    settings = { ...settings, aiRules: saved.aiRules || aiRules };
+    $('#ai-rules-count').textContent = `${settings.aiRules.text.length} / ${AI_RULES_MAX}`;
+    aiRulesWarning(settings.aiRules.text);
+  }
   const ACCENT_THEMES = ['indigo', 'sage', 'ember'];
   let themeSaveToken = 0;
   // The last theme the store confirmed. Optimistic radio changes must never
@@ -2903,6 +2934,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const theme = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
     document.querySelectorAll('input[name="accent-theme"]').forEach((radio) => { radio.checked = radio.value === theme; });
     applyAccentTheme(theme);
+    renderAiRules();
     $('#s-status').textContent = statusText();
   }
   function statusText() {
@@ -2971,6 +3003,13 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     renderProviderConfig();
     $('#s-status').textContent = statusText();
   });
+  $('#ai-rules-text').addEventListener('input', () => {
+    const count = $('#ai-rules-count');
+    if (count) count.textContent = `${$('#ai-rules-text').value.length} / ${AI_RULES_MAX}`;
+    aiRulesWarning($('#ai-rules-text').value);
+  });
+  $('#ai-rules-text').addEventListener('change', () => { void saveAiRules().catch((error) => showStatus(error && error.message ? error.message : 'AI rules could not be saved.')); });
+  $('#ai-rules-enabled').addEventListener('change', () => { void saveAiRules().catch((error) => showStatus(error && error.message ? error.message : 'AI rules could not be saved.')); });
   $('#stt-realtime-provider').addEventListener('change', renderTranscriptionProviderConfig);
   document.querySelectorAll('.key-clear').forEach((button) => button.addEventListener('click', async () => {
     const tier = button.dataset.keyTier;
@@ -3084,6 +3123,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     };
     stashCurrentModels();
     stashCurrentEndpoints();
+    settings.aiRules = readAiRulesForm();
     settings = await volyxLens.settingsSet({ ...settings, apiKeyUpdates });
     persistedTheme = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
     applyAccentTheme(settings.appearance && settings.appearance.theme, { persistHint: true });
