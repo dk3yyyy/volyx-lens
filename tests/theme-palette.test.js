@@ -121,3 +121,24 @@ test('the settings input boundary is visible on every palette', () => {
   assert.match(field, /border:\s*1px solid var\(--accent-muted\)/);
   assert.doesNotMatch(field, /rgba\(255,255,255,0\.14\)/);
 });
+
+test('each theme keeps its inactive palette in the same hue', () => {
+  const inactive = {
+    indigo: block('body.window-inactive'),
+    sage: block(':root[data-accent-theme="sage"] body.window-inactive'),
+    ember: block(':root[data-accent-theme="ember"] body.window-inactive'),
+  };
+  for (const [name, source] of Object.entries(inactive)) {
+    const active = vars(themes[name]);
+    const dimmed = vars(source);
+    assert.equal(dimmed.get('accent'), active.get('accent-muted'), `${name} inactive foreground`);
+    assert.equal(dimmed.get('accent-hi'), active.get('accent-muted-hi'), `${name} inactive hover`);
+    assert.equal(dimmed.get('accent-soft'), active.get('accent-muted-soft'), `${name} inactive focus`);
+    assert.equal(dimmed.get('accent-fill'), active.get('accent-muted-fill'), `${name} inactive fill`);
+    assert.ok(contrast('#FFFFFF', dimmed.get('accent-fill')) >= 4.5, `${name} inactive filled text`);
+    assert.ok(contrast(dimmed.get('accent'), '#0B1020') >= 4.5, `${name} inactive foreground on panel`);
+  }
+  for (const name of ['sage', 'ember']) {
+    assert.doesNotMatch(inactive[name], /--(cyan|live|warning|danger):/, `${name} must not redeclare status`);
+  }
+});

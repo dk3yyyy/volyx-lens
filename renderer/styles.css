@@ -102,9 +102,11 @@ html, body {
    variables here means every control that uses them follows, instead of every
    component needing its own inactive rule. */
 body.window-inactive {
-  --accent: #7181C4;
-  --accent-hi: #7A8AD0;
-  --accent-soft: #A9B1CC;
+  --accent: #7280C3;
+  --accent-hi: #7E89D0;
+  --accent-soft: #ACB0CC;
+  --accent-fill: #646E9E;
+  --accent-fill-hi: #646E9E;
   --cyan: #3E8A99;
   --live: #4FA98A;
   --warning: #A98A4B;
@@ -112,6 +114,22 @@ body.window-inactive {
   --ic: #AEB5C7;
   --tx-1: #D7DCEA;
   --tx-2: #C2C8DB;
+}
+
+:root[data-accent-theme="sage"] body.window-inactive {
+  --accent: #8FA891;
+  --accent-hi: #9AB39C;
+  --accent-soft: #C9DCCC;
+  --accent-fill: #626D5F;
+  --accent-fill-hi: #626D5F;
+}
+
+:root[data-accent-theme="ember"] body.window-inactive {
+  --accent: #C98E72;
+  --accent-hi: #D49B7F;
+  --accent-soft: #F0CDBB;
+  --accent-fill: #8B6959;
+  --accent-fill-hi: #8B6959;
 }
 body.window-inactive #toolbar {
   border-color: rgba(255,255,255,0.09);
