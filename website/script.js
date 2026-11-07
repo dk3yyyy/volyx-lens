@@ -9,6 +9,12 @@ function setMenuOpen(open) {
   toggle.setAttribute('aria-expanded', String(open));
   toggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
   document.body.style.overflow = open ? 'hidden' : '';
+  // The rest of the page is visually covered while the mobile menu is open, so
+  // it must also leave the accessibility tree.
+  const main = document.querySelector('main');
+  const footer = document.querySelector('footer');
+  if (main) main.inert = open;
+  if (footer) footer.inert = open;
 }
 
 function closeNavigation({ restoreFocus = false } = {}) {
@@ -43,14 +49,6 @@ if (toggle && nav) {
     closeNavigation();
   });
 
-  nav.addEventListener('focusout', () => {
-    requestAnimationFrame(() => {
-      if (toggle.getAttribute('aria-expanded') !== 'true') return;
-      const active = document.activeElement;
-      if (!nav.contains(active) && active !== toggle) closeNavigation();
-    });
-  });
-
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') {
       closeNavigation({ restoreFocus: true });
@@ -58,7 +56,7 @@ if (toggle && nav) {
   });
 
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 760) closeNavigation();
+    if (window.innerWidth > 900) closeNavigation();
   });
 }
 
@@ -121,7 +119,7 @@ function applyTheme(theme, { persist = false } = {}) {
     themeColorMeta.setAttribute('content', isLight ? '#eef0ea' : '#141816');
   }
   if (themeToggle) {
-    themeToggle.setAttribute('aria-label', isLight ? 'Switch to dark mode' : 'Switch to light mode');
+    themeToggle.setAttribute('aria-label', isLight ? 'Switch to dark mode (currently light)' : 'Switch to light mode (currently dark)');
   }
   if (persist) {
     try {
@@ -152,7 +150,7 @@ if (themeColorMeta) {
   themeColorMeta.setAttribute('content', initialTheme === 'light' ? '#eef0ea' : '#141816');
 }
 if (themeToggle) {
-  themeToggle.setAttribute('aria-label', initialTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
+  themeToggle.setAttribute('aria-label', initialTheme === 'light' ? 'Switch to dark mode (currently light)' : 'Switch to light mode (currently dark)');
   themeToggle.addEventListener('click', () => {
     const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
     applyTheme(next, { persist: true });

@@ -228,7 +228,8 @@ test('landing page keeps focus, announcements and OS recommendations reachable',
   const toggleTag = html.match(/<button[^>]*data-theme-toggle[^>]*>/)[0];
   assert.doesNotMatch(toggleTag, /aria-pressed/, 'the theme toggle names the action, not a contradictory pressed state');
   assert.match(css, /:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--focus\)/);
-  assert.match(css, /\.release-section :focus-visible\s*\{[^}]*outline-color:\s*#0e0c18/);
+  assert.match(css, /\.release-section :focus-visible\s*\{[^}]*outline-color:\s*#1b211d/);
+  assert.match(css, /\.action-tile :focus-visible\s*\{[^}]*outline-color:\s*#eef0ea/);
   assert.match(script, /getHighEntropyValues/);
   assert.match(script, /className = 'dl-tag'/);
   assert.match(script, /document\.body\.style\.overflow = open \? 'hidden' : ''/);
