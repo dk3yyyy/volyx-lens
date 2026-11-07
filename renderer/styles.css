@@ -1,19 +1,19 @@
-/* Volyx Lens — dark graphite glass with an electric-indigo identity. */
+/* Volyx Lens — dark graphite glass with a sage identity. */
 
 :root {
-  --accent: #6677FF;
-  --accent-hi: #7D8AFF;
-  --accent-soft: #C7CEFF;
-  --accent-fill: #505BDF;
-  --accent-fill-hi: #5A66E8;
+  --accent: #B3CEB7;
+  --accent-hi: #C6DEC9;
+  --accent-soft: #D8E7DB;
+  --accent-fill: #567250;
+  --accent-fill-hi: #5C7A56;
   --accent-ink: #FFFFFF;
-  --accent-hair: rgba(102,119,255,0.22);
-  --accent-wash: rgba(102,119,255,0.15);
-  --accent-glow: rgba(102,119,255,0.40);
-  --accent-muted: #7280C3;
-  --accent-muted-fill: #646E9E;
-  --accent-muted-hi: #7E89D0;
-  --accent-muted-soft: #ACB0CC;
+  --accent-hair: rgba(179,206,183,0.20);
+  --accent-wash: rgba(120,170,135,0.16);
+  --accent-glow: rgba(120,180,140,0.30);
+  --accent-muted: #8FA891;
+  --accent-muted-fill: #626D5F;
+  --accent-muted-hi: #9AB39C;
+  --accent-muted-soft: #C9DCCC;
   --field-border: #5A6788;
   --theme-indigo: #6677FF;
   --theme-sage: #B3CEB7;
@@ -65,6 +65,22 @@ html, body {
   user-select: none;
 }
 
+:root[data-accent-theme="indigo"] {
+  --accent: #6677FF;
+  --accent-hi: #7D8AFF;
+  --accent-soft: #C7CEFF;
+  --accent-fill: #505BDF;
+  --accent-fill-hi: #5A66E8;
+  --accent-ink: #FFFFFF;
+  --accent-hair: rgba(102,119,255,0.22);
+  --accent-wash: rgba(102,119,255,0.15);
+  --accent-glow: rgba(102,119,255,0.40);
+  --accent-muted: #7280C3;
+  --accent-muted-fill: #646E9E;
+  --accent-muted-hi: #7E89D0;
+  --accent-muted-soft: #ACB0CC;
+}
+
 :root[data-accent-theme="sage"] {
   --accent: #B3CEB7;
   --accent-hi: #C6DEC9;
@@ -103,11 +119,11 @@ html, body {
    variables here means every control that uses them follows, instead of every
    component needing its own inactive rule. */
 body.window-inactive {
-  --accent: #7280C3;
-  --accent-hi: #7E89D0;
-  --accent-soft: #ACB0CC;
-  --accent-fill: #646E9E;
-  --accent-fill-hi: #646E9E;
+  --accent: #8FA891;
+  --accent-hi: #9AB39C;
+  --accent-soft: #C9DCCC;
+  --accent-fill: #626D5F;
+  --accent-fill-hi: #626D5F;
   --cyan: #3E8A99;
   --live: #4FA98A;
   --warning: #A98A4B;
@@ -118,6 +134,14 @@ body.window-inactive {
   --accent-wash: color-mix(in srgb, var(--accent-muted) 9%, transparent);
   --accent-hair: color-mix(in srgb, var(--accent-muted) 14%, transparent);
   --accent-glow: color-mix(in srgb, var(--accent-muted) 24%, transparent);
+}
+
+:root[data-accent-theme="indigo"] body.window-inactive {
+  --accent: #7280C3;
+  --accent-hi: #7E89D0;
+  --accent-soft: #ACB0CC;
+  --accent-fill: #646E9E;
+  --accent-fill-hi: #646E9E;
 }
 
 :root[data-accent-theme="sage"] body.window-inactive {

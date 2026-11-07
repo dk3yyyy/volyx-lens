@@ -69,7 +69,7 @@ The `on()` listener uses a strict allowlist of event channels. Any channel not i
 
 ## Settings and appearance
 
-Settings live in `src/store.js` and reach the renderer through `settingsGet` / `settingsSet`. `appearance.theme` is a closed enum (`indigo`, `sage`, `ember`) owned by `src/appearance-themes.js`; `load()` normalises a missing, corrupt, or unknown value to `indigo` after the defaults merge, and `sanitizeSettingsPatch` accepts only the three ids. No arbitrary theme name or CSS can be written through IPC.
+Settings live in `src/store.js` and reach the renderer through `settingsGet` / `settingsSet`. `appearance.theme` is a closed enum (`indigo`, `sage`, `ember`) owned by `src/appearance-themes.js`; `load()` normalises a missing, corrupt, or unknown value to `sage` after the defaults merge, and `sanitizeSettingsPatch` accepts only the three ids. No arbitrary theme name or CSS can be written through IPC.
 
 The accent is applied by a data attribute on `<html>`, which every theme block in `renderer/styles.css` keys off. To avoid a first-frame flash of Indigo on a Sage or Ember install, the main process reads the stored id before creating the window and appends `--volyx-accent=<id>` to `additionalArguments`. The sandboxed preload re-validates that argument and exposes only the resulting string as `initialAccentTheme`; `renderer/theme-boot.js` runs in the head before the stylesheet, uses the store argument on a cold start and the non-sensitive `volyx.accentTheme` paint hint only after a reload (detected with `sessionStorage`), then sets the attribute. Nothing blocks on a synchronous IPC call. Once `settingsGet` resolves, the renderer reconciles the attribute from the store, which is the authority, and writes the hint for the next reload.
 

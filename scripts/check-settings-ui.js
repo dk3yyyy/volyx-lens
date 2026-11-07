@@ -14,7 +14,7 @@ const {
 
 const root = path.join(__dirname, '..');
 const requestedTheme = process.env.VOLYX_LENS_ACCENT_THEME;
-const accentTheme = ['indigo', 'sage', 'ember'].includes(requestedTheme) ? requestedTheme : 'indigo';
+const accentTheme = ['indigo', 'sage', 'ember'].includes(requestedTheme) ? requestedTheme : 'sage';
 const screenshotDir = process.env.VOLYX_LENS_SETTINGS_SCREENSHOT_DIR || '';
 const { STT_MODELS } = require('../src/provider-config');
 const settings = {

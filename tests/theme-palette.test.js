@@ -55,8 +55,8 @@ function hueDistance(a, b) {
 }
 
 const themes = {
-  indigo: block(':root'),
-  sage: block(':root[data-accent-theme="sage"]'),
+  indigo: block(':root[data-accent-theme="indigo"]'),
+  sage: block(':root'),
   ember: block(':root[data-accent-theme="ember"]'),
 };
 
@@ -127,7 +127,7 @@ test('the settings input boundary is visible on every palette', () => {
 
 test('each theme keeps its inactive palette in the same hue', () => {
   const inactive = {
-    indigo: block('body.window-inactive'),
+    indigo: block(':root[data-accent-theme="indigo"] body.window-inactive'),
     sage: block(':root[data-accent-theme="sage"] body.window-inactive'),
     ember: block(':root[data-accent-theme="ember"] body.window-inactive'),
   };

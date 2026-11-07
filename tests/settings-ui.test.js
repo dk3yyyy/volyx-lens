@@ -33,8 +33,8 @@ test('the appearance pane exposes a native radio group and persists through the 
   for (const theme of ['indigo', 'sage', 'ember']) {
     assert.match(html, new RegExp(`name="accent-theme" value="${theme}"`));
   }
-  assert.match(html, /value="indigo" checked/);
-  assert.match(html, /value="indigo"[\s\S]*<small>Default<\/small>/);
+  assert.match(html, /value="sage" checked/);
+  assert.match(html, /value="sage"[\s\S]*<small>Default[^<]*<\/small>/);
   assert.match(renderer, /settingsSet\(\{ appearance: \{ theme \} \}\)/);
   assert.match(renderer, /persistedTheme/);
   assert.match(renderer, /settings = \{ \.\.\.settings, appearance: \{ theme: saved \} \}/);

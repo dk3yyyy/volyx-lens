@@ -21,9 +21,9 @@ test('the root declares the accent foreground and fill roles separately', () => 
   ]) {
     assert.match(root, new RegExp(`${token}:`), `${token} is declared`);
   }
-  assert.match(root, /--accent:\s*#6677FF/);
-  assert.match(root, /--accent-fill:\s*#505BDF/);
-  assert.match(root, /--accent-fill-hi:\s*#5A66E8/);
+  assert.match(root, /--accent:\s*#B3CEB7/);
+  assert.match(root, /--accent-fill:\s*#567250/);
+  assert.match(root, /--accent-fill-hi:\s*#5C7A56/);
   assert.match(root, /--accent-ink:\s*#FFFFFF/);
 });
 
@@ -68,7 +68,7 @@ function withoutBlock(source, selector) {
 
 test('accent literals live only in the indigo declaration blocks', () => {
   let remaining = css;
-  for (const selector of [':root', 'body.window-inactive']) remaining = withoutBlock(remaining, selector);
+  for (const selector of [':root', ':root[data-accent-theme="indigo"]', 'body.window-inactive', ':root[data-accent-theme="indigo"] body.window-inactive']) remaining = withoutBlock(remaining, selector);
   const forbidden = [
     /rgba\(\s*102\s*,\s*119\s*,\s*255/i,
     /rgba\(\s*125\s*,\s*138\s*,\s*255/i,

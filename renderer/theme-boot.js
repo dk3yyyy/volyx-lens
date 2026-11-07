@@ -30,7 +30,7 @@
     value = hint;
     source = 'hint';
   } else {
-    value = 'indigo';
+    value = 'sage';
     source = 'default';
   }
   document.documentElement.setAttribute('data-accent-theme', value);

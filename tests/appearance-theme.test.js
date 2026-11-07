@@ -38,12 +38,12 @@ function readData(userData) {
 
 const { ACCENT_THEMES, DEFAULT_ACCENT_THEME } = require('../src/appearance-themes');
 
-test('the default settings expose indigo as the only initial accent', () => {
+test('the default settings expose sage as the only initial accent', () => {
   assert.deepEqual([...ACCENT_THEMES], ['indigo', 'sage', 'ember']);
-  assert.equal(DEFAULT_ACCENT_THEME, 'indigo');
+  assert.equal(DEFAULT_ACCENT_THEME, 'sage');
   const store = loadStore(temporaryUserData());
-  assert.deepEqual(store.getSettings().appearance, { theme: 'indigo' });
-  assert.deepEqual(store.getPublicSettings().appearance, { theme: 'indigo' });
+  assert.deepEqual(store.getSettings().appearance, { theme: 'sage' });
+  assert.deepEqual(store.getPublicSettings().appearance, { theme: 'sage' });
 });
 
 test('a valid accent theme round-trips through the store', () => {
@@ -79,17 +79,17 @@ test('prototype pollution cannot create or change the theme', () => {
   const store = loadStore(temporaryUserData());
   const patch = JSON.parse('{"appearance":{"__proto__":{"theme":"ember"}}}');
   store.setSettings(patch);
-  assert.equal(store.getSettings().appearance.theme, 'indigo');
+  assert.equal(store.getSettings().appearance.theme, 'sage');
   assert.equal({}.theme, undefined);
 });
 
-test('a corrupt persisted theme loads as indigo and self-heals on save', () => {
+test('a corrupt persisted theme loads as sage and self-heals on save', () => {
   const userData = temporaryUserData();
   writeData(userData, { appearance: { theme: 'chartreuse' } });
   const store = loadStore(userData);
-  assert.equal(store.getSettings().appearance.theme, 'indigo');
+  assert.equal(store.getSettings().appearance.theme, 'sage');
   store.setSettings({ provider: 'openai' });
-  assert.equal(readData(userData).appearance.theme, 'indigo');
+  assert.equal(readData(userData).appearance.theme, 'sage');
 });
 
 test('corrupt persisted shapes cannot reach the renderer', () => {
@@ -97,22 +97,22 @@ test('corrupt persisted shapes cannot reach the renderer', () => {
     const userData = temporaryUserData();
     writeData(userData, value);
     const store = loadStore(userData);
-    assert.deepEqual(store.getPublicSettings().appearance, { theme: 'indigo' }, JSON.stringify(value));
+    assert.deepEqual(store.getPublicSettings().appearance, { theme: 'sage' }, JSON.stringify(value));
   }
 });
 
-test('a missing appearance key migrates silently to indigo', () => {
+test('a missing appearance key migrates silently to sage', () => {
   const userData = temporaryUserData();
   writeData(userData, { provider: 'openai' });
   const store = loadStore(userData);
-  assert.deepEqual(store.getSettings().appearance, { theme: 'indigo' });
+  assert.deepEqual(store.getSettings().appearance, { theme: 'sage' });
 });
 
 test('a null settings root cannot crash startup', () => {
   const userData = temporaryUserData();
   writeData(userData, null);
   const store = loadStore(userData);
-  assert.deepEqual(store.getSettings().appearance, { theme: 'indigo' });
+  assert.deepEqual(store.getSettings().appearance, { theme: 'sage' });
   assert.equal(store.getSettings().provider, 'openai');
 });
 
