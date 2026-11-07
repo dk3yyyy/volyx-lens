@@ -145,3 +145,10 @@ test('each theme keeps its inactive palette in the same hue', () => {
     assert.doesNotMatch(inactive[name], /--(cyan|live|warning|danger):/, `${name} must not redeclare status`);
   }
 });
+
+test('the glass surfaces take the accent tint, not just the buttons', () => {
+  const tinted = css.match(/box-shadow:[^;]*var\(--accent\)/g) || [];
+  assert.ok(tinted.length >= 3, `expected at least three accent-tinted glass surfaces, found ${tinted.length}`);
+  assert.match(css, /--bd-hair:\s*color-mix\(in srgb, var\(--accent-soft\)/);
+  assert.match(css, /--fill-2:\s*color-mix\(in srgb, var\(--accent-soft\)/);
+});
