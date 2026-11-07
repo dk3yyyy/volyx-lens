@@ -322,6 +322,29 @@ test('partially decryptable credentials from an incompatible app identity remain
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, lockedRecord);
 });
 
+test('a keyring that disappears after load cannot erase the persisted credentials', () => {
+  const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+  const record = { version: 1, mode: 'safeStorage', values: { openai: Buffer.from('sealed:sk-live').toString('base64') } };
+  fs.writeFileSync(file, JSON.stringify({ credentials: record }));
+  const safeStorage = workingSafeStorage();
+  safeStorage.isEncryptionAvailable = () => true;
+  const store = loadStore(userData, safeStorage);
+  assert.equal(store.getPublicSettings().credentialStatus.secure, true);
+  safeStorage.isEncryptionAvailable = () => false;
+  store.setSettings({ appearance: { theme: 'sage' } });
+  const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual(persisted.credentials, record, 'the readable ciphertext is preserved');
+  assert.equal(persisted.appearance.theme, 'sage', 'the unrelated settings save still lands');
+});
+
+test('a null transcription object cannot crash settings load', () => {
+  const userData = temporaryUserData();
+  fs.writeFileSync(path.join(userData, 'volyx-lens-data.json'), JSON.stringify({ transcription: null }));
+  const store = loadStore(userData);
+  assert.equal(store.getSettings().transcription.mode, 'realtime');
+});
+
 test('resetting shortcuts replaces the stored overrides instead of merging an empty set', () => {
   const userData = temporaryUserData();
   const store = loadStore(userData);
