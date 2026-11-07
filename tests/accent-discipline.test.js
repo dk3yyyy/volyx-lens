@@ -26,7 +26,8 @@ test('the close button follows the palette instead of a fixed accent', () => {
   // It used to hard-code #5668E4/#4556CF, so it ignored the inactive and
   // high-contrast palettes that every other surface respects.
   const close = rule('.s-close');
-  assert.match(close, /linear-gradient\(180deg, var\(--accent-hi\), var\(--accent\)\)/);
+  assert.match(close, /linear-gradient\(180deg, var\(--accent-fill-hi\), var\(--accent-fill\)\)/);
+  assert.match(close, /color:\s*var\(--accent-ink\)/);
   assert.doesNotMatch(close, /#5668E4|#4556CF/i);
 });
 
@@ -34,7 +35,8 @@ test('selection surfaces are one hue, not indigo fading into cyan', () => {
   for (const selector of ['.s-nav button.on', '.s-seg button.on']) {
     const background = rule(selector);
     assert.doesNotMatch(background, /66,\s*207,\s*232/, `${selector} must not mix in cyan`);
-    assert.match(background, /rgba\(125,138,255,/, `${selector} is indigo`);
+    assert.match(background, /var\(--accent-hi\)/, `${selector} is indigo`);
+    assert.doesNotMatch(background, /rgba\(125,138,255,/);
   }
 });
 

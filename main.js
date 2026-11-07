@@ -9,6 +9,7 @@ const legacyUserDataPath = path.join(path.dirname(currentUserDataPath), 'volyx-l
 const identityMigration = migrateLegacyUserData({ legacyUserData: legacyUserDataPath, currentUserData: currentUserDataPath });
 if (identityMigration.migrated.length) console.log(`[identity] migrated ${identityMigration.migrated.length} legacy data file${identityMigration.migrated.length === 1 ? '' : 's'}`);
 const store = require('./src/store');
+const { normalizeAccentTheme } = require('./src/appearance-themes');
 const { captureScreenshot, MAX_LONG_EDGE_PX, REQUEST_JPEG_QUALITY } = require('./src/screen');
 const { createSTT, resetSidecar } = require('./src/stt');
 const { cancelOfflineTranscriptions } = require('./src/offline-stt');
@@ -1266,6 +1267,7 @@ function createWindow() {
   overlayPassThroughForced = false;
   const { workArea } = screen.getPrimaryDisplay();
   const { width: W, height: H } = dockSizes().expanded;
+  const initialAccentTheme = normalizeAccentTheme(store.getSettings().appearance && store.getSettings().appearance.theme);
   let rendererHasLoaded = false;
   win = new BrowserWindow({
     width: W,
@@ -1284,6 +1286,7 @@ function createWindow() {
     fullscreenable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: [`--volyx-accent=${initialAccentTheme}`],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true

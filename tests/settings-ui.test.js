@@ -13,8 +13,8 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const styles = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
 const settingsHarness = fs.readFileSync(path.join(root, 'scripts', 'check-settings-ui.js'), 'utf8');
 
-test('settings use five simple pages without removing existing controls', () => {
-  for (const section of ['providers', 'listening', 'context', 'shortcuts', 'updates', 'help']) {
+test('settings use seven simple pages without removing existing controls', () => {
+  for (const section of ['providers', 'listening', 'context', 'appearance', 'shortcuts', 'updates', 'help']) {
     assert.match(html, new RegExp(`data-settings-section="${section}"`));
     assert.match(html, new RegExp(`data-settings-page="${section}"`));
     assert.match(html, new RegExp(`id="settings-${section}-title"`));
@@ -23,6 +23,24 @@ test('settings use five simple pages without removing existing controls', () => 
   assert.match(renderer, /function selectSettingsSection\(section/);
   assert.match(renderer, /page\.hidden = !active/);
   assert.match(styles, /grid-template-columns:\s*132px minmax\(0,1fr\)/);
+});
+
+test('the appearance pane exposes a native radio group and persists through the store', () => {
+  assert.match(html, /data-settings-section="appearance" aria-controls="settings-page-appearance"/);
+  assert.match(html, /id="settings-page-appearance"[^>]*data-settings-page="appearance"/);
+  assert.match(html, /<fieldset class="s-theme-group">/);
+  assert.match(html, /<legend>Accent theme<\/legend>/);
+  for (const theme of ['indigo', 'sage', 'ember']) {
+    assert.match(html, new RegExp(`name="accent-theme" value="${theme}"`));
+  }
+  assert.match(html, /value="indigo" checked/);
+  assert.match(html, /value="indigo"[\s\S]*<small>Default<\/small>/);
+  assert.match(renderer, /settingsSet\(\{ appearance: \{ theme \} \}\)/);
+  assert.match(renderer, /data-accent-theme/);
+  assert.match(renderer, /localStorage\.setItem\('volyx\.accentTheme'/);
+  assert.match(renderer, /restoreThemeRadio\.checked = true/);
+  assert.match(styles, /\.s-theme-group/);
+  assert.match(styles, /\.s-theme-swatch/);
 });
 
 test('settings behavior harness covers navigation, modal focus, and compact fit', () => {

@@ -54,7 +54,7 @@ test('surrounding whitespace from an argv handoff is trimmed', () => {
 });
 
 test('the settings pane allowlist matches the sections in renderer/index.html', () => {
-  assert.deepEqual([...SETTINGS_PANES], ['providers', 'listening', 'context', 'shortcuts', 'updates', 'help']);
+  assert.deepEqual([...SETTINGS_PANES], ['providers', 'listening', 'context', 'appearance', 'shortcuts', 'updates', 'help']);
   const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
   const sections = [...html.matchAll(/data-settings-section="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(sections, [...SETTINGS_PANES], 'the parser allowlist must track the real Settings sections');

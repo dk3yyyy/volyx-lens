@@ -1,3 +1,5 @@
+const { DEFAULT_ACCENT_THEME } = require('./appearance-themes');
+
 const PROVIDERS = Object.freeze({
   openai: {
     label: 'OpenAI',
@@ -150,6 +152,7 @@ function getDefaultSettings() {
   }
 
   return {
+    appearance: { theme: DEFAULT_ACCENT_THEME },
     provider: 'openai',
     fallbackProvider: '',
     smart: false,

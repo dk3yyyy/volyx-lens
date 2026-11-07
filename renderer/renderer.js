@@ -2258,6 +2258,18 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
+  const ACCENT_THEMES = ['indigo', 'sage', 'ember'];
+  let themeSaveToken = 0;
+  function normaliseAccentTheme(value) {
+    return ACCENT_THEMES.includes(value) ? value : 'indigo';
+  }
+  function applyAccentTheme(theme, { persistHint = false } = {}) {
+    const id = normaliseAccentTheme(theme);
+    document.documentElement.setAttribute('data-accent-theme', id);
+    if (persistHint) {
+      try { localStorage.setItem('volyx.accentTheme', id); } catch (error) { /* private mode or blocked storage */ }
+    }
+  }
   async function refreshAudioDevices() {
     const select = $('#audio-input-device');
     const selected = (settings.audio && settings.audio.inputDeviceId) || select.value || '';
@@ -2499,10 +2511,40 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     selectSettingsSection(button.dataset.settingsSection, { focus: true });
   }));
 
+  document.querySelectorAll('input[name="accent-theme"]').forEach((radio) => radio.addEventListener('change', async () => {
+    const previous = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
+    const theme = radio.value;
+    if (!ACCENT_THEMES.includes(theme)) return;
+    const token = ++themeSaveToken;
+    settings.appearance = { ...(settings.appearance || {}), theme };
+    applyAccentTheme(theme);
+    try {
+      const savedSettings = await volyxLens.settingsSet({ appearance: { theme } });
+      if (token !== themeSaveToken) return;
+      settings = savedSettings;
+      const saved = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
+      settings.appearance = { ...(settings.appearance || {}), theme: saved };
+      applyAccentTheme(saved, { persistHint: true });
+      if (saved !== theme) {
+        const savedRadio = document.querySelector(`input[name="accent-theme"][value="${saved}"]`);
+        if (savedRadio) savedRadio.checked = true;
+      }
+    } catch (error) {
+      if (token !== themeSaveToken) return;
+      settings.appearance = { ...(settings.appearance || {}), theme: previous };
+      applyAccentTheme(previous);
+      const restoreThemeRadio = document.querySelector(`input[name="accent-theme"][value="${previous}"]`);
+      if (restoreThemeRadio) restoreThemeRadio.checked = true;
+      showStatus(error && error.message ? error.message : 'The accent theme could not be saved.');
+    }
+  }));
+
   let settingsPreviousFocus = null;
   function settingsFocusable() {
     return [...$('#settings').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
-      .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden');
+      .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden')
+      // A native radio group is one tab stop: only the checked radio participates.
+      .filter((element) => element.type !== 'radio' || element.checked);
   }
   function handleSettingsKeydown(event) {
     if (event.key === 'Escape') { event.preventDefault(); closeSettings(); return; }
@@ -2818,6 +2860,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     renderProviderConfig();
     const storageState = settings.credentialStatus || {};
     $('#s-storage-warning').classList.toggle('hidden', !(storageState.secure === false && storageState.backend === 'plaintext-fallback'));
+    const theme = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
+    document.querySelectorAll('input[name="accent-theme"]').forEach((radio) => { radio.checked = radio.value === theme; });
+    applyAccentTheme(theme);
     $('#s-status').textContent = statusText();
   }
   function statusText() {
@@ -3000,6 +3045,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     stashCurrentModels();
     stashCurrentEndpoints();
     settings = await volyxLens.settingsSet({ ...settings, apiKeyUpdates });
+    applyAccentTheme(settings.appearance && settings.appearance.theme, { persistHint: true });
     fillSettings();
     updateSmartToggleModelIds();
   }
@@ -3563,6 +3609,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     renderTranscriptWorkspace();
     $('#live-dot').classList.toggle('off', !st.active);
     updateListeningButton(st.active);
+    applyAccentTheme(settings.appearance && settings.appearance.theme, { persistHint: true });
     if (!settings.onboarded) showOnboard();
     else volyxLens.setModalState(false);
     if (recovery && !recovery.unavailable) {

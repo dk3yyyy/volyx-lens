@@ -11,8 +11,9 @@ const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
 
 test('electric-indigo theme replaces the generic blue identity with accessible semantic tokens', () => {
-  assert.match(styles, /--accent:\s*#6677FF/i);
-  assert.match(styles, /--accent-hi:\s*#7D8AFF/i);
+  const rootBlock = styles.slice(styles.indexOf(':root {'), styles.indexOf('\n}', styles.indexOf(':root {')));
+  assert.match(rootBlock, /--accent:\s*#6677FF/i);
+  assert.match(rootBlock, /--accent-hi:\s*#7D8AFF/i);
   assert.match(styles, /--cyan:\s*#42CFE8/i);
   assert.match(styles, /--live:\s*#4FD19B/i);
   assert.match(styles, /--warning:\s*#F3B84B/i);
