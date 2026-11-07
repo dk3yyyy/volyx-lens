@@ -115,6 +115,17 @@ app.whenReady().then(async () => {
     assert.ok(state.dialog.x >= 0 && state.dialog.y >= 0 && state.dialog.right <= state.viewport.width && state.dialog.bottom <= state.viewport.height, `${names[index]} dialog must fit viewport`);
     heights.push(state.dialog.height);
     await capture(win, names[index]);
+    if (index === 2) {
+      await win.webContents.executeJavaScript("document.querySelector('#ob-buttons button').click()");
+      await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden') && document.querySelector('#onboard-scrim').classList.contains('hidden')", 'provider settings should open without ending onboarding');
+      const providerOpen = await win.webContents.executeJavaScript(`({ onboarded: window.__settings ? window.__settings.onboarded : null, visible: !document.querySelector('#settings-scrim').classList.contains('hidden'), guideHidden: document.querySelector('#onboard-scrim').classList.contains('hidden') })`);
+      assert.equal(providerOpen.guideHidden, true, 'opening provider settings should pause the guide');
+      assert.equal(settings.onboarded, false, 'opening provider settings must not complete onboarding');
+      await win.webContents.executeJavaScript("document.querySelector('#s-close').click()");
+      await waitFor(win, "document.querySelector('#onboard-scrim').classList.contains('hidden') === false && document.querySelector('#ob-step-count').textContent === '3 of 5'", 'closing settings should resume the guide at the same step');
+      const resumed = await win.webContents.executeJavaScript(`({ step: document.querySelector('#ob-step-count').textContent, active: document.activeElement && document.activeElement.id })`);
+      assert.equal(resumed.step, '3 of 5', 'guide should resume at the provider step');
+    }
     if (index === 1) {
       await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
       await waitFor(win, "document.querySelector('#ob-permission-status').classList.contains('has-action')", 'permission recovery action');
@@ -224,7 +235,20 @@ app.whenReady().then(async () => {
   assert.ok(compact.footerRight <= compact.width && compact.dialogRight <= compact.width, 'compact footer and dialog must fit');
   await capture(win, 'compact');
 
-  console.log('Onboarding UI behavior passed: 5 stable steps, focus trap/restoration, modal isolation, and compact layout.');
+  await win.webContents.executeJavaScript("document.querySelector('#ob-back').click()");
+  await waitFor(win, "document.querySelector('#ob-step-count').textContent === '1 of 10'", 'compact welcome step');
+  await waitForEntryAnimation(win, '#onboard', FIRST_PAINT_TIMEOUT_MS);
+  const compactWelcome = await win.webContents.executeJavaScript(`(() => {
+    const content = document.querySelector('#ob-content');
+    const body = document.querySelector('#ob-body').getBoundingClientRect();
+    const rect = content.getBoundingClientRect();
+    return { overflow: content.scrollHeight > content.clientHeight, scrollHeight: content.scrollHeight, clientHeight: content.clientHeight, bodyBottom: body.bottom, contentBottom: rect.bottom, paddingBottom: getComputedStyle(content).paddingBottom };
+  })()`);
+  assert.equal(compactWelcome.overflow, false, `compact welcome copy must fit without scrolling ${JSON.stringify(compactWelcome)}`);
+  assert.ok(compactWelcome.bodyBottom <= compactWelcome.contentBottom + 1, 'compact welcome body must stay inside the content pane');
+  await capture(win, 'compact-welcome');
+
+  console.log('Onboarding UI behavior passed: 5 stable steps, provider settings pause/resume, focus trap/restoration, modal isolation, and compact layout.');
   await guards.finish(0);
 }).catch(async (error) => {
   await guards.finish(1, error);

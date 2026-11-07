@@ -2579,7 +2579,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   let settingsPreviousFocus = null;
   function settingsFocusable() {
-    return [...$('#settings').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    return [...$('#settings').querySelectorAll('button:not([disabled]):not([tabindex="-1"]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
       .filter((element) => element.offsetParent !== null && element.style.visibility !== 'hidden')
       // A native radio group is one tab stop: only the checked radio participates.
       .filter((element) => element.type !== 'radio' || element.checked);
@@ -2640,6 +2640,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const target = settingsPreviousFocus && settingsPreviousFocus.isConnected ? settingsPreviousFocus : $('#more-btn');
     target.focus({ preventScroll: true });
     if (document.activeElement !== target) setTimeout(() => target.focus({ preventScroll: true }), 0);
+    if (obResumeAfterSettings) {
+      obResumeAfterSettings = false;
+      showOnboard({ full: obSteps.length > 5, resumeIndex: obIndex, preservePreviousFocus: true });
+    }
   }
   async function closeSettings() {
     if (providerTestActive) { showStatus('Wait for the response-provider test to finish.'); $('#s-status').focus(); return; }
@@ -3011,7 +3015,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   $('#ai-rules-text').addEventListener('change', () => { void saveAiRules().catch((error) => showStatus(error && error.message ? error.message : 'AI rules could not be saved.')); });
   $('#ai-rules-enabled').addEventListener('change', () => { void saveAiRules().catch((error) => showStatus(error && error.message ? error.message : 'AI rules could not be saved.')); });
   $('#stt-realtime-provider').addEventListener('change', renderTranscriptionProviderConfig);
-  document.querySelectorAll('.key-clear').forEach((button) => button.addEventListener('click', async () => {
+  document.querySelectorAll('.key-clear').forEach((button) => {
+    if (!button.hasAttribute('aria-label')) {
+      const label = button.dataset.key
+        ? `${PROVIDER_LABELS[button.dataset.key] || button.dataset.key} API key`
+        : `${providerView} ${button.dataset.keyTier || ''} API key`;
+      button.setAttribute('aria-label', `Clear ${label}`);
+    }
+    button.addEventListener('click', async () => {
     const tier = button.dataset.keyTier;
     const provider = tier ? `${providerView}.${tier}` : button.dataset.key;
     try {
@@ -3022,7 +3033,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     } catch (error) {
       showStatus(error && error.message ? error.message : 'The API key could not be removed.');
     }
-  }));
+    });
+  });
   document.querySelectorAll('.context-import').forEach((button) => button.addEventListener('click', async () => {
     const kind = button.dataset.kind;
     button.disabled = true;
@@ -3292,10 +3304,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       ? $('#settings')
       : (!obScrim.classList.contains('hidden') ? $('#onboard') : null);
     if (activeSurface) {
-      const rect = activeSurface.getBoundingClientRect();
-      const overSurface = e.clientX >= rect.left && e.clientX <= rect.right
-        && e.clientY >= rect.top && e.clientY <= rect.bottom;
-      setIgnore(!overSurface);
+      // A modal owns the whole window while it is open. Letting the gutter
+      // pass through would click whatever is underneath (and, before this,
+      // whatever app is behind the transparent scrim).
+      setIgnore(false);
       return;
     }
     const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -3312,6 +3324,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     screen: { text: 'Not requested', className: '' }
   };
   let obPreviousFocus = null;
+  let obResumeAfterSettings = false;
   function setPermissionState(kind, text, className = '') {
     permissionStates[kind] = { text, className };
     const state = document.querySelector(`[data-permission-kind="${kind}"] .ob-permission-state`);
@@ -3335,8 +3348,20 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       const result = await volyxLens.requestPermission(kind);
       if (result.granted) {
         setPermissionState(kind, 'Granted', 'granted');
-        obPermissionStatus.textContent = label + ' access granted.';
-        obPermissionStatus.className = 'ob-permission-status granted';
+        if (kind === 'screen' && volyxLens.platform === 'darwin') {
+          const applied = document.createElement('span');
+          applied.textContent = 'Screen Recording is allowed now. macOS applies it after the app restarts.';
+          const restart = document.createElement('button');
+          restart.type = 'button';
+          restart.className = 'ob-restart';
+          restart.textContent = 'Restart Volyx Lens';
+          restart.addEventListener('click', () => volyxLens.relaunch());
+          obPermissionStatus.replaceChildren(applied, restart);
+          obPermissionStatus.className = 'ob-permission-status granted has-action';
+        } else {
+          obPermissionStatus.textContent = label + ' access granted.';
+          obPermissionStatus.className = 'ob-permission-status granted';
+        }
       } else if (result.developmentClient) {
         showDevelopmentPermissionMismatch(kind);
       } else if (result.requiresSettings) {
@@ -3439,7 +3464,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       title: 'Connect your AI provider.',
       body: '<p>Choose OpenAI, Anthropic, Gemini, <span class="hl">Azure Foundry</span>, DeepSeek, Groq, OpenRouter, <span class="hl">NVIDIA</span>, <span class="hl">Opencode</span>, <span class="hl">Opencode Go</span>, <span class="hl">Custom</span>, or a local <span class="hl">Ollama</span> server. Your provider receives context only when you run an answer action.</p><div class="ob-note">Response and transcription providers are configured separately.</div>',
       buttons: [{ icon: 'settings', label: 'Open provider settings', detail: 'Add a key, endpoint, and model names', action: async () => {
-        if (await finishOnboard({ restoreFocus: false, keepModalState: true })) await openSettings();
+        obResumeAfterSettings = true;
+        obScrim.classList.add('hidden');
+        await openSettings();
       } }]
     },
     {
@@ -3563,9 +3590,17 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       dot.setAttribute('aria-label', `${item.stepLabel}: step ${index + 1}`);
       dots.appendChild(dot);
     });
+    const provider = (settings && settings.provider) || 'openai';
+    const providerReady = provider === 'ollama' || Boolean(settings && settings.credentialStatus && settings.credentialStatus.present && settings.credentialStatus.present[provider]);
+    const finalStep = obIndex === obSteps.length - 1;
+    if (finalStep && !providerReady) {
+      $('#ob-title').textContent = 'Almost ready.';
+      $('#ob-body').insertAdjacentHTML('beforeend', '<div class="ob-note ob-warning">No AI provider is configured yet. Add an API key in Settings → Providers, or finish and reopen the guide from the Volyx Lens logo.</div>');
+    }
     $('#ob-back').style.visibility = obIndex === 0 ? 'hidden' : 'visible';
-    $('#ob-next').textContent = obIndex === obSteps.length - 1 ? (obFromSettings || obReplay ? 'Done' : 'Start using Lens') : 'Continue';
-    $('#ob-skip').style.visibility = obIndex === obSteps.length - 1 ? 'hidden' : 'visible';
+    $('#ob-next').textContent = finalStep ? (obFromSettings || obReplay ? 'Done' : (providerReady ? 'Start using Lens' : 'Finish setup')) : 'Continue';
+    $('#ob-skip').textContent = obFromSettings || obReplay ? 'Close guide' : 'Skip setup';
+    $('#ob-skip').style.visibility = finalStep ? 'hidden' : 'visible';
   }
   function onboardFocusable() {
     return [...$('#onboard').querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
@@ -3598,12 +3633,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       focusable[focusable.length - 1].focus();
     }
   }
-  function showOnboard({ full = false } = {}) {
-    obPreviousFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
-      ? document.activeElement
-      : $('#logo-btn');
+  function showOnboard({ full = false, resumeIndex = 0, preservePreviousFocus = false } = {}) {
+    if (!preservePreviousFocus) {
+      obPreviousFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body && document.activeElement.offsetParent !== null
+        ? document.activeElement
+        : $('#logo-btn');
+    }
     obSteps = full ? OB_STEPS : OB_STEPS.filter((step) => step.firstRun !== false);
-    obIndex = 0;
+    obIndex = Math.max(0, Math.min(resumeIndex, obSteps.length - 1));
     renderOnboard();
     obScrim.classList.remove('hidden');
     volyxLens.setModalState(true);
@@ -3648,7 +3685,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if (!keepModalState) volyxLens.setModalState(false);
     obFromSettings = false;
     obReplay = false;
-    if (restoreFocus) requestAnimationFrame(() => (obPreviousFocus && obPreviousFocus.isConnected ? obPreviousFocus : $('#logo-btn')).focus());
+    obResumeAfterSettings = false;
+    if (restoreFocus) requestAnimationFrame(() => {
+      const target = obPreviousFocus && obPreviousFocus.isConnected && obPreviousFocus.offsetParent !== null ? obPreviousFocus : $('#logo-btn');
+      target.focus();
+    });
     return true;
   }
   $('#ob-next').addEventListener('click', () => { if (obIndex === obSteps.length - 1) finishOnboard({ keepModalState: obFromSettings }); else { obIndex++; renderOnboard(); $('#ob-title').focus(); } });
