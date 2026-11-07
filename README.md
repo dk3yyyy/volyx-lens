@@ -76,38 +76,39 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.7.8
+### Current release: v0.7.9
 
 What changed in this release:
 
-- **Three accent themes.** Indigo, Sage and Ember join the neutral palette in Settings → Appearance, and every accent is a token pair rather than a hardcoded colour, so light and dark both stay readable.
-- **Saving a theme no longer discards edits.** Changing the accent while other settings were open used to overwrite the unsaved form; the theme now saves on its own without touching the rest of the pane.
-- **Credentials survive a missing keyring.** If secure storage disappears between launches, the sealed credential record is kept intact instead of being replaced, so keys return when the keyring does.
-- **Settings borders are neutral.** Field outlines use one quiet line token instead of the accent, so form controls no longer change colour with the theme accent.
-- **The landing page is rebuilt around the product.** A working interface preview replaces the abstract hero, the page is roughly half as long, and the privacy, provider, install and unsigned-build details are easier to scan.
-- **macOS CI runs on current runners**, so release and test jobs stop depending on retired images.
+- **Accent themes cover the whole panel.** Indigo, Sage and Ember now tint the panel, toolbar, settings sheet, transcript workspace and dialogs, not just the send button. The glass keeps its original alpha, so contrast over bright content is unchanged; status colours keep their meaning.
+- **Three accent themes** landed in 0.7.8: Indigo, Sage and Ember in Settings → Appearance.
+- **Saving a theme no longer discards edits**, and **credentials survive a missing keyring**.
+- **Settings borders are neutral**, and field outlines no longer follow the accent.
+- **The landing page is rebuilt around the product**, with a working interface preview and roughly half the scroll length.
+- **macOS CI runs on current runners.**
 
-v0.7.8 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
+
+v0.7.9 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.8 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.8/volyx-lens-0.7.8-mac-arm64-unsigned.dmg) · right-click Open |
-| **Intel** | [v0.7.8 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.8/volyx-lens-0.7.8-mac-x64-unsigned.dmg) · right-click Open |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.7.9 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.9/volyx-lens-0.7.9-mac-arm64-unsigned.dmg) · right-click Open |
+| **Intel** | [v0.7.9 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.7.9/volyx-lens-0.7.9-mac-x64-unsigned.dmg) · right-click Open |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.7.8-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.7.8-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.7.8-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.7.9-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.7.9-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.7.9-linux-arm64.AppImage` |
 
-**[Open the v0.7.8 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.8)**
+**[Open the v0.7.9 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.7.9)**
 
 The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. Later tag-triggered releases publish per-file checksum and SBOM files alongside the installers. Signed and notarized builds will replace them once release signing credentials are configured.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.7.8-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.8-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.7.9-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.7.9-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 
