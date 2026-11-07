@@ -4,6 +4,12 @@
   --accent: #6677FF;
   --accent-hi: #7D8AFF;
   --accent-soft: #C7CEFF;
+  --accent-fill: #505BDF;
+  --accent-fill-hi: #5A66E8;
+  --accent-ink: #FFFFFF;
+  --accent-hair: rgba(102,119,255,0.22);
+  --accent-wash: rgba(102,119,255,0.15);
+  --accent-glow: rgba(102,119,255,0.40);
   --cyan: #42CFE8;
   --live: #4FD19B;
   --warning: #F3B84B;
@@ -416,12 +422,12 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .user-bubble {
   align-self: flex-end;
   max-width: 75%;
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
   border-radius: 16px 16px 4px 16px;
   padding: 9px 14px;
   font-size: 15px; font-weight: 500; line-height: 1.35;
-  box-shadow: 0 2px 8px rgba(102,119,255,0.35);
+  box-shadow: 0 2px 8px var(--accent-glow);
   animation: fadeUp 200ms ease both;
 }
 .ai-text {
@@ -543,9 +549,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 #cancel-response:hover { background: rgba(255,110,110,0.16); color: #fff; }
 #send-btn {
   width: 32px; height: 32px; border-radius: 50%;
-  border: none; background: var(--accent); color: #fff;
+  border: none; background: var(--accent-fill); color: var(--accent-ink);
   display: grid; place-items: center; cursor: pointer;
-  box-shadow: 0 2px 8px rgba(102,119,255,0.45);
+  box-shadow: 0 2px 8px var(--accent-glow);
   transition: transform 140ms ease, filter 140ms ease;
 }
 #send-btn:hover { filter: brightness(1.08); transform: scale(1.05); }
@@ -577,7 +583,7 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 }
 .s-head { display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
 .s-title { font-size: 16px; font-weight: 650; color: var(--tx-1); letter-spacing: -0.01em; }
-.s-close { min-height: 34px; border: 1px solid rgba(255,255,255,0.16); background: linear-gradient(180deg, var(--accent-hi), var(--accent)); box-shadow: 0 7px 18px rgba(50,63,166,0.28), inset 0 1px 0 rgba(255,255,255,0.20); color: #fff; font-weight: 650; font-size: 12px; padding: 7px 15px; border-radius: var(--r-control); cursor: pointer; }
+.s-close { min-height: 34px; border: 1px solid rgba(255,255,255,0.16); background: linear-gradient(180deg, var(--accent-fill-hi), var(--accent-fill)); box-shadow: 0 7px 18px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.20); color: var(--accent-ink); font-weight: 650; font-size: 12px; padding: 7px 15px; border-radius: var(--r-control); cursor: pointer; }
 .s-layout { min-height: 0; display: grid; grid-template-columns: 132px minmax(0,1fr); }
 .s-nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 3px; border-right: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.018); }
 .s-nav button { width: 100%; min-height: 40px; display: grid; gap: 2px; align-content: center; padding: 6px 8px; text-align: left; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--tx-mut); cursor: pointer; transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease; }
@@ -915,7 +921,7 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .ob-actions { justify-self: end; display: flex; align-items: center; gap: 7px; }
 .ob-ghost { min-height: 34px; border: 1px solid transparent; background: transparent; color: #B8C0D6; font-size: 11.5px; font-weight: 600; cursor: pointer; padding: 6px 10px; border-radius: 999px; }
 .ob-ghost:hover { color: #fff; background: rgba(255,255,255,0.055); }
-.ob-primary { min-width: 96px; min-height: 38px; border: 1px solid rgba(255,255,255,0.14); background: linear-gradient(180deg, #5365E6, #4354D4); color: #fff; font-size: 11.5px; font-weight: 650; padding: 7px 15px; border-radius: 999px; cursor: pointer; box-shadow: 0 7px 18px rgba(57,72,191,0.28), inset 0 1px 0 rgba(255,255,255,0.20); transition: transform 140ms ease, filter 140ms ease; }
+.ob-primary { min-width: 96px; min-height: 38px; border: 1px solid rgba(255,255,255,0.14); background: linear-gradient(180deg, var(--accent-fill-hi), var(--accent-fill)); color: var(--accent-ink); font-size: 11.5px; font-weight: 650; padding: 7px 15px; border-radius: 999px; cursor: pointer; box-shadow: 0 7px 18px rgba(57,72,191,0.28), inset 0 1px 0 rgba(255,255,255,0.20); transition: transform 140ms ease, filter 140ms ease; }
 .ob-primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .ob-primary:active { transform: translateY(0); }
 @media (max-width: 560px) {

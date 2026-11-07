@@ -26,7 +26,8 @@ test('the close button follows the palette instead of a fixed accent', () => {
   // It used to hard-code #5668E4/#4556CF, so it ignored the inactive and
   // high-contrast palettes that every other surface respects.
   const close = rule('.s-close');
-  assert.match(close, /linear-gradient\(180deg, var\(--accent-hi\), var\(--accent\)\)/);
+  assert.match(close, /linear-gradient\(180deg, var\(--accent-fill-hi\), var\(--accent-fill\)\)/);
+  assert.match(close, /color:\s*var\(--accent-ink\)/);
   assert.doesNotMatch(close, /#5668E4|#4556CF/i);
 });
 
