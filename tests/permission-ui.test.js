@@ -143,8 +143,12 @@ test('replayable tutorial covers channels, task context, auto-assist, smart togg
   assert.match(renderer, /smartBtn\.title = `Smart/);
   assert.match(renderer, /smartBtn\.setAttribute\('aria-label', `Smart toggle/);
   assert.match(renderer, /firstRun: false/);
-  assert.match(renderer, /obSteps = full \? OB_STEPS : OB_STEPS\.filter\(\(step\) => step\.firstRun !== false\)/);
+  assert.match(renderer, /obSteps = full \? OB_STEPS : OB_STEPS\.filter\(\(step\) => step\.firstRun !== false\);/);
   assert.match(renderer, /\$\('#logo-btn'\)\.addEventListener\('click', \(\) => \{ obReplay = true; showOnboard\(\{ full: true \}\)/);
   assert.match(renderer, /obReplay/);
-  assert.match(renderer, /obFromSettings \|\| obReplay \? 'Done' : 'Start using Lens'/);
+  assert.match(renderer, /finalStep \? \(obFromSettings \|\| obReplay \? 'Done' : \(providerReady \? 'Start using Lens' : 'Finish setup'\)\)/);
+  assert.match(renderer, /obResumeAfterSettings = true;\n        obScrim\.classList\.add\('hidden'\);\n        await openSettings\(\);/);
+  assert.doesNotMatch(renderer, /if \(await finishOnboard\(\{ restoreFocus: false, keepModalState: true \}\)\) await openSettings\(\);/);
+  assert.match(renderer, /Screen Recording is allowed now\. macOS applies it after the app restarts\./);
+  assert.match(renderer, /No AI provider is configured yet/);
 });
