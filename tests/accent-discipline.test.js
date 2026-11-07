@@ -35,7 +35,8 @@ test('selection surfaces are one hue, not indigo fading into cyan', () => {
   for (const selector of ['.s-nav button.on', '.s-seg button.on']) {
     const background = rule(selector);
     assert.doesNotMatch(background, /66,\s*207,\s*232/, `${selector} must not mix in cyan`);
-    assert.match(background, /rgba\(125,138,255,/, `${selector} is indigo`);
+    assert.match(background, /var\(--accent-hi\)/, `${selector} is indigo`);
+    assert.doesNotMatch(background, /rgba\(125,138,255,/);
   }
 });
 

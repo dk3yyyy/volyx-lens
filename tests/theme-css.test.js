@@ -50,3 +50,29 @@ test('the existing focus ring stays on the accent-soft role', () => {
   const focus = rule('button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible');
   assert.match(focus, /outline:\s*2px solid var\(--accent-soft\)/);
 });
+
+
+function withoutBlock(source, selector) {
+  const start = source.indexOf(`${selector} {`);
+  if (start === -1) return source;
+  let depth = 0;
+  for (let i = start; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) return source.slice(0, start) + source.slice(i + 1);
+    }
+  }
+  return source;
+}
+
+test('accent literals live only in the indigo declaration blocks', () => {
+  let remaining = css;
+  for (const selector of [':root', 'body.window-inactive']) remaining = withoutBlock(remaining, selector);
+  const forbidden = [
+    /rgba\(\s*102\s*,\s*119\s*,\s*255/i,
+    /rgba\(\s*125\s*,\s*138\s*,\s*255/i,
+    /#C7CEFF/i, /#D9DCFF/i, /#AAB5FF/i, /#B5BEFF/i, /#a9c8ff/i, /#a072ff/i, /#6677FF/i,
+  ];
+  for (const pattern of forbidden) assert.doesNotMatch(remaining, pattern);
+});
