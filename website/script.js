@@ -1,164 +1,69 @@
 'use strict';
 
-const toggle = document.querySelector('.nav-toggle');
+/* Navigation */
+const navToggle = document.querySelector('.nav-toggle');
 const nav = document.querySelector('#site-nav');
 
-function setMenuOpen(open) {
-  if (!toggle || !nav) return;
-  nav.classList.toggle('is-open', open);
-  toggle.setAttribute('aria-expanded', String(open));
-  toggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
-  document.body.style.overflow = open ? 'hidden' : '';
-  // The rest of the page is visually covered while the mobile menu is open, so
-  // it must also leave the accessibility tree.
-  const main = document.querySelector('main');
-  const footer = document.querySelector('footer');
-  if (main) main.inert = open;
-  if (footer) footer.inert = open;
+function setMenu(open, { restoreFocus = false } = {}) {
+  if (!navToggle || !nav) return;
+  nav.dataset.open = String(open);
+  navToggle.setAttribute('aria-expanded', String(open));
+  navToggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+  if (restoreFocus) navToggle.focus();
 }
 
-function closeNavigation({ restoreFocus = false } = {}) {
-  setMenuOpen(false);
-  if (restoreFocus) toggle.focus();
-}
-
-if (toggle && nav) {
-  toggle.addEventListener('click', () => {
-    const open = toggle.getAttribute('aria-expanded') === 'true';
-    setMenuOpen(!open);
-    if (!open) nav.querySelector('a')?.focus();
+if (navToggle && nav) {
+  navToggle.addEventListener('click', () => {
+    setMenu(navToggle.getAttribute('aria-expanded') !== 'true');
   });
-
   nav.addEventListener('click', (event) => {
-    const link = event.target.closest('a');
-    if (!link) return;
-    const href = link.getAttribute('href') || '';
-    closeNavigation();
-    if (!href.startsWith('#') || href.length < 2) return;
-    const target = document.querySelector(href);
-    if (!target) return;
-    // Move focus to the section the link points at, so keyboard and screen
-    // reader users land where the page scrolled instead of at <body>.
-    target.setAttribute('tabindex', '-1');
-    target.focus({ preventScroll: true });
+    if (!event.target.closest('a')) return;
+    setMenu(false);
   });
-
-  document.addEventListener('click', (event) => {
-    if (toggle.getAttribute('aria-expanded') !== 'true') return;
-    if (event.target.closest('#site-nav, .nav-toggle')) return;
-    closeNavigation();
-  });
-
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') {
-      closeNavigation({ restoreFocus: true });
+    if (event.key === 'Escape' && navToggle.getAttribute('aria-expanded') === 'true') {
+      setMenu(false, { restoreFocus: true });
     }
   });
-
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 900) closeNavigation();
+    if (window.innerWidth > 820) setMenu(false);
   });
 }
 
-const contextNames = {
-  screen: 'Screen',
-  you: 'microphone',
-  them: 'system audio'
-};
-
-const contextControls = [...document.querySelectorAll('[data-context]')].filter((node) => node.matches('button'));
-const summary = document.querySelector('[data-context-summary]');
-
-function updateContext() {
-  const active = contextControls.filter((button) => button.getAttribute('aria-pressed') === 'true');
-  contextControls.forEach((button) => {
-    const key = button.dataset.context;
-    const isActive = button.getAttribute('aria-pressed') === 'true';
-    button.classList.toggle('is-active', isActive);
-    document.querySelector(`[data-beam="${key}"]`)?.classList.toggle('is-active', isActive);
-    document.querySelector(`[data-label="${key}"]`)?.classList.toggle('is-active', isActive);
-  });
-  if (summary) {
-    summary.textContent = active.length
-      ? active.map((button) => contextNames[button.dataset.context]).join(' + ')
-      : 'No context selected';
-  }
-}
-
-contextControls.forEach((button) => {
-  button.addEventListener('click', () => {
-    const active = button.getAttribute('aria-pressed') === 'true';
-    button.setAttribute('aria-pressed', String(!active));
-    updateContext();
-  });
-});
-
-updateContext();
-
-document.querySelectorAll('details').forEach((details) => {
-  details.addEventListener('toggle', () => {
-    if (!details.open) return;
-    document.querySelectorAll('details[open]').forEach((other) => {
-      if (other !== details) other.open = false;
-    });
-  });
-});
-
-const year = document.querySelector('[data-year]');
-if (year) year.textContent = String(new Date().getFullYear());
-
-// ---- theme toggle -------------------------------------------------------
+/* Theme */
 const THEME_KEY = 'volyx-lens-theme';
 const themeToggle = document.querySelector('[data-theme-toggle]');
-const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+const themeColor = document.querySelector('meta[name="theme-color"]');
 
 function applyTheme(theme, { persist = false } = {}) {
-  const isLight = theme === 'light';
-  document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
-  if (themeColorMeta) {
-    themeColorMeta.setAttribute('content', isLight ? '#eef0ea' : '#141816');
-  }
+  const light = theme === 'light';
+  document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  if (themeColor) themeColor.setAttribute('content', light ? '#eceee7' : '#101411');
   if (themeToggle) {
-    themeToggle.setAttribute('aria-label', isLight ? 'Switch to dark mode (currently light)' : 'Switch to light mode (currently dark)');
+    themeToggle.setAttribute('aria-label', light ? 'Switch to dark mode (currently light)' : 'Switch to light mode (currently dark)');
   }
   if (persist) {
-    try {
-      localStorage.setItem(THEME_KEY, isLight ? 'light' : 'dark');
-    } catch (error) {
-      // storage may be unavailable; fall back to per-visit theme
-    }
+    try { localStorage.setItem(THEME_KEY, light ? 'light' : 'dark'); } catch (error) { /* storage unavailable */ }
   }
 }
 
-function currentTheme() {
-  let saved = null;
+function savedTheme() {
   try {
-    saved = localStorage.getItem(THEME_KEY);
-  } catch (error) {
-    // ignore storage failures
-  }
-  if (saved === 'light' || saved === 'dark') return saved;
+    const value = localStorage.getItem(THEME_KEY);
+    if (value === 'light' || value === 'dark') return value;
+  } catch (error) { /* storage unavailable */ }
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-// The theme is already set by the inline script in <head> to avoid a flash.
-// Sync the toggle button state with it here, since the headless script can't
-// see the button.
-const initialTheme = currentTheme();
-document.documentElement.setAttribute('data-theme', initialTheme === 'light' ? 'light' : 'dark');
-if (themeColorMeta) {
-  themeColorMeta.setAttribute('content', initialTheme === 'light' ? '#eef0ea' : '#141816');
-}
+applyTheme(savedTheme());
 if (themeToggle) {
-  themeToggle.setAttribute('aria-label', initialTheme === 'light' ? 'Switch to dark mode (currently light)' : 'Switch to light mode (currently dark)');
   themeToggle.addEventListener('click', () => {
-    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-    applyTheme(next, { persist: true });
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light', { persist: true });
   });
 }
 
 window.addEventListener('storage', (event) => {
-  if (event.key === THEME_KEY && event.newValue) applyTheme(event.newValue);
+  if (event.key === THEME_KEY && (event.newValue === 'light' || event.newValue === 'dark')) applyTheme(event.newValue);
 });
 
 const systemTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -166,138 +71,86 @@ if (systemTheme && typeof systemTheme.addEventListener === 'function') {
   systemTheme.addEventListener('change', () => {
     let saved = null;
     try { saved = localStorage.getItem(THEME_KEY); } catch (error) { /* storage unavailable */ }
-    if (saved !== 'light' && saved !== 'dark') {
-      applyTheme(systemTheme.matches ? 'dark' : 'light');
-    }
+    if (saved !== 'light' && saved !== 'dark') applyTheme(systemTheme.matches ? 'dark' : 'light');
   });
 }
 
+/* Context switches in the interface preview */
+const sources = [...document.querySelectorAll('[data-source]')];
+const contextCount = document.querySelector('[data-context-count]');
+
+
+function updateContext() {
+  const active = sources.filter((button) => button.getAttribute('aria-pressed') === 'true');
+  sources.forEach((button) => {
+    const on = button.getAttribute('aria-pressed') === 'true';
+    button.classList.toggle('is-on', on);
+    const small = button.querySelector('small');
+    if (small) {
+      const key = button.dataset.source;
+      const base = key === 'screen' ? 'Display 1' : key === 'mic' ? 'Built-in' : 'System channel';
+      small.textContent = `${base} · ${on ? 'On' : 'Off'}`;
+    }
+  });
+  if (contextCount) contextCount.textContent = `${active.length} of 3 sources`;
+}
+
+sources.forEach((button) => {
+  button.addEventListener('click', () => {
+    button.setAttribute('aria-pressed', button.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    updateContext();
+  });
+});
+updateContext();
+
+/* OS-aware download buttons */
 const RELEASE = 'https://github.com/dk3yyyy/volyx-lens/releases';
-const DL_ASSETS = {
-  win: {
-    href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-win-x64.exe`,
-    label: 'Windows',
-    detail: 'x64 NSIS installer · v0.7.7',
-    direct: true
-  },
-  'mac-arm64': {
-    href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg`,
-    label: 'macOS Apple Silicon',
-    detail: 'Unsigned DMG · v0.7.7',
-    direct: true
-  },
-  'mac-x64': {
-    href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-mac-x64-unsigned.dmg`,
-    label: 'macOS Intel',
-    detail: 'Unsigned DMG · v0.7.7',
-    direct: true
-  },
-  mac: {
-    href: `${RELEASE}/tag/v0.7.7`,
-    label: 'macOS',
-    detail: 'Unsigned v0.7.7',
-    direct: false
-  },
-  'linux-x64': {
-    href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-linux-x86_64.AppImage`,
-    label: 'Linux x64',
-    detail: 'AppImage · v0.7.7',
-    direct: true
-  },
-  'linux-arm64': {
-    href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-linux-arm64.AppImage`,
-    label: 'Linux arm64',
-    detail: 'AppImage · v0.7.7',
-    direct: true
-  }
+const ASSETS = {
+  win: { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-win-x64.exe`, label: 'Windows', detail: 'x64 installer' },
+  'mac-arm64': { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-mac-arm64-unsigned.dmg`, label: 'macOS Apple Silicon', detail: 'Unsigned DMG' },
+  'mac-x64': { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-mac-x64-unsigned.dmg`, label: 'macOS Intel', detail: 'Unsigned DMG' },
+  mac: { href: `${RELEASE}/tag/v0.7.7`, label: 'macOS', detail: 'Choose your chip on the release page' },
+  'linux-x64': { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-linux-x86_64.AppImage`, label: 'Linux x64', detail: 'AppImage' },
+  'linux-arm64': { href: `${RELEASE}/download/v0.7.7/volyx-lens-0.7.7-linux-arm64.AppImage`, label: 'Linux arm64', detail: 'AppImage' }
 };
 
-async function macArchitecture() {
+async function macArch() {
   try {
     const data = navigator.userAgentData;
     if (!data || typeof data.getHighEntropyValues !== 'function') return null;
     const values = await data.getHighEntropyValues(['architecture']);
     if (values.architecture === 'arm') return 'mac-arm64';
     if (values.architecture === 'x86') return 'mac-x64';
-  } catch (error) {
-    // Client Hints can be unavailable or rejected; fall back to the release page.
-  }
+  } catch (error) { /* client hints unavailable */ }
   return null;
 }
 
 async function detectOS() {
   const ua = (navigator.userAgent || '').toLowerCase();
   if (/windows|win32|win64/.test(ua)) return 'win';
-  if (/iphone|ipad|ipod|ios/.test(ua)) return null; // iOS UAs contain 'like Mac OS X'
-  if (/mac os|macintosh/.test(ua)) return (await macArchitecture()) || 'mac';
-  if (/android/.test(ua)) return null; // Android Chromium UAs contain 'linux'
+  if (/iphone|ipad|ipod|ios/.test(ua)) return null;
+  if (/mac os|macintosh/.test(ua)) return (await macArch()) || 'mac';
+  if (/android/.test(ua)) return null;
   if (/linux/.test(ua)) return /arm|aarch64/.test(ua) ? 'linux-arm64' : 'linux-x64';
   return null;
 }
 
 async function initDownloads() {
-  const detected = await detectOS();
-  const assets = detected ? DL_ASSETS[detected] : null;
-  const primary = document.querySelector('#dl-primary');
-  const hero = document.querySelector('#dl-hero');
-  const note = document.querySelector('#dl-note');
-
-  if (!detected || !assets) {
-    if (note) {
-      note.textContent = 'Choose your operating system below; every build is served from GitHub Releases with its SHA-256 checksum attached.';
-    }
-    return;
-  }
-
-  const label = `Download for ${assets.label}`;
-  if (primary) {
-    primary.href = assets.href;
-    const span = primary.querySelector('span');
-    if (span) span.textContent = label;
-  }
-  if (hero) {
-    hero.href = assets.href;
-    const span = hero.querySelector('span');
-    if (span) span.textContent = label;
-  }
-  if (note) {
-    note.textContent = assets.direct
-      ? `Detected ${assets.label}: ${assets.detail}. Downloading starts from GitHub Releases; pick another platform below if needed.`
-      : `Detected ${assets.label}: ${assets.detail}. Pick Apple Silicon or Intel on the release page.`;
-  }
-
-  const card = document.querySelector(`.dl-card[data-os="${detected}"]`);
-  if (!card) return;
-  // The markup ships one static tag (Windows card, as a no-JS fallback).
-  // Clear it first so exactly one card is marked when JS runs.
-  document.querySelectorAll('.dl-card .dl-tag').forEach((tag) => tag.remove());
-  card.classList.add('is-recommended');
-  card.setAttribute('aria-current', 'true');
-  // The tag is injected so cards cannot drift out of sync with the markup.
-  if (!card.querySelector('.dl-tag')) {
-    const tag = document.createElement('i');
-    tag.className = 'dl-tag';
-    tag.textContent = 'Recommended for this device';
-    card.appendChild(tag);
-  }
+  const os = await detectOS();
+  const asset = os ? ASSETS[os] : null;
+  if (!asset) return;
+  document.querySelectorAll('[data-download]').forEach((link) => {
+    link.href = asset.href;
+    const label = link.querySelector('span');
+    if (label) label.textContent = `Download for ${asset.label}`;
+  });
+  document.querySelectorAll('[data-detected]').forEach((note) => {
+    note.textContent = `Detected ${asset.label} · ${asset.detail} · v0.7.7`;
+  });
 }
 
 initDownloads();
 
-
-// ---- reveals -------------------------------------------------------------
-// Content is visible without JavaScript. The motion layer only opts in when
-// the visitor allows motion and the browser can observe intersections.
-const revealTargets = [...document.querySelectorAll('[data-reveal]')];
-const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-if (revealTargets.length && !reduceMotion && 'IntersectionObserver' in window) {
-  document.documentElement.setAttribute('data-motion', 'on');
-  const revealObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (!entry.isIntersecting) return;
-      entry.target.classList.add('is-in');
-      revealObserver.unobserve(entry.target);
-    });
-  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 });
-  revealTargets.forEach((target) => revealObserver.observe(target));
-}
+/* Year */
+const year = document.querySelector('[data-year]');
+if (year) year.textContent = String(new Date().getFullYear());
