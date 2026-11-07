@@ -81,6 +81,9 @@ function load() {
   // appearance is a small, closed enum. Normalise it after the merge so a
   // hand-edited or removed value cannot reach the renderer or the CSS attribute.
   data.appearance = { theme: normalizeAccentTheme(data.appearance && data.appearance.theme) };
+  if (!data.transcription || typeof data.transcription !== 'object' || Array.isArray(data.transcription)) {
+    data.transcription = { ...DEFAULTS.transcription };
+  }
   data.notifiedUpdateKeys = sanitizeNotifiedUpdateKeys(storedUpdateKeys);
   // A profile created before history defaulted to on keeps it off unless the
   // person already stored a choice, so upgrading never starts writing
@@ -123,10 +126,21 @@ function save() {
   const serialized = clone(data);
   delete serialized.apiKeys;
   delete serialized.credentialStatus;
-  serialized.credentials = credentialRecordLocked && persistedCredentialRecord
-    ? persistedCredentialRecord
-    : vault.seal(data.apiKeys);
-  const nextCredentialRecord = serialized.credentials;
+  // Never replace a readable safeStorage record with an empty memory-only one
+  // just because the keyring became unavailable after startup. Keep the old
+  // ciphertext, and let the session-only status explain why new keys are not
+  // persisted.
+  let nextCredentialRecord;
+  if (credentialRecordLocked && persistedCredentialRecord) {
+    nextCredentialRecord = persistedCredentialRecord;
+  } else if (vault.isSecure()) {
+    nextCredentialRecord = vault.seal(data.apiKeys);
+  } else if (persistedCredentialRecord && persistedCredentialRecord.mode === 'safeStorage') {
+    nextCredentialRecord = persistedCredentialRecord;
+  } else {
+    nextCredentialRecord = vault.seal(data.apiKeys);
+  }
+  serialized.credentials = nextCredentialRecord;
   const nextCredentialLocked = credentialRecordLocked
     || (nextCredentialRecord.mode === 'safeStorage' && !vault.isSecure());
   const temporary = `${FILE}.tmp`;
