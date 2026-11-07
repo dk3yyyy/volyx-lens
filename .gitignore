@@ -11,3 +11,6 @@ native/tests/.build/
 cue-data.json
 .freebuff/
 coverage/
+
+# design-taste work files
+.taste-skill/
