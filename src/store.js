@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
 const { getDefaultSettings, PROVIDERS, migrateModelId, modelSupportsVision } = require('./provider-config');
+const { isAccentTheme, normalizeAccentTheme } = require('./appearance-themes');
 const { resolveHistoryEnabled } = require('./history-default');
 const { createCredentialVault } = require('./credential-vault');
 const { sanitizeShortcutsPatch } = require('./shortcut-validator');
@@ -76,6 +77,9 @@ function load() {
   delete settingsOnly.apiKeys;
   delete settingsOnly.notifiedUpdateKeys;
   data = deepMerge(DEFAULTS, settingsOnly);
+  // appearance is a small, closed enum. Normalise it after the merge so a
+  // hand-edited or removed value cannot reach the renderer or the CSS attribute.
+  data.appearance = { theme: normalizeAccentTheme(data.appearance && data.appearance.theme) };
   data.notifiedUpdateKeys = sanitizeNotifiedUpdateKeys(storedUpdateKeys);
   // A profile created before history defaulted to on keeps it off unless the
   // person already stored a choice, so upgrading never starts writing
@@ -205,6 +209,10 @@ function sanitizeSettingsPatch(patch = {}) {
   }
   if (Object.hasOwn(patch, 'autoAnswerCooldownSec')) safe.autoAnswerCooldownSec = Math.max(5, Math.min(600, Number(patch.autoAnswerCooldownSec) || 60));
   if (typeof patch.onboarded === 'boolean') safe.onboarded = patch.onboarded;
+  if (patch.appearance && typeof patch.appearance === 'object' && !Array.isArray(patch.appearance)
+    && isAccentTheme(patch.appearance.theme)) {
+    safe.appearance = { theme: patch.appearance.theme };
+  }
   if (['both', 'screen', 'conversation'].includes(patch.assistContext)) safe.assistContext = patch.assistContext;
   if (patch.endpoints && typeof patch.endpoints === 'object') {
     const endpoints = {};
