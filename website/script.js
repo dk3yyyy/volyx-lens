@@ -4,20 +4,35 @@
 const navToggle = document.querySelector('.nav-toggle');
 const nav = document.querySelector('#site-nav');
 
-function setMenu(open, { restoreFocus = false } = {}) {
+function setMenu(open, { restoreFocus = false, focusFirst = false } = {}) {
   if (!navToggle || !nav) return;
   nav.dataset.open = String(open);
   navToggle.setAttribute('aria-expanded', String(open));
   navToggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+  if (open && focusFirst) {
+    const first = nav.querySelector('a');
+    if (first) first.focus();
+  }
   if (restoreFocus) navToggle.focus();
 }
 
 if (navToggle && nav) {
   navToggle.addEventListener('click', () => {
-    setMenu(navToggle.getAttribute('aria-expanded') !== 'true');
+    setMenu(navToggle.getAttribute('aria-expanded') !== 'true', { focusFirst: true });
   });
   nav.addEventListener('click', (event) => {
-    if (!event.target.closest('a')) return;
+    const link = event.target.closest('a');
+    if (!link) return;
+    setMenu(false);
+    const target = document.querySelector(link.getAttribute('href'));
+    if (target) {
+      target.setAttribute('tabindex', '-1');
+      window.requestAnimationFrame(() => target.focus({ preventScroll: true }));
+    }
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (navToggle.getAttribute('aria-expanded') !== 'true') return;
+    if (event.target.closest('#site-nav, .nav-toggle')) return;
     setMenu(false);
   });
   document.addEventListener('keydown', (event) => {
@@ -88,7 +103,7 @@ function updateContext() {
     const small = button.querySelector('small');
     if (small) {
       const key = button.dataset.source;
-      const base = key === 'screen' ? 'Display 1' : key === 'mic' ? 'Built-in' : 'System channel';
+      const base = key === 'screen' ? 'Display 1' : key === 'mic' ? 'Built-in' : 'System';
       small.textContent = `${base} · ${on ? 'On' : 'Off'}`;
     }
   });
@@ -178,8 +193,11 @@ async function macArch() {
 async function detectOS() {
   const ua = (navigator.userAgent || '').toLowerCase();
   if (/windows|win32|win64/.test(ua)) return 'win';
-  if (/iphone|ipad|ipod|ios/.test(ua)) return null;
-  if (/mac os|macintosh/.test(ua)) return (await macArch()) || 'mac';
+  if (/iphone|ipad|ipod|ios|android|cros/.test(ua)) return null;
+  if (/mac os|macintosh/.test(ua)) {
+    if ((navigator.maxTouchPoints || 0) > 1 || /mobile/.test(ua)) return null;
+    return (await macArch()) || 'mac';
+  }
   if (/android/.test(ua)) return null;
   if (/linux/.test(ua)) return /arm|aarch64/.test(ua) ? 'linux-arm64' : 'linux-x64';
   return null;
