@@ -975,3 +975,73 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .cross-pulse, .app-window::after, .cp-preview::after, .screen-connector { display: none; }
   .app-window, .cp-aperture, .cp-wave i, .cp-thread, .screen-note, .screen-connector { animation: none; }
 }
+
+/* Hero rebuild preview: the actual app chrome, not a capture-source dashboard. */
+.app-preview {
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #2c382b;
+  border-radius: 24px;
+  background: #0b100b;
+  box-shadow: 0 32px 62px -42px rgba(0, 0, 0, .74), 0 2px 8px -3px rgba(0, 0, 0, .3);
+  color: #eef1e7;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  isolation: isolate;
+}
+.ap-bar { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border-bottom: 1px solid rgba(255, 255, 255, .10); background: rgba(255, 255, 255, .025); }
+.ap-brand { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; letter-spacing: -.01em; }
+.ap-brand img { border-radius: 5px; }
+.ap-live { display: inline-flex; align-items: center; gap: 6px; color: #b3ceb7; font: 500 8px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+.ap-live i, .ap-foot i { width: 5px; height: 5px; border-radius: 50%; background: #b3ceb7; box-shadow: 0 0 0 3px rgba(179, 206, 183, .12); }
+.ap-toolbar { display: flex; align-items: center; gap: 5px; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, .08); background: rgba(0, 0, 0, .14); }
+.ap-tool { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 9px; border: 1px solid rgba(255, 255, 255, .13); border-radius: 999px; background: rgba(255, 255, 255, .035); color: #c3cdbf; font: 500 9px/1 var(--mono); letter-spacing: .03em; }
+.ap-tool-on { color: #d8e7db; border-color: rgba(179, 206, 183, .42); background: rgba(179, 206, 183, .10); }
+.ap-tool-on i { width: 5px; height: 5px; border-radius: 50%; background: #b3ceb7; }
+.ap-provider { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 5px 7px; border: 1px solid rgba(255, 255, 255, .13); border-radius: 999px; color: #c3cdbf; font: 500 8.5px/1 var(--mono); }
+.ap-provider svg { width: 8px; height: 5px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.ap-conversation { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 20px 18px 16px; background: radial-gradient(circle at 85% 10%, rgba(179, 206, 183, .07), transparent 34%), radial-gradient(circle at 8% 90%, rgba(86, 114, 80, .11), transparent 30%); }
+.ap-context { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.ap-context-label { margin-right: 2px; color: #9fae9a; font: 500 8px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+.ap-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid rgba(179, 206, 183, .28); border-radius: 999px; background: rgba(179, 206, 183, .07); color: #c8d3c2; font: 400 8.5px/1 var(--mono); }
+.ap-chip b { color: #d8e7db; font-weight: 600; }
+.ap-chip.is-off { border-color: rgba(255, 255, 255, .11); background: transparent; color: #8f9c8c; }
+.ap-turn { align-self: flex-end; max-width: 84%; padding: 11px 13px; border: 1px solid rgba(179, 206, 183, .24); border-radius: 14px 14px 4px 14px; background: rgba(179, 206, 183, .09); }
+.ap-who { display: block; margin-bottom: 5px; color: #b3ceb7; font: 500 8px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+.ap-turn p { margin: 0; color: #f1f5ea; font-size: 15px; line-height: 1.4; }
+.ap-answer { align-self: flex-start; max-width: 92%; padding: 12px 14px; border: 1px solid rgba(255, 255, 255, .12); border-radius: 4px 14px 14px 14px; background: rgba(255, 255, 255, .055); }
+.ap-who-lens { display: inline-flex; align-items: center; gap: 5px; color: #d8e7db; }
+.ap-who-lens img { border-radius: 4px; }
+.ap-answer p { margin: 0; color: #dfe7d9; font-size: 13.5px; line-height: 1.5; }
+.ap-answer code { color: #d8e7db; font: .92em var(--mono); }
+.ap-cites { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.ap-cites span { padding: 3px 5px; border: 1px solid rgba(179, 206, 183, .24); border-radius: 4px; color: #b3ceb7; font: 400 8px/1 var(--mono); }
+.ap-mic-quote { align-self: flex-start; max-width: 88%; padding: 6px 9px; border-left: 2px solid #b3ceb7; color: #aeb9a9; font-size: 11.5px; line-height: 1.4; }
+.ap-mic-quote span { margin-right: 5px; color: #b3ceb7; font: 500 7.5px/1 var(--mono); letter-spacing: .08em; }
+.ap-composer { display: flex; align-items: center; gap: 8px; margin: 0 18px 14px; padding: 9px 10px 9px 12px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 16px; background: rgba(255, 255, 255, .055); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
+.ap-placeholder { flex: 1; color: #9fae9a; font-size: 12.5px; }
+.ap-key { color: #c3cdbf; font: 500 8px/1 var(--mono); }
+.ap-send { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #b3ceb7; color: #0b100b; font-size: 14px; font-weight: 700; }
+.ap-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 18px 15px; color: #8f9c8c; font: 500 8px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+.ap-foot span:first-child { display: inline-flex; align-items: center; gap: 5px; color: #b3ceb7; }
+[data-theme="dark"] .app-preview { background: #121712; border-color: rgba(255, 255, 255, .20); }
+@media (max-width: 560px) {
+  .app-preview { min-height: 480px; border-radius: 18px; }
+  .ap-bar { min-height: 42px; padding: 0 12px; }
+  .ap-toolbar { padding: 7px 10px; gap: 4px; }
+  .ap-tool { min-height: 30px; padding: 0 8px; font-size: 8.5px; }
+  .ap-provider { font-size: 8px; }
+  .ap-conversation { padding: 14px 12px 12px; gap: 10px; }
+  .ap-turn { max-width: 90%; }
+  .ap-turn p { font-size: 14px; }
+  .ap-answer { max-width: 96%; padding: 10px 11px; }
+  .ap-answer p { font-size: 12px; }
+  .ap-mic-quote { display: none; }
+  .ap-composer { margin: 0 12px 11px; min-height: 42px; }
+  .ap-foot { padding: 0 12px 12px; font-size: 7px; }
+}
+@media (max-width: 360px) {
+  .ap-tool { padding: 0 6px; font-size: 8px; }
+  .ap-provider { display: none; }
+}
