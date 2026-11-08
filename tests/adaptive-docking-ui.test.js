@@ -86,9 +86,10 @@ test('the expanded panel keeps a transparent scrollbar track instead of a bright
   assert.match(styles, /#panel:hover::\-webkit-scrollbar-thumb,\s*#panel:focus-within::\-webkit-scrollbar-thumb\s*\{[^}]*background:\s*var\(--sb-thumb-hover\)/);
 });
 
-test('the full toolbar remains the drag target while interactive controls stay no-drag', () => {
-  assert.doesNotMatch(html, /class="tb-grab"/);
-  assert.doesNotMatch(styles, /\.tb-grab/);
+test('the toolbar and its grip are drag targets while interactive controls stay no-drag', () => {
+  assert.match(html, /class="tb-grab"[^>]*aria-hidden="true"/);
+  assert.match(styles, /\.tb-grab\s*\{\s*-webkit-app-region:\s*drag/);
+  assert.match(styles, /\.tb-grab[^}]*cursor:\s*grab/);
   assert.match(styles, /#toolbar\s*\{\s*-webkit-app-region:\s*drag/);
   assert.match(styles, /\.no-drag, button, input, textarea\s*\{\s*-webkit-app-region:\s*no-drag/);
 });
