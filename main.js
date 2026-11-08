@@ -66,7 +66,6 @@ const { createWindowAutoFitController } = require('./src/window-auto-fit');
 const { createChatHistory } = require('./src/chat-history');
 const { createMeetingStore } = require('./src/meeting-store');
 const { contextMenuTemplate } = require('./src/context-menu');
-const { createWindowState } = require('./src/window-state');
 const { buildBackupPlan, readBackupFolder, MAX_BACKUP_FILES, MAX_BACKUP_FILE_BYTES } = require('./src/meeting-backup');
 const { buildPreviousMeetingsBlock, PREVIOUS_MEETINGS_NOTE } = require('./src/meeting-memory');
 const { createMeetingRecovery, countUnsavedTurns } = require('./src/meeting-recovery');
@@ -82,15 +81,10 @@ const { buildRulesBlock } = require('./src/ai-rules');
 
 const chatHistory = createChatHistory();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
-// The user's expanded window size, remembered across launches. Position is not
-// stored: the dock controller owns it, and a remembered anchor would fight it.
-const windowState = createWindowState({ file: path.join(currentUserDataPath, 'window-state.json') });
-let savedWindowSize = windowState.load();
-
+// The overlay has one fixed expanded size. There is no resize affordance and no
+// remembered size: docking owns the window geometry.
 function dockSizes() {
-  return savedWindowSize
-    ? { ...DEFAULT_DOCK_SIZES, expanded: savedWindowSize }
-    : DEFAULT_DOCK_SIZES;
+  return DEFAULT_DOCK_SIZES;
 }
 // Modes that benefit from "what did we agree last time" context. Slide review
 // has its own supplied material, and recap covers the live session only.
@@ -1098,10 +1092,6 @@ function publishDockState() {
   win.webContents.send('window:dock-state', { side: windowDock.side, collapsed: windowDock.collapsed });
 }
 
-// Set by createWindow. The quit path runs outside that closure, and it has to be
-// able to save the size before the app exits.
-let saveWindowSizeNow = () => {};
-
 function applyDockBounds({ side = windowDock.side, collapsed = windowDock.collapsed, anchor = windowDock.anchor, targetDisplay = null } = {}) {
   if (!win || win.isDestroyed()) return;
   windowAutoFit?.cancel();
@@ -1281,7 +1271,7 @@ function createWindow() {
     frame: false,
     transparent: true,
     hasShadow: false,
-    resizable: true,
+    resizable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
@@ -1310,36 +1300,12 @@ function createWindow() {
   win.on('moved', () => {
     windowAutoFit?.recordMove(screen.getCursorScreenPoint());
   });
-  // Remember the size the user settles on. A collapsed window is a 260pt rail,
-  // so saving that would restore a sliver; only an expanded window is recorded.
-  let windowSizeTimer = null;
-  const rememberWindowSize = () => {
-    if (!win || win.isDestroyed() || windowDock.collapsed) return;
-    const { width, height } = win.getBounds();
-    const saved = windowState.save({ width, height });
-    if (saved) savedWindowSize = saved;
-  };
-  const scheduleWindowSizeSave = () => {
-    if (windowDock.collapsed) return;
-    clearTimeout(windowSizeTimer);
-    windowSizeTimer = setTimeout(rememberWindowSize, 400);
-  };
-  // 'resize' fires for every resize including a programmatic one; 'resized' only
-  // fires when a user finishes dragging an edge. Listening to one of them is a
-  // feature that silently never saves.
-  win.on('resize', scheduleWindowSizeSave);
-  win.on('resized', scheduleWindowSizeSave);
-  saveWindowSizeNow = rememberWindowSize;
   win.on('close', () => {
-    clearTimeout(windowSizeTimer);
-    windowSizeTimer = null;
-    rememberWindowSize();
     windowAutoFit?.cancel();
   });
   win.on('closed', () => {
     windowAutoFit?.cancel();
     windowAutoFit = null;
-    saveWindowSizeNow = () => {};
   });
 
   win.loadURL(APP_ENTRY_URL);
@@ -3469,9 +3435,6 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', (event) => {
-  // Quitting calls app.exit(0) after the awaited cleanup, which destroys the
-  // window without a 'close' event, so this is the last chance to persist size.
-  try { saveWindowSizeNow(); } catch {}
   relaunchRequested = false; // any quit supersedes a pending relaunch (incl. window-all-closed / native menu)
   if (shutdownPromise) return; // cleanup already ran (or is in progress)
   event.preventDefault();
