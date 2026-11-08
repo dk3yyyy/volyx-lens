@@ -8,24 +8,52 @@
 
 Use your screen, voice, meeting audio, and saved Task Context with the AI provider you choose. Requests go directly from the app to that provider rather than through a Volyx Lens-operated server. You choose when to capture and what context to send. On macOS, the overlay uses the operating system's protected-window mechanism to reduce accidental exposure of its contents in supported capture tools; this is a privacy safeguard, not a way to conceal use. Support varies by platform and capture tool, and exclusion is never guaranteed.
 
-[**Explore the live site**](https://volyxlens.pages.dev/) · [Download](#download) · [Product tour](#product-tour) · [Architecture](docs/architecture.md) · [Privacy](#privacy-and-security)
+<p>
+  <a href="https://github.com/dk3yyyy/volyx-lens/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dk3yyyy/volyx-lens?label=release"></a>
+  <a href="LICENSE.md"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <img alt="Platforms: macOS, Windows, Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-2f6b43">
+</p>
+
+[**Explore the live site**](https://volyxlens.pages.dev/) · [Download](#download) · [Product tour](#product-tour) · [Architecture](docs/architecture.md) · [Privacy](#privacy-and-security) · [Privacy policy](https://volyxlens.pages.dev/privacy)
 
 <br />
 
 <a href="https://volyxlens.pages.dev/">
-  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens live website showing the privacy-first macOS and Windows AI assistant that reduces its exposure in supported screen shares, its separate screen, voice, and meeting-audio inputs, and direct provider routing" />
+  <img src="docs/live-site-preview.webp" width="100%" alt="Volyx Lens landing page with the app-chrome product preview, showing attached screen and microphone context and a Lens answer" />
 </a>
 
 <sub>Live product site: <a href="https://volyxlens.pages.dev/">volyxlens.pages.dev</a></sub>
 
 </div>
 
+<details>
+<summary><strong>Contents</strong></summary>
+
+- [What it is](#what-it-is)
+- [Highlights](#highlights)
+- [Product tour](#product-tour)
+- [Download](#download)
+- [Platform support](#platform-support)
+- [What it can do](#what-it-can-do)
+- [Setup](#setup)
+- [Task Context](#task-context)
+- [Meetings](#meetings)
+- [Slide tracking](#slide-tracking)
+- [How it works](#how-it-works)
+- [Privacy and security](#privacy-and-security)
+- [Troubleshooting](#troubleshooting)
+- [Build from source](#build-from-source)
+- [Release integrity](#release-integrity)
+- [License](#license)
+
+</details>
+
 ---
 
 > [!IMPORTANT]
 > **Use Volyx Lens transparently and with consent.** Tell people when you are capturing or transcribing conversations, and get any consent required by law, policy, or the people involved. Disclose AI assistance when an exam, interview, workplace, platform, or other setting requires it. Do not use capture protection to hide recording or assistance, or to bypass those rules. Capture exclusion is best-effort, never guaranteed; modern capture tools or a physical camera may still show the app.
 
-## Why Volyx Lens
+## What it is
 
 Volyx Lens is a compact glass overlay, a private AI assistant for macOS, Windows, and Linux (Linux support is experimental), that can use three intentionally separate inputs:
 
@@ -99,11 +127,15 @@ macOS and Linux:
 curl -fsSL https://volyxlens.pages.dev/install.sh | sh
 ```
 
+[View install.sh](https://github.com/dk3yyyy/volyx-lens/blob/main/website/install.sh)
+
 Windows PowerShell:
 
 ```powershell
 irm https://volyxlens.pages.dev/install.ps1 | iex
 ```
+
+[View install.ps1](https://github.com/dk3yyyy/volyx-lens/blob/main/website/install.ps1)
 
 The installer resolves the newest release, downloads the asset for your OS and architecture, verifies the published SHA-256, and installs it — `/Applications` on macOS (or `~/Applications` with `--user`), `~/.local/bin` plus a desktop entry on Linux, and the per-user installer on Windows. It needs no Node or package manager. Pass `--version v0.8.0` to install a specific release, `--dry-run` to see the URL, or `--no-launch` to skip opening the app.
 
@@ -417,7 +449,7 @@ Scanned PDFs are images, not text, and are not supported — export or OCR the d
 Requirements:
 
 - macOS 13+, Windows 10/11, or a recent Linux distribution
-- [Node.js](https://nodejs.org) 20+ installed
+- [Node.js](https://nodejs.org) 22+ installed
 - npm (bundled with Node.js)
 - macOS only: Xcode Command Line Tools (`xcode-select --install`) for native OCR and system-audio helpers
 - Linux only (for the Them channel at runtime): `pactl` and `parec` from `pulseaudio-utils` (or PipeWire's PulseAudio compatibility) and an active default audio sink

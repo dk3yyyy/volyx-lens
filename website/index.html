@@ -65,7 +65,7 @@
       <a href="#work">What it does</a>
       <a href="#providers">Providers</a>
       <a href="#install">Install</a>
-      <a href="#notes">Notes</a>
+      <a href="#notes">FAQ</a>
     </nav>
     <div class="header-tools">
       <button class="theme-toggle" type="button" aria-label="Switch to dark mode" data-theme-toggle>
@@ -85,7 +85,7 @@
       <a href="#work">What it does</a>
       <a href="#providers">Providers</a>
       <a href="#install">Install</a>
-      <a href="#notes">Notes</a>
+      <a href="#notes">FAQ</a>
     </nav>
   </noscript>
 
@@ -115,6 +115,7 @@
               <code data-install-command>curl -fsSL https://volyxlens.pages.dev/install.sh | sh</code>
               <button class="copy-command" type="button" data-copy-command>Copy</button>
             </div>
+            <p class="hero-install-help"><a href="install.sh">install.sh</a> · <a href="install.ps1">install.ps1</a> · verifies SHA-256 · supports <code>--dry-run</code></p>
           </div>
         </div>
 
@@ -215,32 +216,32 @@
 
         <article class="work-row work-row-screen">
           <div class="work-copy">
-            <p class="row-index">01 / Screen help</p>
+            <p class="row-index">Screen help</p>
             <h3>Ask about what is already on screen</h3>
             <p>Ask about an error, a diff or a dense document without retyping it. The screen is captured locally and sent only when you ask.</p>
           </div>
           <figure class="work-shot work-scene" aria-label="A failing build line selected inside a code window, with a Volyx Lens annotation explaining the fix">
             <div class="screen-stage" aria-hidden="true">
               <div class="screen-window">
-                <div class="screen-bar"><span class="screen-dots"><i></i><i></i><i></i></span><span class="screen-file">src/retry.js</span><span class="screen-capture">Screen · captured</span><span class="screen-state">build failed · TS2304</span></div>
+                <div class="screen-bar"><span class="screen-dots"><i></i><i></i><i></i></span><span class="screen-file">src/retry.js</span><span class="screen-capture">Screen · captured</span><span class="screen-state">ReferenceError · retryLimit</span></div>
                 <div class="screen-code">
-                  <span class="sc-line"><b>38</b>const retry = { attempts: 3 };</span>
+                  <span class="sc-line"><b>38</b>import { send } from "./transport.js";</span>
                   <span class="sc-line"><b>39</b>export async function request(input) {</span>
-                  <span class="sc-line"><b>40</b>  let attempt = 0;</span>
-                  <span class="sc-line is-dim"><b>41</b>  try { return await send(input); }</span>
-                  <span class="sc-line is-hit"><b>42</b>  const limit = retryLimit;</span>
-                  <span class="sc-line is-dim"><b>43</b>  catch (error) {</span>
+                  <span class="sc-line is-hit"><b>40</b>  for (let attempt = 0; attempt &lt; retryLimit; attempt++) {</span>
+                  <span class="sc-line"><b>41</b>    try { return await send(input); }</span>
+                  <span class="sc-line"><b>42</b>    catch (error) { lastError = error; }</span>
+                  <span class="sc-line"><b>43</b>  }</span>
+                  <span class="sc-line"><b>44</b>}</span>
                 </div>
                 <div class="screen-focus"></div>
               </div>
               <div class="screen-note">
                 <p class="note-kicker">01 · Lens answer</p>
-                <p class="note-line"><span>42</span><code>const limit = retryLimit;</code></p>
+                <p class="note-line"><span>40</span><code>for (let attempt = 0; attempt &lt; retryLimit; attempt++) {</code></p>
                 <p class="note-q">Why won’t this build?</p>
-                <p class="note-a"><code>retryLimit</code> is not defined here. <code>config.js</code> has the current limit.</p>
-                <p class="note-cite">src/retry.js:42</p>
+                <p class="note-a"><code>retryLimit</code> is not defined in this module. <code>config.js</code> has the current retry limit.</p>
+                <p class="note-cite">src/retry.js:40</p>
               </div>
-              <span class="screen-connector"></span>
             </div>
           </figure>
         </article>
@@ -248,7 +249,7 @@
         <article class="work-row work-row-meeting">
           <div class="meeting-head">
             <div>
-              <p class="row-index">02 / Meeting capture</p>
+              <p class="row-index">Meeting capture</p>
               <h3>Meeting transcripts, with You and Them separated</h3>
             </div>
             <p>Separate You and Them channels, searchable history on your device, and notes only when you ask for them.</p>
@@ -286,9 +287,9 @@
 
         <article class="work-row work-row-task">
           <div class="work-copy">
-            <p class="row-index">03 / Task Context</p>
-            <h3>Keep several screens in Task Context</h3>
-            <p>Task Context keeps a small set of screens in local memory and tells you what it left out.</p>
+            <p class="row-index">Task Context</p>
+            <h3>Keep several views in Task Context</h3>
+            <p>Task Context keeps a small set of views in local memory and tells you what it left out.</p>
             <p class="row-detail">Nothing sent until you ask.</p>
           </div>
 
@@ -308,7 +309,8 @@
               <div class="out-item"><strong>Reference tab</strong><small>Not needed for this question</small></div>
               <div class="out-item"><strong>Old revision</strong><small>Superseded by the current diff</small></div>
             </div>
-                      </div>          </div>
+            </div>
+          </div>
         </article>
       </div>
     </section>
@@ -369,7 +371,7 @@
           </div>
           <div>
             <dt>Local transcription</dt>
-            <dd>Local Whisper ships in the Windows and Linux packages, off by default; the model downloads on first use.</dd>
+            <dd>Local Whisper ships in the Windows and Linux packages, off by default; the model downloads on first use. It is not bundled on macOS; point the app at your own <code>whisper-server</code>. Windows also needs the Microsoft Visual C++ Redistributable.</dd>
           </div>
         </dl>
       </div>
@@ -391,11 +393,11 @@
         </div>
         <div class="install-files">
           <div class="files-head"><span>Builds</span><span>v0.8.0</span></div>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-win-x64.exe"><strong>Windows</strong><span>x64 installer · unsigned</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-mac-arm64-unsigned.dmg"><strong>macOS · Apple Silicon</strong><span>Unsigned DMG</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-mac-x64-unsigned.dmg"><strong>macOS · Intel</strong><span>Unsigned DMG</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-linux-x86_64.AppImage"><strong>Linux · x64</strong><span>AppImage · experimental</span></a>
-          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-linux-arm64.AppImage"><strong>Linux · arm64</strong><span>AppImage · experimental</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-win-x64.exe"><strong>Windows</strong><span>Installer · x64 · unsigned</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-mac-arm64-unsigned.dmg"><strong>macOS · Apple Silicon</strong><span>DMG · unsigned</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-mac-x64-unsigned.dmg"><strong>macOS · Intel</strong><span>DMG · unsigned</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-linux-x86_64.AppImage"><strong>Linux · x64</strong><span>AppImage · unsigned · experimental</span></a>
+          <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-linux-arm64.AppImage"><strong>Linux · arm64</strong><span>AppImage · unsigned · experimental</span></a>
           <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.0"><strong>All files</strong><span>Checksums and SBOMs</span></a>
         </div>
       </div>
@@ -409,8 +411,8 @@
       <div class="wrap notes-grid">
         <div class="notes-head">
           <p class="eyebrow">05 — Before you install</p>
-          <h2 id="notes-title">Unsigned builds, updates, keys, offline use.</h2>
-          <p>Six things to know before you install.</p>
+          <h2 id="notes-title">Before you install.</h2>
+          <p>The things the installer and the app cannot decide for you.</p>
         </div>
         <div class="notes-list">
           <details>
@@ -423,7 +425,7 @@
           </details>
           <details>
             <summary>Updates check GitHub every six hours</summary>
-            <p>Volyx Lens asks api.github.com for the latest release. The request includes your IP address and user agent. Turn update checks off in Settings → Updates.</p>
+            <p>Volyx Lens asks api.github.com for the latest release. The request includes your IP address and user agent. Unsigned Windows and macOS builds only notify; Linux AppImages update in place, and nothing installs without your action. Turn update checks off in Settings → Updates.</p>
           </details>
           <details>
             <summary>Keys are stored on your machine, not on a Volyx server</summary>
@@ -453,7 +455,7 @@
       </div>
       <div class="footer-links">
         <div><span>Product</span><a href="#route">How it works</a><a href="#work">What it does</a><a href="#install">Install</a><a href="#notes">Before you install</a></div>
-        <div><span>Project</span><a href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/releases" target="_blank" rel="noreferrer">Releases<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/issues" target="_blank" rel="noreferrer">Issues<span class="sr-only"> (opens in a new tab)</span></a></div>
+        <div><span>Project</span><a href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">GitHub<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/releases" target="_blank" rel="noreferrer">Releases<span class="sr-only"> (opens in a new tab)</span></a></div>
         <div><span>Terms</span><a href="/privacy">Privacy</a><a href="https://github.com/dk3yyyy/volyx-lens/blob/main/LICENSE.md" target="_blank" rel="noreferrer">License<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/security/policy" target="_blank" rel="noreferrer">Security<span class="sr-only"> (opens in a new tab)</span></a><a href="https://github.com/dk3yyyy/volyx-lens/issues/new" target="_blank" rel="noreferrer">Report an issue<span class="sr-only"> (opens in a new tab)</span></a></div>
       </div>
     </div>

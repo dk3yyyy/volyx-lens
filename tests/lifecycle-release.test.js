@@ -62,5 +62,5 @@ test('release scripts gate signing credentials and preserve hardened runtime/not
 test('documented Node version matches the tested packaging runtime', () => {
   // 22 is the floor since pdfjs 6 needs Promise.withResolvers.
   assert.equal(pkg.engines.node, '>=22');
-  assert.match(readme, /Node\.js\]\([^)]*\) 20\+ installed/);
+  assert.match(readme, /Node\.js\]\([^)]*\) 22\+ installed/);
 });
