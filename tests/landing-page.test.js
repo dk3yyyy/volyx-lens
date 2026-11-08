@@ -66,6 +66,16 @@ test('landing page preserves the canonical Volyx Lens eye byte for byte', () => 
   );
 });
 
+test('the one-line install is in the hero and has a working fallback', () => {
+  assert.match(html, /data-install-command/);
+  assert.match(html, /data-copy-command/);
+  assert.match(html, /data-install-platform="windows"/);
+  assert.match(script, /INSTALL_COMMANDS/);
+  assert.match(css, /@keyframes app-settle/);
+  assert.match(css, /@keyframes app-scan/);
+  assert.match(css, /prefers-reduced-motion[\s\S]*app-window::after/);
+});
+
 test('landing page ships accessible navigation, context switches and reduced motion', () => {
   assert.match(html, /<button[^>]+aria-controls="site-nav"[^>]+aria-expanded="false"/i);
   assert.match(html, /data-source="screen"/);

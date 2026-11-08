@@ -227,6 +227,48 @@ async function initDownloads() {
 
 initDownloads();
 
+/* One-line install */
+const INSTALL_COMMANDS = {
+  unix: 'curl -fsSL https://volyxlens.pages.dev/install.sh | sh',
+  windows: 'irm https://volyxlens.pages.dev/install.ps1 | iex'
+};
+function setInstallPlatform(platform) {
+  const command = document.querySelector('[data-install-command]');
+  if (!command || !INSTALL_COMMANDS[platform]) return;
+  command.textContent = INSTALL_COMMANDS[platform];
+  document.querySelectorAll('[data-install-platform]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.installPlatform === platform));
+  });
+}
+document.querySelectorAll('[data-install-platform]').forEach((button) => {
+  button.addEventListener('click', () => setInstallPlatform(button.dataset.installPlatform));
+});
+if (/windows/i.test(navigator.userAgent || '')) setInstallPlatform('windows');
+const copyCommand = document.querySelector('[data-copy-command]');
+if (copyCommand) {
+  copyCommand.addEventListener('click', async () => {
+    const command = document.querySelector('[data-install-command]');
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command.textContent);
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(command);
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.execCommand('copy');
+      selection.removeAllRanges();
+    }
+    copyCommand.textContent = 'Copied';
+    copyCommand.classList.add('is-copied');
+    setTimeout(() => {
+      copyCommand.textContent = 'Copy';
+      copyCommand.classList.remove('is-copied');
+    }, 1600);
+  });
+}
+
 /* Year */
 const year = document.querySelector('[data-year]');
 if (year) year.textContent = String(new Date().getFullYear());
