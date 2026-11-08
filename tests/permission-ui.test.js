@@ -152,3 +152,9 @@ test('replayable tutorial covers channels, task context, auto-assist, smart togg
   assert.match(renderer, /Screen Recording is allowed now\. macOS applies it after the app restarts\./);
   assert.match(renderer, /No AI provider is configured yet/);
 });
+
+test('browser-managed microphone permission is described as ask-on-use, not unavailable', () => {
+  const renderer = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
+  assert.match(renderer, /volyxLens\.platform !== 'darwin' && result\.status === 'not-determined'/);
+  assert.match(renderer, /setPermissionState\(kind, 'Ask on use', ''\)/);
+});

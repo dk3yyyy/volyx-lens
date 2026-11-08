@@ -199,3 +199,9 @@ test('checkbox rows use a two-column grid and keyless custom providers are ready
   assert.match(renderer, /const customEndpoint = provider === 'custom'/);
   assert.match(renderer, /const keyless = provider === 'ollama' \|\| provider === 'opencode' \|\| customEndpoint/);
 });
+
+test('provider list treats stock model names as unconfigured unless the provider is keyless', () => {
+  assert.match(renderer, /const keyless = id === 'ollama' \|\| id === 'opencode'/);
+  assert.match(renderer, /present\[`\$\{id\}\.fast`\]/);
+  assert.doesNotMatch(renderer, /const configured = new Set\(\[settings\.provider, settings\.fallbackProvider\]/);
+});
