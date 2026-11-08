@@ -87,9 +87,9 @@
     --accent: #cfe3b4;
     --accent-ink: #16200f;
     --accent-soft: #263120;
-    --line: rgba(255, 255, 255, .14);
-    --line-strong: rgba(255, 255, 255, .28);
-    --control-line: rgba(255, 255, 255, .34);
+    --line: rgba(255, 255, 255, .20);
+    --line-strong: rgba(255, 255, 255, .38);
+    --control-line: rgba(255, 255, 255, .48);
     --panel: #0a0d0a;
     --panel-2: #121712;
     --panel-ink: #eef1e7;
@@ -594,7 +594,7 @@ section[id], main[id] { scroll-margin-top: 80px; }
 .build-cite { margin: 9px 0 0; color: var(--muted); font: 400 9px/1 var(--mono); }
 
 /* Hero: the product as a capture deck, not a code screenshot. */
-.context-panel { position: relative; display: flex; flex-direction: column; min-height: 560px; overflow: hidden; border: 1px solid #2c382b; border-radius: 14px; background: #0b100b; box-shadow: 0 32px 62px -42px rgba(0,0,0,.74), 0 2px 8px -3px rgba(0,0,0,.3); isolation: isolate; }
+.context-panel { position: relative; display: flex; flex-direction: column; min-height: 560px; overflow: hidden; border: 1px solid #2c382b; border-radius: 20px; background: #0b100b; box-shadow: 0 32px 62px -42px rgba(0,0,0,.74), 0 2px 8px -3px rgba(0,0,0,.3); isolation: isolate; }
 .context-panel::before { position: absolute; inset: 0; background: radial-gradient(70% 60% at 0% 0%, rgba(86,114,80,.20), transparent 70%); content: ""; pointer-events: none; }
 .cp-bar { position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-bottom: 1px solid rgba(255,255,255,.11); color: #eef1e7; }
 .cp-bar img { border-radius: 4px; }
@@ -802,7 +802,7 @@ section[id], main[id] { scroll-margin-top: 80px; }
 }
 @media (max-width: 560px) {
   .hero-install { gap: 5px; margin-top: 16px; padding-top: 10px; }
-  .context-panel { min-height: 306px; border-radius: 10px; }
+  .context-panel { min-height: 306px; border-radius: 16px; }
   .cp-bar { min-height: 36px; padding: 0 10px; gap: 6px; }
   .cp-name { font-size: 10px; }.cp-provider { font-size: 8px; padding: 4px 5px; }
   .cp-body { display: flex; flex-direction: column; gap: 3px; padding: 5px; }
