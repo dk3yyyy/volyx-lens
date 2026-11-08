@@ -153,7 +153,7 @@ test('landing page renders the interface as a designed scene, not a screenshot',
 });
 
 test('download OS detection maps desktop platforms, architecture and ignores mobile', async () => {
-  const start = script.indexOf('async function macArch()');
+  const start = script.indexOf('function macArchFromRenderer()');
   const end = script.indexOf('initDownloads();');
   assert.ok(start > 0 && end > start, 'detection functions present');
   const source = script.slice(start, end);

@@ -113,15 +113,33 @@ const ASSETS = {
   'linux-arm64': { href: `${RELEASE}/download/v0.8.4/volyx-lens-0.8.4-linux-arm64.AppImage`, label: 'Linux arm64', detail: 'AppImage' }
 };
 
+// Safari and Firefox do not expose Client Hints. Their WebGL renderer string
+// still tells Apple silicon from Intel, so the button can point at one DMG
+// instead of dumping the visitor on the release page.
+function macArchFromRenderer() {
+  if (typeof document === 'undefined') return null;
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) return null;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) || '');
+    if (/apple/i.test(renderer)) return 'mac-arm64';
+    if (/intel|amd|radeon/i.test(renderer)) return 'mac-x64';
+  } catch (error) { /* WebGL unavailable */ }
+  return null;
+}
+
 async function macArch() {
   try {
     const data = navigator.userAgentData;
-    if (!data || typeof data.getHighEntropyValues !== 'function') return null;
-    const values = await data.getHighEntropyValues(['architecture']);
-    if (values.architecture === 'arm') return 'mac-arm64';
-    if (values.architecture === 'x86') return 'mac-x64';
+    if (data && typeof data.getHighEntropyValues === 'function') {
+      const values = await data.getHighEntropyValues(['architecture']);
+      if (values.architecture === 'arm') return 'mac-arm64';
+      if (values.architecture === 'x86') return 'mac-x64';
+    }
   } catch (error) { /* client hints unavailable */ }
-  return null;
+  return macArchFromRenderer();
 }
 
 async function detectOS() {

@@ -240,7 +240,7 @@ section[id], main[id] { scroll-margin-top: 80px; }
 .hero h1 { max-width: 11ch; }
 .hero-lede { max-width: 42ch; margin-top: 22px; color: var(--muted); font-size: 16.5px; line-height: 1.62; text-wrap: pretty; }
 .hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 22px; margin-top: 26px; }
-.hero-detect { margin-top: 13px; color: var(--muted); font: 400 11px/1.5 var(--mono); letter-spacing: .02em; }
+.hero-detect, .detected { margin-top: 13px; color: var(--muted); font: 400 11px/1.5 var(--mono); letter-spacing: .02em; }
 
 .hero-panel { grid-column: 6 / -1; }
 .app-window :focus-visible { outline-color: #cfe3b4; }
