@@ -87,6 +87,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify the bundled whisper.cpp runtime
         # The packaged tree only exists on the leg that ran pack; without this the
         # other matrix entry verifies a directory that was never built.
@@ -138,6 +139,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify the bundled whisper.cpp runtime
         run: npm run verify:whisper-runtime
 
@@ -172,6 +174,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run verify:vision-ocr-package
 
   swift-test:

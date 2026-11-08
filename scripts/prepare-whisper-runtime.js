@@ -186,9 +186,18 @@ async function downloadArchive({ runtime, cacheDir, fetchImpl }) {
     for (const url of urls) {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
+          const headers = url === runtime.assetApiUrl
+            ? {
+                Accept: 'application/octet-stream',
+                // The unauth API asset endpoint is rate-limited by IP. CI supplies
+                // the job token so a shared runner does not turn the fallback into
+                // an HTTP 403. Never log this header.
+                ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
+              }
+            : undefined;
           const response = await fetchImpl(url, {
             redirect: 'follow',
-            headers: url === runtime.assetApiUrl ? { Accept: 'application/octet-stream' } : undefined,
+            headers,
             signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) : undefined,
           });
           if (!response || response.ok !== true) {
