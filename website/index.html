@@ -92,7 +92,7 @@
         <div class="hero-copy">
           <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span>Desktop context panel</p>
           <h1 id="hero-title">Choose what your AI sees and hears.</h1>
-          <p class="hero-lede">Volyx Lens is a desktop AI panel for your screen, microphone and meeting audio. Pick the sources, then send them to the provider you configured.</p>
+          <p class="hero-lede">Volyx Lens is a desktop AI panel for your screen, microphone and meeting audio. Choose the sources, then send them to the provider you configured.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.0" data-download>
               <span>Download Volyx Lens</span>
@@ -113,7 +113,6 @@
               <button class="copy-command" type="button" data-copy-command>Copy</button>
             </div>
           </div>
-          <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.8.0</p>
         </div>
 
         <div class="hero-panel">
@@ -121,8 +120,6 @@
             <div class="cp-bar">
               <img src="assets/volyx-lens-logo.svg" width="18" height="18" alt="">
               <span class="cp-name">Volyx Lens</span>
-              <span class="cp-local">local</span>
-              <span class="cp-ready"><i aria-hidden="true"></i> Ready</span>
               <span class="cp-provider">OpenAI <svg viewBox="0 0 10 6" aria-hidden="true"><path d="m1 1 4 4 4-4"/></svg></span>
             </div>
             <div class="cp-body">
@@ -153,14 +150,13 @@
                 </div>
               </div>
               <div class="cp-thread">
-                <p class="cp-label">Question with screen + mic context</p>
+                <p class="cp-label">Question with screen and mic</p>
                 <p class="cp-question">What changed in this diff?</p>
                 <p class="cp-answer">The retry limit moved into <code>config.js</code>. Two callers still read the old constant.</p>
                 <p class="cp-cite"><span>Screen</span> src/retry.js:42 <span>config.js:8</span></p>
                 <p class="cp-heard"><span class="cp-heard-label">Microphone</span><span class="cp-heard-mark" aria-hidden="true"></span>“Can you explain this error?”</p>
-                <div class="cp-context"><span>Sent with this answer</span><span>Screen · src/retry.js:42</span><span>Microphone · 00:06</span></div>
                 <div class="cp-followup"><span>Ask a follow-up</span><span>⌘↵</span></div>
-                <p class="cp-foot"><span><i aria-hidden="true"></i> Listening</span><span>Direct to OpenAI</span></p>
+                <p class="cp-foot"><span><i aria-hidden="true"></i> Listening</span><span>Direct to provider</span></p>
               </div>
             </div>
           </div>
@@ -176,7 +172,7 @@
             <p class="eyebrow">01 — The route</p>
             <h2 id="route-title">Your context goes straight to your provider.</h2>
           </div>
-          <p class="route-intro">Selected context goes to the provider you configured. Volyx Lens has no relay: no Volyx Lens server sits in between. Session media stays in memory; saved transcripts stay on this device.</p>
+          <p class="route-intro">Selected context goes to the provider you configured. There is no relay and no analytics SDK. Live screen and audio stay in memory; saved transcripts stay on this device.</p>
         </div>
 
         <div class="route-map" role="img" aria-label="Your machine holds the sources and the Volyx Lens app. One direct line leaves it for the AI provider you configured. No relay and no Volyx Lens server sit on that line.">
@@ -199,7 +195,7 @@
             <span class="cross-kicker">Direct request</span>
             <span class="cross-line"><i class="cross-pulse"></i></span>
             <span class="no-relay">No relay</span>
-            <span class="cross-proto">Your key, sent direct</span>
+            <span class="cross-proto">Your request, sent direct</span>
           </div>
 
           <div class="route-zone route-zone-provider">
@@ -213,12 +209,7 @@
           </div>
         </div>
 
-        <dl class="fact-row">
-          <div><dt>Relay servers</dt><dd>0</dd></div>
-          <div><dt>Keys stored</dt><dd>OS secure storage</dd></div>
-          <div><dt>Analytics SDK</dt><dd>None</dd></div>
-          <div><dt>Source license</dt><dd>Apache 2.0</dd></div>
-        </dl>
+
       </div>
     </section>
 
@@ -229,15 +220,14 @@
             <p class="eyebrow">02 — What it does</p>
             <h2 id="work-title">Screen help, meeting capture, Task Context.</h2>
           </div>
-          <p>Three ways to give the panel context. Auto-assist, meeting detection and slide tracking are off by default.</p>
+          <p>Three ways to give the panel context.</p>
         </div>
 
         <article class="work-row work-row-screen">
           <div class="work-copy">
             <p class="row-index">01 / Screen help</p>
             <h3>Ask about what is already on screen</h3>
-            <p>Point at an error, a diff or a dense document without retyping it. The screen stays on your machine until you send the question.</p>
-            <p class="row-detail">Screen + microphone · 2 of 3 sources</p>
+            <p>Ask about an error, a diff or a dense document without retyping it. The screen is captured locally and sent only when you ask.</p>
           </div>
           <figure class="work-shot work-scene" aria-label="A failing build line selected inside a code window, with a Volyx Lens annotation explaining the fix">
             <div class="screen-stage" aria-hidden="true">
@@ -299,7 +289,7 @@
             </div>
             <div class="tr-foot">
               <span>Two channels · searchable history</span>
-              <span class="tr-notes">Notes: off · ask when you need them</span>
+              <span class="tr-notes">Notes: off</span>
             </div>
           </div>
         </article>
@@ -309,7 +299,7 @@
             <p class="row-index">03 / Task Context</p>
             <h3>Keep several screens in Task Context</h3>
             <p>Task Context keeps a small set of screens in local memory and tells you what it left out.</p>
-            <p class="row-detail">4 kept · 2 left out · nothing sent until you ask</p>
+            <p class="row-detail">Nothing sent until you ask.</p>
           </div>
 
           <div class="manifest" aria-hidden="true">
@@ -328,8 +318,7 @@
               <div class="out-item"><strong>Reference tab</strong><small>Not needed for this question</small></div>
               <div class="out-item"><strong>Old revision</strong><small>Superseded by the current diff</small></div>
             </div>
-            <div class="manifest-foot"><span>Nothing sent until you ask</span><span>2 left out</span></div>
-          </div>          </div>
+                      </div>          </div>
         </article>
       </div>
     </section>
@@ -341,7 +330,7 @@
             <p class="eyebrow">03 — Providers</p>
             <h2 id="providers-title">Works with the provider you already use.</h2>
           </div>
-          <p>12 response providers, including a custom OpenAI-compatible endpoint. Hosted or local, bring a key when the provider needs one. Model availability and charges are set by the provider.</p>
+          <p>12 response providers, including a custom OpenAI-compatible endpoint. Add a key only when the provider needs one. Models and charges come from your provider.</p>
         </div>
 
         <div class="provider-groups">
@@ -364,14 +353,14 @@
             </div>
           </div>
           <div class="provider-group provider-group-local">
-            <div class="group-head"><h3>Local</h3><span>2</span></div>
+            <div class="group-head"><h3>Local</h3><span>2 providers</span></div>
             <ul>
               <li><strong>Ollama</strong><span>Local responses</span></li>
               <li><strong>Opencode</strong><span>Local responses</span></li>
             </ul>
           </div>
           <div class="provider-group provider-group-custom">
-            <div class="group-head"><h3>Custom</h3><span>1</span></div>
+            <div class="group-head"><h3>Custom</h3><span>1 provider</span></div>
             <ul>
               <li><strong>Custom (OpenAI-compatible)</strong><span>Custom endpoint</span></li>
             </ul>
@@ -400,8 +389,8 @@
       <div class="wrap install-grid">
         <div class="install-lead">
           <p class="eyebrow">04 — Install</p>
-          <h2 id="install-title">Install Volyx Lens.</h2>
-          <p>One app for macOS 13 or later, Windows 10/11, or Linux. Add a provider key when you first open it, and change providers whenever you want.</p>
+          <h2 id="install-title">Volyx Lens for macOS, Windows and Linux.</h2>
+          <p>One app for macOS 13 or later, Windows 10/11, or Linux. Add a provider key if your provider needs one.</p>
           <div class="install-actions">
             <a class="button button-primary" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.0" data-download>
               <span>Download Volyx Lens</span>
@@ -409,7 +398,6 @@
             </a>
             <a class="text-link" href="https://github.com/dk3yyyy/volyx-lens#download" target="_blank" rel="noreferrer">Installation steps<span class="sr-only"> (opens in a new tab)</span></a>
           </div>
-          <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.8.0</p>
         </div>
         <div class="install-files">
           <div class="files-head"><span>Builds</span><span>v0.8.0</span></div>
@@ -423,8 +411,7 @@
       </div>
 
       <div class="wrap install-disclosures">
-        <p class="platform-note">macOS 13 Ventura or later. Windows, Linux, and the current macOS DMGs ship unsigned; every file has a .sha256 checksum and a CycloneDX SBOM. The macOS build will be signed with an Apple Developer ID and notarized once release signing credentials are configured.</p>
-        <p class="install-license">Apache License 2.0 · no relay · no analytics SDK</p>
+        <p class="platform-note">macOS, Windows and Linux builds are unsigned. Every file includes a SHA-256 checksum and a CycloneDX SBOM.</p>
       </div>
     </section>
 
@@ -432,13 +419,13 @@
       <div class="wrap notes-grid">
         <div class="notes-head">
           <p class="eyebrow">05 — Before you install</p>
-          <h2 id="notes-title">Unsigned builds, keys, offline limits.</h2>
-          <p>What the installer does not tell you, in six answers.</p>
+          <h2 id="notes-title">Unsigned builds, updates, keys, offline use.</h2>
+          <p>Six things to know before you install.</p>
         </div>
         <div class="notes-list">
           <details>
             <summary>macOS builds are unsigned</summary>
-            <p>Drag the app into Applications and try to open it once. On macOS 15 and later, go to System Settings → Privacy &amp; Security and choose <strong>Open Anyway</strong>. On macOS 13–14, right-click the app and choose Open. <code>xattr -cr "/Applications/Volyx Lens.app"</code> is an advanced fallback. It runs as a panel rather than a Dock app, so there may be no Dock icon; reopen it from Applications. The build is not notarized, so macOS may ask for Screen Recording permission again after an update.</p>
+            <p>Open the app once, then approve it in System Settings → Privacy &amp; Security on macOS 15 or later; on macOS 13–14, right-click and choose Open. <code>xattr -cr</code> is an advanced fallback. The panel has no Dock icon, so reopen it from Applications. An update may ask for Screen Recording permission again.</p>
           </details>
           <details>
             <summary>Windows shows an unknown publisher warning</summary>
@@ -446,7 +433,7 @@
           </details>
           <details>
             <summary>Updates check GitHub every six hours</summary>
-            <p>Volyx Lens asks api.github.com for the latest release. That request includes your IP address, a user agent, and on signed builds an updater ID. Turn update checks off in Settings → Updates.</p>
+            <p>Volyx Lens asks api.github.com for the latest release. The request includes your IP address and user agent. Turn update checks off in Settings → Updates.</p>
           </details>
           <details>
             <summary>Keys are stored on your machine, not on a Volyx server</summary>
@@ -454,11 +441,11 @@
           </details>
           <details>
             <summary>What works offline</summary>
-            <p>With a local Ollama server, responses run offline. Local Whisper covers offline batch transcription on Windows and Linux after you enable it and download a model; macOS supports offline batch transcription when a whisper-server binary is configured.</p>
+            <p>Ollama gives offline responses. Local Whisper gives offline batch transcription on Windows and Linux after you enable it and download a model; macOS needs a configured whisper-server binary.</p>
           </details>
           <details>
             <summary>Recording law is still your responsibility</summary>
-            <p>Capture permissions are explicit, but local consent and recording laws still apply. Do not capture private conversations, protected work, exams or interviews without permission. Capture exclusion is best-effort and never guaranteed.</p>
+            <p>Capture permissions are explicit, but consent and recording laws still apply. Do not capture people without their permission. Capture exclusion is best-effort and never guaranteed.</p>
           </details>
         </div>
       </div>
@@ -482,7 +469,7 @@
     </div>
     <div class="wrap footer-bottom">
       <span>© <span data-year>2026</span> Joshua Nwachinemere</span>
-      <span>Open source · Apache 2.0 · 0 relay servers</span>
+      <span>Open source · Apache License 2.0 · No relay servers</span>
     </div>
   </footer>
 </body>
