@@ -141,13 +141,10 @@ test('landing page links to existing license, security and issue documents', () 
   assert.ok(fs.readFileSync(path.join(root, 'SECURITY.md'), 'utf8').endsWith('\n'));
 });
 
-test('landing page declares the interface screenshot at its intrinsic size', () => {
-  const match = html.match(/assets\/volyx-lens-stage\.png"\s+width="(\d+)"\s+height="(\d+)"/);
-  assert.ok(match, 'stage screenshot carries width and height');
-  const png = fs.readFileSync(path.join(website, 'assets', 'volyx-lens-stage.png'));
-  assert.equal(png.subarray(1, 4).toString('ascii'), 'PNG');
-  assert.equal(Number(match[1]), png.readUInt32BE(16));
-  assert.equal(Number(match[2]), png.readUInt32BE(20));
+test('landing page renders the interface as a designed scene, not a screenshot', () => {
+  assert.match(html, /class="product-stage"/);
+  assert.match(html, /work-scene/);
+  assert.doesNotMatch(html, /volyx-lens-stage\.png/);
 });
 
 test('download OS detection maps desktop platforms, architecture and ignores mobile', async () => {
