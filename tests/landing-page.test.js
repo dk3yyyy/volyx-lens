@@ -91,7 +91,7 @@ test('landing page ships accessible navigation, preview semantics and reduced mo
 
 test('landing page explains the implemented context, meeting, coding and offline boundaries', () => {
   assert.match(html, /Task Context/i);
-  assert.match(html, /Keep several screens in Task Context/i);
+  assert.match(html, /Keep several views in Task Context/i);
   assert.doesNotMatch(html, /Mail|Calendar/);
   assert.match(html, /Reference tab/i);
   assert.match(html, /Old revision/i);
