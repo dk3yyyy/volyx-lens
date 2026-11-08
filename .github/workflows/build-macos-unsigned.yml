@@ -70,6 +70,7 @@ jobs:
           --config.mac.identity=null
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
 
       - name: Ad-hoc sign, package, and verify the artifacts
         shell: bash
