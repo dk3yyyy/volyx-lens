@@ -241,8 +241,10 @@ body.window-inactive #toolbar {
 }
 .tb-grab span { width: 3px; height: 3px; border-radius: 50%; background: rgba(255,255,255,0.38); }
 .tb-grab:hover span { background: rgba(255,255,255,0.68); }
+/* The side rail is only 220px tall and every pixel is used by controls; the
+   whole rail is still a drag region, so the grip is unnecessary there. */
 #app[data-dock="left"] .tb-grab,
-#app[data-dock="right"] .tb-grab { transform: rotate(90deg); }
+#app[data-dock="right"] .tb-grab { display: none; }
 .tb-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.10); margin: 0 2px; }
 #toolbar button { border: none; background: transparent; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background 140ms ease, transform 140ms ease; }
 #slide-tracking-toolbar-indicator { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid rgba(66,207,232,0.35); border-radius: 999px; color: #bdeeff; background: rgba(66,207,232,0.12); font-size: 10.5px; font-weight: 650; }

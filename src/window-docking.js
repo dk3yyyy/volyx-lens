@@ -4,7 +4,7 @@ const DOCK_SIDES = Object.freeze(['top', 'bottom', 'left', 'right']);
 const DEFAULT_DOCK_SIZES = Object.freeze({
   expanded: Object.freeze({ width: 700, height: 600 }),
   collapsedHorizontal: Object.freeze({ width: 260, height: 52 }),
-  collapsedVertical: Object.freeze({ width: 52, height: 264 }),
+  collapsedVertical: Object.freeze({ width: 52, height: 220 }),
   edgeInset: 6,
   // The window's own floor. Docking below it made Electron clamp the window back
   // up over the work area it was supposed to fit into (VR-20).
