@@ -93,6 +93,9 @@ test('landing page ships accessible navigation, context switches and reduced mot
 test('landing page explains the implemented context, meeting, coding and offline boundaries', () => {
   assert.match(html, /Task Context/i);
   assert.match(html, /Keep several screens in Task Context/i);
+  assert.doesNotMatch(html, /Mail|Calendar/);
+  assert.match(html, /Reference tab/i);
+  assert.match(html, /Old revision/i);
   assert.match(html, /tells you what it left out/i);
   assert.match(html, /You and Them/i);
   assert.match(html, /meeting transcripts/i);
@@ -142,7 +145,7 @@ test('landing page links to existing license, security and issue documents', () 
 });
 
 test('landing page renders the interface as a designed scene, not a screenshot', () => {
-  assert.match(html, /class="product-stage"/);
+  assert.match(html, /class="context-panel"/);
   assert.match(html, /work-scene/);
   assert.doesNotMatch(html, /volyx-lens-stage\.png/);
 });
