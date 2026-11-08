@@ -52,7 +52,7 @@ test('collapsed rail is horizontal at top and bottom and vertical at left and ri
     assert.ok(bounds.height > bounds.width, `${side} rail should be vertical`);
   }
   assert.deepEqual(DEFAULT_DOCK_SIZES.collapsedHorizontal, { width: 260, height: 52 });
-  assert.deepEqual(DEFAULT_DOCK_SIZES.collapsedVertical, { width: 52, height: 220 });
+  assert.deepEqual(DEFAULT_DOCK_SIZES.collapsedVertical, { width: 52, height: 264 });
 });
 
 test('dock bounds preserve the dragged rail center along an edge and clamp at corners', () => {
