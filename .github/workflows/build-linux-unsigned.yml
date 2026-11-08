@@ -36,13 +36,30 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            native-bin/.whisper-runtime-cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+      - run: bash scripts/ci-install.sh
       - run: npm test
       - run: npm run check:syntax
       - run: npm run security:secrets
       - run: npm audit --audit-level=low
 
       - name: Build the AppImage
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           npm pkg set "build.publish[0].channel=latest-${{ matrix.arch }}"
