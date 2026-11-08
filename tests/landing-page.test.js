@@ -70,16 +70,16 @@ test('the one-line install is in the hero and has a working fallback', () => {
   assert.match(html, /data-copy-command/);
   assert.match(html, /data-install-platform="windows"/);
   assert.match(script, /INSTALL_COMMANDS/);
-  assert.match(css, /@keyframes app-settle/);
-  assert.match(css, /@keyframes app-scan/);
-  assert.match(css, /prefers-reduced-motion[\s\S]*app-window::after/);
+  assert.match(css, /\.app-preview\s*\{/);
+  assert.doesNotMatch(html, /data-source/);
 });
 
-test('landing page ships accessible navigation, context switches and reduced motion', () => {
+test('landing page ships accessible navigation, preview semantics and reduced motion', () => {
   assert.match(html, /<button[^>]+aria-controls="site-nav"[^>]+aria-expanded="false"/i);
   assert.match(html, /class="ap-chip"><b>Screen<\/b>/);
   assert.match(html, /class="ap-chip"><b>Mic<\/b>/);
   assert.match(html, /class="ap-chip is-off"><b>System<\/b>/);
+  assert.doesNotMatch(html, /data-source/);
   assert.match(html, /<noscript>/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/i);
   assert.match(css, /:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus\)/);
