@@ -1,4 +1,4 @@
-// Inlined Lucide icon paths (MIT, lucide.dev) + Volyx Lens logo glyph.
+// Inlined Lucide icon paths (MIT, lucide.dev).
 // icon(name, {size, stroke, fill}) -> SVG markup string.
 (function () {
   const P = {
@@ -20,18 +20,10 @@
     play: '<path d="M6 4.5v15a1 1 0 0 0 1.5.87l12-7.5a1 1 0 0 0 0-1.74l-12-7.5A1 1 0 0 0 6 4.5z"/>',
     'stop-square': '<rect x="5" y="5" width="14" height="14" rx="3.5"/>'
   };
-  // Volyx Lens logo — an original lens outline with a centered V.
-  const LOGO = '<svg viewBox="0 0 24 24" width="SIZE" height="SIZE" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-    '<circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="1.6"/>' +
-    '<path d="M4.8 12c1.8-3.4 4.2-5.1 7.2-5.1s5.4 1.7 7.2 5.1c-1.8 3.4-4.2 5.1-7.2 5.1S6.6 15.4 4.8 12Z" stroke="currentColor" stroke-width="1.45"/>' +
-    '<path d="m9.1 9.8 2.9 5 2.9-5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '</svg>';
-
   function icon(name, opts) {
     opts = opts || {};
     const size = opts.size || 16;
     const stroke = opts.stroke != null ? opts.stroke : 2;
-    if (name === 'logo') return LOGO.replaceAll('SIZE', size);
     if (FILLED[name]) {
       return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="currentColor" stroke="none" xmlns="http://www.w3.org/2000/svg">' + FILLED[name] + '</svg>';
     }

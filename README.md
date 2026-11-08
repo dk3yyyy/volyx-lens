@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="renderer/assets/volyx-lens-logo.svg" width="112" alt="Volyx Lens eye logo" />
+<img src="renderer/assets/volyx-lens-logo.svg" width="112" alt="Volyx Lens sage aperture logo" />
 
 # Volyx Lens
 
@@ -59,8 +59,8 @@ These captures come from the current Electron UI test harness. Provider values s
 <table>
   <tr>
     <td width="50%" align="center">
-      <a href="docs/onboarding-welcome-eye.png">
-        <img src="docs/onboarding-welcome-eye.png" alt="Volyx Lens welcome screen introducing screen, voice, and assistance features" />
+      <a href="docs/onboarding-welcome.png">
+        <img src="docs/onboarding-welcome.png" alt="Volyx Lens welcome screen introducing screen, voice, and assistance features" />
       </a>
       <br />
       <sub><strong>Guided onboarding</strong>: five steps on first run — ten when reopened from Settings — for permissions, providers, sharing, and readiness.</sub>

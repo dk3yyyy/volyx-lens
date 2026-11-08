@@ -59,7 +59,7 @@ test('landing page attributes the product to its actual owner', () => {
   assert.doesNotMatch(html, /VolyxAI/i);
 });
 
-test('landing page preserves the canonical Volyx Lens eye byte for byte', () => {
+test('landing page preserves the canonical Volyx Lens logo byte for byte', () => {
   assert.equal(
     sha256(path.join(website, 'assets', 'volyx-lens-logo.svg')),
     sha256(path.join(root, 'renderer', 'assets', 'volyx-lens-logo.svg')),
