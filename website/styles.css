@@ -559,6 +559,7 @@ section[id], main[id] { scroll-margin-top: 80px; }
 .stage-source-num { align-self: start; color: var(--muted); font: 400 7px/1 var(--mono); }
 .stage-source-copy { min-width: 0; display: grid; gap: 2px; }
 .stage-source-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 500; }
+.source-short { display: none; }
 .stage-source-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 7.5px; }
 .stage-toggle { position: relative; width: 20px; height: 11px; border: 1px solid var(--line-strong); border-radius: 99px; background: transparent; }
 .stage-toggle i { position: absolute; top: 2px; left: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); transition: transform .16s var(--m-ease), background-color .16s var(--m-ease); }
@@ -662,7 +663,7 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .stage-source-copy small { display: none; }
   .stage-source-copy strong { font-size: 8.5px; }
   .stage-sources { gap: 4px; }
-  .hero-install-row code { font-size: 9.2px; }
+  .hero-install-row code { font-size: 9.1px; }
 }
 @media (max-width: 560px) {
   body { font-size: 16px; }
@@ -680,7 +681,7 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .hero-install { margin-top: 10px; padding-top: 7px; gap: 5px; }
   .hero-install-tabs button { min-height: 24px; padding: 0 5px; font-size: 8.5px; }
   .hero-install-row { min-height: 44px; }
-  .hero-install-row code { align-items: center; padding: 5px 10px; overflow-wrap: anywhere; white-space: normal; font-size: 9.5px; line-height: 1.5; }
+  .hero-install-row code { align-items: center; padding: 5px 10px; overflow-wrap: normal; word-break: normal; white-space: normal; font-size: 9.5px; line-height: 1.5; }
   .copy-command { min-width: 50px; font-size: 8.5px; }
   .app-bar { min-height: 44px; padding: 0 12px; gap: 7px; }
   .app-local { display: none; }
@@ -773,6 +774,14 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .build-cite { margin-top: 6px; font-size: 8px; }
 }
 @media (max-width: 360px) {
+  .hero-install-row code { font-size: 9px; overflow-x: hidden; }
+  .stage-source { gap: 2px; padding: 5px 3px; }
+  .stage-source-copy strong { font-size: 8.5px; letter-spacing: -.01em; }
+  .source-short { display: inline; }
+  .source-long { display: none; }
+  .stage-toggle { width: 16px; }
+}
+
   .hero-panel .app-window { max-height: 246px; }
 }
 @media (forced-colors: active) {
