@@ -25,7 +25,20 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+      - run: bash scripts/ci-install.sh
       # The unit suite runs on both supported LTS lines. Everything else —
       # coverage, the coverage thresholds, the syntax check, and the packaged
       # smoke test — stays on Node 20, so those run once instead of once per
@@ -101,7 +114,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+      - run: bash scripts/ci-install.sh
       - run: npm test
       - run: npm run check:syntax
       - name: Package Windows app directory
@@ -122,7 +148,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+      - run: bash scripts/ci-install.sh
       - run: npm test
       - run: npm run pack
         env:
