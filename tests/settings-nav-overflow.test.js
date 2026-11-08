@@ -14,7 +14,7 @@ test('the settings nav wraps at the minimum window instead of scrolling', () => 
   assert.match(compact, /\.s-nav \{[^}]*flex-wrap: wrap;/);
   assert.match(compact, /\.s-nav \{[^}]*overflow-x: visible;/);
   assert.doesNotMatch(compact, /\.s-nav \{[^}]*overflow-x: auto;/);
-  assert.match(compact, /\.s-nav button \{[^}]*flex: 1 1 calc\(33\.333% - 4px\);/);
+  assert.match(compact, /\.s-nav button \{[^}]*flex: 1 1 calc\(25% - 4px\);/);
   assert.match(compact, /\.s-nav button \{[^}]*min-width: 0;/);
 });
 

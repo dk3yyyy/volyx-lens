@@ -2662,7 +2662,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   $('#shortcuts-reset').addEventListener('click', async () => {
     try {
       const result = await volyxLens.shortcutsReset();
-      if (result && result.ok) renderShortcutStatus(result.status);
+      if (result && result.ok) {
+        // saveSettings() sends the whole local settings object on close. Keep
+        // the local mirror empty so closing does not write the old bindings back.
+        settings.shortcuts = {};
+        renderShortcutStatus(result.status);
+      }
       showStatus('Shortcuts reset to defaults.');
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Could not reset shortcuts.');
@@ -2785,7 +2790,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     document.querySelectorAll('[data-tier-key-config]').forEach((row) => {
       const providers = String(row.dataset.tierKeyConfig || '').split(/\s+/).filter(Boolean);
       row.classList.toggle('hidden', !providers.includes(providerView));
-      if (!providers.includes(providerView)) return;
+      // Clear the shared tier inputs even when this provider hides the row.
+      // Otherwise a key typed for Azure can be submitted under OpenAI after a
+      // provider switch, writing one provider's secret into another provider's slot.
       for (const tier of ['fast', 'smart']) {
         const slot = `${providerView}.${tier}`;
         const input = $(`#key-${tier}`);
