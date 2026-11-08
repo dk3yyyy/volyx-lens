@@ -117,56 +117,50 @@
         </div>
 
         <div class="hero-panel">
-          <div class="product-stage" role="group" aria-label="Volyx Lens reading a changed line in src/retry.js and answering with screen and microphone context">
-            <div class="stage-code" aria-hidden="true">
-              <div class="stage-code-bar">
-                <span class="stage-dots"><i></i><i></i><i></i></span>
-                <span class="stage-file">src/retry.js</span>
-                <span class="stage-diff">+1 −1</span>
-              </div>
-              <ol class="stage-lines">
-                <li><code>const retry = { attempts: 3, base: 250 };</code></li>
-                <li><code>export async function request(input) {</code></li>
-                <li><code>  let attempt = 0;</code></li>
-                <li><code>  while (attempt &lt; retry.attempts) {</code></li>
-                <li class="is-removed"><code>    const limit = 3;</code></li>
-                <li class="is-focus"><code>    const limit = config.retryLimit;</code></li>
-                <li><code>    try { return await send(input); }</code></li>
-                <li><code>    catch (error) {</code></li>
-                <li><code>      await wait(2 ** attempt * retry.base);</code></li>
-                <li><code>    }</code></li>
-              </ol>
-              <div class="stage-focus" aria-hidden="true">
-                <span>Screen · captured</span>
-              </div>
+          <div class="context-panel" role="group" aria-label="Volyx Lens with screen and microphone context, answering a question about a changed line">
+            <div class="cp-bar">
+              <img src="assets/volyx-lens-logo.svg" width="18" height="18" alt="">
+              <span class="cp-name">Volyx Lens</span>
+              <span class="cp-local">local</span>
+              <span class="cp-ready"><i aria-hidden="true"></i> Ready</span>
+              <span class="cp-provider">OpenAI <svg viewBox="0 0 10 6" aria-hidden="true"><path d="m1 1 4 4 4-4"/></svg></span>
             </div>
-
-            <div class="stage-answer">
-              <div class="stage-answer-head">
-                <img src="assets/volyx-lens-logo.svg" width="20" height="20" alt="">
-                <span class="stage-brand">Volyx Lens</span>
-                <span class="stage-count" data-context-count>2 of 3 sources</span>
-                <span class="stage-live"><i aria-hidden="true"></i> listening</span>
+            <div class="cp-body">
+              <div class="cp-capture">
+                <div class="cp-head"><span>Capture sources</span><span data-context-count>2 of 3 sources</span></div>
+                <button class="cp-source cp-screen is-on" type="button" data-source="screen" aria-pressed="true">
+                  <span class="cp-preview" aria-hidden="true">
+                    <span class="cp-preview-bar"><i></i><i></i><i></i><span>src/retry.js</span></span>
+                    <span class="cp-code">
+                      <span class="cp-diff"><b>41</b><em>- const limit = 3;</em></span>
+                      <span class="cp-diff is-add"><b>42</b><em>+ const limit = config.retryLimit;</em></span>
+                      <span class="cp-code-line"><b>43</b>try { return await send(input); }</span>
+                    </span>
+                    <span class="cp-focus-line"></span>
+                    <span class="cp-aperture"></span>
+                  </span>
+                  <span class="cp-meta"><strong>Screen</strong><small>Display 1 · On</small><span class="cp-toggle" aria-hidden="true"><i></i></span></span>
+                </button>
+                <div class="cp-source-row">
+                  <button class="cp-source cp-mic is-on" type="button" data-source="mic" aria-pressed="true">
+                    <span class="cp-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+                    <span class="cp-meta"><strong>Microphone</strong><small>Built-in · On</small><span class="cp-toggle" aria-hidden="true"><i></i></span></span>
+                  </button>
+                  <button class="cp-source cp-meeting" type="button" data-source="system" aria-pressed="false">
+                    <span class="cp-wave is-off" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+                    <span class="cp-meta"><strong>Meeting audio</strong><small>System · Off</small><span class="cp-toggle" aria-hidden="true"><i></i></span></span>
+                  </button>
+                </div>
               </div>
-              <p class="stage-q">What changed in this diff?</p>
-              <p class="stage-a">The retry limit moved into <code>config.js</code>. Two callers still read the old constant.</p>
-              <p class="stage-cite"><span>Screen</span> src/retry.js:42</p>
-              <div class="stage-sources" role="group" aria-label="Capture sources">
-                <button class="stage-source is-on" type="button" data-source="screen" aria-pressed="true">
-                  <span class="stage-source-num" aria-hidden="true">01</span>
-                  <span class="stage-source-copy"><strong>Screen</strong><small>Display 1 · On</small></span>
-                  <span class="stage-toggle" aria-hidden="true"><i></i></span>
-                </button>
-                <button class="stage-source is-on" type="button" data-source="mic" aria-pressed="true">
-                  <span class="stage-source-num" aria-hidden="true">02</span>
-                  <span class="stage-source-copy"><strong>Microphone</strong><small>Built-in · On</small></span>
-                  <span class="stage-toggle" aria-hidden="true"><i></i></span>
-                </button>
-                <button class="stage-source" type="button" data-source="system" aria-pressed="false">
-                  <span class="stage-source-num" aria-hidden="true">03</span>
-                  <span class="stage-source-copy"><strong><span class="source-long">Meeting audio</span><span class="source-short">Meeting</span></strong><small>System · Off</small></span>
-                  <span class="stage-toggle" aria-hidden="true"><i></i></span>
-                </button>
+              <div class="cp-thread">
+                <p class="cp-label">Question with screen + mic context</p>
+                <p class="cp-question">What changed in this diff?</p>
+                <p class="cp-answer">The retry limit moved into <code>config.js</code>. Two callers still read the old constant.</p>
+                <p class="cp-cite"><span>Screen</span> src/retry.js:42 <span>config.js:8</span></p>
+                <p class="cp-heard"><span class="cp-heard-label">Microphone</span><span class="cp-heard-mark" aria-hidden="true"></span>“Can you explain this error?”</p>
+                <div class="cp-context"><span>Sent with this answer</span><span>Screen · src/retry.js:42</span><span>Microphone · 00:06</span></div>
+                <div class="cp-followup"><span>Ask a follow-up</span><span>⌘↵</span></div>
+                <p class="cp-foot"><span><i aria-hidden="true"></i> Listening</span><span>Direct to OpenAI</span></p>
               </div>
             </div>
           </div>
@@ -245,35 +239,28 @@
             <p>Point at an error, a diff or a dense document without retyping it. The screen stays on your machine until you send the question.</p>
             <p class="row-detail">Screen + microphone · 2 of 3 sources</p>
           </div>
-          <figure class="work-shot work-scene" aria-label="A terminal build error with the failing retry line selected, and Volyx Lens explaining what to change">
-            <div class="build-stage" aria-hidden="true">
-              <div class="build-window">
-                <div class="build-bar">
-                  <span class="stage-dots"><i></i><i></i><i></i></span>
-                  <span class="build-file">zsh · npm run build</span>
-                  <span class="build-exit">build failed</span>
+          <figure class="work-shot work-scene" aria-label="A failing build line selected inside a code window, with a Volyx Lens annotation explaining the fix">
+            <div class="screen-stage" aria-hidden="true">
+              <div class="screen-window">
+                <div class="screen-bar"><span class="screen-dots"><i></i><i></i><i></i></span><span class="screen-file">src/retry.js</span><span class="screen-capture">Screen · captured</span><span class="screen-state">build failed · TS2304</span></div>
+                <div class="screen-code">
+                  <span class="sc-line"><b>38</b>const retry = { attempts: 3 };</span>
+                  <span class="sc-line"><b>39</b>export async function request(input) {</span>
+                  <span class="sc-line"><b>40</b>  let attempt = 0;</span>
+                  <span class="sc-line is-dim"><b>41</b>  try { return await send(input); }</span>
+                  <span class="sc-line is-hit"><b>42</b>  const limit = retryLimit;</span>
+                  <span class="sc-line is-dim"><b>43</b>  catch (error) {</span>
                 </div>
-                <ol class="build-lines">
-                  <li><code>$ npm run build</code></li>
-                  <li><code>vite v5.4.2 building for production...</code></li>
-                  <li><code>src/retry.js:42:18 - error TS2304</code></li>
-                  <li class="is-error"><code>Cannot find name 'retryLimit'.</code></li>
-                  <li><code>const limit = retryLimit;</code></li>
-                  <li><code>              ^~~~~~~~~~</code></li>
-                  <li class="build-fail"><code>Build failed in 412ms.</code></li>
-                </ol>
-                <div class="build-focus"><span>Screen · captured</span></div>
+                <div class="screen-focus"></div>
               </div>
-              <div class="build-answer">
-                <div class="build-head">
-                  <img src="assets/volyx-lens-logo.svg" width="18" height="18" alt="">
-                  <span>Volyx Lens</span>
-                  <span class="build-source">screen</span>
-                </div>
-                <p class="build-q">Why won't this build?</p>
-                <p class="build-a">This line still reads the old constant. <code>config.js</code> already has the new limit.</p>
-                <p class="build-cite">src/retry.js:42</p>
+              <div class="screen-note">
+                <p class="note-kicker">01 · Lens answer</p>
+                <p class="note-line"><span>42</span><code>const limit = retryLimit;</code></p>
+                <p class="note-q">Why won’t this build?</p>
+                <p class="note-a"><code>retryLimit</code> is not defined here. <code>config.js</code> has the current limit.</p>
+                <p class="note-cite">src/retry.js:42</p>
               </div>
+              <span class="screen-connector"></span>
             </div>
           </figure>
         </article>
@@ -322,55 +309,27 @@
             <p class="row-index">03 / Task Context</p>
             <h3>Keep several screens in Task Context</h3>
             <p>Task Context keeps a small set of screens in local memory and tells you what it left out.</p>
-            <p class="row-detail">4 kept · 2 omitted · nothing sent until you ask</p>
+            <p class="row-detail">4 kept · 2 left out · nothing sent until you ask</p>
           </div>
 
           <div class="manifest" aria-hidden="true">
             <div class="manifest-head">
               <span>Task Context</span>
-              <span>6 screens seen</span>
+              <span>4 kept · 2 left out</span>
             </div>
-            <div class="manifest-row">
-              <span class="m-num">01</span>
-              <span class="m-thumb" aria-hidden="true"></span>
-              <span class="m-name">Editor</span>
-              <span class="m-state">Kept</span>
+            <div class="manifest-stack">
+              <div class="m-card"><span class="m-preview m-editor"><i></i><i></i><i></i><i></i></span><span class="m-name">Editor</span><span class="m-state">Kept</span></div>
+              <div class="m-card"><span class="m-preview m-docs"><i></i><i></i><i></i></span><span class="m-name">Docs</span><span class="m-state">Kept</span></div>
+              <div class="m-card"><span class="m-preview m-term"><i></i><i></i><i></i></span><span class="m-name">Terminal</span><span class="m-state">Kept</span></div>
+              <div class="m-card"><span class="m-preview m-pr"><i></i><i></i><i></i></span><span class="m-name">Pull request</span><span class="m-state">Kept</span></div>
             </div>
-            <div class="manifest-row">
-              <span class="m-num">02</span>
-              <span class="m-thumb" aria-hidden="true"></span>
-              <span class="m-name">Docs</span>
-              <span class="m-state">Kept</span>
+            <div class="manifest-out">
+              <span class="out-label">Left out</span>
+              <div class="out-item"><strong>Reference tab</strong><small>Not needed for this question</small></div>
+              <div class="out-item"><strong>Old revision</strong><small>Superseded by the current diff</small></div>
             </div>
-            <div class="manifest-row">
-              <span class="m-num">03</span>
-              <span class="m-thumb" aria-hidden="true"></span>
-              <span class="m-name">Terminal</span>
-              <span class="m-state">Kept</span>
-            </div>
-            <div class="manifest-row">
-              <span class="m-num">04</span>
-              <span class="m-thumb" aria-hidden="true"></span>
-              <span class="m-name">Pull request</span>
-              <span class="m-state">Kept</span>
-            </div>
-            <div class="manifest-row is-out">
-              <span class="m-num">05</span>
-              <span class="m-thumb" aria-hidden="true"></span>
-              <span class="m-name">Mail</span>
-              <span class="m-state">Omitted</span>
-            </div>
-            <div class="manifest-row is-out">
-              <span class="m-num">06</span>
-              <span class="m-thumb" aria-hidden="true"></span>
-              <span class="m-name">Calendar</span>
-              <span class="m-state">Omitted</span>
-            </div>
-            <div class="manifest-foot">
-              <span>4 of 6 kept in local memory</span>
-              <span>2 omitted</span>
-            </div>
-          </div>
+            <div class="manifest-foot"><span>Nothing sent until you ask</span><span>2 left out</span></div>
+          </div>          </div>
         </article>
       </div>
     </section>
