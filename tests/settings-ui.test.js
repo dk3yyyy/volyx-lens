@@ -22,7 +22,7 @@ test('settings use seven simple pages without removing existing controls', () =>
   assert.match(html, /id="settings"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(renderer, /function selectSettingsSection\(section/);
   assert.match(renderer, /page\.hidden = !active/);
-  assert.match(styles, /grid-template-columns:\s*132px minmax\(0,1fr\)/);
+  assert.match(styles, /grid-template-columns:\s*156px minmax\(0,1fr\)/);
 });
 
 test('the appearance pane exposes a native radio group and persists through the store', () => {
@@ -60,7 +60,7 @@ test('settings behavior harness covers navigation, modal focus, and compact fit'
 
 test('settings navigation is compact and interactive controls use restrained liquid-glass squircles', () => {
   assert.match(styles, /--r-control:\s*12px/);
-  assert.match(styles, /\.s-layout\s*\{[^}]*grid-template-columns:\s*132px minmax\(0,1fr\)/);
+  assert.match(styles, /\.s-layout\s*\{[^}]*grid-template-columns:\s*156px minmax\(0,1fr\)/);
   assert.match(styles, /\.s-nav button\s*\{[^}]*min-height:\s*40px[^}]*border-radius:\s*var\(--r-control\)/);
   assert.match(styles, /\.s-nav button\.on\s*\{[^}]*linear-gradient[^}]*inset 0 1px 0/);
   assert.match(styles, /\.s-seg button\s*\{[^}]*border-radius:\s*var\(--r-control\)/);
@@ -192,4 +192,10 @@ test('long privacy notes are collapsed into disclosures instead of stacked parag
   assert.match(html, /<details class="s-note-details"><summary>What leaves this device<\/summary>/);
   assert.match(html, /<details class="s-note-details"><summary>How offline transcription works<\/summary>/);
   assert.match(styles, /\.s-note-details[\s\S]*?\.s-note-details\[open\]/);
+});
+
+test('checkbox rows use a two-column grid and keyless custom providers are ready without a key', () => {
+  assert.match(styles, /\.s-field:has\(input\[type="checkbox"\]\) \{[^}]*display: grid[^}]*grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(renderer, /const customEndpoint = provider === 'custom'/);
+  assert.match(renderer, /const keyless = provider === 'ollama' \|\| provider === 'opencode' \|\| customEndpoint/);
 });

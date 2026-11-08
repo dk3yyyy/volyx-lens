@@ -2877,7 +2877,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
-    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', nvidia: 'nvapi-...', opencodeGo: 'oc_sk_...', deepgram: 'Deepgram API key', azureRealtime: 'Optional separate Realtime resource key', azureSpeech: 'Azure AI Speech resource key' };
+    const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', nvidia: 'nvapi-...', opencodeGo: 'oc_sk_...', deepgram: 'Deepgram API key', azureRealtime: 'Optional Realtime key', azureSpeech: 'Azure AI Speech resource key' };
     for (const provider of Object.keys(keyPlaceholders)) {
       const input = $(`#key-${provider}`);
       input.value = '';
@@ -3598,7 +3598,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       dots.appendChild(dot);
     });
     const provider = (settings && settings.provider) || 'openai';
-    const providerReady = provider === 'ollama' || Boolean(settings && settings.credentialStatus && settings.credentialStatus.present && settings.credentialStatus.present[provider]);
+    const credentialPresent = (settings && settings.credentialStatus && settings.credentialStatus.present) || {};
+    const tier = (settings && settings.endpointByTier && settings.endpointByTier[provider]) || {};
+    const customEndpoint = provider === 'custom' && Boolean(tier.fast || tier.smart);
+    const keyless = provider === 'ollama' || provider === 'opencode' || customEndpoint;
+    const tierKey = Boolean(credentialPresent[`${provider}.fast`] || credentialPresent[`${provider}.smart`]);
+    const providerReady = keyless || Boolean(credentialPresent[provider]) || tierKey;
     const finalStep = obIndex === obSteps.length - 1;
     if (finalStep && !providerReady) {
       $('#ob-title').textContent = 'Almost ready.';
