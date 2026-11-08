@@ -24,11 +24,10 @@ test('landing page ships a semantic, truthful static entry point', () => {
   assert.equal((html.match(/<h1\b/gi) || []).length, 1);
   assert.match(html, /Choose what your AI sees and hears/i);
   assert.match(html, /Volyx Lens is a desktop AI panel/i);
-  assert.match(html, /No Volyx Lens server sits in between/i);
+  assert.match(html, /There is no relay and no analytics SDK/i);
   assert.match(html, /best-effort/i);
   assert.match(html, /Apache License 2\.0/i);
-  assert.match(html, /current macOS DMGs ship unsigned; every file has a \.sha256 checksum and a CycloneDX SBOM/i);
-  assert.match(html, /Developer ID and notarized once release signing credentials are configured/i);
+  assert.match(html, /macOS, Windows and Linux builds are unsigned\. Every file includes a SHA-256 checksum and a CycloneDX SBOM/i);
   assert.doesNotMatch(html, /VolyxAI/i);
   assert.doesNotMatch(html, /customer(s)?|trusted by|SOC\s?2|guaranteed invisible/i);
 });

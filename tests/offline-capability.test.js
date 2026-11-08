@@ -39,5 +39,5 @@ test('advertised copy says the binary is required', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   assert.match(readme, /requires a `whisper-server` binary/);
   const site = fs.readFileSync(path.join(root, 'website', 'index.html'), 'utf8');
-  assert.match(site, /when a whisper-server binary is configured/);
+  assert.match(site, /macOS needs a configured whisper-server binary/);
 });
