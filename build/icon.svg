@@ -1,7 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Volyx Lens mark">
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Volyx Lens sage aperture mark</title>
+  <desc id="desc">A sage aperture ring around a dark core on a near-black tile.</desc>
   <defs>
     <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#161D16"/><stop offset="1" stop-color="#090C09"/>
+      <stop offset="0" stop-color="#1B241A"/><stop offset="1" stop-color="#0A0E0A"/>
     </linearGradient>
     <linearGradient id="iris" gradientUnits="userSpaceOnUse" x1="286" y1="250" x2="760" y2="800">
       <stop offset="0" stop-color="#D8E7DB"/>
@@ -14,7 +16,8 @@
     </linearGradient>
   </defs>
   <rect x="40" y="40" width="944" height="944" rx="216" fill="url(#tile)"/>
-  <rect x="56" y="56" width="912" height="912" rx="202" fill="none" stroke="#EEF1E7" stroke-opacity=".08" stroke-width="10"/>
+  <rect x="40" y="40" width="944" height="944" rx="216" fill="none" stroke="#B3CEB7" stroke-opacity=".36" stroke-width="44"/>
+  <rect x="56" y="56" width="912" height="912" rx="202" fill="none" stroke="#EEF1E7" stroke-opacity=".10" stroke-width="10"/>
   <circle cx="512" cy="512" r="318" fill="none" stroke="#EEF1E7" stroke-opacity=".10" stroke-width="10"/>
   <path d="M212 512 a300 300 0 1 0 600 0 a300 300 0 1 0 -600 0 Z M466.0 414.0 H558.0 A52 52 0 0 1 610.0 466.0 V558.0 A52 52 0 0 1 558.0 610.0 H466.0 A52 52 0 0 1 414.0 558.0 V466.0 A52 52 0 0 1 466.0 414.0 Z" fill="url(#iris)" fill-rule="evenodd"/>
   <path d="M466.0 414.0 H558.0 A52 52 0 0 1 610.0 466.0 V558.0 A52 52 0 0 1 558.0 610.0 H466.0 A52 52 0 0 1 414.0 558.0 V466.0 A52 52 0 0 1 466.0 414.0 Z" fill="#070906"/>
