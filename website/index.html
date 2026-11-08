@@ -116,65 +116,60 @@
         </div>
 
         <div class="hero-panel">
-          <div class="app-window" role="group" aria-label="Volyx Lens interface preview with three capture sources, a provider choice and one answer">
-            <div class="app-bar">
-              <span class="app-mark" aria-hidden="true"><i></i></span>
-              <span class="app-title">Volyx Lens</span>
-              <span class="app-local">local</span>
-              <span class="app-state"><i aria-hidden="true"></i> Ready</span>
-              <button class="app-provider" type="button" aria-expanded="false" aria-controls="provider-menu">
-                <span data-provider-label>OpenAI</span>
-                <svg viewBox="0 0 10 6" aria-hidden="true"><path d="m1 1 4 4 4-4"/></svg>
-              </button>
-              <div class="provider-menu" id="provider-menu" hidden>
-                <button type="button" data-provider-option="OpenAI" aria-pressed="true">OpenAI<small>Responses, transcription</small></button>
-                <button type="button" data-provider-option="Anthropic" aria-pressed="false">Anthropic<small>Responses</small></button>
-                <button type="button" data-provider-option="Google Gemini" aria-pressed="false">Google Gemini<small>Responses, batch transcription</small></button>
-                <button type="button" data-provider-option="Groq" aria-pressed="false">Groq<small>Responses, Whisper</small></button>
+          <div class="product-stage" role="group" aria-label="Volyx Lens reading a changed line in src/retry.js and answering with screen and microphone context">
+            <div class="stage-code" aria-hidden="true">
+              <div class="stage-code-bar">
+                <span class="stage-dots"><i></i><i></i><i></i></span>
+                <span class="stage-file">src/retry.js</span>
+                <span class="stage-diff">+1 −1</span>
+              </div>
+              <ol class="stage-lines">
+                <li><code>const retry = { attempts: 3, base: 250 };</code></li>
+                <li><code>export async function request(input) {</code></li>
+                <li><code>  let attempt = 0;</code></li>
+                <li><code>  while (attempt &lt; retry.attempts) {</code></li>
+                <li class="is-removed"><code>    const limit = 3;</code></li>
+                <li class="is-focus"><code>    const limit = config.retryLimit;</code></li>
+                <li><code>    try { return await send(input); }</code></li>
+                <li><code>    catch (error) {</code></li>
+                <li><code>      await wait(2 ** attempt * retry.base);</code></li>
+                <li><code>    }</code></li>
+              </ol>
+              <div class="stage-focus" aria-hidden="true">
+                <span>Screen · captured</span>
               </div>
             </div>
 
-            <div class="app-sources">
-              <div class="sources-head">
-                <span>Capture sources</span>
-                <span data-context-count aria-live="polite">2 of 3 sources</span>
+            <div class="stage-answer">
+              <div class="stage-answer-head">
+                <img src="assets/volyx-lens-logo.svg" width="20" height="20" alt="">
+                <span class="stage-brand">Volyx Lens</span>
+                <span class="stage-count" data-context-count>2 of 3 sources</span>
+                <span class="stage-live"><i aria-hidden="true"></i> listening</span>
               </div>
-              <button class="source is-on" type="button" data-source="screen" aria-pressed="true">
-                <span class="src-num" aria-hidden="true">01</span>
-                <span class="src-copy"><strong>Screen</strong><small>Display 1 · On</small></span>
-                <span class="toggle" aria-hidden="true"><i></i></span>
-              </button>
-              <button class="source is-on" type="button" data-source="mic" aria-pressed="true">
-                <span class="src-num" aria-hidden="true">02</span>
-                <span class="src-copy"><strong>Microphone</strong><small>Built-in · On</small></span>
-                <span class="toggle" aria-hidden="true"><i></i></span>
-              </button>
-              <button class="source" type="button" data-source="system" aria-pressed="false">
-                <span class="src-num" aria-hidden="true">03</span>
-                <span class="src-copy"><strong>Meeting audio</strong><small>System · Off</small></span>
-                <span class="toggle" aria-hidden="true"><i></i></span>
-              </button>
-            </div>
-
-            <div class="app-main">
-              <p class="thread-label">Question with screen context</p>
-              <div class="thread">
-                <p class="thread-q">What changed in this diff?</p>
-                <div class="thread-a">
-                  <p class="answer-meta"><b>Volyx Lens</b><span>via <b data-provider>OpenAI</b> · 2 of 3 sources</span></p>
-                  <p>The retry limit moved into <code>config.js</code>. Two callers still read the old constant, so the backoff never resets.</p>
-                  <pre><code>src/retry.js:42</code></pre>
-                </div>
+              <p class="stage-q">What changed in this diff?</p>
+              <p class="stage-a">The retry limit moved into <code>config.js</code>. Two callers still read the old constant.</p>
+              <p class="stage-cite"><span>Screen</span> src/retry.js:42</p>
+              <div class="stage-sources" role="group" aria-label="Capture sources">
+                <button class="stage-source is-on" type="button" data-source="screen" aria-pressed="true">
+                  <span class="stage-source-num" aria-hidden="true">01</span>
+                  <span class="stage-source-copy"><strong>Screen</strong><small>Display 1 · On</small></span>
+                  <span class="stage-toggle" aria-hidden="true"><i></i></span>
+                </button>
+                <button class="stage-source is-on" type="button" data-source="mic" aria-pressed="true">
+                  <span class="stage-source-num" aria-hidden="true">02</span>
+                  <span class="stage-source-copy"><strong>Microphone</strong><small>Built-in · On</small></span>
+                  <span class="stage-toggle" aria-hidden="true"><i></i></span>
+                </button>
+                <button class="stage-source" type="button" data-source="system" aria-pressed="false">
+                  <span class="stage-source-num" aria-hidden="true">03</span>
+                  <span class="stage-source-copy"><strong>Meeting audio</strong><small>System · Off</small></span>
+                  <span class="stage-toggle" aria-hidden="true"><i></i></span>
+                </button>
               </div>
-              <form class="composer" aria-label="Ask a question">
-                <label class="sr-only" for="ask">Ask about what you see</label>
-                <input id="ask" type="text" placeholder="Ask about this diff" autocomplete="off">
-                <span class="composer-key" aria-hidden="true">Ctrl↵</span>
-                <button type="submit" aria-label="Send question">Send</button>
-              </form>
-              <p class="preview-status" role="status" aria-live="polite"></p>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </section>
@@ -249,8 +244,36 @@
             <p>Point at an error, a diff or a dense document without retyping it. The screen stays on your machine until you send the question.</p>
             <p class="row-detail">Screen + microphone · 2 of 3 sources</p>
           </div>
-          <figure class="work-shot">
-            <img src="assets/volyx-lens-stage.png" width="1184" height="752" alt="Volyx Lens with screen and microphone context switched on, answering a question about a failing native build." loading="lazy" decoding="async">
+          <figure class="work-shot work-scene" aria-label="A terminal build error with the failing retry line selected, and Volyx Lens explaining what to change">
+            <div class="build-stage" aria-hidden="true">
+              <div class="build-window">
+                <div class="build-bar">
+                  <span class="stage-dots"><i></i><i></i><i></i></span>
+                  <span class="build-file">zsh · npm run build</span>
+                  <span class="build-exit">build failed</span>
+                </div>
+                <ol class="build-lines">
+                  <li><code>$ npm run build</code></li>
+                  <li><code>vite v5.4.2 building for production...</code></li>
+                  <li><code>src/retry.js:42:18 - error TS2304</code></li>
+                  <li class="is-error"><code>Cannot find name 'retryLimit'.</code></li>
+                  <li><code>const limit = retryLimit;</code></li>
+                  <li><code>              ^~~~~~~~~~</code></li>
+                  <li class="build-fail"><code>Build failed in 412ms.</code></li>
+                </ol>
+                <div class="build-focus"><span>Screen · captured</span></div>
+              </div>
+              <div class="build-answer">
+                <div class="build-head">
+                  <img src="assets/volyx-lens-logo.svg" width="18" height="18" alt="">
+                  <span>Volyx Lens</span>
+                  <span class="build-source">screen</span>
+                </div>
+                <p class="build-q">Why won't this build?</p>
+                <p class="build-a">This line still reads the old constant. <code>config.js</code> already has the new limit.</p>
+                <p class="build-cite">src/retry.js:42</p>
+              </div>
+            </div>
           </figure>
         </article>
 
