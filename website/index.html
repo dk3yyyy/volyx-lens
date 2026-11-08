@@ -99,6 +99,19 @@
             </a>
             <a class="text-link hero-source" href="https://github.com/dk3yyyy/volyx-lens" target="_blank" rel="noreferrer">View source<span class="sr-only"> (opens in a new tab)</span></a>
           </div>
+          <div class="hero-install" role="group" aria-label="One-line install">
+            <div class="hero-install-top">
+              <span>Install from the terminal</span>
+              <span class="hero-install-tabs" role="group" aria-label="Install command platform">
+                <button type="button" data-install-platform="unix" aria-pressed="true">macOS / Linux</button>
+                <button type="button" data-install-platform="windows" aria-pressed="false">Windows</button>
+              </span>
+            </div>
+            <div class="hero-install-row">
+              <code data-install-command>curl -fsSL https://volyxlens.pages.dev/install.sh | sh</code>
+              <button class="copy-command" type="button" data-copy-command>Copy</button>
+            </div>
+          </div>
           <p class="hero-detect" data-detected hidden>Detected Linux x64 · AppImage · v0.8.0</p>
         </div>
 
@@ -423,18 +436,6 @@
           <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-linux-x86_64.AppImage"><strong>Linux · x64</strong><span>AppImage · experimental</span></a>
           <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.0/volyx-lens-0.8.0-linux-arm64.AppImage"><strong>Linux · arm64</strong><span>AppImage · experimental</span></a>
           <a class="platform" href="https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.0"><strong>All files</strong><span>Checksums and SBOMs</span></a>
-        </div>
-
-        <div class="one-command">
-          <div>
-            <strong>One command</strong>
-            <p>Downloads the latest release for this machine, checks its published SHA-256, and installs it. No Node, no package manager.</p>
-          </div>
-          <div class="one-command-lines">
-            <code>curl -fsSL https://volyxlens.pages.dev/install.sh | sh</code>
-            <code>irm https://volyxlens.pages.dev/install.ps1 | iex</code>
-            <small>macOS / Linux · Windows PowerShell</small>
-          </div>
         </div>
       </div>
 
