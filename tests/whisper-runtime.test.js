@@ -146,6 +146,8 @@ test('falls back to the GitHub API asset endpoint when the download URL returns 
     assetApiUrl: 'https://api.example.invalid/repos/ggml-org/whisper.cpp/releases/assets/1',
   };
   const calls = [];
+  const previousToken = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = 'test-token';
   const fetchImpl = async (url, options) => {
     calls.push({ url, options });
     if (url === runtime.assetUrl) {
@@ -164,7 +166,10 @@ test('falls back to the GitHub API asset endpoint when the download URL returns 
   assert.equal(result.status, 'installed');
   assert.deepEqual(calls.map((call) => call.url), [runtime.assetUrl, runtime.assetUrl, runtime.assetApiUrl]);
   assert.equal(calls[2].options.headers.Accept, 'application/octet-stream');
+  assert.equal(calls[2].options.headers.Authorization, 'Bearer test-token');
   assert.equal(fs.existsSync(path.join(projectDir, 'native-bin', 'whisper-server')), true);
+  if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+  else process.env.GITHUB_TOKEN = previousToken;
 });
 
 test('a verified archive installs an executable binary and the next run is a no-op', async () => {
