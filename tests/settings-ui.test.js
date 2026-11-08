@@ -152,7 +152,7 @@ test('Help page reopens the interactive guide from Settings', () => {
   assert.match(html, /help-topics/);
   assert.match(renderer, /\$\('#help-open-guide'\)\.addEventListener\('click'/);
   assert.match(renderer, /showOnboard\(\{ full: true \}\)/);
-  assert.match(styles, /\.help-actions button\s*\{[^}]*border-radius:\s*7px/);
+  assert.match(styles, /\.help-actions button\s*\{[^}]*border-radius:\s*10px/);
   assert.match(styles, /\.help-topic-icon\s*\{[^}]*border-radius:\s*7px/);
 });
 
@@ -177,4 +177,19 @@ test('settings never promise a saved key that is only in memory', () => {
   assert.doesNotMatch(renderer, /: 'plaintext fallback'/);
   assert.match(html, /API keys are not saved on this system/);
   assert.doesNotMatch(html, /written to disk with restricted file permissions/);
+});
+
+test('provider tier keys are cleared before a provider switch can reuse them', () => {
+  assert.match(renderer, /document\.querySelectorAll\('\[data-tier-key-config\]'\)[\s\S]{0,900}?input\.value = ''/);
+  assert.match(renderer, /writing one provider's secret into another provider's slot/);
+});
+
+test('resetting shortcuts clears the local settings mirror before close saves', () => {
+  assert.match(renderer, /settings\.shortcuts = \{\};[\s\S]{0,200}?renderShortcutStatus\(result\.status\)/);
+});
+
+test('long privacy notes are collapsed into disclosures instead of stacked paragraphs', () => {
+  assert.match(html, /<details class="s-note-details"><summary>What leaves this device<\/summary>/);
+  assert.match(html, /<details class="s-note-details"><summary>How offline transcription works<\/summary>/);
+  assert.match(styles, /\.s-note-details[\s\S]*?\.s-note-details\[open\]/);
 });
