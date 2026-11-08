@@ -86,6 +86,7 @@ test('manifest pins every supported target with an https asset and a full SHA-25
     assert.equal(entry.tag, RELEASE_TAG);
     assert.match(entry.assetUrl, /^https:\/\/github\.com\/ggml-org\/whisper\.cpp\/releases\/download\/b\d+\//, `${key} downloads over https`);
     assert.ok(entry.assetUrl.endsWith(`/${entry.asset}`), `${key} asset URL names the pinned archive`);
+    assert.match(entry.assetApiUrl, /^https:\/\/api\.github\.com\/repos\/ggml-org\/whisper\.cpp\/releases\/assets\/\d+$/, `${key} has an API asset fallback`);
     assert.match(entry.sha256, /^[0-9a-f]{64}$/, `${key} archive is pinned by SHA-256`);
     assert.ok(['zip', 'tar.gz'].includes(entry.archive), `${key} uses a supported archive type`);
     assert.ok(entry.binary.endsWith(entry.binaryName), `${key} archive path ends with the shipped binary name`);
@@ -135,6 +136,35 @@ test('a wrong archive hash is rejected and leaves no binary behind', async () =>
     ? fs.readdirSync(path.join(projectDir, 'native-bin')).filter((name) => name.endsWith('.part') || name.includes('.tmp-'))
     : [];
   assert.deepEqual(leftovers, [], 'no partial file is left in place');
+});
+
+test('falls back to the GitHub API asset endpoint when the download URL returns 504', async () => {
+  const { bytes } = makeTarGz({ binaryPath: 'whisper-server', contents: 'fixture server bytes' });
+  const projectDir = temporaryDir();
+  const runtime = {
+    ...runtimeForFixture({ bytes }),
+    assetApiUrl: 'https://api.example.invalid/repos/ggml-org/whisper.cpp/releases/assets/1',
+  };
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    if (url === runtime.assetUrl) {
+      return { ok: false, status: 504, headers: { get: () => '0' } };
+    }
+    return stubFetch(bytes)(url, options);
+  };
+
+  const result = await prepareWhisperRuntime({
+    projectDir,
+    cacheDir: path.join(projectDir, 'cache'),
+    fetchImpl,
+    runtime,
+    log: () => {},
+  });
+  assert.equal(result.status, 'installed');
+  assert.deepEqual(calls.map((call) => call.url), [runtime.assetUrl, runtime.assetUrl, runtime.assetApiUrl]);
+  assert.equal(calls[2].options.headers.Accept, 'application/octet-stream');
+  assert.equal(fs.existsSync(path.join(projectDir, 'native-bin', 'whisper-server')), true);
 });
 
 test('a verified archive installs an executable binary and the next run is a no-op', async () => {

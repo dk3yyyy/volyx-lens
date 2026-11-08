@@ -25,7 +25,21 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            native-bin/.whisper-runtime-cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+      - run: bash scripts/ci-install.sh
       # The unit suite runs on both supported LTS lines. Everything else —
       # coverage, the coverage thresholds, the syntax check, and the packaged
       # smoke test — stays on Node 20, so those run once instead of once per
@@ -72,6 +86,7 @@ jobs:
         run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
       - name: Verify the bundled whisper.cpp runtime
         # The packaged tree only exists on the leg that ran pack; without this the
         # other matrix entry verifies a directory that was never built.
@@ -101,13 +116,28 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            native-bin/.whisper-runtime-cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+      - run: bash scripts/ci-install.sh
       - run: npm test
       - run: npm run check:syntax
       - name: Package Windows app directory
         run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
       - name: Verify the bundled whisper.cpp runtime
         run: npm run verify:whisper-runtime
 
@@ -122,11 +152,26 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            native-bin/.whisper-runtime-cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+      - run: bash scripts/ci-install.sh
       - run: npm test
       - run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
       - run: npm run verify:vision-ocr-package
 
   swift-test:
