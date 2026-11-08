@@ -659,7 +659,7 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 }
 #settings {
   pointer-events: auto;
-  width: min(680px, calc(100vw - 28px)); height: min(600px, calc(100vh - 32px));
+  width: min(720px, calc(100vw - 28px)); height: min(620px, calc(100vh - 32px));
   overflow: hidden; padding: 0; display: grid; grid-template-rows: 60px minmax(0,1fr);
   -webkit-app-region: no-drag;
   background: rgba(12, 17, 34, 0.74);
@@ -669,14 +669,14 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .s-head { display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
 .s-title { font-size: 16px; font-weight: 650; color: var(--tx-1); letter-spacing: -0.01em; }
 .s-close { min-height: 34px; border: 1px solid rgba(255,255,255,0.16); background: linear-gradient(180deg, var(--accent-fill-hi), var(--accent-fill)); box-shadow: 0 7px 18px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.20); color: var(--accent-ink); font-weight: 650; font-size: 12px; padding: 7px 15px; border-radius: var(--r-control); cursor: pointer; }
-.s-layout { min-height: 0; display: grid; grid-template-columns: 132px minmax(0,1fr); }
+.s-layout { min-height: 0; display: grid; grid-template-columns: 156px minmax(0,1fr); }
 .s-nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 3px; border-right: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.018); }
 .s-nav button { width: 100%; min-height: 40px; display: grid; gap: 2px; align-content: center; padding: 6px 8px; text-align: left; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--tx-mut); cursor: pointer; transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease; }
 .s-nav button:hover { color: var(--tx-1); border-color: rgba(255,255,255,0.09); background: linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035)); transform: translateY(-1px); }
 .s-nav button.on { color: var(--tx-1); border-color: color-mix(in srgb, var(--accent-hi) 36%, transparent); background: linear-gradient(145deg, color-mix(in srgb, var(--accent-hi) 22%, transparent), color-mix(in srgb, var(--accent-hi) 10%, transparent)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 18px var(--accent-hair); }
 .s-nav strong { font-size: 11.5px; font-weight: 650; }
 .s-nav span { font-size: 10.5px; line-height: 1.2; }
-.s-pages { min-width: 0; overflow-y: auto; padding: 24px 26px 22px; scrollbar-width: thin; scrollbar-color: var(--sb-thumb) transparent; scrollbar-gutter: stable; }
+.s-pages { min-width: 0; overflow-y: auto; padding: 24px 28px 22px; scrollbar-width: thin; scrollbar-color: var(--sb-thumb) transparent; scrollbar-gutter: stable; }
 .s-pages:hover { scrollbar-color: var(--sb-thumb-hover) transparent; }
 .s-pages::-webkit-scrollbar { width: 7px; }
 .s-pages::-webkit-scrollbar-track { background: transparent; }
@@ -685,8 +685,12 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .s-page { display: flex; flex-direction: column; gap: 8px; }
 .s-page[hidden] { display: none; }
 .s-page-head { margin-bottom: 5px; }
+.s-subhead { margin: 20px 0 2px; padding-top: 16px; border-top: 1px solid var(--bd-hair); color: var(--tx-2); font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.s-subhead-first { margin-top: 0; padding-top: 0; border-top: 0; }
+.s-subhead .s-hint { margin-left: 8px; color: var(--tx-mut); font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; }
 .s-page-head h2 { margin: 0 0 5px; color: var(--tx-1); font-size: 21px; line-height: 1.15; letter-spacing: -0.025em; }
-.s-page-head h2:focus { outline: none; }
+.s-page-head h2:focus:not(:focus-visible) { outline: none; }
+.s-page-head h2:focus-visible { padding: 2px 4px; margin-left: -4px; outline: 2px solid var(--accent-soft); outline-offset: 4px; border-radius: 6px; }
 .s-page-head p { margin: 0; color: var(--tx-mut); font-size: 11.5px; line-height: 1.45; }
 .s-label { color: var(--tx-2); font-size: 13px; font-weight: 600; margin-top: 8px; }
 .s-hint { color: var(--tx-mut); font-weight: 400; font-size: 11px; margin-left: 6px; }
@@ -733,10 +737,11 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .provider-test-result.error { border: 1px solid rgba(255,102,120,0.25); background: rgba(255,102,120,0.08); color: #FFB5B5; }
 .provider-config-row > .s-label:first-child { display: block; }
 .s-field { display: flex; align-items: center; gap: 10px; }
-.s-field:has(input[type="checkbox"]):has(select) { flex-wrap: wrap; }
-.s-field:has(input[type="checkbox"]):has(select) > label { width: 100%; flex: 0 0 100%; }
-.s-field:has(input[type="checkbox"]):has(select) input[type="checkbox"] { margin-left: 0; }
-.s-field > label { width: 110px; flex: 0 0 110px; color: var(--tx-mut); font-size: 12px; line-height: 1.25; }
+.s-field:has(input[type="checkbox"]) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.s-field:has(input[type="checkbox"]) > label { width: auto; flex: none; }
+.s-field:has(input[type="checkbox"]) input[type="checkbox"] { margin-left: 0; }
+.s-field:has(input[type="checkbox"]):has(select) { grid-template-columns: minmax(0, 1fr) auto auto; }
+.s-field > label { width: 150px; flex: 0 0 150px; color: var(--tx-mut); font-size: 12px; line-height: 1.25; }
 .s-field input, .s-field select { flex: 1; min-width: 0; padding: 9px 11px; border-radius: var(--r-control); border: 1px solid var(--field-border); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
 .s-theme-group { border: 1px solid var(--bd-hair); border-radius: var(--r-control); padding: 12px; margin: 0; display: grid; gap: 6px; }
 .s-theme-group legend { padding: 0 4px; color: var(--tx-mut); font-size: 11px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -856,6 +861,8 @@ body:has(#onboard-scrim:not(.hidden)) #app {
   .s-nav span { display: none; }
   .s-pages { padding: 18px; }
   .provider-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .s-field { flex-wrap: wrap; }
+  .s-field > label, .s-field:has(input[type="checkbox"]) > label { width: 100%; flex: 0 0 100%; }
 }
 
 /* ============================ Onboarding / tutorial ============================ */
