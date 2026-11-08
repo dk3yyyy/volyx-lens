@@ -76,23 +76,11 @@ test('the dock controller uses a remembered size instead of the built-in one', (
   assert.ok(clamped.width <= 700 - (DEFAULT_DOCK_SIZES.edgeInset * 2), 'a size larger than the display is clamped to the work area');
 });
 
-test('the window is created, docked and saved with the remembered size', () => {
-  assert.match(main, /require\('\.\/src\/window-state'\)/);
-  assert.match(main, /createWindowState\(\{ file: path\.join\(currentUserDataPath, 'window-state\.json'\) \}\)/);
-  assert.match(main, /function dockSizes\(\)/, 'one place resolves the sizes');
+test('the overlay has a fixed size and no resize affordance', () => {
+  assert.match(main, /resizable: false/);
+  assert.match(main, /function dockSizes\(\) \{\s*return DEFAULT_DOCK_SIZES;\s*\}/);
+  assert.doesNotMatch(main, /window-state\.json/);
+  assert.doesNotMatch(main, /scheduleWindowSizeSave|saveWindowSizeNow|windowState\.save/);
   assert.match(main, /const \{ width: W, height: H \} = dockSizes\(\)\.expanded/);
-  assert.match(main, /const sizes = dockSizes\(\);/);
   assert.match(main, /dockBounds\(\{ workArea: display\.workArea, side, anchor: resolvedAnchor, collapsed, sizes \}\)/);
-  assert.match(main, /railCenter\(currentBounds, windowDock\.side, sizes\)/);
-  // A collapsed window is a 260pt rail, so remembering that would restore a
-  // sliver: both the resize handler and the save itself refuse while collapsed.
-  assert.match(main, /const scheduleWindowSizeSave = \(\) => \{[\s\S]{0,100}windowDock\.collapsed\) return;/);
-  assert.match(main, /rememberWindowSize[\s\S]{0,140}windowDock\.collapsed/);
-  assert.match(main, /windowState\.save\(/);
-  // 'resized' only fires for a user-driven resize, and the quit path exits via
-  // app.exit(0) which destroys the window without a 'close' event, so both have
-  // to be covered or the size is read at launch and never written.
-  assert.match(main, /win\.on\('resize', scheduleWindowSizeSave\)/);
-  assert.match(main, /win\.on\('resized', scheduleWindowSizeSave\)/);
-  assert.match(main, /app\.on\('before-quit',[\s\S]{0,240}saveWindowSizeNow\(\)/);
 });
