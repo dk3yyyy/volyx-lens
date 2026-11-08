@@ -25,7 +25,23 @@ LAUNCH=1
 DRY_RUN=0
 
 usage() {
-  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'EOF'
+Volyx Lens installer for macOS and Linux.
+
+  curl -fsSL https://volyxlens.pages.dev/install.sh | sh
+
+It resolves the newest GitHub release, downloads the asset for this OS and
+architecture, verifies the published SHA-256, and installs:
+  macOS  -> /Applications (or ~/Applications with --user)
+  Linux  -> ~/.local/bin/volyx-lens.AppImage plus a desktop entry
+
+Flags:
+  --version vX.Y.Z   install a specific release instead of the latest
+  --user             macOS only: install into ~/Applications
+  --prefix DIR       install the app into DIR (macOS)
+  --no-launch        do not open the app after installing
+  --dry-run          print what would happen, download nothing
+EOF
   exit 0
 }
 
