@@ -2735,14 +2735,20 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   const PROVIDER_IDS = Object.keys(PROVIDER_LABELS);
   function providerIsConfigured(id) {
     const present = (settings.credentialStatus && settings.credentialStatus.present) || {};
-    if (present[id]) return true;
     const models = (settings.models && settings.models[id]) || {};
-    if (String(models.fast || '').trim() || String(models.smart || '').trim()) return true;
     const endpoints = (settings.endpointByTier && settings.endpointByTier[id]) || {};
-    return Boolean(String(endpoints.fast || '').trim() || String(endpoints.smart || '').trim());
+    const hasEndpoint = Boolean(String(endpoints.fast || '').trim() || String(endpoints.smart || '').trim());
+    const keyless = id === 'ollama' || id === 'opencode';
+    if (keyless) return hasEndpoint || Boolean(String(models.fast || '').trim() || String(models.smart || '').trim());
+    return Boolean(
+      present[id]
+      || present[`${id}.fast`]
+      || present[`${id}.smart`]
+      || hasEndpoint
+    );
   }
   function renderProviderList() {
-    const configured = new Set([settings.provider, settings.fallbackProvider].filter(Boolean));
+    const configured = new Set();
     for (const id of PROVIDER_IDS) if (providerIsConfigured(id)) configured.add(id);
     const configuredList = $('#provider-configured');
     const catalogList = $('#provider-catalog-list');
@@ -3396,6 +3402,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         });
         obPermissionStatus.replaceChildren(message, openSettings);
         obPermissionStatus.className = 'ob-permission-status denied has-action';
+      } else if (volyxLens.platform !== 'darwin' && result.status === 'not-determined') {
+        setPermissionState(kind, 'Ask on use', '');
+        obPermissionStatus.textContent = result.message || (label + ' access will be requested when you start using Volyx Lens.');
+        obPermissionStatus.className = 'ob-permission-status';
       } else {
         setPermissionState(kind, 'Unavailable', 'denied');
         obPermissionStatus.textContent = result.message || (label + ' access is unavailable.');
