@@ -176,38 +176,56 @@ async function downloadArchive({ runtime, cacheDir, fetchImpl }) {
 
   const partial = `${cacheFile}.part`;
   fs.rmSync(partial, { force: true });
+  // GitHub's release download URL sometimes answers 504 while its API asset
+  // endpoint still works. Try the documented URL first, then the pinned API
+  // asset, and retry each once. Every response is still checked against the
+  // archive SHA-256 before it is written into the cache.
+  const urls = [...new Set([runtime.assetUrl, runtime.assetApiUrl].filter(Boolean))];
+  let lastError;
   try {
-    const response = await fetchImpl(runtime.assetUrl, {
-      redirect: 'follow',
-      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) : undefined,
-    });
-    if (!response || response.ok !== true) {
-      const status = response && response.status ? `HTTP ${response.status}` : 'no response';
-      throw new Error(`Could not download the whisper.cpp archive ${runtime.assetUrl}: ${status}.`);
+    for (const url of urls) {
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const response = await fetchImpl(url, {
+            redirect: 'follow',
+            headers: url === runtime.assetApiUrl ? { Accept: 'application/octet-stream' } : undefined,
+            signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) : undefined,
+          });
+          if (!response || response.ok !== true) {
+            const status = response && response.status ? `HTTP ${response.status}` : 'no response';
+            throw new Error(`Could not download the whisper.cpp archive ${url}: ${status}.`);
+          }
+          const declaredSize = Number(responseHeader(response, 'content-length') || 0);
+          if (declaredSize > MAX_ARCHIVE_BYTES) {
+            throw new Error(`The whisper.cpp archive ${runtime.asset} is larger than the ${MAX_ARCHIVE_BYTES} byte limit.`);
+          }
+          if (typeof response.arrayBuffer !== 'function') {
+            throw new Error(`The response for ${url} has no body to read.`);
+          }
+          const bytes = Buffer.from(await response.arrayBuffer());
+          if (bytes.length === 0 || bytes.length > MAX_ARCHIVE_BYTES) {
+            throw new Error(`The whisper.cpp archive ${runtime.asset} has an unusable size: ${bytes.length} bytes.`);
+          }
+          await fs.promises.writeFile(partial, bytes, { mode: 0o600 });
+          const actual = sha256Buffer(bytes);
+          if (actual !== String(runtime.sha256).toLowerCase()) {
+            throw new Error(
+              `The whisper.cpp archive ${runtime.asset} failed SHA-256 verification: expected ${runtime.sha256}, got ${actual}. The download was discarded.`,
+            );
+          }
+          await fs.promises.rename(partial, cacheFile);
+          return cacheFile;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        }
+      }
     }
-    const declaredSize = Number(responseHeader(response, 'content-length') || 0);
-    if (declaredSize > MAX_ARCHIVE_BYTES) {
-      throw new Error(`The whisper.cpp archive ${runtime.asset} is larger than the ${MAX_ARCHIVE_BYTES} byte limit.`);
-    }
-    if (typeof response.arrayBuffer !== 'function') {
-      throw new Error(`The response for ${runtime.assetUrl} has no body to read.`);
-    }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length === 0 || bytes.length > MAX_ARCHIVE_BYTES) {
-      throw new Error(`The whisper.cpp archive ${runtime.asset} has an unusable size: ${bytes.length} bytes.`);
-    }
-    await fs.promises.writeFile(partial, bytes, { mode: 0o600 });
-    const actual = sha256Buffer(bytes);
-    if (actual !== String(runtime.sha256).toLowerCase()) {
-      throw new Error(
-        `The whisper.cpp archive ${runtime.asset} failed SHA-256 verification: expected ${runtime.sha256}, got ${actual}. The download was discarded.`,
-      );
-    }
-    await fs.promises.rename(partial, cacheFile);
-    return cacheFile;
+    throw lastError || new Error(`Could not download the whisper.cpp archive ${runtime.asset}.`);
   } finally {
     fs.rmSync(partial, { force: true });
   }
+
 }
 
 // The files the server needs beside it: the executable plus every shared library
