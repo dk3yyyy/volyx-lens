@@ -1056,3 +1056,26 @@ section[id], main[id] { scroll-margin-top: 80px; }
   .ap-tool:not(.ap-tool-on) { display: none; }
   .ap-chip.is-off { display: none; }
 }
+
+/* Static legal and error pages */
+.legal-page { min-height: 100vh; background: var(--bg); color: var(--ink); }
+.legal-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 72px; padding-inline: max(var(--gutter), calc((100% - var(--wrap)) / 2)); border-bottom: 1px solid var(--line); }
+.legal-back { color: var(--muted); font: 500 11px/1 var(--mono); letter-spacing: .04em; text-decoration: none; }
+.legal-back:hover { color: var(--ink); }
+.legal-main { padding: clamp(58px, 8vw, 104px) 0 clamp(70px, 9vw, 112px); }
+.legal-copy { max-width: 760px; }
+.legal-copy .eyebrow { margin-bottom: 18px; }
+.legal-copy h1 { max-width: 14ch; font-size: clamp(2.6rem, 5vw, 4.4rem); line-height: .98; letter-spacing: -.05em; }
+.legal-copy h2 { margin: 38px 0 10px; font-size: 1.25rem; line-height: 1.2; letter-spacing: -.02em; }
+.legal-copy p, .legal-copy li { color: var(--muted); font-size: 15px; line-height: 1.7; }
+.legal-copy p + p { margin-top: 12px; }
+.legal-copy ul { display: grid; gap: 8px; margin: 12px 0 0; padding-left: 20px; }
+.legal-copy a { color: var(--ink); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.legal-meta { margin-top: 26px; color: var(--muted); font: 500 10px/1.5 var(--mono); letter-spacing: .03em; }
+.legal-foot { padding: 24px 0 30px; border-top: 1px solid var(--line); color: var(--muted); font: 400 10px/1.5 var(--mono); }
+.notfound-main { min-height: calc(100vh - 72px); display: grid; place-items: center; padding: 42px var(--gutter); }
+.notfound { max-width: 560px; text-align: center; }
+.notfound-code { color: var(--brass); font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.notfound h1 { margin-top: 16px; font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: .98; letter-spacing: -.05em; }
+.notfound p { max-width: 38ch; margin: 18px auto 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+.notfound-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px 22px; margin-top: 26px; }
