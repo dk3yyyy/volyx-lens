@@ -95,7 +95,7 @@ test('landing page explains the implemented context, meeting, coding and offline
   assert.doesNotMatch(html, /Mail|Calendar/);
   assert.match(html, /Reference tab/i);
   assert.match(html, /Old revision/i);
-  assert.match(html, /tells you what it left out/i);
+  assert.match(html, /tells you what it did not send/i);
   assert.match(html, /You and Them/i);
   assert.match(html, /meeting transcripts/i);
   assert.match(html, /notes only when you ask/i);
