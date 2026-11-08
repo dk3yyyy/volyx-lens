@@ -187,3 +187,27 @@ test('theme follows the OS until a choice is stored, with a no-JS fallback', () 
   assert.match(css, /@media \(prefers-color-scheme: dark\)[\s\S]*:root:not\(\[data-theme\]\)/);
   assert.match(script, /Switch to dark mode \(currently light\)/);
 });
+
+test('site ships legal, 404, discovery and icon surfaces with per-page metadata', () => {
+  const privacy = read('privacy.html');
+  const notFound = read('404.html');
+  for (const page of [privacy, notFound]) {
+    assert.match(page, /<title>[^<]+<\/title>/);
+    assert.match(page, /<meta name="description" content="[^"]+">/);
+    assert.match(page, /<link rel="icon" href="assets\/favicon.ico"/);
+    assert.match(page, /<link rel="apple-touch-icon" href="assets\/apple-touch-icon.png">/);
+  }
+  assert.match(privacy, /<link rel="canonical" href="https:\/\/volyxlens\.pages\.dev\/privacy">/);
+  assert.match(privacy, /property="og:image" content="https:\/\/volyxlens\.pages\.dev\/assets\/volyx-lens-social-1200x630-v2\.png"/);
+  assert.match(notFound, /<meta name="robots" content="noindex,follow">/);
+  assert.match(read('robots.txt'), /Sitemap: https:\/\/volyxlens\.pages\.dev\/sitemap\.xml/);
+  assert.match(read('sitemap.xml'), /https:\/\/volyxlens\.pages\.dev\/privacy/);
+  assert.match(read('site.webmanifest'), /"icons"/);
+  for (const file of ['favicon.ico', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'volyx-lens-social-1200x630-v2.png']) {
+    assert.ok(fs.statSync(path.join(website, 'assets', file)).size > 0, `${file} is empty`);
+  }
+  const images = [...html.matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
+  assert.ok(images.length > 0);
+  for (const tag of images) assert.match(tag, /\balt="/, `image has no alt attribute: ${tag}`);
+  assert.ok(html.includes('href="/privacy"'));
+});
