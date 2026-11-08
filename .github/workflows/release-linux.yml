@@ -1,7 +1,14 @@
 name: Linux AppImage release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to rebuild
+        required: true
+        default: v0.8.0
   push:
+
     tags:
       - "v*"
 
@@ -31,6 +38,9 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          # Manual rebuilds build current main so they include CI and packaging
+          # fixes; the requested tag is only the release target.
+          ref: ${{ inputs.tag != '' && 'main' || github.ref }}
           persist-credentials: false
           fetch-depth: 0
       - name: Verify tagged commit is on main
@@ -42,13 +52,31 @@ jobs:
           node-version: 22
           cache: npm
       - name: Verify tag matches package version
-        run: test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
-      - run: npm ci
+        run: test "${{ inputs.tag || github.ref_name }}" = "v$(node -p "require('./package.json').version")"
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            native-bin/.whisper-runtime-cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+      - run: bash scripts/ci-install.sh
       - run: npm test
       - run: npm run check:syntax
       - run: npm run security:secrets
       - run: npm audit --audit-level=low
       - name: Build AppImage
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm pkg set "build.publish[0].channel=latest-${{ matrix.arch }}"
           npm pkg set "build.extraMetadata.volyxReleaseBuild=true" --json
@@ -138,7 +166,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="$GITHUB_REF_NAME"
+          TAG="${{ inputs.tag || github.ref_name }}"
           if gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
             --verify-tag --title "Volyx Lens $TAG" --generate-notes; then
             echo "Release created by this workflow."
