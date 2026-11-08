@@ -77,9 +77,9 @@ test('the one-line install is in the hero and has a working fallback', () => {
 
 test('landing page ships accessible navigation, context switches and reduced motion', () => {
   assert.match(html, /<button[^>]+aria-controls="site-nav"[^>]+aria-expanded="false"/i);
-  assert.match(html, /data-source="screen"/);
-  assert.match(html, /data-source="mic"/);
-  assert.match(html, /data-source="system"/);
+  assert.match(html, /class="ap-chip"><b>Screen<\/b>/);
+  assert.match(html, /class="ap-chip"><b>Mic<\/b>/);
+  assert.match(html, /class="ap-chip is-off"><b>System<\/b>/);
   assert.match(html, /<noscript>/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/i);
   assert.match(css, /:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus\)/);
@@ -144,7 +144,10 @@ test('landing page links to existing license, security and issue documents', () 
 });
 
 test('landing page renders the interface as a designed scene, not a screenshot', () => {
-  assert.match(html, /class="context-panel"/);
+  assert.match(html, /class="app-preview"[^>]*role="img"/);
+  assert.match(html, /aria-label="Volyx Lens desktop app/);
+  assert.doesNotMatch(html, /class="context-panel"/);
+  assert.doesNotMatch(html, /Capture sources/i);
   assert.match(html, /work-scene/);
   assert.doesNotMatch(html, /volyx-lens-stage\.png/);
 });

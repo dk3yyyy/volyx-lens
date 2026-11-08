@@ -116,50 +116,42 @@
         </div>
 
         <div class="hero-panel">
-          <div class="context-panel" role="group" aria-label="Volyx Lens with screen and microphone context, answering a question about a changed line">
-            <div class="cp-bar">
-              <img src="assets/volyx-lens-logo.svg" width="18" height="18" alt="">
-              <span class="cp-name">Volyx Lens</span>
-              <span class="cp-provider">OpenAI <svg viewBox="0 0 10 6" aria-hidden="true"><path d="m1 1 4 4 4-4"/></svg></span>
-            </div>
-            <div class="cp-body">
-              <div class="cp-capture">
-                <div class="cp-head"><span>Capture sources</span><span data-context-count>2 of 3 sources</span></div>
-                <button class="cp-source cp-screen is-on" type="button" data-source="screen" aria-pressed="true">
-                  <span class="cp-preview" aria-hidden="true">
-                    <span class="cp-preview-bar"><i></i><i></i><i></i><span>src/retry.js</span></span>
-                    <span class="cp-code">
-                      <span class="cp-diff"><b>41</b><em>- const limit = 3;</em></span>
-                      <span class="cp-diff is-add"><b>42</b><em>+ const limit = config.retryLimit;</em></span>
-                      <span class="cp-code-line"><b>43</b>try { return await send(input); }</span>
-                    </span>
-                    <span class="cp-focus-line"></span>
-                    <span class="cp-aperture"></span>
-                  </span>
-                  <span class="cp-meta"><strong>Screen</strong><small>Display 1 · On</small><span class="cp-toggle" aria-hidden="true"><i></i></span></span>
-                </button>
-                <div class="cp-source-row">
-                  <button class="cp-source cp-mic is-on" type="button" data-source="mic" aria-pressed="true">
-                    <span class="cp-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-                    <span class="cp-meta"><strong>Microphone</strong><small>Built-in · On</small><span class="cp-toggle" aria-hidden="true"><i></i></span></span>
-                  </button>
-                  <button class="cp-source cp-meeting" type="button" data-source="system" aria-pressed="false">
-                    <span class="cp-wave is-off" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-                    <span class="cp-meta"><strong>Meeting audio</strong><small>System · Off</small><span class="cp-toggle" aria-hidden="true"><i></i></span></span>
-                  </button>
+          <div class="app-preview" role="img" aria-label="Volyx Lens desktop app with screen and microphone attached, a question about a changed line, a Lens answer, and a follow-up composer">
+              <div class="ap-bar">
+                <span class="ap-brand"><img src="assets/volyx-lens-logo.svg" width="18" height="18" alt=""> Volyx Lens</span>
+                <span class="ap-live"><i aria-hidden="true"></i> Listening</span>
+              </div>
+              <div class="ap-toolbar">
+                <span class="ap-tool">Hide</span>
+                <span class="ap-tool">New</span>
+                <span class="ap-tool ap-tool-on"><i aria-hidden="true"></i> Listen</span>
+                <span class="ap-tool">Stop</span>
+                <span class="ap-provider">OpenAI <svg viewBox="0 0 10 6" aria-hidden="true"><path d="m1 1 4 4 4-4"/></svg></span>
+              </div>
+              <div class="ap-conversation">
+                <div class="ap-context">
+                  <span class="ap-context-label">Attached</span>
+                  <span class="ap-chip"><b>Screen</b> src/retry.js:42</span>
+                  <span class="ap-chip"><b>Mic</b> 00:06</span>
+                  <span class="ap-chip is-off"><b>System</b> off</span>
+                </div>
+                <div class="ap-turn ap-user">
+                  <span class="ap-who">You</span>
+                  <p>What changed in this diff?</p>
+                </div>
+                <div class="ap-answer">
+                  <span class="ap-who ap-who-lens"><img src="assets/volyx-lens-logo.svg" width="14" height="14" alt=""> Lens</span>
+                  <p>The retry limit moved into <code>config.js</code>. Two callers still read the old constant.</p>
+                  <div class="ap-cites"><span>src/retry.js:42</span><span>config.js:8</span></div>
                 </div>
               </div>
-              <div class="cp-thread">
-                <p class="cp-label">Question with screen and mic</p>
-                <p class="cp-question">What changed in this diff?</p>
-                <p class="cp-answer">The retry limit moved into <code>config.js</code>. Two callers still read the old constant.</p>
-                <p class="cp-cite"><span>Screen</span> src/retry.js:42 <span>config.js:8</span></p>
-                <p class="cp-heard"><span class="cp-heard-label">Microphone</span><span class="cp-heard-mark" aria-hidden="true"></span>“Can you explain this error?”</p>
-                <div class="cp-followup"><span>Ask a follow-up</span><span>⌘↵</span></div>
-                <p class="cp-foot"><span><i aria-hidden="true"></i> Listening</span><span>Direct to provider</span></p>
+              <div class="ap-composer">
+                <span class="ap-placeholder">Ask a follow-up…</span>
+                <span class="ap-key">⌘↵</span>
+                <span class="ap-send">→</span>
               </div>
+              <div class="ap-foot"><span><i aria-hidden="true"></i> Direct to provider</span><span>2 of 3 sources</span></div>
             </div>
-          </div>
         </div>
         </div>
       </div>
