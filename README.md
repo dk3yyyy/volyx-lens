@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="renderer/assets/volyx-lens-logo.svg" width="112" alt="Volyx Lens eye logo" />
+<img src="renderer/assets/volyx-lens-logo.svg" width="112" alt="Volyx Lens sage aperture logo" />
 
 # Volyx Lens
 
