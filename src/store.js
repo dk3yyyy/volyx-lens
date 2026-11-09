@@ -356,7 +356,12 @@ function setSettings(patch) {
 function applyApiKeyUpdates(updates) {
   const accepted = Object.entries(updates || {}).filter(([name]) => KEY_NAMES.includes(name));
   if (credentialRecordLocked && accepted.length) {
-    throw new Error('Saved credentials are locked by the operating system. Unlock secure storage and restart Volyx Lens before changing API keys.');
+    // The sealed record cannot be opened (most often after an app update changes
+    // the signing identity). The person has just typed a key, so replace the
+    // unreadable record instead of dead-ending the Done button. Keys that could
+    // still be decrypted stay in memory and are sealed into the new record.
+    credentialRecordLocked = false;
+    persistedCredentialRecord = null;
   }
   for (const [name, value] of accepted) {
     data.apiKeys[name] = value == null ? '' : String(value).trim();

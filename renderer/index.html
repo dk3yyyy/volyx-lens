@@ -226,6 +226,10 @@
           <strong>API keys are not saved on this system</strong>
           <span>Secure storage (macOS Keychain / safeStorage) is unavailable, so keys you enter are kept in memory for this session only and are never written to disk. They are gone after a restart. Fix secure storage to save them.</span>
         </div>
+        <div id="s-locked-warning" class="s-warn hidden" role="alert">
+          <strong>Saved credentials could not be unlocked</strong>
+          <span>This usually happens after an app update changes the signing identity. Enter your key again and press Done: it will replace the unreadable record. If the keychain is temporarily locked, unlocking it and restarting also restores the old keys.</span>
+        </div>
         <div class="provider-list-shell">
           <div class="s-label">Response providers <span class="s-hint">configured first; add another when needed</span></div>
           <div id="provider-seg" role="tablist" class="provider-list" aria-label="Provider configuration" aria-orientation="vertical">
