@@ -2948,6 +2948,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     renderProviderConfig();
     const storageState = settings.credentialStatus || {};
     $('#s-storage-warning').classList.toggle('hidden', !(storageState.secure === false && storageState.backend === 'plaintext-fallback'));
+    $('#s-locked-warning').classList.toggle('hidden', storageState.backend !== 'locked-safeStorage');
     const theme = normaliseAccentTheme(settings.appearance && settings.appearance.theme);
     document.querySelectorAll('input[name="accent-theme"]').forEach((radio) => { radio.checked = radio.value === theme; });
     applyAccentTheme(theme);

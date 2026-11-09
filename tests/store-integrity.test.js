@@ -277,7 +277,7 @@ test('settings and credential updates commit in one atomic write and roll back t
   assert.notEqual(before, committed);
 });
 
-test('locked secure credentials cannot be overwritten by a partial key update', () => {
+test('a new key replaces an unreadable locked record instead of dead-ending Done', () => {
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');
   const lockedRecord = { version: 1, mode: 'safeStorage', values: { openai: 'opaque-one', azure: 'opaque-two' } };
@@ -287,15 +287,15 @@ test('locked secure credentials cannot be overwritten by a partial key update', 
   const status = store.getPublicSettings().credentialStatus;
   assert.equal(status.backend, 'locked-safeStorage');
   assert.equal(status.present.openai, true);
-  assert.throws(() => store.updateApiKeys({ deepseek: 'replacement' }), /locked by the operating system/i);
+  store.updateApiKeys({ deepseek: 'replacement' });
 
-  store.setSettings({ smart: true });
+  assert.equal(store.getSettings().apiKeys.deepseek, 'replacement');
+  assert.equal(store.getPublicSettings().credentialStatus.backend, 'plaintext-fallback');
   const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
-  assert.deepEqual(persisted.credentials, lockedRecord);
-  assert.equal(persisted.smart, true);
+  assert.notDeepEqual(persisted.credentials, lockedRecord, 'the unreadable record is replaced');
 });
 
-test('partially decryptable credentials from an incompatible app identity remain locked and are never overwritten', () => {
+test('a new key keeps the decryptable credentials and drops the unreadable ones', () => {
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');
   const lockedRecord = { version: 1, mode: 'safeStorage', values: {
@@ -318,8 +318,12 @@ test('partially decryptable credentials from an incompatible app identity remain
   assert.equal(status.present.azure, true);
   store.setSettings({ smart: true });
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, lockedRecord);
-  assert.throws(() => store.updateApiKeys({ deepseek: 'must-not-reseal' }), /locked by the operating system/i);
-  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, lockedRecord);
+  store.updateApiKeys({ deepseek: 'must-not-reseal' });
+  const sealed = JSON.parse(fs.readFileSync(file, 'utf8')).credentials;
+  assert.notDeepEqual(sealed, lockedRecord);
+  assert.equal(Buffer.from(sealed.values.openai, 'base64').toString(), 'still-readable-key');
+  assert.equal(Buffer.from(sealed.values.deepseek, 'base64').toString(), 'must-not-reseal');
+  assert.equal(sealed.values.azure, undefined, 'the unreadable key is gone');
 });
 
 test('a keyring that disappears after load cannot erase the persisted credentials', () => {
@@ -475,8 +479,11 @@ test('a locked safeStorage record is never destroyed by the plaintext scrub', ()
   assert.equal(store.getSettings().apiKeys.openai, '', 'nothing is invented for the session');
   store.setSettings({ smart: false });
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, lockedRecord);
-  assert.throws(() => store.updateApiKeys({ deepseek: 'must-not-reseal' }), /locked by the operating system/i);
-  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, lockedRecord);
+  store.updateApiKeys({ deepseek: 'must-not-reseal' });
+  assert.equal(store.getSettings().apiKeys.deepseek, 'must-not-reseal');
+  const replaced = JSON.parse(fs.readFileSync(file, 'utf8')).credentials;
+  assert.equal(replaced.mode, 'memory-only');
+  assert.deepEqual(replaced.values, {});
 });
 
 test('the update notification preference defaults on, persists, and rejects non-booleans', () => {
