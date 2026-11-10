@@ -488,10 +488,10 @@ class DeepgramRealtimeChannel {
         // a repeated empty boundary must not suppress the next real flush.
         this._flushCommitted();
       } else {
-        const resultKey = `${startMs}:${durationMs}:${text}`;
+        const resultKey = `${startMs}:${durationMs}:${text}:final`;
         if (!this.completed.has(resultKey)) {
           this._rememberCompleted(resultKey);
-          const full = `${this.committed || ''} ${text}`.trim();
+          const full = this._mergeCommitted(text);
           this.committed = '';
           this._emitFinal(full, latencyMs);
         }
@@ -503,7 +503,7 @@ class DeepgramRealtimeChannel {
     }
     if (!text) return;
     if (event.is_final === true) {
-      const resultKey = `${startMs}:${durationMs}:${text}`;
+      const resultKey = `${startMs}:${durationMs}:${text}:interim`;
       if (this.completed.has(resultKey)) return;
       this._rememberCompleted(resultKey);
       this._appendCommitted(text, latencyMs);
@@ -512,6 +512,13 @@ class DeepgramRealtimeChannel {
     }
     this.onLatency({ channel: this.channel, kind: 'first_partial', latencyMs });
     this.onPartial({ channel: this.channel, itemId: this._nextItemId(), text: `${this.committed || ''} ${text}`.trim() });
+  }
+
+  _mergeCommitted(text) {
+    const committed = (this.committed || '').trim();
+    if (!committed) return text;
+    if (committed === text || committed.endsWith(` ${text}`)) return committed;
+    return `${committed} ${text}`.trim();
   }
 
   _appendCommitted(text, latencyMs) {

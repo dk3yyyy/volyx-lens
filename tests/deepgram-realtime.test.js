@@ -751,3 +751,15 @@ test('a configuration failure does not hide a later fatal socket error', async (
   assert.deepEqual(errors.map((error) => error.code), ['realtime_configuration_failed', 'realtime_authentication_failed']);
   await channel.close();
 });
+
+test('an is_final segment can be promoted to speech_final without being deduped away', async () => {
+  const { channel, connection, finals } = await connectedDeepgramChannel({ drainTimeoutMs: 10 });
+  const frame = {
+    type: 'Results', start: 0.2, duration: 0.6, is_final: true,
+    channel: { alternatives: [{ transcript: 'hello world' }] },
+  };
+  connection.emit('message', frame);
+  connection.emit('message', { ...frame, speech_final: true });
+  await channel.close();
+  assert.deepEqual(finals.map((event) => event.text), ['hello world']);
+});
