@@ -11,9 +11,9 @@
 | 1. Channel lifecycle and data loss | Fixed | 36 channel tests pass; mutation checked by the batch author |
 | 2. Configuration and classification | Fixed | Auto is preserved through the renderer and maps to `multi`; rate limits classify ahead of auth |
 | 3. Manager and pipeline | Fixed | Drain membership, async close, late-final gap, double-stop tests |
-| 4. Verification | Fixed | `npm test` 1360 pass; syntax, secrets, four UI harnesses, and coverage gate pass; model/language pre-validation remains deferred |
+| 4. Verification | Fixed | `npm test` 1361 pass; syntax, secrets, four UI harnesses, and coverage gate pass; model/language pre-validation remains deferred |
 
-Deferred: pre-validating every free-form Deepgram model id would reject legitimate custom and fine-tuned model names. The code now limits `multi` to the models that document it, and leaves unsupported auto requests without a language instead of guessing.
+Deferred: pre-validating every free-form Deepgram model id would reject legitimate custom and fine-tuned model names. The code now limits `multi` to the models that document it, and leaves unsupported auto requests without a language instead of guessing. Stopping while the socket is still connecting still discards the bounded pre-connect PCM; it cannot be transcribed after the socket is cancelled, and the connect window is capped at 10 seconds.
 
 ## Outcome
 
@@ -149,7 +149,7 @@ npm run check:syntax
 
 ## Batch 4: verification and handoff
 
-**Status:** full suite, syntax, secret scan, four UI harnesses, and coverage gate are green. The PR/handoff text is the remaining step.
+**Status:** full suite, syntax, secret scan, four UI harnesses, and coverage gate are green. The branch has six commits; the PR/handoff text is the remaining step.
 
 **Files:** test files only, plus this plan and the audit report status.
 
