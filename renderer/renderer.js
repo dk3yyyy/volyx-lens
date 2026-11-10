@@ -1737,7 +1737,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   // payload before it reaches the DOM: a reason the renderer does not know, an
   // oversized duration, or an unexpected channel must not make the row lie about
   // what was lost. Wording stays fixed so the same loss always reads the same.
-  const GAP_REASONS = new Set(['realtime-failed', 'drain-failed']);
+  const GAP_REASONS = new Set(['realtime-failed', 'drain-failed', 'realtime-drain-timeout']);
   const MAX_GAP_DURATION_MS = 10 * 60 * 1000;
 
   function normalizeTranscriptGap(event) {
@@ -1766,6 +1766,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
           : '';
       return `Transcription gap: about ${seconds}s of ${speaker}audio captured just before the stop was not transcribed`;
     }
+    if (gap.reason === 'realtime-drain-timeout') return 'Transcription gap: the last words may have been missed when transcription stopped';
     return 'Transcription gap: some audio was not transcribed';
   }
 
@@ -3114,6 +3115,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#auto-answer-confidence').disabled = settings.autoAnswer !== true;
     $('#auto-answer-cooldown').disabled = settings.autoAnswer !== true;
     if (!settings.questionDetection) clearQuestionSuggestion();
+    const languageValue = $('#stt-language').value.trim();
+    const languageSetting = ['auto', 'automatic'].includes(languageValue.toLowerCase()) ? 'auto' : languageValue;
     settings.transcription = {
       ...(settings.transcription || {}),
       mode: $('#stt-mode').value,
@@ -3128,7 +3131,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       offlineEnabled: $('#stt-offline-enabled').checked,
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
       whisperModel: $('#stt-whisper-model').value,
-      language: ['auto', 'automatic'].includes($('#stt-language').value.trim().toLowerCase()) ? '' : $('#stt-language').value.trim().toLowerCase(),
+      language: languageSetting,
       delay: $('#stt-delay').value,
       historyEnabled: $('#stt-history-enabled').checked,
       historyRetentionDays: Number($('#stt-retention-days').value) || 0,

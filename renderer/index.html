@@ -419,7 +419,7 @@
             <option value="zh-TW">Chinese (Traditional)</option>
           </datalist>
         </div>
-        <details class="s-note-details"><summary>How language codes work</summary><div class="s-note">Local whisper.cpp supports 50+ languages. Deepgram and OpenAI/Azure Realtime honor the code where their language sets allow; OpenAI and Gemini batch fallbacks auto-detect and ignore this field. Type any ISO code (e.g. <code>auto</code>, <code>yue</code>).</div></details>
+        <details class="s-note-details"><summary>How language codes work</summary><div class="s-note">Local whisper.cpp supports 50+ languages. This field is shared across providers: Deepgram uses the listed language codes, and Auto requires Nova-3 multilingual mode. Other providers may ignore the field; OpenAI and Gemini batch fallbacks auto-detect and ignore this field. Type an ISO code from the list, or <code>auto</code>.</div></details>
         <div class="s-field stt-provider-config" data-stt-provider="openai azure"><label for="stt-delay">OpenAI/Azure delay</label><select id="stt-delay"><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select></div>
         <div class="s-field"><label for="stt-fallback-model">OpenAI fallback</label><input id="stt-fallback-model" type="text" placeholder="gpt-4o-mini-transcribe" autocomplete="off" /></div>
         <div class="s-field"><label for="stt-gemini-fallback-model">Gemini fallback</label><input id="stt-gemini-fallback-model" type="text" placeholder="gemini-3.5-flash" autocomplete="off" /></div>

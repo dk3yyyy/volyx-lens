@@ -74,3 +74,9 @@ test('toolbar has a compact icon-only listening control with accessible dynamic 
   assert.match(renderer, /button\.title = label/);
   assert.match(renderer, /button\.setAttribute\('aria-label', label\)/);
 });
+
+test('language settings preserve Auto and explicit casing for Deepgram', () => {
+  assert.match(renderer, /const languageSetting = \['auto', 'automatic'\]\.includes\(languageValue\.toLowerCase\(\)\) \? 'auto' : languageValue/);
+  assert.match(renderer, /language: languageSetting/);
+  assert.match(main, /realtime\.provider === 'deepgram' \? \(transcription\.language \|\| 'auto'\)/);
+});
