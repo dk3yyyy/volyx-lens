@@ -7,10 +7,10 @@ const Module = require('node:module');
 
 const storePath = require.resolve('../src/store');
 
-function loadStore(userData, safeStorage = { isEncryptionAvailable: () => false }) {
+function loadStore(userData, safeStorage = { isEncryptionAvailable: () => false }, isReady = () => true) {
   const originalLoad = Module._load;
   Module._load = function load(request, parent, isMain) {
-    if (request === 'electron') return { app: { getPath: () => userData }, safeStorage };
+    if (request === 'electron') return { app: { getPath: () => userData, isReady }, safeStorage };
     return originalLoad.call(this, request, parent, isMain);
   };
   delete require.cache[storePath];
@@ -342,8 +342,66 @@ test('a keyring that disappears after load cannot erase the persisted credential
   assert.equal(persisted.appearance.theme, 'sage', 'the unrelated settings save still lands');
 });
 
-test('a null transcription object cannot crash settings load', () => {
+test('settings read before the app is ready keep the sealed keys instead of calling them locked', () => {
   const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+  let ready = false;
+  const storage = {
+    isEncryptionAvailable: () => ready,
+    encryptString: (value) => Buffer.from(`sealed:${value}`, 'utf8'),
+    decryptString: (buffer) => {
+      if (!ready) throw new Error('safeStorage cannot be used before app is ready');
+      return Buffer.from(buffer).toString('utf8').replace(/^sealed:/, '');
+    },
+  };
+  const record = { version: 1, mode: 'safeStorage', values: {
+    openai: Buffer.from('sealed:sk-live-key', 'utf8').toString('base64'),
+  } };
+  fs.writeFileSync(file, JSON.stringify({ credentials: record }));
+
+  const store = loadStore(userData, storage, () => ready);
+  const early = store.getPublicSettings().credentialStatus;
+  assert.equal(early.backend, 'safeStorage', 'a pre-ready read is not a locked record');
+  assert.equal(early.present.openai, true);
+  assert.equal(early.secure, false, 'readable only after the retry');
+
+  ready = true;
+  assert.equal(store.unlockDeferredCredentials(), true);
+  const unlocked = store.getPublicSettings().credentialStatus;
+  assert.equal(unlocked.backend, 'safeStorage');
+  assert.equal(unlocked.secure, true);
+  assert.equal(unlocked.persisted, true);
+  assert.equal(store.getSettings().apiKeys.openai, 'sk-live-key');
+});
+
+test('a settings write before the app is ready does not clobber the sealed record', () => {
+  const userData = temporaryUserData();
+  const file = path.join(userData, 'volyx-lens-data.json');
+  let ready = false;
+  const storage = {
+    isEncryptionAvailable: () => ready,
+    encryptString: (value) => Buffer.from(`sealed:${value}`, 'utf8'),
+    decryptString: (buffer) => {
+      if (!ready) throw new Error('safeStorage cannot be used before app is ready');
+      return Buffer.from(buffer).toString('utf8').replace(/^sealed:/, '');
+    },
+  };
+  const record = { version: 1, mode: 'safeStorage', values: {
+    deepgram: Buffer.from('sealed:dg-live-key', 'utf8').toString('base64'),
+  } };
+  fs.writeFileSync(file, JSON.stringify({ credentials: record }));
+
+  const store = loadStore(userData, storage, () => ready);
+  store.setSettings({ smart: true });
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).credentials, record, 'the sealed record survives');
+
+  ready = true;
+  assert.equal(store.unlockDeferredCredentials(), true);
+  assert.equal(store.getSettings().apiKeys.deepgram, 'dg-live-key');
+  assert.equal(store.getPublicSettings().credentialStatus.secure, true);
+});
+
+test('a null transcription object cannot crash settings load', () => {  const userData = temporaryUserData();
   fs.writeFileSync(path.join(userData, 'volyx-lens-data.json'), JSON.stringify({ transcription: null }));
   const store = loadStore(userData);
   assert.equal(store.getSettings().transcription.mode, 'realtime');
