@@ -105,8 +105,41 @@ test('the drain emits the gap next to the existing status line', () => {
 
 test('the renderer shows the drain reason and duration in the existing gap row', () => {
   assert.match(renderer, /function normalizeTranscriptGap\(event\)/);
-  assert.match(renderer, /GAP_REASONS = new Set\(\['realtime-failed', 'drain-failed'\]\)/);
+  assert.match(renderer, /GAP_REASONS = new Set\(\['realtime-failed', 'drain-failed', 'realtime-drain-timeout'\]\)/);
   assert.match(renderer, /Transcription gap: about \$\{seconds\}s of \$\{speaker\}audio captured just before the stop was not transcribed/);
+  assert.match(renderer, /Transcription gap: the last words may have been missed when transcription stopped/);
   assert.match(renderer, /transcriptGaps\.map\(\(gap\) => \(\{ \.\.\.gap, gap: true \}\)\)/);
   assert.match(renderer, /row\.className = 'transcript-gap'/);
+});
+
+test('main keeps the manager in the drain set until its async stop resolves', () => {
+  const start = main.indexOf('async function stopTranscriptionPipeline(');
+  const block = main.slice(start, main.indexOf('function routePcm'));
+  assert.match(
+    block,
+    /drainingRealtimeManagers\.add\(manager\);\n    await manager\.stop\(\{ graceMs: 750 \}\);\n    drainingRealtimeManagers\.delete\(manager\);/,
+    'the manager is a drain member for the whole shutdown, then removed',
+  );
+});
+
+test('main still records a final that arrives while the manager drains', () => {
+  const start = main.indexOf('      onFinal: (event) => {');
+  const block = main.slice(start, main.indexOf('      onLateFinal:', start));
+  assert.match(block, /drainingRealtimeManagers\.has\(manager\)/);
+  assert.match(block, /recordTranscript\(event, generation, epoch\)/);
+});
+
+test('a final after the channel drain window emits one gap instead of disappearing', () => {
+  const start = main.indexOf('      onLateFinal:');
+  const block = main.slice(start, main.indexOf('      onState: (event) => {', start));
+  assert.match(block, /reason: 'realtime-drain-timeout'/);
+  assert.equal((block.match(/send\('transcript:gap'/g) || []).length, 1, 'one gap marker per late final');
+  assert.match(block, /generation !== sessionGeneration \|\| epoch !== transcriptEpoch/);
+});
+
+test('fallback enters batch once and emits exactly one gap', () => {
+  const start = main.indexOf('function activateBatchTranscription(');
+  const block = main.slice(start, main.indexOf('function startTranscriptionPipeline('));
+  assert.match(block, /if \(!state\.capturing \|\| transcriptionMode === 'batch'\) return;/);
+  assert.equal((block.match(/send\('transcript:gap'/g) || []).length, 1);
 });
