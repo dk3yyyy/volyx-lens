@@ -373,15 +373,21 @@ class RealtimeTranscriptionManager {
     DeepgramClientImpl,
     onPartial = () => {},
     onFinal = () => {},
+    onLateFinal = () => {},
     onError = () => {},
     onState = () => {},
     onLatency = () => {},
   }) {
     this.failed = false;
     this.closed = false;
+    this.closing = false;
+    this.drainSettled = false;
+    this.lateFinalReported = false;
     this.closeTimer = null;
     this.stopPromise = null;
     this.resolveStop = null;
+    this.onFinal = onFinal;
+    this.onLateFinal = onLateFinal;
     this.onError = onError;
     this.onState = onState;
     this.onLatency = onLatency;
@@ -429,7 +435,7 @@ class RealtimeTranscriptionManager {
         DeepgramClientImpl,
         flushGraceMs: this.flushGraceMs,
         onPartial,
-        onFinal,
+        onFinal: (event) => this._final(event),
         onError: (error) => this._fail(error),
         onItemFailure: (failure) => this.onState({ mode: 'realtime', status: 'item_failed', ...failure }),
         onState: (event) => this._channelState(event),
@@ -551,45 +557,62 @@ class RealtimeTranscriptionManager {
   }
 
   stop({ graceMs = 0, flushFallback } = {}) {
-    if (this.closed) return Promise.resolve();
+    // Once the drain has settled there is nothing left to wait for; return the
+    // same settled promise so a repeated stop is harmless.
+    if (this.closed) return this.stopPromise || Promise.resolve();
     if (!this.stopPromise) {
       this.stopPromise = new Promise((resolve) => { this.resolveStop = resolve; });
-    }
-    const shouldFlushFallback = flushFallback == null ? graceMs > 0 : !!flushFallback;
-    for (const channel of Object.keys(this.channels)) {
-      if (this.provider === 'deepgram') {
-        // Mark the stop before the finalize, not after it: stopping while the socket
-        // is still connecting used to throw on sendFinalize and report a fatal
-        // realtime error for a session the user was closing (VR-14).
-        if (typeof this.channels[channel].beginStop === 'function') this.channels[channel].beginStop();
-        this.channels[channel].commit();
-      } else if (this.provider === 'azure') {
-        const stream = this.azureStreams[channel];
-        if (shouldFlushFallback && stream.durationMs >= 500 && stream.maxLevel >= 30) {
+      const shouldFlushFallback = flushFallback == null ? graceMs > 0 : !!flushFallback;
+      for (const channel of Object.keys(this.channels)) {
+        if (this.provider === 'deepgram') {
+          // Mark the stop before the finalize, not after it: stopping while the socket
+          // is still connecting used to throw on sendFinalize and report a fatal
+          // realtime error for a session the user was closing (VR-14).
+          if (typeof this.channels[channel].beginStop === 'function') this.channels[channel].beginStop();
           this.channels[channel].commit();
-          this.onState({ mode: 'realtime', status: 'activity', channel, activity: 'processing', fixedWindow: true });
+        } else if (this.provider === 'azure') {
+          const stream = this.azureStreams[channel];
+          if (shouldFlushFallback && stream.durationMs >= 500 && stream.maxLevel >= 30) {
+            this.channels[channel].commit();
+            this.onState({ mode: 'realtime', status: 'activity', channel, activity: 'processing', fixedWindow: true });
+          }
+          stream.durationMs = 0;
+          stream.maxLevel = 0;
+        } else if (this.vads[channel].active) {
+          this.channels[channel].commit();
+        } else if (shouldFlushFallback && this._fallbackEligible(channel)) {
+          this._flushFallback(channel);
+          this.onState({ mode: 'realtime', status: 'activity', channel, activity: 'processing', fallback: true });
         }
-        stream.durationMs = 0;
-        stream.maxLevel = 0;
-      } else if (this.vads[channel].active) {
-        this.channels[channel].commit();
-      } else if (shouldFlushFallback && this._fallbackEligible(channel)) {
-        this._flushFallback(channel);
-        this.onState({ mode: 'realtime', status: 'activity', channel, activity: 'processing', fallback: true });
+        this.vads[channel].reset();
+        this.preRoll[channel] = Buffer.alloc(0);
+        this._resetFallback(channel);
       }
-      this.vads[channel].reset();
-      this.preRoll[channel] = Buffer.alloc(0);
-      this._resetFallback(channel);
     }
     const close = async () => {
-      if (this.closed) return;
-      this.closed = true;
+      // `closing` keeps a second stop() from starting a second teardown. `closed`
+      // is left false until the drain resolves: the final Results frame can still
+      // arrive while the channel flushes CloseStream, and callers use `closed` to
+      // decide whether another stop still has work to wait for.
+      if (this.closing || this.closed) return;
+      this.closing = true;
       this.closeTimer = null;
-      // Await channel teardown (which includes any end-of-audio flush window)
-      // so the manager keeps accepting finals until they can no longer arrive.
-      await Promise.all(Object.values(this.channels).map((channel) => channel.close()));
+      try {
+        // Await channel teardown (which includes any end-of-audio flush window)
+        // so the manager keeps accepting finals until they can no longer arrive.
+        await Promise.all(Object.values(this.channels).map(async (channel) => {
+          try { await channel.close(); } catch { /* teardown still must settle stop */ }
+        }));
+      } finally {
+        this.closing = false;
+      }
+      // A failure during the drain already reported the terminal state and
+      // resolved stop; do not emit a second 'stopped' after 'failed'.
+      if (this.failed) return;
+      this.drainSettled = true;
+      this.closed = true;
       this.onState({ mode: 'realtime', status: 'stopped' });
-      if (this.resolveStop) { this.resolveStop(); this.resolveStop = null; }
+      if (this.resolveStop) { const resolve = this.resolveStop; this.resolveStop = null; resolve(); }
     };
     if (this.closeTimer) clearTimeout(this.closeTimer);
     if (graceMs > 0) this.closeTimer = setTimeout(close, graceMs);
@@ -597,8 +620,27 @@ class RealtimeTranscriptionManager {
     return this.stopPromise;
   }
 
+  _final(event) {
+    if (this.drainSettled) {
+      // The channel already finished its CloseStream drain, so this final missed
+      // the window where main can still record it. Report the hole once instead
+      // of dropping it silently after the draining manager was discarded.
+      if (this.lateFinalReported) return;
+      this.lateFinalReported = true;
+      this.onLateFinal(event);
+      return;
+    }
+    this.onFinal(event);
+  }
+
   _fail(error) {
     if (this.failed) return;
+    // ConfigureFailure is non-fatal at the provider. Keep the live stream and
+    // surface the rejected option instead of tearing down the whole session.
+    if (error && error.code === 'realtime_configuration_failed') {
+      this.onState({ mode: 'realtime', status: 'configuration_error', channel: error.channel, message: error.message });
+      return;
+    }
     this.failed = true;
     this.closed = true;
     if (this.closeTimer) { clearTimeout(this.closeTimer); this.closeTimer = null; }

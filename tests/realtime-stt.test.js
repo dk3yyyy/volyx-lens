@@ -560,3 +560,185 @@ test('overlapping azure phrases do not consume the same slot twice', () => {
   assert.equal(result.phrases.length, 50);
   assert.deepEqual(result.phrases.slice(0, 40), phrases, 'configured phrases keep their priority');
 });
+
+// --- Deepgram manager stop/drain contract -----------------------------------
+
+class FakeDeepgramConnection extends EventEmitter {
+  constructor() {
+    super();
+    this.socket = { readyState: 1, bufferedAmount: 0 };
+    this.media = [];
+    this.finalized = 0;
+    this.closeStreams = 0;
+    this.closed = 0;
+    this.onCloseStream = null;
+  }
+  connect() { queueMicrotask(() => this.emit('open')); }
+  async waitForOpen() {}
+  sendMedia(buffer) { this.media.push(Buffer.from(buffer)); }
+  sendKeepAlive() {}
+  sendFinalize() { this.finalized += 1; }
+  sendCloseStream() {
+    this.closeStreams += 1;
+    if (this.onCloseStream) this.onCloseStream(this);
+  }
+  close() { this.closed += 1; this.socket.readyState = 3; this.emit('close', 1000, 'closed'); }
+}
+
+class FakeDeepgramClient {
+  static instances = [];
+  constructor() {
+    this.connection = new FakeDeepgramConnection();
+    this.listen = { v1: { connect: async () => this.connection } };
+    FakeDeepgramClient.instances.push(this);
+  }
+}
+
+function deepgramResults(transcript, { fromFinalize = true, speechFinal = false, start = 0, duration = 0.5 } = {}) {
+  return {
+    type: 'Results',
+    start,
+    duration,
+    is_final: true,
+    speech_final: speechFinal,
+    from_finalize: fromFinalize,
+    channel: { alternatives: [{ transcript }] },
+  };
+}
+
+async function startDeepgramManager({ channels = ['you'], onFinal, onLateFinal, onError, onState } = {}) {
+  FakeDeepgramClient.instances = [];
+  const finals = [];
+  const lateFinals = [];
+  const errors = [];
+  const states = [];
+  const manager = new RealtimeTranscriptionManager({
+    apiKey: 'test-key',
+    provider: 'deepgram',
+    model: 'nova-3',
+    language: 'en',
+    sampleRate: 16000,
+    enabledChannels: channels,
+    DeepgramClientImpl: FakeDeepgramClient,
+    onFinal: onFinal || ((event) => finals.push(event)),
+    onLateFinal: onLateFinal || ((event) => lateFinals.push(event)),
+    onError: onError || ((error) => errors.push(error)),
+    onState: onState || ((event) => states.push(event)),
+  });
+  await manager.start();
+  const connections = FakeDeepgramClient.instances.map((client) => client.connection);
+  return { manager, connection: connections[0], connections, finals, lateFinals, errors, states };
+}
+
+test('manager stop with graceMs 0 waits for the channel drain and records the final first', async () => {
+  const order = [];
+  const finals = [];
+  const { manager, connection } = await startDeepgramManager({
+    onFinal: (event) => { order.push('final'); finals.push(event); },
+  });
+  manager.channels.you.drainTimeoutMs = 100;
+  connection.onCloseStream = (conn) => {
+    queueMicrotask(() => {
+      conn.emit('message', deepgramResults('last words'));
+      conn.emit('message', { type: 'Metadata' });
+    });
+  };
+
+  await manager.stop({ graceMs: 0 }).then(() => order.push('stopped'));
+
+  assert.deepEqual(order, ['final', 'stopped'], 'the final is delivered before stop() resolves');
+  assert.equal(finals.length, 1);
+  assert.equal(finals[0].text, 'last words');
+  assert.equal(manager.closed, true);
+});
+
+test('manager keeps closed false through the grace and close drain so finals are not dropped', async () => {
+  const { manager, connection, finals, lateFinals, states } = await startDeepgramManager();
+  manager.channels.you.drainTimeoutMs = 100;
+  let closedDuringDrain = null;
+  connection.onCloseStream = (conn) => {
+    queueMicrotask(() => {
+      closedDuringDrain = manager.closed;
+      conn.emit('message', deepgramResults('drain words'));
+      conn.emit('message', { type: 'Metadata' });
+    });
+  };
+
+  const stopping = manager.stop({ graceMs: 30 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  connection.emit('message', deepgramResults('grace words', { fromFinalize: false, speechFinal: true }));
+  await stopping;
+
+  assert.deepEqual(finals.map((event) => event.text).sort(), ['drain words', 'grace words']);
+  assert.equal(closedDuringDrain, false, 'the manager is still open while the channel drains');
+  assert.equal(manager.closed, true);
+  assert.equal(lateFinals.length, 0, 'an in-drain final is not treated as a late final');
+  assert.equal(states.filter((event) => event.status === 'stopped').length, 1);
+});
+
+test('a double stop joins the in-flight drain, closes once, and records the final once', async () => {
+  const { manager, connection, finals, states } = await startDeepgramManager();
+  manager.channels.you.drainTimeoutMs = 1000;
+
+  const first = manager.stop({ graceMs: 0 });
+  await new Promise((resolve) => setImmediate(resolve));
+  let settled = false;
+  first.then(() => { settled = true; });
+  const second = manager.stop({ graceMs: 0 });
+  assert.equal(second, first, 'a second stop awaits the same shutdown promise');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false, 'the drain is still in flight');
+
+  connection.emit('message', deepgramResults('last words'));
+  connection.emit('message', { type: 'Metadata' });
+  await Promise.all([first, second]);
+
+  assert.equal(finals.length, 1);
+  assert.equal(connection.closeStreams, 1, 'CloseStream is sent once');
+  assert.equal(connection.closed, 1);
+  assert.equal(states.filter((event) => event.status === 'stopped').length, 1);
+});
+
+test('a final after the channel drain timeout is reported once through onLateFinal', async () => {
+  const { manager, connection, finals, lateFinals } = await startDeepgramManager();
+  manager.channels.you.drainTimeoutMs = 10;
+
+  await manager.stop({ graceMs: 0 });
+  assert.equal(finals.length, 0);
+
+  connection.emit('message', deepgramResults('too late', { start: 1 }));
+  connection.emit('message', deepgramResults('also too late', { start: 2 }));
+
+  assert.equal(finals.length, 0, 'main can no longer record a final after the drain settled');
+  assert.equal(lateFinals.length, 1, 'one late-final notification marks the hole');
+  assert.equal(lateFinals[0].text, 'too late');
+});
+
+test('manager reports one terminal error when both Deepgram channels fail', async () => {
+  const { manager, connections, errors } = await startDeepgramManager({ channels: ['you', 'them'] });
+  manager.channels.you.drainTimeoutMs = 5;
+  manager.channels.them.drainTimeoutMs = 5;
+
+  connections[0].emit('message', { type: 'Error', code: 'UNAVAILABLE', message: 'down' });
+  connections[1].emit('message', { type: 'Error', code: 'UNAVAILABLE', message: 'also down' });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(errors.length, 1, 'fallback is entered once, so main emits one gap');
+  assert.equal(manager.failed, true);
+});
+
+test('Deepgram ConfigureFailure is surfaced without killing the live session', () => {
+  const states = [];
+  const errors = [];
+  const manager = new RealtimeTranscriptionManager({
+    apiKey: 'test-' + 'key',
+    provider: 'deepgram',
+    model: 'nova-3',
+    onError: (error) => errors.push(error),
+    onState: (event) => states.push(event),
+  });
+  manager._fail({ code: 'realtime_configuration_failed', channel: 'you', message: 'Deepgram rejected the stream configuration.' });
+  assert.equal(manager.failed, false);
+  assert.equal(errors.length, 0);
+  assert.equal(states.at(-1).status, 'configuration_error');
+});

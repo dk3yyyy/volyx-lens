@@ -1564,7 +1564,10 @@ function startTranscriptionPipeline() {
         personalContext: personalContextStore.getEnabledDocuments().map((document) => document.text || '').join(' '),
       }),
       model: realtime.model,
-      language: transcription.language || '',
+      // An empty language in the UI is labelled Auto-detect. For Deepgram that
+      // must become auto, not the provider's English default; explicit codes
+      // such as zh-HK keep their casing.
+      language: realtime.provider === 'deepgram' ? (transcription.language || 'auto') : (transcription.language || ''),
       delay: transcription.delay || 'low',
       sampleRate: AUDIO_SAMPLE_RATE,
       enabledChannels,
@@ -1573,6 +1576,16 @@ function startTranscriptionPipeline() {
       onPartial: (event) => { if (generation === sessionGeneration && epoch === transcriptEpoch && realtimeManager === manager) send('transcript:partial', event); },
       onFinal: (event) => {
         if (generation === sessionGeneration && epoch === transcriptEpoch && (realtimeManager === manager || drainingRealtimeManagers.has(manager))) recordTranscript(event, generation, epoch);
+      },
+      onLateFinal: (event) => {
+        // The channel finished its drain without this final, so main can no longer
+        // record it. One gap row marks the hole instead of losing it silently.
+        if (generation !== sessionGeneration || epoch !== transcriptEpoch || realtimeManager) return;
+        send('transcript:gap', {
+          ts: Date.now(),
+          reason: 'realtime-drain-timeout',
+          channels: [event && event.channel === 'you' ? 'you' : 'them'],
+        });
       },
       onState: (event) => {
         if (generation !== sessionGeneration || realtimeManager !== manager) return;

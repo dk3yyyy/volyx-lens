@@ -13,14 +13,17 @@ function classifyRealtimeError(error, channel, {
     .filter(Boolean)
     .map((value) => String(value).toLowerCase())
     .join(' ');
+  // Rate limits must be checked before the generic auth branch: a 429 payload
+  // often mentions the credential that was throttled ("Rate limit exceeded for
+  // token abc"), and must not be reported as an authentication failure.
+  if (includeRateLimit && /(429|rate.?limit|too many requests)/.test(candidate)) {
+    return { code: 'realtime_rate_limited', message: `${providerLabel} rate limit was reached.`, channel };
+  }
   if (/(auth|token|api.?key|401|403)/.test(candidate)) {
     return { code: 'realtime_authentication_failed', message: `${providerLabel} authentication failed.`, channel };
   }
   if (candidate.includes('timeout')) {
     return { code: 'realtime_connection_timeout', message: `${providerLabel} connection timed out.`, channel };
-  }
-  if (includeRateLimit && /(rate|limit|429)/.test(candidate)) {
-    return { code: 'realtime_rate_limited', message: `${providerLabel} rate limit was reached.`, channel };
   }
   if (/(network|socket|transport|connect|closed|backpressure|ws_)/.test(candidate)) {
     return { code: 'realtime_transport_failed', message: `${providerLabel} connection failed.`, channel };
