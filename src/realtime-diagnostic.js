@@ -54,7 +54,7 @@ function runRealtimeDiagnostic({ settings, WebSocketImpl = WebSocket, DeepgramCl
       apiKey: resolved.apiKey,
       channel: 'you',
       model: resolved.model,
-      language: normalizeTranscriptionLanguage(safeSettings.transcription?.language),
+      language: safeSettings.transcription?.language || 'auto',
       sampleRate: AUDIO_SAMPLE_RATE,
       connectTimeoutMs: timeoutMs,
       DeepgramClientImpl,

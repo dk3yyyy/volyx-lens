@@ -347,6 +347,7 @@ test('connection diagnostic verifies Deepgram without sending audio or exposing 
   assert.equal(result.provider, 'deepgram');
   assert.equal(result.deployment, 'nova-3');
   assert.equal(FakeDeepgramClient.instances[0].connection.media.length, 0);
+  assert.equal(FakeDeepgramClient.instances[0].query.language, 'multi', 'the default empty setting is exercised as Auto, not English');
   assert.doesNotMatch(JSON.stringify(result), /deepgram-secret/);
 });
 
