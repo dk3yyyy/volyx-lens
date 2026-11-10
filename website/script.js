@@ -105,12 +105,12 @@ if (previewForm && previewStatus) {
 /* OS-aware download buttons */
 const RELEASE = 'https://github.com/dk3yyyy/volyx-lens/releases';
 const ASSETS = {
-  win: { href: `${RELEASE}/download/v0.8.6/volyx-lens-0.8.6-win-x64.exe`, label: 'Windows', detail: 'x64 installer' },
-  'mac-arm64': { href: `${RELEASE}/download/v0.8.6/volyx-lens-0.8.6-mac-arm64-unsigned.dmg`, label: 'macOS Apple Silicon', detail: 'Unsigned DMG' },
-  'mac-x64': { href: `${RELEASE}/download/v0.8.6/volyx-lens-0.8.6-mac-x64-unsigned.dmg`, label: 'macOS Intel', detail: 'Unsigned DMG' },
-  mac: { href: `${RELEASE}/tag/v0.8.6`, label: 'macOS', detail: 'Choose Intel or Apple Silicon' },
-  'linux-x64': { href: `${RELEASE}/download/v0.8.6/volyx-lens-0.8.6-linux-x86_64.AppImage`, label: 'Linux x64', detail: 'AppImage' },
-  'linux-arm64': { href: `${RELEASE}/download/v0.8.6/volyx-lens-0.8.6-linux-arm64.AppImage`, label: 'Linux arm64', detail: 'AppImage' }
+  win: { href: `${RELEASE}/download/v0.8.7/volyx-lens-0.8.7-win-x64.exe`, label: 'Windows', detail: 'x64 installer' },
+  'mac-arm64': { href: `${RELEASE}/download/v0.8.7/volyx-lens-0.8.7-mac-arm64-unsigned.dmg`, label: 'macOS Apple Silicon', detail: 'Unsigned DMG' },
+  'mac-x64': { href: `${RELEASE}/download/v0.8.7/volyx-lens-0.8.7-mac-x64-unsigned.dmg`, label: 'macOS Intel', detail: 'Unsigned DMG' },
+  mac: { href: `${RELEASE}/tag/v0.8.7`, label: 'macOS', detail: 'Choose Intel or Apple Silicon' },
+  'linux-x64': { href: `${RELEASE}/download/v0.8.7/volyx-lens-0.8.7-linux-x86_64.AppImage`, label: 'Linux x64', detail: 'AppImage' },
+  'linux-arm64': { href: `${RELEASE}/download/v0.8.7/volyx-lens-0.8.7-linux-arm64.AppImage`, label: 'Linux arm64', detail: 'AppImage' }
 };
 
 // Safari and Firefox do not expose Client Hints. Their WebGL renderer string
@@ -168,7 +168,7 @@ async function initDownloads() {
     link.setAttribute('aria-label', `Download Volyx Lens for ${asset.label}`);
   });
   document.querySelectorAll('[data-detected]').forEach((note) => {
-    note.textContent = `Detected ${asset.label} · ${asset.detail} · v0.8.6`;
+    note.textContent = `Detected ${asset.label} · ${asset.detail} · v0.8.7`;
     note.hidden = false;
   });
   const key = document.querySelector('.composer-key');

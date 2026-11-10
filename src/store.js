@@ -28,6 +28,15 @@ const LEGACY_MODEL_DEFAULTS = Object.freeze({
 let data = null;
 let persistedCredentialRecord = null;
 let credentialRecordLocked = false;
+// Electron's safeStorage cannot be used before the app is ready. Settings are
+// read at module scope in the main process, so the first load happens too early
+// and every decrypt would fail. Remember that the keys were skipped for this
+// reason (not because the record is unreadable) and retry once ready fires.
+let credentialsDeferred = false;
+
+function appIsReady() {
+  return typeof app.isReady === 'function' ? app.isReady() !== false : true;
+}
 
 function deepMerge(base, over) {
   const out = Array.isArray(base) ? base.slice() : { ...base };
@@ -69,8 +78,11 @@ function load() {
   const storedUpdateKeys = raw.notifiedUpdateKeys;
   persistedCredentialRecord = raw.credentials && typeof raw.credentials === 'object' ? raw.credentials : null;
   const openedCredentials = vault.openWithStatus(persistedCredentialRecord);
-  credentialRecordLocked = !!(persistedCredentialRecord && persistedCredentialRecord.mode === 'safeStorage'
-    && (!vault.isSecure() || openedCredentials.failedNames.length));
+  const sealedRecord = !!(persistedCredentialRecord && persistedCredentialRecord.mode === 'safeStorage');
+  credentialsDeferred = sealedRecord && !vault.isSecure() && !appIsReady();
+  credentialRecordLocked = sealedRecord
+    && !credentialsDeferred
+    && (!vault.isSecure() || openedCredentials.failedNames.length);
   const protectedKeys = openedCredentials.values;
   const settingsOnly = { ...raw };
   delete settingsOnly.credentials;
@@ -133,7 +145,7 @@ function save() {
   // ciphertext, and let the session-only status explain why new keys are not
   // persisted.
   let nextCredentialRecord;
-  if (credentialRecordLocked && persistedCredentialRecord) {
+  if ((credentialRecordLocked || credentialsDeferred) && persistedCredentialRecord) {
     nextCredentialRecord = persistedCredentialRecord;
   } else if (vault.isSecure()) {
     nextCredentialRecord = vault.seal(data.apiKeys);
@@ -144,7 +156,7 @@ function save() {
   }
   serialized.credentials = nextCredentialRecord;
   const nextCredentialLocked = credentialRecordLocked
-    || (nextCredentialRecord.mode === 'safeStorage' && !vault.isSecure());
+    || (!credentialsDeferred && nextCredentialRecord.mode === 'safeStorage' && !vault.isSecure());
   const temporary = `${FILE}.tmp`;
   let fd = null;
   try {
@@ -166,7 +178,25 @@ function save() {
   }
 }
 
+// Electron only exposes safeStorage after the ready event. The main process
+// reads settings earlier than that, so the first attempt to open the sealed
+// record always fails; retrying here turns that false "locked" state back into
+// the readable keys as soon as the runtime is ready.
+function unlockDeferredCredentials() {
+  if (!credentialsDeferred) return false;
+  load();
+  if (!appIsReady() || !vault.isSecure()) return false;
+  const opened = vault.openWithStatus(persistedCredentialRecord);
+  credentialsDeferred = false;
+  credentialRecordLocked = opened.failedNames.length > 0;
+  for (const [name, value] of Object.entries(opened.values)) {
+    if (value) data.apiKeys[name] = value;
+  }
+  return true;
+}
+
 function publicSettings() {
+  unlockDeferredCredentials();
   const full = load();
   const result = clone(full);
   result.apiKeys = Object.fromEntries(KEY_NAMES.map((name) => [name, '']));
@@ -179,9 +209,11 @@ function publicSettings() {
     present: Object.fromEntries(KEY_NAMES.map((name) => [name, !!full.apiKeys[name] || !!persistedNames[name]])),
     secure: vault.isSecure() && !credentialRecordLocked,
     // Whether the keys survive a restart. False means they are session-only.
-    persisted: securityStatus.persisted === true && !credentialRecordLocked,
-    backend: credentialRecordLocked ? 'locked-safeStorage' : vault.backend(),
-    warning: securityStatus.warning,
+    persisted: securityStatus.persisted === true && !credentialRecordLocked && !credentialsDeferred,
+    backend: credentialRecordLocked
+      ? 'locked-safeStorage'
+      : (credentialsDeferred ? 'safeStorage' : vault.backend()),
+    warning: credentialsDeferred ? '' : securityStatus.warning,
   };
   // Read-only capability metadata so the renderer can derive UI (e.g. which
   // providers are text-only) instead of hardcoding provider lists.
@@ -354,6 +386,7 @@ function setSettings(patch) {
 }
 
 function applyApiKeyUpdates(updates) {
+  unlockDeferredCredentials();
   const accepted = Object.entries(updates || {}).filter(([name]) => KEY_NAMES.includes(name));
   if (credentialRecordLocked && accepted.length) {
     // The sealed record cannot be opened (most often after an app update changes
@@ -412,8 +445,9 @@ function recordNotifiedUpdateKey(key) {
 }
 
 module.exports = {
-  getSettings: () => load(),
+  getSettings() { unlockDeferredCredentials(); return load(); },
   getPublicSettings: () => publicSettings(),
+  unlockDeferredCredentials,
   setSettings,
   recordNotifiedUpdateKey,
   updateSettingsAndApiKeys,

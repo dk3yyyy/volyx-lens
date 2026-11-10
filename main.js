@@ -3355,6 +3355,9 @@ function resetShortcuts() {
 // -------- lifecycle --------
 app.whenReady().then(() => {
   if (!primaryInstance) return;
+  // Settings are read at module scope, before safeStorage is usable, so the
+  // sealed API keys are reopened here now that the runtime is ready.
+  try { store.unlockDeferredCredentials(); } catch {}
   enforceHistoryRetention();
   // Undo has a lifetime: purge copies deleted more than TRASH_RETENTION_DAYS ago
   // at startup, so the window is a promise and not an approximation.
