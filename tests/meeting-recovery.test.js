@@ -174,6 +174,7 @@ test('main process checkpoints only opted-in transcripts and exposes restore or 
 
   assert.match(main, /createMeetingRecovery\(\{ file: path\.join\(currentUserDataPath, 'meeting-recovery\.json'\) \}\)/);
   assert.match(main, /meetingRecovery\.save\(\{[\s\S]*?enabled: historyEnabled/);
+  assert.match(main, /meetingRecovery\.resume\(\)/);
   assert.match(main, /handleTrusted\('recovery:get'/);
   assert.match(main, /handleTrusted\('recovery:restore'/);
   assert.match(main, /handleTrusted\('recovery:discard'/);

@@ -60,11 +60,12 @@ test('an empty history produces no block at all', () => {
   assert.deepEqual(buildPreviousMeetingsBlock([meeting({ summary: '' })]), { text: '', count: 0 });
 });
 
-test('main only attaches previous meetings when history is enabled', () => {
+test('main only attaches previous meetings when history and meeting memory are enabled', () => {
   const main = read('main.js');
 
   assert.match(main, /buildPreviousMeetingsBlock/);
   assert.match(main, /settings\.transcription\.historyEnabled/);
+  assert.match(main, /settings\.transcription\.meetingMemory === true/);
   assert.match(main, /PREVIOUS_MEETINGS_MODES/);
   assert.match(main, /previousMeetingsCache/);
   assert.match(main, /const stored = meetingStore\.updateNotes\(record\.id, notes\);/);

@@ -200,6 +200,8 @@ function getDefaultSettings() {
       historyEnabled: true,
       // Days to keep saved meetings. 0 keeps everything up to the store cap.
       historyRetentionDays: 0,
+      // Explicit opt-in: include summaries from saved meetings in live requests.
+      meetingMemory: false,
       meetingDetection: false,
       slideTracking: false,
     },

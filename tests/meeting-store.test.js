@@ -51,6 +51,17 @@ test('list() correctly reports hasNotes=false when no notes exist', () => {
   store.clear();
 });
 
+test('notes containing only decisions or follow-up still count as notes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'Hello', ts: 1000 }], enabled: true });
+  store.updateNotes(saved.id, { summary: '', keyPoints: [], decisions: ['Approve the budget'], actionItems: [], followUp: [] });
+  assert.equal(store.list()[0].hasNotes, true);
+  store.updateNotes(saved.id, { summary: '', keyPoints: [], decisions: [], actionItems: [], followUp: ['Send the deck'] });
+  assert.equal(store.list()[0].hasNotes, true);
+  store.clear();
+});
+
 test('updateCleaned stores a parallel cleaned copy without touching raw turns', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
   const store = createMeetingStore({ dir });
@@ -264,6 +275,22 @@ test('prune sweeps a stale temp copy but leaves another instance write alone', (
 
   assert.equal(fs.existsSync(stale), false, 'a temp copy from a dead writer is cleaned up');
   assert.equal(fs.existsSync(fresh), true, 'an in-flight write by another instance is left alone');
+  store.clear();
+});
+
+test('prune never deletes a valid meeting to make room for corrupt files', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  for (let index = 0; index < 199; index += 1) {
+    store.finalize({ turns: [{ channel: 'you', text: `turn ${index}`, ts: index }], enabled: true, reason: 'capture-stop' });
+  }
+  fs.writeFileSync(path.join(dir, 'corrupt-a.json'), '{not json');
+  fs.writeFileSync(path.join(dir, 'corrupt-b.json'), '{"version":1}');
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'last session', ts: 9999 }], enabled: true });
+  assert.equal(saved.pruned, 0);
+  assert.equal(store.list().length, 200);
+  assert.equal(fs.existsSync(path.join(dir, 'corrupt-a.json')), true);
+  assert.equal(fs.existsSync(path.join(dir, 'corrupt-b.json')), true);
   store.clear();
 });
 

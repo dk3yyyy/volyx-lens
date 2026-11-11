@@ -149,23 +149,29 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     } catch {
       return { removed: 0 };
     }
-    if (entries.length <= MAX_RECORDS) return { removed: 0 };
+    // Only readable records count toward the cap. Counting stray/corrupt JSON
+    // files made prune delete valid meetings to make room for files list() never
+    // shows; leave unreadable files alone and prune only the oldest valid record.
     const timed = [];
     for (const name of entries) {
       try {
+        const record = JSON.parse(fsImpl.readFileSync(path.join(dir, name), 'utf8'));
+        if (!isRecordShape(record)) continue;
         const stat = fsImpl.statSync(path.join(dir, name));
         timed.push({ name, mtimeMs: stat.mtimeMs });
       } catch {
-        // Unreadable files are treated as oldest so a later pass prunes them.
+        // A corrupt file is not a saved meeting; do not use it as a reason to
+        // delete a valid one.
       }
     }
+    if (timed.length <= MAX_RECORDS) return { removed: 0 };
     timed.sort((a, b) => b.mtimeMs - a.mtimeMs);
     const keep = new Set(timed.slice(0, MAX_RECORDS).map((entry) => entry.name));
     let removed = 0;
-    for (const name of entries) {
-      if (keep.has(name)) continue;
+    for (const entry of timed) {
+      if (keep.has(entry.name)) continue;
       try {
-        fsImpl.unlinkSync(path.join(dir, name));
+        fsImpl.unlinkSync(path.join(dir, entry.name));
         removed += 1;
       } catch {
         // Best-effort pruning; the record is still readable elsewhere.
@@ -331,7 +337,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
           endedAt: Number.isFinite(record.endedAt) ? record.endedAt : null,
           turnCount: Array.isArray(record.turns) ? record.turns.length : 0,
           preview: previewText(record.turns),
-          hasNotes: !!record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length),
+          hasNotes: !!record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.decisions?.length || record.notes.actionItems?.length || record.notes.followUp?.length),
           hasCleaned: Array.isArray(record.cleaned && record.cleaned.texts)
             && record.cleaned.texts.length === (Array.isArray(record.turns) ? record.turns.length : 0)
             && record.cleaned.texts.length > 0,

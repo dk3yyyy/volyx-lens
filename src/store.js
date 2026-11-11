@@ -328,6 +328,7 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'offlineCloudFallback') && typeof value.offlineCloudFallback === 'boolean') transcription.offlineCloudFallback = value.offlineCloudFallback;
     if (Object.hasOwn(value, 'language')) transcription.language = String(value.language || '').slice(0, 20);
     if (Object.hasOwn(value, 'historyEnabled') && typeof value.historyEnabled === 'boolean') transcription.historyEnabled = value.historyEnabled;
+    if (Object.hasOwn(value, 'meetingMemory') && typeof value.meetingMemory === 'boolean') transcription.meetingMemory = value.meetingMemory;
     if (Object.hasOwn(value, 'historyRetentionDays')) {
       const days = Math.floor(Number(value.historyRetentionDays));
       // 0 means keep everything; anything unusable falls back to that rather
