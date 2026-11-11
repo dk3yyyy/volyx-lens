@@ -77,9 +77,14 @@ function load() {
   // shape, so it is validated separately instead of being deep-merged.
   const storedUpdateKeys = raw.notifiedUpdateKeys;
   persistedCredentialRecord = raw.credentials && typeof raw.credentials === 'object' ? raw.credentials : null;
-  const openedCredentials = vault.openWithStatus(persistedCredentialRecord);
   const sealedRecord = !!(persistedCredentialRecord && persistedCredentialRecord.mode === 'safeStorage');
-  credentialsDeferred = sealedRecord && !vault.isSecure() && !appIsReady();
+  // Touching safeStorage before ready both fails and can block the main process
+  // behind a Keychain authorization dialog, so the record is left untouched
+  // until the runtime is ready and the retry below opens it.
+  credentialsDeferred = sealedRecord && !appIsReady();
+  const openedCredentials = credentialsDeferred
+    ? { values: {}, failedNames: [], plaintext: false }
+    : vault.openWithStatus(persistedCredentialRecord);
   credentialRecordLocked = sealedRecord
     && !credentialsDeferred
     && (!vault.isSecure() || openedCredentials.failedNames.length);

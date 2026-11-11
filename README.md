@@ -106,7 +106,7 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.8.7
+### Current release: v0.8.8
 
 What changed in this release:
 
@@ -117,7 +117,7 @@ What changed in this release:
 - **Diagnostics and tests cover the contract.** The Deepgram Test Connection now exercises Auto, with regression tests for stop, drain, duplicate, replay, and error paths.
 
 
-v0.8.7 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
+v0.8.8 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
 
 ### Install with one command
 
@@ -137,27 +137,27 @@ irm https://volyxlens.pages.dev/install.ps1 | iex
 
 [View install.ps1](https://github.com/dk3yyyy/volyx-lens/blob/main/website/install.ps1)
 
-The installer resolves the newest release, downloads the asset for your OS and architecture, verifies the published SHA-256, and installs it — `/Applications` on macOS (or `~/Applications` with `--user`), `~/.local/bin` plus a desktop entry on Linux, and the per-user installer on Windows. It needs no Node or package manager. Pass `--version v0.8.7` to install a specific release, `--dry-run` to see the URL, or `--no-launch` to skip opening the app.
+The installer resolves the newest release, downloads the asset for your OS and architecture, verifies the published SHA-256, and installs it — `/Applications` on macOS (or `~/Applications` with `--user`), `~/.local/bin` plus a desktop entry on Linux, and the per-user installer on Windows. It needs no Node or package manager. Pass `--version v0.8.8` to install a specific release, `--dry-run` to see the URL, or `--no-launch` to skip opening the app.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.8.7 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.7/volyx-lens-0.8.7-mac-arm64-unsigned.dmg) · right-click Open |
-| **Intel** | [v0.8.7 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.7/volyx-lens-0.8.7-mac-x64-unsigned.dmg) · right-click Open |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.8.8 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.8/volyx-lens-0.8.8-mac-arm64-unsigned.dmg) · right-click Open |
+| **Intel** | [v0.8.8 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.8/volyx-lens-0.8.8-mac-x64-unsigned.dmg) · right-click Open |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.8.7-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.8.7-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.8.7-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.8.8-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.8.8-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.8.8-linux-arm64.AppImage` |
 
-**[Open the v0.8.7 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.7)**
+**[Open the v0.8.8 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.8)**
 
 The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. Later tag-triggered releases publish per-file checksum and SBOM files alongside the installers. Signed and notarized builds will replace them once release signing credentials are configured.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.8.7-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.8.7-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.8.8-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.8.8-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 
