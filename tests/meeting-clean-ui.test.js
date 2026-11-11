@@ -88,7 +88,7 @@ test('progress is reported per batch with the provider that is doing the work', 
 
 test('a live answer and a saved-meeting job never stream at the same time', () => {
   assert.match(main, /if \(activeHistoryJob\) \{[\s\S]{0,320}send\('llm:error', \{ message: historyJobBusyMessage\(\) \}\);/);
-  assert.match(main, /if \(state\.busy \|\| responseDiagnosticPromise\) return;/);
+  assert.match(main, /if \(state\.busy \|\| responseDiagnosticPromise\) \{[\s\S]{0,500}if \(confirmedTaskContext\) send\('llm:error'/);
 });
 
 test('meeting notes surface provider failures as sanitized states', () => {

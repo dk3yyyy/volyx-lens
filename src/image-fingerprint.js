@@ -1,6 +1,7 @@
-const FINGERPRINT_WIDTH = 17;
-const FINGERPRINT_HEIGHT = 16;
-const HASH_HEX_LENGTH = 64;
+const FINGERPRINT_WIDTH = 64;
+const FINGERPRINT_HEIGHT = 36;
+const DIFFERENCE_HASH_HEX_LENGTH = (FINGERPRINT_HEIGHT * (FINGERPRINT_WIDTH - 1)) / 4;
+const AVERAGE_HASH_HEX_LENGTH = (FINGERPRINT_HEIGHT * (FINGERPRINT_WIDTH - 1)) / 4;
 
 function bitsToHex(bits) {
   let value = '';
@@ -62,16 +63,16 @@ function hammingDistance(left, right) {
 }
 
 function isNearDuplicateFingerprint(left, right, {
-  maxDifferenceDistance = 5,
-  maxAverageDistance = 5,
+  maxDifferenceDistance = 10,
+  maxAverageDistance = 8,
   maxMeanDifference = 4,
   maxSpreadDifference = 6,
 } = {}) {
   if (!left || !right
     || typeof left.differenceHash !== 'string' || typeof right.differenceHash !== 'string'
     || typeof left.averageHash !== 'string' || typeof right.averageHash !== 'string') return false;
-  if (left.differenceHash.length !== HASH_HEX_LENGTH || right.differenceHash.length !== HASH_HEX_LENGTH
-    || left.averageHash.length !== HASH_HEX_LENGTH || right.averageHash.length !== HASH_HEX_LENGTH) return false;
+  if (left.differenceHash.length !== DIFFERENCE_HASH_HEX_LENGTH || right.differenceHash.length !== DIFFERENCE_HASH_HEX_LENGTH
+    || left.averageHash.length !== AVERAGE_HASH_HEX_LENGTH || right.averageHash.length !== AVERAGE_HASH_HEX_LENGTH) return false;
   const lowContrastPair = Number(left.lumaSpread) <= 6 && Number(right.lumaSpread) <= 6;
   return hammingDistance(left.differenceHash, right.differenceHash) <= maxDifferenceDistance
     && (lowContrastPair || hammingDistance(left.averageHash, right.averageHash) <= maxAverageDistance)
@@ -92,7 +93,8 @@ function fingerprintDataUrl(dataUrl, nativeImage) {
 module.exports = {
   FINGERPRINT_WIDTH,
   FINGERPRINT_HEIGHT,
-  HASH_HEX_LENGTH,
+  DIFFERENCE_HASH_HEX_LENGTH,
+  AVERAGE_HASH_HEX_LENGTH,
   createImageFingerprint,
   hammingDistance,
   isNearDuplicateFingerprint,
