@@ -1,22 +1,29 @@
 const DEFAULT_MAX_SLIDES = 20;
-const DEFAULT_MAX_DISTANCE = 7;
+const DEFAULT_MAX_DISTANCE = 4;
 const DEFAULT_STABLE_REQUIRED = 2;
+const HASH_GRID_WIDTH = 16;
+const HASH_GRID_HEIGHT = 9;
 const MAX_PREVIEW_BYTES = 512 * 1024;
 const MAX_TOTAL_PREVIEW_BYTES = 8 * 1024 * 1024;
 const MAX_TRANSCRIPT_CHARACTERS = 1200;
 const MAX_SLIDE_TEXT_CHARACTERS = 4000;
 
 function hashFrame(width, height, rgba) {
-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 9 || height < 8
+  // A 9x8 horizontal-only hash collapsed ordinary text slides to nearly the same
+  // signature: a different title and bullet list could differ by only a few bits.
+  // Use a difference hash over a 16x9 grid, with both horizontal and vertical
+  // comparisons, so text rows and their edits survive downscaling. The threshold
+  // stays low because a static slide is deterministic across captures.
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < HASH_GRID_WIDTH || height < HASH_GRID_HEIGHT
     || !rgba || rgba.length < width * height * 4) return null;
 
-  const samples = new Array(9 * 8);
-  for (let y = 0; y < 8; y += 1) {
-    const startY = Math.floor((y * height) / 8);
-    const endY = Math.floor(((y + 1) * height) / 8);
-    for (let x = 0; x < 9; x += 1) {
-      const startX = Math.floor((x * width) / 9);
-      const endX = Math.floor(((x + 1) * width) / 9);
+  const cells = new Array(HASH_GRID_WIDTH * HASH_GRID_HEIGHT);
+  for (let y = 0; y < HASH_GRID_HEIGHT; y += 1) {
+    const startY = Math.floor((y * height) / HASH_GRID_HEIGHT);
+    const endY = Math.max(startY + 1, Math.min(height, Math.floor(((y + 1) * height) / HASH_GRID_HEIGHT)));
+    for (let x = 0; x < HASH_GRID_WIDTH; x += 1) {
+      const startX = Math.floor((x * width) / HASH_GRID_WIDTH);
+      const endX = Math.max(startX + 1, Math.min(width, Math.floor(((x + 1) * width) / HASH_GRID_WIDTH)));
       let luminance = 0;
       let pixelCount = 0;
       for (let sourceY = startY; sourceY < endY; sourceY += 1) {
@@ -26,23 +33,30 @@ function hashFrame(width, height, rgba) {
           pixelCount += 1;
         }
       }
-      samples[y * 9 + x] = luminance / pixelCount;
+      cells[y * HASH_GRID_WIDTH + x] = pixelCount ? luminance / pixelCount : 0;
     }
   }
 
-  let hash = 0n;
-  let bit = 0n;
-  for (let y = 0; y < 8; y += 1) {
-    for (let x = 0; x < 8; x += 1) {
-      if (samples[y * 9 + x] > samples[y * 9 + x + 1]) hash |= 1n << bit;
-      bit += 1n;
+  const bits = [];
+  for (let y = 0; y < HASH_GRID_HEIGHT; y += 1) {
+    for (let x = 0; x < HASH_GRID_WIDTH; x += 1) {
+      const index = y * HASH_GRID_WIDTH + x;
+      if (x + 1 < HASH_GRID_WIDTH) bits.push(cells[index] > cells[index + 1] ? 1 : 0);
+      if (y + 1 < HASH_GRID_HEIGHT) bits.push(cells[index] > cells[index + HASH_GRID_WIDTH] ? 1 : 0);
     }
   }
-  return hash.toString(16).padStart(16, '0');
+  while (bits.length % 4 !== 0) bits.push(0);
+  let hash = '';
+  for (let index = 0; index < bits.length; index += 4) {
+    hash += ((bits[index] << 3) | (bits[index + 1] << 2) | (bits[index + 2] << 1) | bits[index + 3]).toString(16);
+  }
+  return hash;
 }
 
 function hammingDistance(left, right) {
-  if (typeof left !== 'string' || typeof right !== 'string' || !/^[0-9a-f]{16}$/i.test(left) || !/^[0-9a-f]{16}$/i.test(right)) {
+  if (typeof left !== 'string' || typeof right !== 'string'
+    || !/^[0-9a-f]+$/i.test(left) || !/^[0-9a-f]+$/i.test(right)
+    || left.length !== right.length || left.length % 2 !== 0) {
     return Infinity;
   }
   let difference = BigInt(`0x${left}`) ^ BigInt(`0x${right}`);
@@ -61,7 +75,7 @@ function createSlideTracker({
   now = () => Date.now(),
 } = {}) {
   const limit = Number.isSafeInteger(maxSlides) && maxSlides > 0 ? Math.min(maxSlides, 100) : DEFAULT_MAX_SLIDES;
-  const distanceLimit = Number.isSafeInteger(maxDistance) && maxDistance >= 0 ? Math.min(maxDistance, 32) : DEFAULT_MAX_DISTANCE;
+  const distanceLimit = Number.isSafeInteger(maxDistance) && maxDistance >= 0 ? Math.min(maxDistance, 64) : DEFAULT_MAX_DISTANCE;
   const stableCountRequired = Number.isSafeInteger(stableRequired) && stableRequired > 0 ? Math.min(stableRequired, 10) : DEFAULT_STABLE_REQUIRED;
   let slides = [];
   let baselineHash = null;
@@ -81,7 +95,7 @@ function createSlideTracker({
   }
 
   function observe(hash, { transcriptExcerpt = '' } = {}) {
-    if (typeof hash !== 'string' || !/^[0-9a-f]{16}$/i.test(hash)) {
+    if (typeof hash !== 'string' || !/^[0-9a-f]+$/i.test(hash) || hash.length % 2 !== 0) {
       candidateHash = null;
       candidateCount = 0;
       return { emitted: null, removed: [] };

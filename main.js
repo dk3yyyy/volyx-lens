@@ -533,8 +533,8 @@ async function sampleSlideFrame(generation) {
   } catch (error) {
     if (generation !== slideTrackingGeneration) return;
     console.log('[slide-tracking] capture failed', String(error && error.message || 'unknown').slice(0, 120));
-    stopSlideTracking();
-    send('status', { message: 'Slide tracking stopped because screen capture was unavailable. Check screen-recording permission, then restart Listening.' });
+    pauseSlideTracking();
+    send('status', { message: 'Slide tracking stopped because screen capture was unavailable. Existing previews were kept; check screen-recording permission, then turn Slides on again.' });
   } finally {
     slideTrackingInFlight = false;
   }
@@ -601,6 +601,23 @@ function stopSlideTracking() {
   slideTrackingTimer = null;
   slideTrackingGeneration += 1;
   clearSlideTrackingData();
+}
+
+// A capture failure must not erase slides the user already has. Disarm the
+// setting, keep the previews for review, and let the next Listening session
+// start fresh. The toggle reflects the real state instead of staying "on" with
+// no sampler behind it.
+function pauseSlideTracking() {
+  if (slideTrackingTimer !== null) clearInterval(slideTrackingTimer);
+  slideTrackingTimer = null;
+  try {
+    if (store.getSettings().transcription.slideTracking === true) {
+      store.setSettings({ transcription: { slideTracking: false } });
+    }
+  } catch (error) {
+    console.log('[slide-tracking] could not persist paused state', String(error && error.message || 'unknown').slice(0, 120));
+  }
+  publishSlideTrackingState();
 }
 
 async function processTaskContextOcr(captureId, dataUrl, generation) {
@@ -2921,6 +2938,16 @@ handleTrusted('task-context:undo', () => undoTaskContext());
 handleTrusted('task-context:remove', (_event, id) => removeTaskContextCapture(id));
 handleTrusted('task-context:pin', (_event, payload = {}) => pinTaskContextCapture(payload.id, payload.pinned));
 handleTrusted('task-context:clear', () => clearTaskContext());
+handleTrusted('slide-tracking:set-enabled', (_event, enabled) => {
+  const next = enabled === true;
+  const current = store.getSettings().transcription.slideTracking === true;
+  if (next !== current) {
+    store.setSettings({ transcription: { slideTracking: next } });
+    if (next && state.capturing) startSlideTracking();
+    else if (!next) stopSlideTracking();
+  }
+  return publishSlideTrackingState();
+});
 handleTrusted('slide-tracking:clear', () => {
   const result = clearSlideTrackingData();
   return { ...slideTrackingState(), cleared: result.cleared };

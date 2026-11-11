@@ -199,6 +199,23 @@ app.whenReady().then(async () => {
 
   await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"listening\"]').click(); document.querySelector('#test-live-transcription-btn').click()");
   await waitFor(win, "document.querySelector('#realtime-test-result').textContent.includes('permission_client_mismatch')", 'development permission identity guidance');
+  const slideSwitch = await win.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#stt-slide-tracking');
+    const label = document.querySelector('label[for="stt-slide-tracking"]');
+    const style = getComputedStyle(input);
+    return {
+      role: input && input.getAttribute('role'),
+      width: style.width,
+      height: style.height,
+      labelled: !!(label && label.control === input),
+      checked: input && input.checked,
+    };
+  })()`);
+  assert.equal(slideSwitch.role, 'switch', 'slide tracking is exposed as a switch');
+  assert.equal(slideSwitch.width, '36px', 'the slide switch uses the compact switch width');
+  assert.equal(slideSwitch.height, '20px', 'the slide switch uses the compact switch height');
+  assert.equal(slideSwitch.labelled, true, 'the slide switch is associated with its visible label');
+  assert.equal(slideSwitch.checked, false, 'slide tracking remains off by default in settings');
   const permissionDiagnostic = await win.webContents.executeJavaScript(`({
     text: document.querySelector('#realtime-test-result').textContent,
     startAttempted: document.querySelector('#test-live-transcription-btn').textContent !== 'Test Live Mic'

@@ -21,6 +21,29 @@ function slideFrame(brightColumns, width = 16, height = 16) {
   return rgba;
 }
 
+function textSlide(titleWidth, rows, width = 160, height = 90) {
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let index = 0; index < width * height; index += 1) {
+    rgba[index * 4] = 245;
+    rgba[index * 4 + 1] = 245;
+    rgba[index * 4 + 2] = 245;
+    rgba[index * 4 + 3] = 255;
+  }
+  const fill = (x, y, blockWidth, blockHeight, value) => {
+    for (let py = y; py < y + blockHeight; py += 1) {
+      for (let px = x; px < x + blockWidth; px += 1) {
+        const offset = (py * width + px) * 4;
+        rgba[offset] = value;
+        rgba[offset + 1] = value;
+        rgba[offset + 2] = value;
+      }
+    }
+  };
+  fill(40, 10, titleWidth, 8, 20);
+  rows.forEach((length, index) => fill(20, 30 + index * 14, length, 4, 30));
+  return rgba;
+}
+
 test('slide tracking rejects invalid frame dimensions and buffers', () => {
   assert.equal(hashFrame(0, 16, Buffer.alloc(16)), null);
   assert.equal(hashFrame(7, 16, Buffer.alloc(7 * 16 * 4)), null);
@@ -43,6 +66,27 @@ test('slide frame hash averages each image cell so localized text changes are de
   }
 
   assert.ok(hammingDistance(hashFrame(width, height, plain), hashFrame(width, height, changed)) > 0);
+});
+
+test('difference hash separates ordinary text slides that the old coarse hash collapsed', () => {
+  const first = textSlide(90, [100, 80, 110]);
+  const second = textSlide(70, [90, 120, 70]);
+  const firstHash = hashFrame(160, 90, first);
+  const secondHash = hashFrame(160, 90, second);
+
+  assert.equal(firstHash.length, 66);
+  assert.ok(hammingDistance(firstHash, secondHash) > 4, 'a different title and bullet list must cross the default threshold');
+  assert.equal(hammingDistance(firstHash, hashFrame(160, 90, textSlide(90, [100, 80, 110]))), 0, 'the same slide must keep the same hash');
+});
+
+test('tracker emits a text slide change after two stable samples', () => {
+  const tracker = createSlideTracker();
+  const first = hashFrame(160, 90, textSlide(90, [100, 80, 110]));
+  const second = hashFrame(160, 90, textSlide(70, [90, 120, 70]));
+
+  assert.equal(tracker.observe(first).emitted, null);
+  assert.equal(tracker.observe(second).emitted, null);
+  assert.equal(tracker.observe(second).emitted.sequence, 1);
 });
 
 test('slide review markup has no orphaned recovery dialog content', () => {
@@ -165,9 +209,21 @@ test('slide tracking is opt-in, only active while listening, visible, and cleara
   assert.match(defaults, /slideTracking: false/);
   assert.match(store, /typeof value\.slideTracking === 'boolean'\) transcription\.slideTracking/);
   assert.match(html, /id="stt-slide-tracking" type="checkbox"/);
+  assert.match(html, /id="stt-slide-tracking"[^>]*class="s-switch"[^>]*role="switch"/);
+  assert.match(html, /id="slide-tracking-toggle"[^>]*role="switch"[^>]*aria-checked="false"/);
   assert.match(html, /id="slide-tracking-indicator"/);
   assert.match(html, /id="slide-tracking-toolbar-indicator"/);
   assert.match(renderer, /slideTracking: \$\('#stt-slide-tracking'\)\.checked/);
+  assert.match(renderer, /trackingToggle\.setAttribute\('aria-checked'/);
+  assert.match(renderer, /settings\.transcription\.slideTracking = slideTracking\.enabled/);
+  assert.match(renderer, /slideTrackingSetEnabled/);
+  assert.match(preload, /slideTrackingSetEnabled: \(enabled\) => ipcRenderer\.invoke\('slide-tracking:set-enabled'/);
+  assert.match(main, /handleTrusted\('slide-tracking:set-enabled'/);
+  assert.match(main, /if \(next && state\.capturing\) startSlideTracking\(\)/);
+  assert.match(main, /else if \(!next\) stopSlideTracking\(\)/);
+  assert.match(main, /function pauseSlideTracking\(\)/);
+  assert.match(main, /pauseSlideTracking\(\);\n\s*send\('status'/);
+  assert.match(renderer, /slideSettingDirty/);
   assert.match(renderer, /volyxLens\.on\('slide-tracking:state'/);
   assert.match(preload, /slideTrackingClear: \(\) => ipcRenderer\.invoke\('slide-tracking:clear'\)/);
   assert.match(preload, /'slide-tracking:state'/);
