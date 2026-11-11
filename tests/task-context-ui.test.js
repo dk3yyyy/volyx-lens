@@ -71,8 +71,8 @@ test('local perceptual fingerprints reject near-duplicates without crossing the 
   assert.match(main, /fingerprintDataUrl\(dataUrl, nativeImage\)/);
   assert.match(main, /isNearDuplicate: isNearDuplicateFingerprint/);
   assert.match(main, /visually similar screen, so the new capture was not saved\. No AI request was made/);
-  assert.match(imageFingerprint, /FINGERPRINT_WIDTH = 17/);
-  assert.match(imageFingerprint, /FINGERPRINT_HEIGHT = 16/);
+  assert.match(imageFingerprint, /FINGERPRINT_WIDTH = 64/);
+  assert.match(imageFingerprint, /FINGERPRINT_HEIGHT = 36/);
   assert.match(taskContextModule, /capture\.fingerprint && isNearDuplicate\(fingerprint, capture\.fingerprint\)/);
   assert.match(renderer, /similar skipped/);
   assert.match(renderer, /visual \$\{fingerprintFailures === 1 \? 'check' : 'checks'\} unavailable/);
@@ -120,6 +120,8 @@ test('large visual requests require confirmation before capture or upload', () =
   assert.match(renderer, /volyxLens\.on\('llm:confirm-task-context'/);
   assert.match(renderer, /Multiple images can increase latency and provider cost/);
   assert.match(renderer, /confirmedTaskContext: true/);
+  assert.match(main, /if \(confirmedTaskContext\) send\('llm:error'/);
+  assert.match(main, /Wait for the active response or provider test to finish before confirming Task Context/);
 });
 
 test('New Session and quit clear task-context images from memory', () => {

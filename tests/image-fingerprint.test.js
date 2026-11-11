@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const {
   FINGERPRINT_WIDTH,
   FINGERPRINT_HEIGHT,
+  DIFFERENCE_HASH_HEX_LENGTH,
+  AVERAGE_HASH_HEX_LENGTH,
   createImageFingerprint,
   hammingDistance,
   isNearDuplicateFingerprint,
@@ -24,13 +26,32 @@ function bitmapFor(pixel) {
   return bitmap;
 }
 
-test('image fingerprint creates deterministic private 256-bit visual signatures', () => {
+function textBitmap(rows) {
+  const bitmap = bitmapFor(() => 245);
+  const fill = (x, y, width, height, value) => {
+    for (let py = y; py < y + height; py += 1) {
+      for (let px = x; px < x + width; px += 1) {
+        const offset = ((py * FINGERPRINT_WIDTH) + px) * 4;
+        bitmap[offset] = value;
+        bitmap[offset + 1] = value;
+        bitmap[offset + 2] = value;
+      }
+    }
+  };
+  fill(6, 4, 40, 3, 20);
+  rows.forEach((length, index) => fill(4, 10 + index * 4, length, 2, 30));
+  return bitmap;
+}
+
+test('image fingerprint creates deterministic private visual signatures', () => {
   const bitmap = bitmapFor((x, y) => (x * 8) + (y * 3));
   const first = createImageFingerprint(bitmap);
   const second = createImageFingerprint(Buffer.from(bitmap));
   assert.deepEqual(first, second);
-  assert.match(first.differenceHash, /^[a-f0-9]{64}$/);
-  assert.match(first.averageHash, /^[a-f0-9]{64}$/);
+  assert.equal(first.differenceHash.length, DIFFERENCE_HASH_HEX_LENGTH);
+  assert.match(first.differenceHash, /^[a-f0-9]+$/);
+  assert.equal(first.averageHash.length, AVERAGE_HASH_HEX_LENGTH);
+  assert.match(first.averageHash, /^[a-f0-9]+$/);
   assert.equal(hammingDistance(first.differenceHash, second.differenceHash), 0);
   assert.equal(Number.isInteger(first.meanLuma), true);
   assert.equal(Number.isInteger(first.lumaSpread), true);
@@ -51,20 +72,30 @@ test('conservative similarity accepts tiny bitmap changes but rejects materially
   assert.equal(isNearDuplicateFingerprint(baseFingerprint, createImageFingerprint(different)), false);
 });
 
+test('same-layout text pages with different content are not rejected as near duplicates', () => {
+  const first = createImageFingerprint(textBitmap([30, 20, 26, 18, 22]));
+  const second = createImageFingerprint(textBitmap([24, 28, 18, 26, 16]));
+
+  assert.ok(hammingDistance(first.differenceHash, second.differenceHash) + hammingDistance(first.averageHash, second.averageHash) > 10);
+  assert.equal(isNearDuplicateFingerprint(first, second), false);
+  assert.equal(isNearDuplicateFingerprint(first, createImageFingerprint(textBitmap([30, 20, 26, 18, 22]))), true);
+});
+
 test('low-contrast JPEG noise uses structural and luminance checks instead of unstable average bits', () => {
   const flat = {
-    differenceHash: '0'.repeat(64),
-    averageHash: '0'.repeat(64),
+    differenceHash: '0'.repeat(DIFFERENCE_HASH_HEX_LENGTH),
+    averageHash: '0'.repeat(AVERAGE_HASH_HEX_LENGTH),
     meanLuma: 63,
     lumaSpread: 0,
   };
+  const cursorHash = `${'0'.repeat(30)}280028${'0'.repeat(DIFFERENCE_HASH_HEX_LENGTH - 36)}`;
   const cursorScaleChange = {
-    differenceHash: `${'0'.repeat(30)}280028${'0'.repeat(28)}`,
-    averageHash: 'f'.repeat(64),
+    differenceHash: cursorHash,
+    averageHash: 'f'.repeat(AVERAGE_HASH_HEX_LENGTH),
     meanLuma: 63,
     lumaSpread: 0,
   };
-  assert.equal(cursorScaleChange.differenceHash.length, 64);
+  assert.equal(cursorScaleChange.differenceHash.length, DIFFERENCE_HASH_HEX_LENGTH);
   assert.equal(isNearDuplicateFingerprint(flat, cursorScaleChange), true);
 });
 
@@ -77,7 +108,7 @@ test('luminance checks keep visually different flat screens distinct even when s
 });
 
 test('fingerprint input and malformed comparisons fail closed', () => {
-  assert.throws(() => createImageFingerprint(Buffer.alloc(4)), /17x16/);
+  assert.throws(() => createImageFingerprint(Buffer.alloc(4)), /64x36/);
   assert.throws(() => createImageFingerprint('not bytes'), /byte buffer/);
   assert.equal(hammingDistance('zz', 'zz'), Infinity);
   assert.equal(isNearDuplicateFingerprint(null, null), false);
@@ -100,6 +131,6 @@ test('Electron adapter decodes and resizes locally without retaining the source 
     },
   };
   const result = fingerprintDataUrl('data:image/png;base64,AAAA', nativeImage);
-  assert.deepEqual(resizeOptions, { width: 17, height: 16, quality: 'good' });
+  assert.deepEqual(resizeOptions, { width: FINGERPRINT_WIDTH, height: FINGERPRINT_HEIGHT, quality: 'good' });
   assert.equal(Object.values(result).some((value) => String(value).includes('data:image')), false);
 });

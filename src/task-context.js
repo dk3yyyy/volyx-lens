@@ -96,18 +96,25 @@ function createTaskContext({
     };
   }
 
-  function recomputeOverlaps() {
-    for (const capture of captures) {
-      capture.ocrUniqueText = capture.ocrText;
-      capture.overlapPreviousId = null;
-      capture.overlapPreviousSequence = null;
-      capture.overlapLines = 0;
-      capture.overlapConfidence = 0;
-      capture.overlapLineStart = null;
-      capture.overlapLineEnd = null;
-    }
+  function resetOverlap(capture) {
+    capture.ocrUniqueText = capture.ocrText;
+    capture.overlapPreviousId = null;
+    capture.overlapPreviousSequence = null;
+    capture.overlapLines = 0;
+    capture.overlapConfidence = 0;
+    capture.overlapLineStart = null;
+    capture.overlapLineEnd = null;
+  }
+
+  function recomputeOverlaps(startIndex = 0) {
+    // Overlap links only look backwards through the previous eight captures.
+    // Recomputing every capture after each OCR result turned ordinary additions
+    // into an O(n^2) main-process stall. Callers that change an earlier capture
+    // ask for the affected suffix (and eviction/removal still recompute all).
+    const from = Math.max(0, Math.min(captures.length, Number.isSafeInteger(startIndex) ? startIndex : 0));
+    for (let index = from; index < captures.length; index += 1) resetOverlap(captures[index]);
     if (typeof detectOverlap !== 'function') return;
-    for (let index = 1; index < captures.length; index += 1) {
+    for (let index = from; index < captures.length; index += 1) {
       const current = captures[index];
       if (current.ocrStatus !== 'ready' || !current.ocrText) continue;
       let best = null;
@@ -196,7 +203,7 @@ function createTaskContext({
     }
 
     captures.splice(0, captures.length, ...survivors, candidate);
-    recomputeOverlaps();
+    recomputeOverlaps(evictedCaptures.length ? 1 : captures.length - 1);
     nextId += 1;
     nextSequence += 1;
     revision += 1;
@@ -311,7 +318,8 @@ function createTaskContext({
       capture.ocrStatus = status;
     }
     ocrEvictedCount += ocrEvicted;
-    recomputeOverlaps();
+    const changedIndex = captures.indexOf(capture);
+    recomputeOverlaps(ocrEvicted ? 1 : Math.max(1, changedIndex));
     revision += 1;
     return summary({ ocrUpdated: true, ocrEvicted, updatedCapture: metadata(capture) });
   }

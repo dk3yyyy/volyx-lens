@@ -2181,7 +2181,13 @@ async function runFeature(mode, userText, {
   slideContext = '',
   slideReviewTranscript = null,
 } = {}) {
-  if (state.busy || responseDiagnosticPromise) return;
+  if (state.busy || responseDiagnosticPromise) {
+    // The renderer has already put itself in a busy state before it sends the
+    // confirmed Task Context request. Returning silently here left that state
+    // with no terminal event and every control disabled.
+    if (confirmedTaskContext) send('llm:error', { message: 'Wait for the active response or provider test to finish before confirming Task Context.' });
+    return;
+  }
   // Notes and transcript cleanup stream model requests too. Starting a live
   // answer on top of one double-spends and leaves two jobs racing the UI.
   if (activeHistoryJob) {
