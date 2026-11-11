@@ -30,6 +30,7 @@ test('defaults enable realtime Whisper with a bounded batch fallback', () => {
     whisperModel: 'base.en',
     historyEnabled: true,
     historyRetentionDays: 0,
+    meetingMemory: false,
     meetingDetection: false,
     slideTracking: false,
   });

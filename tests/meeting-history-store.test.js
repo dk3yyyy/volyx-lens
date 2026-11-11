@@ -247,6 +247,9 @@ test('history defaults on for new installs and is sanitized only as a boolean', 
 
 test('settings UI exposes the history toggle and persists it', () => {
   assert.match(html, /id="stt-history-enabled"[^>]*type="checkbox"/);
+  assert.match(html, /id="stt-meeting-memory"[^>]*class="s-switch"[^>]*role="switch"/);
+  assert.match(renderer, /\$\('#stt-meeting-memory'\)\.checked = transcription\.meetingMemory === true/);
+  assert.match(renderer, /meetingMemory: \$\('#stt-meeting-memory'\)\.checked/);
   assert.match(html, /On by default for new installs; profiles created earlier keep their current setting\. Finalized sessions are saved.*in-progress transcript is checkpointed locally for recovery/);
   assert.match(renderer, /\$\('#stt-history-enabled'\)\.checked = transcription\.historyEnabled === true/);
   assert.match(renderer, /historyEnabled: \$\('#stt-history-enabled'\)\.checked/);

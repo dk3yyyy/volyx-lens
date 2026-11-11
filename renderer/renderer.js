@@ -2958,6 +2958,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
     $('#stt-history-enabled').checked = transcription.historyEnabled === true;
+    $('#stt-meeting-memory').checked = transcription.meetingMemory === true;
     if ($('#stt-retention-days')) $('#stt-retention-days').value = String(transcription.historyRetentionDays || 0);
     $('#stt-meeting-detection').checked = transcription.meetingDetection === true;
     $('#stt-slide-tracking').checked = transcription.slideTracking === true;
@@ -3171,6 +3172,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       language: languageSetting,
       delay: $('#stt-delay').value,
       historyEnabled: $('#stt-history-enabled').checked,
+      meetingMemory: $('#stt-meeting-memory').checked,
       historyRetentionDays: Number($('#stt-retention-days').value) || 0,
       meetingDetection: $('#stt-meeting-detection').checked,
       slideTracking: $('#stt-slide-tracking').checked,

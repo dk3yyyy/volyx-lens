@@ -98,7 +98,7 @@ function invalidatePreviousMeetings() {
 
 function previousMeetingsContext() {
   const settings = store.getSettings();
-  if (!(settings.transcription && settings.transcription.historyEnabled)) return '';
+  if (!(settings.transcription && settings.transcription.historyEnabled && settings.transcription.meetingMemory === true)) return '';
   if (Date.now() - previousMeetingsCache.at < PREVIOUS_MEETINGS_TTL_MS) return previousMeetingsCache.text;
   let text = '';
   try {
@@ -2869,6 +2869,9 @@ handleTrusted('settings:set', (_e, patch = {}) => {
       || previous.transcription.historyEnabled !== updated.transcription.historyEnabled)) {
     enforceHistoryRetention();
   }
+  const wasMeetingMemory = previous.transcription && previous.transcription.meetingMemory === true;
+  const isMeetingMemory = updated.transcription && updated.transcription.meetingMemory === true;
+  if (wasMeetingMemory !== isMeetingMemory) invalidatePreviousMeetings();
   if (wasHistoryEnabled && !isHistoryEnabled) {
     // Stored transcripts stop being fair game the moment history is turned off:
     // cancel any cleanup or notes run that is already streaming them out.
@@ -2876,7 +2879,13 @@ handleTrusted('settings:set', (_e, patch = {}) => {
     cancelMeetingRecoverySave();
     meetingRecovery.clearBestEffort();
     invalidatePreviousMeetings();
-  } else if (!wasHistoryEnabled && isHistoryEnabled && transcript.length) persistMeetingRecovery({ immediate: true });
+  } else if (!wasHistoryEnabled && isHistoryEnabled) {
+    // Clear history suppresses recovery until an explicit new session. Turning
+    // Save meeting history back on must also re-arm it, or the switch says on
+    // while finalize keeps returning 'cleared' forever.
+    meetingRecovery.resume();
+    if (transcript.length) persistMeetingRecovery({ immediate: true });
+  }
   if (transcriptionSettingsChanged(previous, updated)) {
     resetSttErrorState();
     if (state.capturing) {
