@@ -52,6 +52,7 @@
   let listeningActive = false;
   let meetingDetectedSince = null;
   let slideTracking = { enabled: false, active: false, slides: [], total: 0 };
+  let slideSettingDirty = false;
   let diagnosticsTimer = null;
   let activeRequestMode = null;
   let lastRequest = null; // the last request sent, so a failed answer can be retried
@@ -103,8 +104,11 @@
         : 'Track presentation slides while Listening.';
     }
     const settingsToggle = $('#stt-slide-tracking');
-    if (settingsToggle) settingsToggle.checked = slideTracking.enabled;
-    if (settings && settings.transcription) settings.transcription.slideTracking = slideTracking.enabled;
+    const settingsOpen = !$('#settings-scrim').classList.contains('hidden');
+    if (!settingsOpen || !slideSettingDirty) {
+      if (settingsToggle) settingsToggle.checked = slideTracking.enabled;
+      if (settings && settings.transcription) settings.transcription.slideTracking = slideTracking.enabled;
+    }
     $('#slide-tracking-panel').classList.toggle('hidden', !slideTracking.active && slideTracking.slides.length === 0);
     $('#slide-tracking-count').textContent = `${slideTracking.total} ${slideTracking.total === 1 ? 'slide' : 'slides'}`;
     $('#slide-tracking-clear').disabled = slideTracking.total === 0;
@@ -2957,6 +2961,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if ($('#stt-retention-days')) $('#stt-retention-days').value = String(transcription.historyRetentionDays || 0);
     $('#stt-meeting-detection').checked = transcription.meetingDetection === true;
     $('#stt-slide-tracking').checked = transcription.slideTracking === true;
+    slideSettingDirty = false;
     const audio = settings.audio || {};
     $('#audio-input-device').value = audio.inputDeviceId || '';
     $('#audio-mic-enabled').checked = audio.micEnabled !== false;
@@ -3061,6 +3066,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   $('#ai-rules-text').addEventListener('change', () => { void saveAiRules().catch((error) => showStatus(error && error.message ? error.message : 'AI rules could not be saved.')); });
   $('#ai-rules-enabled').addEventListener('change', () => { void saveAiRules().catch((error) => showStatus(error && error.message ? error.message : 'AI rules could not be saved.')); });
   $('#stt-realtime-provider').addEventListener('change', renderTranscriptionProviderConfig);
+  $('#stt-slide-tracking').addEventListener('change', () => { slideSettingDirty = true; });
   document.querySelectorAll('.key-clear').forEach((button) => {
     if (!button.hasAttribute('aria-label')) {
       const label = button.dataset.key
