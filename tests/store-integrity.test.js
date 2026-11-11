@@ -346,10 +346,12 @@ test('settings read before the app is ready keep the sealed keys instead of call
   const userData = temporaryUserData();
   const file = path.join(userData, 'volyx-lens-data.json');
   let ready = false;
+  let decryptCalls = 0;
   const storage = {
     isEncryptionAvailable: () => ready,
     encryptString: (value) => Buffer.from(`sealed:${value}`, 'utf8'),
     decryptString: (buffer) => {
+      decryptCalls += 1;
       if (!ready) throw new Error('safeStorage cannot be used before app is ready');
       return Buffer.from(buffer).toString('utf8').replace(/^sealed:/, '');
     },
@@ -364,9 +366,11 @@ test('settings read before the app is ready keep the sealed keys instead of call
   assert.equal(early.backend, 'safeStorage', 'a pre-ready read is not a locked record');
   assert.equal(early.present.openai, true);
   assert.equal(early.secure, false, 'readable only after the retry');
+  assert.equal(decryptCalls, 0, 'safeStorage is never touched before ready');
 
   ready = true;
   assert.equal(store.unlockDeferredCredentials(), true);
+  assert.equal(decryptCalls, 1);
   const unlocked = store.getPublicSettings().credentialStatus;
   assert.equal(unlocked.backend, 'safeStorage');
   assert.equal(unlocked.secure, true);

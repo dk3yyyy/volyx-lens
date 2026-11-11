@@ -3355,9 +3355,6 @@ function resetShortcuts() {
 // -------- lifecycle --------
 app.whenReady().then(() => {
   if (!primaryInstance) return;
-  // Settings are read at module scope, before safeStorage is usable, so the
-  // sealed API keys are reopened here now that the runtime is ready.
-  try { store.unlockDeferredCredentials(); } catch {}
   enforceHistoryRetention();
   // Undo has a lifetime: purge copies deleted more than TRASH_RETENTION_DAYS ago
   // at startup, so the window is a promise and not an approximation.
@@ -3410,6 +3407,10 @@ app.whenReady().then(() => {
   }, { useSystemPicker: false });
 
   createWindow();
+  // Opening the sealed keys can raise a Keychain authorization prompt on a
+  // build the OS has not seen before, so do it after the window exists instead
+  // of holding up startup behind it.
+  setImmediate(() => { try { store.unlockDeferredCredentials(); } catch {} });
   // Windows and Linux pass the launch URL as a command-line argument. macOS
   // delivers it through open-url instead. Either way the renderer is not
   // listening yet, so handleDeepLink queues it for app:renderer-ready.
