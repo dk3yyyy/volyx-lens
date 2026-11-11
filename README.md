@@ -310,7 +310,7 @@ Deleting one meeting or a selection is recoverable: the record moves to a delete
 
 ## Slide tracking
 
-Slide tracking is off by default. When enabled in **Settings → Listening → Track presentation slides**, Volyx Lens samples the display containing its window about every three seconds while Listening is active. Frame comparison happens locally; a preview is retained only after a stable visual change, with up to four nearby finalized transcript turns when available. The in-memory history is limited to 20 previews and 8 MB total.
+Slide tracking is off by default. Turn it on with the **Slides** switch in the transcript toolbar while Listening, or in **Settings → Listening → Track presentation slides**. The switch persists the setting: turning it on starts tracking in the current session, and turning it off clears the tracked previews immediately. Volyx Lens samples the display containing its window about every three seconds while Listening is active. Frame comparison happens locally; a preview is retained only after a stable visual change, with up to four nearby finalized transcript turns when available. The in-memory history is limited to 20 previews and 8 MB total.
 
 Tracked previews and transcript excerpts are bounded, kept in memory only, and shown in the transcript workspace while tracking is active. Use **Clear** at any time. They are cleared when Listening stops, a new session starts, or the transcript is cleared. This feature does not send screenshots or transcript excerpts to a provider automatically.
 

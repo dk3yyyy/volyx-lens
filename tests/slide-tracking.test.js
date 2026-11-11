@@ -165,9 +165,18 @@ test('slide tracking is opt-in, only active while listening, visible, and cleara
   assert.match(defaults, /slideTracking: false/);
   assert.match(store, /typeof value\.slideTracking === 'boolean'\) transcription\.slideTracking/);
   assert.match(html, /id="stt-slide-tracking" type="checkbox"/);
+  assert.match(html, /id="stt-slide-tracking"[^>]*class="s-switch"[^>]*role="switch"/);
+  assert.match(html, /id="slide-tracking-toggle"[^>]*role="switch"[^>]*aria-checked="false"/);
   assert.match(html, /id="slide-tracking-indicator"/);
   assert.match(html, /id="slide-tracking-toolbar-indicator"/);
   assert.match(renderer, /slideTracking: \$\('#stt-slide-tracking'\)\.checked/);
+  assert.match(renderer, /trackingToggle\.setAttribute\('aria-checked'/);
+  assert.match(renderer, /settings\.transcription\.slideTracking = slideTracking\.enabled/);
+  assert.match(renderer, /slideTrackingSetEnabled/);
+  assert.match(preload, /slideTrackingSetEnabled: \(enabled\) => ipcRenderer\.invoke\('slide-tracking:set-enabled'/);
+  assert.match(main, /handleTrusted\('slide-tracking:set-enabled'/);
+  assert.match(main, /if \(next && state\.capturing\) startSlideTracking\(\)/);
+  assert.match(main, /else if \(!next\) stopSlideTracking\(\)/);
   assert.match(renderer, /volyxLens\.on\('slide-tracking:state'/);
   assert.match(preload, /slideTrackingClear: \(\) => ipcRenderer\.invoke\('slide-tracking:clear'\)/);
   assert.match(preload, /'slide-tracking:state'/);

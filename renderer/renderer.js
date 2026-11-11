@@ -94,6 +94,17 @@
     }
     $('#slide-tracking-indicator').classList.toggle('hidden', !slideTracking.active);
     $('#slide-tracking-toolbar-indicator').classList.toggle('hidden', !slideTracking.active);
+    const trackingToggle = $('#slide-tracking-toggle');
+    if (trackingToggle) {
+      trackingToggle.setAttribute('aria-checked', slideTracking.enabled ? 'true' : 'false');
+      trackingToggle.classList.toggle('active', slideTracking.active);
+      trackingToggle.title = slideTracking.enabled
+        ? 'Slide tracking is on while Listening. Click to turn it off.'
+        : 'Track presentation slides while Listening.';
+    }
+    const settingsToggle = $('#stt-slide-tracking');
+    if (settingsToggle) settingsToggle.checked = slideTracking.enabled;
+    if (settings && settings.transcription) settings.transcription.slideTracking = slideTracking.enabled;
     $('#slide-tracking-panel').classList.toggle('hidden', !slideTracking.active && slideTracking.slides.length === 0);
     $('#slide-tracking-count').textContent = `${slideTracking.total} ${slideTracking.total === 1 ? 'slide' : 'slides'}`;
     $('#slide-tracking-clear').disabled = slideTracking.total === 0;
@@ -356,6 +367,26 @@
   });
   $('#task-context-prev').addEventListener('click', () => refreshTaskContextList({ offset: Math.max(0, taskContextPage.offset - taskContextPage.limit) }));
   $('#task-context-next').addEventListener('click', () => refreshTaskContextList({ offset: taskContextPage.offset + taskContextPage.limit }));
+  $('#slide-tracking-toggle').addEventListener('click', async () => {
+    const button = $('#slide-tracking-toggle');
+    if (button.disabled) return;
+    const next = !slideTracking.enabled;
+    button.disabled = true;
+    try {
+      const result = await volyxLens.slideTrackingSetEnabled(next);
+      const nextState = result && typeof result === 'object' ? result : slideTracking;
+      renderSlideTracking(nextState);
+      showStatus(next
+        ? (nextState.active
+          ? 'Slide tracking on. It watches for stable slide changes while Listening continues.'
+          : 'Slide tracking on. It will start with Listening and clear when Listening stops.')
+        : 'Slide tracking off. Tracked slide previews and transcript excerpts were cleared from memory.');
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'Slide tracking could not be changed.');
+    } finally {
+      button.disabled = false;
+    }
+  });
   $('#slide-tracking-clear').addEventListener('click', async () => {
     try {
       renderSlideTracking(await volyxLens.slideTrackingClear());

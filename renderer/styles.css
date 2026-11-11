@@ -394,6 +394,15 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .transcript-actions button, .transcript-actions select, .diagnostics-foot button { border: 1px solid color-mix(in srgb, var(--accent-soft) 15%, transparent); background: color-mix(in srgb, var(--accent-soft) 5.5%, transparent); color: var(--tx-2); border-radius: 10px; padding: 4px 6px; font: 600 11px var(--font); cursor: pointer; }
 .transcript-actions button:hover, .diagnostics-foot button:hover { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: #fff; }
 .transcript-actions button:disabled { opacity: 0.38; cursor: default; }
+.transcript-actions .slide-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px 3px 5px; border-radius: 999px; color: var(--tx-2); background: transparent; border: 1px solid color-mix(in srgb, var(--accent-soft) 18%, transparent); }
+.transcript-actions .slide-toggle:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--tx-1); }
+.transcript-actions .slide-toggle[aria-checked="true"] { color: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.slide-toggle-track { position: relative; width: 24px; height: 14px; flex: 0 0 24px; border-radius: 999px; background: color-mix(in srgb, var(--tx-mut) 35%, transparent); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18); transition: background 140ms ease; }
+.slide-toggle-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--tx-2); transition: transform 140ms ease, background 140ms ease; }
+.slide-toggle[aria-checked="true"] .slide-toggle-track { background: var(--accent); }
+.slide-toggle[aria-checked="true"] .slide-toggle-track::after { transform: translateX(10px); background: #0d1710; }
+.slide-toggle-label { font: 600 10.5px var(--font); letter-spacing: 0.01em; }
+.slide-toggle:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
 #transcript-export-format { outline: none; }
 #transcript-list { display: grid; gap: 4px; max-height: 168px; overflow-y: auto; margin-top: 8px; -webkit-user-select: text; user-select: text; }
 .transcript-turn { display: grid; grid-template-columns: 43px minmax(0,1fr) 51px 32px; align-items: start; gap: 7px; padding: 6px 7px; border-radius: 7px; background: color-mix(in srgb, var(--accent-soft) 3.5%, transparent); border-left: 2px solid transparent; }
@@ -778,6 +787,11 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .s-field input:focus, .s-field select:focus { border-color: var(--accent); }
 .s-field input:focus-visible, .s-field select:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
 .s-field input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px; margin-left: auto; padding: 0; accent-color: var(--accent); cursor: pointer; }
+.s-field input.s-switch { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 36px; width: 36px; height: 20px; margin: 0; padding: 0; border: 1px solid color-mix(in srgb, var(--tx-mut) 38%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--tx-mut) 22%, transparent); cursor: pointer; transition: background 140ms ease, border-color 140ms ease; }
+.s-field input.s-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--tx-2); transition: transform 140ms ease, background 140ms ease; }
+.s-field input.s-switch:checked { border-color: var(--accent); background: var(--accent); }
+.s-field input.s-switch:checked::after { transform: translateX(16px); background: #0d1710; }
+.s-field input.s-switch:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 .key-field .key-clear { width: auto; flex: 0 0 auto; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--tx-mut); border-radius: 10px; padding: 7px 8px; font-size: 10px; cursor: pointer; }
 .key-field .key-clear:hover:not(:disabled) { color: #ffb5b5; border-color: rgba(255,102,120,0.28); }
 .key-field .key-clear:disabled { opacity: 0.35; cursor: default; }

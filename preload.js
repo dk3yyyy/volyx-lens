@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   taskContextPin: (id, pinned) => ipcRenderer.invoke('task-context:pin', { id, pinned: pinned === true }),
   taskContextClear: () => ipcRenderer.invoke('task-context:clear'),
   slideTrackingClear: () => ipcRenderer.invoke('slide-tracking:clear'),
+  slideTrackingSetEnabled: (enabled) => ipcRenderer.invoke('slide-tracking:set-enabled', enabled === true),
   slideTrackingReview: (payload = {}) => ipcRenderer.invoke('slide-tracking:review', payload),
   transcriptGet: () => ipcRenderer.invoke('transcript:get'),
   recapPlan: () => ipcRenderer.invoke('recap:plan'),

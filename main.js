@@ -2921,6 +2921,16 @@ handleTrusted('task-context:undo', () => undoTaskContext());
 handleTrusted('task-context:remove', (_event, id) => removeTaskContextCapture(id));
 handleTrusted('task-context:pin', (_event, payload = {}) => pinTaskContextCapture(payload.id, payload.pinned));
 handleTrusted('task-context:clear', () => clearTaskContext());
+handleTrusted('slide-tracking:set-enabled', (_event, enabled) => {
+  const next = enabled === true;
+  const current = store.getSettings().transcription.slideTracking === true;
+  if (next !== current) {
+    store.setSettings({ transcription: { slideTracking: next } });
+    if (next && state.capturing) startSlideTracking();
+    else if (!next) stopSlideTracking();
+  }
+  return publishSlideTrackingState();
+});
 handleTrusted('slide-tracking:clear', () => {
   const result = clearSlideTrackingData();
   return { ...slideTrackingState(), cleared: result.cleared };
