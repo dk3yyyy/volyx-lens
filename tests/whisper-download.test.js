@@ -132,3 +132,61 @@ test('the SHA-256 helper streams instead of reading the whole file', () => {
   assert.match(source, /fs\.readSync\(fd, buffer, 0, buffer\.length, null\)/);
   assert.doesNotMatch(source, /readFileSync\(filePath\)/, 'the 3 GB model must not be buffered');
 });
+
+test('downloadModel passes the abort signal to fetch and refuses an already-aborted download', async () => {
+  const dir = temporaryDir();
+  let fetched = 0;
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    downloadModel('tiny', null, {
+      dir,
+      manifest: pinnedFixture(Buffer.from('x')),
+      signal: controller.signal,
+      fetchImpl: async () => { fetched += 1; return responseFor([Buffer.from('x')]); },
+    }),
+    { name: 'AbortError' },
+  );
+  assert.equal(fetched, 0, 'no request starts for an already-aborted signal');
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
+
+test('aborting mid-stream cancels the download and removes the partial file', async () => {
+  const dir = temporaryDir();
+  const controller = new AbortController();
+  const good = Buffer.from('a small stand-in for a whisper model');
+  let seenOptions;
+  const progress = [];
+  const fetchImpl = async (url, options) => {
+    seenOptions = options;
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => String(good.length) },
+      body: (async function* stream() {
+        yield good.subarray(0, 10);
+        // Hold the stream open until the consumer aborts, then fail like fetch does.
+        await new Promise((resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+        });
+        yield good.subarray(10);
+      })(),
+    };
+  };
+
+  const downloading = downloadModel('tiny', (fraction) => progress.push(fraction), {
+    dir,
+    manifest: pinnedFixture(good),
+    signal: controller.signal,
+    fetchImpl,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(seenOptions && seenOptions.signal === controller.signal, 'the signal reaches fetch');
+  assert.deepEqual(progress, [10 / good.length]);
+
+  controller.abort();
+  await assert.rejects(downloading, { name: 'AbortError' });
+  assert.deepEqual(fs.readdirSync(dir), [], 'the partial file is cleaned up on abort');
+});

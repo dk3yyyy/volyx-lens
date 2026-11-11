@@ -19,24 +19,27 @@ const crypto = require('crypto');
 // bump removed it.
 const { normalizeWhisperLanguage } = require('./whisper-language');
 const { fileFor, unavailableReason, downloadUrl } = require('./whisper-models');
+const { RELEASE_VERSION } = require('./whisper-runtime-manifest');
 
 // Model specifications (~30 models)
+// The `.int8` ids map to quantized multilingual files (q8_0, and q5_0 for
+// large-v3), not English-only ones: only the `.en` ids are English-only.
 const MODEL_SPECS = {
-  'tiny': { sizeMB: 39, params: '39M', desc: 'English-only, very fast, lowest quality' },
+  'tiny': { sizeMB: 39, params: '39M', desc: 'Multilingual, very fast, lowest quality' },
   'tiny.en': { sizeMB: 39, params: '39M', desc: 'English-only, very fast, lowest quality' },
-  'tiny.int8': { sizeMB: 39, params: '39M', desc: 'English-only int8 quantized, very fast' },
+  'tiny.int8': { sizeMB: 39, params: '39M', desc: 'Multilingual int8 quantized, very fast' },
   'base': { sizeMB: 142, params: '139M', desc: 'Multilingual, fast, good quality' },
   'base.en': { sizeMB: 142, params: '139M', desc: 'English-only, fast, good quality' },
-  'base.int8': { sizeMB: 142, params: '139M', desc: 'English-only int8 quantized, fast' },
+  'base.int8': { sizeMB: 142, params: '139M', desc: 'Multilingual int8 quantized, fast' },
   'small': { sizeMB: 466, params: '466M', desc: 'Multilingual, balanced speed/quality' },
   'small.en': { sizeMB: 466, params: '466M', desc: 'English-only, balanced speed/quality' },
-  'small.int8': { sizeMB: 466, params: '466M', desc: 'English-only int8 quantized, balanced' },
+  'small.int8': { sizeMB: 466, params: '466M', desc: 'Multilingual int8 quantized, balanced' },
   'medium': { sizeMB: 1550, params: '1550M', desc: 'Multilingual, better quality' },
   'medium.en': { sizeMB: 1550, params: '1550M', desc: 'English-only, better quality' },
-  'medium.int8': { sizeMB: 1550, params: '1550M', desc: 'English-only int8 quantized, better' },
+  'medium.int8': { sizeMB: 1550, params: '1550M', desc: 'Multilingual int8 quantized, better' },
   'large-v3': { sizeMB: 3036, params: '3036M', desc: 'Multilingual, best quality (default)' },
   'large-v3.en': { sizeMB: 3036, params: '3036M', desc: 'English-only, best quality' },
-  'large-v3.int8': { sizeMB: 3036, params: '3036M', desc: 'English-only int8 quantized, best' },
+  'large-v3.int8': { sizeMB: 3036, params: '3036M', desc: 'Multilingual q5_0 quantized, best' },
   'large': { sizeMB: 3036, params: '3036M', desc: 'Multilingual, largest (slowest)' },
   'large.int8': { sizeMB: 3036, params: '3036M', desc: 'Multilingual int8 quantized' },
   'distil-large-v3': { sizeMB: 1550, params: '1550M', desc: 'Distilled, faster than large-v3' },
@@ -82,13 +85,21 @@ function sha256File(filePath) {
   return hash.digest('hex');
 }
 
+function abortError(message = 'Model download aborted') {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
+
 // Download a model from Hugging Face with progress and verification.
 //
 // The bytes are hashed as they arrive, streamed to a private temp file, capped at the
 // size the manifest expects, and only moved into place when the digest matches the
 // published one. A mirror or a TLS-terminating proxy cannot substitute a different
 // model, and peak memory stays at one chunk instead of the whole file (VR-23).
-async function downloadModel(modelId, onProgress, { fetchImpl = fetch, dir = MODELS_DIR, base, manifest = null } = {}) {
+// `signal` makes the whole operation abortable: the fetch is cancelled and the
+// partial file is removed before the rejection surfaces.
+async function downloadModel(modelId, onProgress, { fetchImpl = fetch, dir = MODELS_DIR, base, manifest = null, signal = null } = {}) {
   const spec = MODEL_SPECS[modelId.toLowerCase()];
   if (!spec) throw new Error(`Unknown model: ${modelId}. Available: ${Object.keys(MODEL_SPECS).join(', ')}`);
   // `manifest` is a test seam for a fixture with a reproducible digest; in the app it
@@ -114,6 +125,7 @@ async function downloadModel(modelId, onProgress, { fetchImpl = fetch, dir = MOD
     try { fs.unlinkSync(indexPath); } catch {}
   }
   try { fs.unlinkSync(partialPath); } catch {}
+  if (signal && signal.aborted) throw abortError(`Download for ${modelId} was aborted`);
 
   const url = downloadUrl(modelId, base);
   const hash = crypto.createHash('sha256');
@@ -121,12 +133,13 @@ async function downloadModel(modelId, onProgress, { fetchImpl = fetch, dir = MOD
   let fd = null;
 
   try {
-    const res = await fetchImpl(url);
+    const res = await fetchImpl(url, signal ? { signal } : undefined);
     if (!res.ok) throw new Error(`Failed to download model: ${res.status} ${res.statusText}`);
     const total = Number(res.headers.get('content-length') || '0') || entry.bytes;
 
     fd = fs.openSync(partialPath, 'w', 0o600);
     for await (const chunk of res.body) {
+      if (signal && signal.aborted) throw abortError(`Download for ${modelId} was aborted`);
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       received += buf.length;
       if (received > entry.bytes) {
@@ -136,6 +149,7 @@ async function downloadModel(modelId, onProgress, { fetchImpl = fetch, dir = MOD
       fs.writeSync(fd, buf);
       if (onProgress && total > 0) onProgress(Math.min(received / total, 1));
     }
+    if (signal && signal.aborted) throw abortError(`Download for ${modelId} was aborted`);
     fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = null;
@@ -160,6 +174,8 @@ async function downloadModel(modelId, onProgress, { fetchImpl = fetch, dir = MOD
     if (fd !== null) try { fs.closeSync(fd); } catch {}
     try { fs.unlinkSync(partialPath); } catch {}
     try { fs.unlinkSync(indexPath); } catch {}
+    if (error && error.name === 'AbortError') throw error;
+    if (signal && signal.aborted) throw abortError(`Download for ${modelId} was aborted`);
     throw new Error(`Failed to download model ${modelId}: ${error.message}`);
   }
 }
@@ -175,6 +191,9 @@ function verifyModel(modelId, expectedSha256) {
 // Build the multipart body for the whisper.cpp server /inference endpoint.
 // A non-empty language code is forwarded as a `language` form field so local
 // transcription honors the selected language; empty means auto-detection.
+// Temperature is a request field, not a server startup flag: whisper-server
+// v1.9.5 has no `--temp` option (passing it aborts startup), but it does read
+// `temperature` from this multipart body. 0.0 keeps decoding deterministic.
 function buildInferenceBody(pcmBuffer, language = '') {
   const boundary = `volyx-${crypto.randomBytes(16).toString('hex')}`;
   const parts = [
@@ -186,13 +205,36 @@ function buildInferenceBody(pcmBuffer, language = '') {
   if (normalizedLanguage) {
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${normalizedLanguage}\r\n`, 'utf8'));
   }
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="temperature"\r\n\r\n0.0\r\n`, 'utf8'));
   parts.push(Buffer.from(`--${boundary}--\r\n`, 'utf8'));
   return { boundary, body: Buffer.concat(parts) };
 }
 
 // Version of whisper.cpp the runtime-provisioned binaries directory maps to.
-// Must match dev/whisper-binary.js so a downloaded binary is found here.
-const PROVISIONED_BINARY_VERSION = 'v1.9.2';
+// The release comes from the pinned runtime manifest so provisioning and the
+// sidecar can never disagree about which directory holds the binary.
+const PROVISIONED_BINARY_VERSION = RELEASE_VERSION;
+
+// The whisper-server argument contract. Kept separate from start() so it can be
+// asserted without spawning a process; the pinned v1.9.5 server rejects unknown
+// options (notably `--temp`), so only options listed in its --help belong here.
+function buildServerArgs({ modelPath, host = '127.0.0.1', port, threads = 1 } = {}) {
+  if (typeof modelPath !== 'string' || !modelPath) throw new Error('buildServerArgs requires a modelPath');
+  const numericPort = Number(port);
+  if (!Number.isInteger(numericPort) || numericPort < 1 || numericPort > 65535) {
+    throw new Error(`buildServerArgs requires a valid TCP port, received ${port}`);
+  }
+  const numericThreads = Number(threads);
+  if (!Number.isInteger(numericThreads) || numericThreads < 1) {
+    throw new Error(`buildServerArgs requires a positive thread count, received ${threads}`);
+  }
+  return [
+    '-m', modelPath,
+    '--host', host,
+    '--port', String(numericPort),
+    '--threads', String(numericThreads),
+  ];
+}
 
 // Resolve the whisper.cpp server binary used by the sidecar.
 // Precedence: VOLYX_LENS_WHISPER_SIDECAR_BIN env var, then the runtime
@@ -272,7 +314,7 @@ function getUserDataPath() {
 class WhisperSidecar {
   constructor(options = {}) {
     this.modelId = options.modelId || 'base.en';
-    this.modelPath = null;
+    this.modelPath = options.modelPath || null;
     this.port = options.port || 0;
     this.host = options.host || '127.0.0.1';
     this.language = normalizeWhisperLanguage(options.language);
@@ -285,6 +327,30 @@ class WhisperSidecar {
     this.ontranscript = options.ontranscript || (() => {});
     this.onstate = options.onstate || (() => {});
     this.abortCtrl = null;
+    this.threads = Number.isInteger(options.threads) && options.threads > 0 ? options.threads : 1;
+    // large-v3 can take well over 30 s to load from a slow disk, so the default
+    // startup budget is two minutes.
+    this.startupTimeoutMs = Number.isFinite(options.startupTimeoutMs) && options.startupTimeoutMs >= 0
+      ? options.startupTimeoutMs
+      : 120000;
+    this.startupPollIntervalMs = Number.isFinite(options.startupPollIntervalMs) && options.startupPollIntervalMs >= 0
+      ? options.startupPollIntervalMs
+      : 200;
+    this.onDownloadProgress = typeof options.onDownloadProgress === 'function' ? options.onDownloadProgress : null;
+    // Injection seams: the app always uses the real implementations, while tests
+    // can drive download, spawn, fetch, time and port allocation deterministically.
+    this._fetch = typeof options.fetchImpl === 'function' ? options.fetchImpl : fetch;
+    this._downloadModel = typeof options.downloadModel === 'function' ? options.downloadModel : downloadModel;
+    this._spawn = typeof options.spawn === 'function' ? options.spawn : require('child_process').spawn;
+    this._resolveBinary = typeof options.resolveBinary === 'function' ? options.resolveBinary : resolveWhisperBinary;
+    this._sleep = typeof options.sleep === 'function'
+      ? options.sleep
+      : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    this._now = typeof options.now === 'function' ? options.now : Date.now;
+    // Aborts an in-flight start() (model download, port allocation, health wait).
+    this._startCtrl = null;
+    // Coalesces concurrent start() calls into one startup and one child.
+    this._startPromise = null;
   }
 
   // Update the language used for subsequent transcriptions. Whisper.cpp only
@@ -330,15 +396,19 @@ class WhisperSidecar {
     child.on('error', onExit);
   }
 
+  // Allocate a free HTTP port by briefly binding a TCP listener on the loopback
+  // interface. A UDP socket can report a port that is already taken by a TCP
+  // listener, which would make whisper-server fail to bind.
   _allocatePort() {
-    return new Promise((resolve) => {
-      const dgram = require('dgram');
-      const s = dgram.createSocket('udp4');
-      s.bind(0, this.host, () => {
-        const addr = s.address();
-        s.close(() => resolve(addr.port));
+    const net = require('net');
+    return new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.unref();
+      server.once('error', reject);
+      server.listen(0, this.host, () => {
+        const { port } = server.address();
+        server.close(() => resolve(port));
       });
-      s.on('error', (err) => { /* ignore */ });
     });
   }
 
@@ -346,74 +416,139 @@ class WhisperSidecar {
     return `http://${this.host}:${this.port}${path}`;
   }
 
-  async start() {
-    if (this.running) return;
-
-    // Load model if not already cached
-    if (!this.modelPath) {
-      await downloadModel(this.modelId);
-      this.modelPath = modelCachePath(this.modelId);
+  _assertStartAlive(controller) {
+    if (controller.signal.aborted) {
+      const error = new Error('Whisper sidecar start was aborted');
+      error.name = 'AbortError';
+      throw error;
     }
+  }
 
-    const port = this.port || await this._allocatePort();
-    this.port = port;
+  _disposeChild(child) {
+    if (!child) return;
+    try { child.kill(); } catch { /* already gone */ }
+  }
 
-    const modelRelPath = path.relative(process.cwd(), this.modelPath);
-    const args = [
-      '-m', modelRelPath,
-      '--host', this.host,
-      '--port', String(port),
-      '--threads', '1',
-      '--temp', '0',
-    ];
-
-    this._setState('starting');
-    const { binary: execArg } = resolveWhisperBinary({ binariesDir: defaultBinariesDir() });
-    const child = require('child_process').spawn(execArg, args, {
-      stdio: ['ignore', 'ignore', 'pipe'],
-      env: { ...process.env, PATH: process.env.PATH },
+  start() {
+    if (this.running) return Promise.resolve();
+    if (this._startPromise) return this._startPromise;
+    this._startPromise = this._start().finally(() => {
+      this._startPromise = null;
     });
+    return this._startPromise;
+  }
 
-    this.child = child;
-    this._watchChild(child);
-    let stderrAccum = '';
+  async _start() {
+    const controller = new AbortController();
+    this._startCtrl = controller;
+    const signal = controller.signal;
+    let child = null;
 
-    child.stderr.on('data', (chunk) => {
-      stderrAccum += chunk.toString();
-    });
-
-    // Health check
-    const healthCheck = async () => {
-      try {
-        const res = await fetch(this._endpoint('/health'));
-        return res && res.ok;
-      } catch {
-        return false;
+    try {
+      // Load model if not already cached. The download shares the start token,
+      // so stop() cancels a multi-gigabyte fetch instead of waiting it out.
+      if (!this.modelPath) {
+        const result = await this._downloadModel(this.modelId, this.onDownloadProgress, { signal });
+        this.modelPath = (result && result.path) || modelCachePath(this.modelId);
       }
-    };
+      this._assertStartAlive(controller);
 
-    const deadline = Date.now() + 30000; // 30s startup timeout
-    while (Date.now() < deadline) {
-      const ready = await healthCheck();
-      if (ready) {
-        this._setState('ready');
-        return;
+      const port = this.port || await this._allocatePort();
+      this.port = port;
+      this._assertStartAlive(controller);
+
+      const args = buildServerArgs({
+        modelPath: this.modelPath,
+        host: this.host,
+        port,
+        threads: this.threads,
+      });
+
+      this._setState('starting');
+      const { binary: execArg } = this._resolveBinary({ binariesDir: defaultBinariesDir() });
+      // Last gate before spawn: a stop() that landed while the model was
+      // downloading or the port was being allocated must never leave a child.
+      this._assertStartAlive(controller);
+
+      child = this._spawn(execArg, args, {
+        stdio: ['ignore', 'ignore', 'pipe'],
+        env: { ...process.env, PATH: process.env.PATH },
+      });
+
+      this.child = child;
+      this._watchChild(child);
+      let stderrAccum = '';
+      let exitCode = null;
+      const exited = new Promise((resolve) => {
+        child.once('exit', (code) => { exitCode = code; resolve(code); });
+      });
+
+      if (child.stderr && typeof child.stderr.on === 'function') {
+        child.stderr.on('data', (chunk) => {
+          stderrAccum += chunk.toString();
+        });
       }
-      await new Promise(r => setTimeout(r, 200));
+
+      // Health check
+      const healthCheck = async () => {
+        try {
+          const res = await this._fetch(this._endpoint('/health'));
+          return res && res.ok;
+        } catch {
+          return false;
+        }
+      };
+
+      const deadline = this._now() + this.startupTimeoutMs;
+      while (this._now() < deadline) {
+        this._assertStartAlive(controller);
+        const ready = await healthCheck();
+        this._assertStartAlive(controller);
+        if (ready) {
+          this._setState('ready');
+          return;
+        }
+        // Wake as soon as the child exits instead of polling a dead process for
+        // the entire startup budget. The stderr tail is the useful diagnostic.
+        const exitedFirst = await Promise.race([
+          this._sleep(this.startupPollIntervalMs).then(() => null),
+          exited,
+        ]);
+        if (exitedFirst !== null) break;
+      }
+
+      const tail = stderrAccum.trim().slice(-400);
+      if (exitCode !== null) {
+        throw new Error(
+          `Whisper sidecar exited with code ${exitCode}` + (tail ? `: ${tail}` : '.'),
+        );
+      }
+      throw new Error('Whisper sidecar did not become ready in time' + (tail ? `: ${tail}` : ''));
+    } catch (error) {
+      this._disposeChild(child);
+      if (this.child === child) this.child = null;
+      if (this._state && this._state !== 'idle') this._setState('idle');
+      throw error;
+    } finally {
+      if (this._startCtrl === controller) this._startCtrl = null;
     }
-
-    this._setState('idle');
-    if (this.child) this.child.kill();
-    throw new Error('Whisper sidecar did not become ready in time');
   }
 
   async stop() {
     this._rejectAndClearQueue();
+    // Invalidate an in-flight start() before killing anything: the token check
+    // inside start() refuses to spawn once this signal is aborted.
+    if (this._startCtrl) {
+      this._startCtrl.abort();
+      this._startCtrl = null;
+    }
     if (this.child) {
       this.child.kill();
       this.child = null;
     }
     this._setState('idle');
+    // Cancel an outstanding /inference request instead of leaving it to run
+    // until its two-minute timeout.
     if (this.abortCtrl) {
       this.abortCtrl.abort();
       this.abortCtrl = null;
@@ -473,10 +608,11 @@ class WhisperSidecar {
     const { boundary, body } = buildInferenceBody(pcmBuffer, language);
 
     const controller = new AbortController();
+    this.abortCtrl = controller;
     const timer = setTimeout(() => controller.abort(), 120000); // 2min inference timeout
 
     try {
-      const res = await fetch(this._endpoint('/inference'), {
+      const res = await this._fetch(this._endpoint('/inference'), {
         method: 'POST',
         headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
         body,
@@ -493,17 +629,26 @@ class WhisperSidecar {
       throw error;
     } finally {
       clearTimeout(timer);
+      if (this.abortCtrl === controller) this.abortCtrl = null;
     }
   }
 
   // Force unload model and stop sidecar
   unload() {
     this._rejectAndClearQueue();
+    if (this._startCtrl) {
+      this._startCtrl.abort();
+      this._startCtrl = null;
+    }
     if (this.child) {
       this.child.kill();
       this.child = null;
     }
     this._setState('idle');
+    if (this.abortCtrl) {
+      this.abortCtrl.abort();
+      this.abortCtrl = null;
+    }
     this.modelPath = null;
     this.processingYou = false;
     this.processingThem = false;
@@ -513,11 +658,13 @@ class WhisperSidecar {
 module.exports = {
   MODEL_SPECS,
   MODELS_DIR,
+  PROVISIONED_BINARY_VERSION,
   ensureDir,
   downloadModel,
   verifyModel,
   sha256File,
   buildInferenceBody,
+  buildServerArgs,
   resolveWhisperBinary,
   defaultBinariesDir,
   isExecutableFile,

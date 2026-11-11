@@ -10,6 +10,7 @@ const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 const { defaultBinariesDir } = require('../src/whisper-sidecar');
+const { fileFor, unavailableReason } = require('../src/whisper-models');
 
 test('the sidecar exposes the binaries directory it resolves', () => {
   assert.equal(typeof defaultBinariesDir, 'function');
@@ -40,4 +41,18 @@ test('advertised copy says the binary is required', () => {
   assert.match(readme, /requires a `whisper-server` binary/);
   const site = fs.readFileSync(path.join(root, 'website', 'index.html'), 'utf8');
   assert.match(site, /macOS needs a configured whisper-server binary/);
+});
+
+test('every offered whisper model has a published file', () => {
+  const select = html.match(/<select id="stt-whisper-model">([\s\S]*?)<\/select>/);
+  assert.ok(select, 'renderer/index.html has the whisper model selector');
+  const values = [...select[1].matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(values.length > 0, 'the selector offers at least one model');
+  assert.equal(values.includes('base.en'), true, 'base.en stays available');
+  for (const value of values) {
+    assert.ok(fileFor(value), `${value} is offered but has no published file`);
+    assert.equal(unavailableReason(value), '', `${value} is offered but is explicitly unavailable`);
+  }
+  assert.equal(values.includes('large-v3.en'), false);
+  assert.equal(values.includes('distil-large-v3'), false);
 });
