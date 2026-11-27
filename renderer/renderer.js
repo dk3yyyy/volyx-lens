@@ -1084,8 +1084,8 @@
     // "turns remain You/Them" note was false once a name was saved. State the
     // merge instead of denying it.
     note.textContent = participant
-      ? `Speaker slots are the model's numbering for this recording: local to it, not names, and not arrival order. Transcript rows above label all system audio as “${participant}”; these slots do not split that name. Times use this device's clock, anchored to the meeting start; they are not word-aligned to transcript rows.`
-      : "Speaker slots are the model's numbering for this recording: local to it, not names, and not arrival order. Transcript rows above still show You/Them because the system channel is not split by speaker. Times use this device's clock, anchored to the meeting start; they are not word-aligned to transcript rows.";
+      ? `Speaker labels are arrival order within this recording (first new voice is 1): local to it, not names. Transcript rows above label all system audio as “${participant}”; these slots do not split that name. Times use this device's clock, anchored to the meeting start; they are not word-aligned to transcript rows.`
+      : "Speaker labels are arrival order within this recording (first new voice is 1): local to it, not names. Transcript rows above still show You/Them because the system channel is not split by speaker. Times use this device's clock, anchored to the meeting start; they are not word-aligned to transcript rows.";
     container.append(heading, note);
     runs.forEach((run, runIndex) => {
       const section = document.createElement('section');
