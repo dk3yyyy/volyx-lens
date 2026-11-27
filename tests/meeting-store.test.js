@@ -90,7 +90,7 @@ test('diarization sidecars reject audio, out-of-range slots, and duplicate recor
     assert.equal(store.updateDiarization(saved.id, { ...run, segments: [{ speakerId: 3, t0Ms: 10, t1Ms: 20 }] }).updated, true);
     const runs = store.get(saved.id).diarizationRuns;
     assert.equal(runs.length, 1);
-    assert.equal(runs[0].segments[0].speakerId, 3);
+    assert.equal(runs[0].segments[0].speakerId, 1, 'a lone native slot 3 is the first voice heard, so it becomes 1');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -766,4 +766,35 @@ test('retention zero or a nonsense value keeps everything', () => {
   assert.equal(store.pruneOlderThan('abc').removed, 0);
   assert.equal(store.list().length, 1);
   store.clear();
+});
+
+test('legacy native speaker slots are renumbered to arrival order on read', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({ turns: [{ channel: 'them', text: 'Hi', ts: 1 }], enabled: true });
+    const run = {
+      version: 1,
+      recordingId: 'diar-legacy-order',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'b'.repeat(64),
+      preset: 'very_high_latency',
+      sampleRate: 16000,
+      durationMs: 6000,
+      segments: [
+        { speakerId: 3, t0Ms: 100, t1Ms: 1500 },
+        { speakerId: 1, t0Ms: 1600, t1Ms: 3000 },
+        { speakerId: 2, t0Ms: 3100, t1Ms: 4500 },
+        { speakerId: 3, t0Ms: 4600, t1Ms: 5900 },
+      ],
+    };
+    assert.equal(store.updateDiarization(saved.id, run).updated, true);
+    const segments = store.get(saved.id).diarizationRuns[0].segments;
+    assert.deepEqual(segments.map((segment) => segment.speakerId), [1, 2, 3, 1],
+      'first distinct voice becomes 1, the next new one 2');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -88,6 +88,14 @@ function normalizeDiarizationRun(run) {
     segments.push({ speakerId, t0Ms, t1Ms });
   }
   segments.sort((left, right) => left.t0Ms - right.t0Ms || left.t1Ms - right.t1Ms || left.speakerId - right.speakerId);
+  // Older runs stored the model's native slot numbers. Renumber in memory by
+  // first appearance so every read, export and timeline agrees with the copy
+  // that says the first distinct voice is 1. Idempotent for already-ordered ids.
+  const labels = new Map();
+  for (const segment of segments) {
+    if (!labels.has(segment.speakerId)) labels.set(segment.speakerId, labels.size + 1);
+    segment.speakerId = labels.get(segment.speakerId);
+  }
   const normalized = {
     version: 1,
     recordingId: run.recordingId,
