@@ -985,6 +985,59 @@
     return named || 'Them';
   }
 
+  function diarizationTime(ms) {
+    const total = Math.max(0, Math.floor(Number(ms) || 0));
+    const minutes = Math.floor(total / 60000);
+    const seconds = Math.floor((total % 60000) / 1000);
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  // A compact, read-only timeline. Every label says "System Speaker N" and the
+  // note repeats that slots are local to the recording, so the pane never
+  // suggests a persistent identity or a name for the other participant.
+  function renderMeetingDiarization() {
+    const container = $('#meeting-diarization');
+    container.replaceChildren();
+    const runs = meetingDetail && Array.isArray(meetingDetail.diarizationRuns) ? meetingDetail.diarizationRuns : [];
+    container.classList.toggle('hidden', runs.length === 0);
+    if (!runs.length) return;
+    const heading = document.createElement('strong');
+    heading.textContent = 'System speaker activity';
+    const note = document.createElement('p');
+    note.className = 'history-diarization-note';
+    note.textContent = 'Arrival-order labels are local to each recording. Transcript turns remain You/Them.';
+    container.append(heading, note);
+    for (const run of runs) {
+      const section = document.createElement('section');
+      section.className = 'history-diarization-run';
+      const title = document.createElement('h3');
+      title.textContent = `System audio · ${diarizationTime(run.durationMs)}`;
+      section.appendChild(title);
+      if (run.status !== 'ready') {
+        const status = document.createElement('p');
+        status.textContent = run.status === 'failed' ? 'Speaker analysis failed.' : 'Speaker analysis unavailable.';
+        section.appendChild(status);
+      } else if (!run.segments.length) {
+        const empty = document.createElement('p');
+        empty.textContent = 'No system speaker activity was detected.';
+        section.appendChild(empty);
+      } else {
+        const list = document.createElement('ol');
+        list.className = 'history-diarization-list';
+        // The store already orders segments, but a record read from an older
+        // build may not be; display order is chronological either way.
+        const segments = [...run.segments].sort((left, right) => left.t0Ms - right.t0Ms || left.t1Ms - right.t1Ms || left.speakerId - right.speakerId);
+        for (const segment of segments) {
+          const item = document.createElement('li');
+          item.textContent = `System Speaker ${segment.speakerId} · ${diarizationTime(segment.t0Ms)}–${diarizationTime(segment.t1Ms)}`;
+          list.appendChild(item);
+        }
+        section.appendChild(list);
+      }
+      container.appendChild(section);
+    }
+  }
+
   function renderMeetingTurns() {
     const container = $('#meeting-history-turns');
     container.replaceChildren();
@@ -1049,6 +1102,7 @@
     $('#meeting-history-detail-meta').textContent = parts.join(' · ');
     updateMeetingViewToggle();
     updateMeetingExtras();
+    renderMeetingDiarization();
   }
 
   let meetingDetailOpenerId = null;

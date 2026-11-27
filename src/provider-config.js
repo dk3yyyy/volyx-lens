@@ -200,6 +200,9 @@ function getDefaultSettings() {
       transcriptRules: '',
       postProcessTranscript: true,
       normalizeSpokenDigits: true,
+      // Opt-in post-session speaker attribution for the Them/system channel.
+      // maxMinutes bounds the in-memory recording (1-10); nothing is persisted.
+      diarization: { enabled: false, preset: 'very_high_latency', maxMinutes: 5 },
       delay: 'low',
       whisperModel: 'base.en',
       localModelId: '',

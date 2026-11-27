@@ -54,6 +54,21 @@ function deepMerge(base, over) {
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
+// Diarization is opt-in and bounded. A stored or patched value must never widen
+// the in-memory recording past ten minutes, and an unknown preset falls back to
+// the offline-accurate default instead of reaching the native worker.
+const DIARIZATION_PRESETS = Object.freeze(['low_latency', 'high_latency', 'very_high_latency']);
+function normalizeDiarization(value) {
+  const fallback = DEFAULTS.transcription.diarization;
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const minutes = Math.floor(Number(source.maxMinutes));
+  return {
+    enabled: typeof source.enabled === 'boolean' ? source.enabled : fallback.enabled,
+    preset: DIARIZATION_PRESETS.includes(source.preset) ? source.preset : fallback.preset,
+    maxMinutes: Number.isFinite(minutes) ? Math.max(1, Math.min(10, minutes)) : fallback.maxMinutes,
+  };
+}
+
 function migrateLegacyModelDefaults(settings) {
   let changed = false;
   for (const [provider, replacements] of Object.entries(LEGACY_MODEL_DEFAULTS)) {
@@ -120,6 +135,7 @@ function load() {
   data.transcription.normalizeSpokenDigits = typeof data.transcription.normalizeSpokenDigits === 'boolean'
     ? data.transcription.normalizeSpokenDigits
     : DEFAULTS.transcription.normalizeSpokenDigits;
+  data.transcription.diarization = normalizeDiarization(data.transcription.diarization);
   data.notifiedUpdateKeys = sanitizeNotifiedUpdateKeys(storedUpdateKeys);
   // A profile created before history defaulted to on keeps it off unless the
   // person already stored a choice, so upgrading never starts writing
@@ -349,6 +365,9 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'transcriptRules')) transcription.transcriptRules = String(value.transcriptRules || '').slice(0, 4000);
     if (Object.hasOwn(value, 'postProcessTranscript') && typeof value.postProcessTranscript === 'boolean') transcription.postProcessTranscript = value.postProcessTranscript;
     if (Object.hasOwn(value, 'normalizeSpokenDigits') && typeof value.normalizeSpokenDigits === 'boolean') transcription.normalizeSpokenDigits = value.normalizeSpokenDigits;
+    if (Object.hasOwn(value, 'diarization') && value.diarization && typeof value.diarization === 'object' && !Array.isArray(value.diarization)) {
+      transcription.diarization = normalizeDiarization(value.diarization);
+    }
     if (Object.hasOwn(value, 'historyEnabled') && typeof value.historyEnabled === 'boolean') transcription.historyEnabled = value.historyEnabled;
     if (Object.hasOwn(value, 'meetingMemory') && typeof value.meetingMemory === 'boolean') transcription.meetingMemory = value.meetingMemory;
     if (Object.hasOwn(value, 'historyRetentionDays')) {

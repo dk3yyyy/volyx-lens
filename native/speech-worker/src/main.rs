@@ -8,8 +8,10 @@ use std::thread::{self, JoinHandle};
 use base64::Engine;
 use serde_json::{json, Value};
 use transcribe_cpp::{
-    Backend, Capabilities, Error, Model, ModelOptions, RunOptions, Session, StreamOptions,
-    Transcript, VadOptions, VadSession,
+    Backend, Capabilities, DiarizeExtension, DiarizeInfo, DiarizeOptions, DiarizeSession,
+    DiarizeSessionOptions, Error, Model, ModelOptions, RunOptions, Session,
+    SortformerDiarizeOptions, SortformerPreset, SpeakerSegment, StreamOptions, Transcript,
+    VadOptions, VadSession,
 };
 
 struct LoadedModel {
@@ -18,6 +20,16 @@ struct LoadedModel {
     model: Model,
     session: Session,
     capabilities: Capabilities,
+    requested_backend: Backend,
+    backend_fallback: bool,
+}
+
+struct LoadedDiarizer {
+    id: String,
+    path: PathBuf,
+    model: Model,
+    session: DiarizeSession,
+    info: DiarizeInfo,
     requested_backend: Backend,
     backend_fallback: bool,
 }
@@ -106,6 +118,81 @@ fn backend_for_preference(preference: &str) -> Backend {
         }
         _ => Backend::Auto,
     }
+}
+
+fn diarize_preset(preference: &str) -> SortformerPreset {
+    match preference {
+        "low_latency" => SortformerPreset::LowLatency,
+        "high_latency" => SortformerPreset::HighLatency,
+        _ => SortformerPreset::VeryHighLatency,
+    }
+}
+
+fn speaker_segments_json(segments: &[SpeakerSegment]) -> Vec<Value> {
+    let mut ordered: Vec<&SpeakerSegment> = segments.iter().collect();
+    ordered.sort_by_key(|segment| (segment.t0_ms, segment.t1_ms, segment.speaker_id));
+    ordered
+        .into_iter()
+        .map(|segment| {
+            json!({
+                "t0Ms": segment.t0_ms,
+                "t1Ms": segment.t1_ms,
+                "startMs": segment.t0_ms,
+                "endMs": segment.t1_ms,
+                "speakerId": segment.speaker_id,
+                "confidence": if segment.p.is_finite() { segment.p } else { f32::NAN }
+            })
+        })
+        .collect()
+}
+
+fn load_diarizer_with_backend(path: &Path, backend: Backend) -> Result<LoadedDiarizer, String> {
+    let build = |requested| {
+        let model = Model::load_with(
+            path,
+            &ModelOptions {
+                backend: requested,
+                ..Default::default()
+            },
+        )
+        .map_err(|error| format!("Could not load {}: {error}", path.display()))?;
+        let info = model
+            .diarize_info()
+            .map_err(|error| format!("Could not read diarization model capabilities: {error}"))?;
+        let session = model
+            .diarize_session_with(&DiarizeSessionOptions::default())
+            .map_err(|error| format!("Could not create a diarization session: {error}"))?;
+        Ok(LoadedDiarizer {
+            id: String::new(),
+            path: path.to_path_buf(),
+            model,
+            session,
+            info,
+            requested_backend: requested,
+            backend_fallback: false,
+        })
+    };
+    let mut loaded = match build(backend) {
+        Ok(loaded) => loaded,
+        Err(error) if !matches!(backend, Backend::Cpu | Backend::CpuAccel) => {
+            build(Backend::Cpu)
+                .map_err(|cpu_error| format!("{error}; CPU fallback failed: {cpu_error}"))?
+        }
+        Err(error) => return Err(error),
+    };
+    loaded.backend_fallback = is_cpu_backend(&loaded.model.backend())
+        && !matches!(backend, Backend::Cpu | Backend::CpuAccel | Backend::Auto);
+    Ok(loaded)
+}
+
+fn diarizer_info(loaded: &LoadedDiarizer) -> Value {
+    json!({
+        "modelId": loaded.id,
+        "backend": loaded.model.backend(),
+        "backendFallback": loaded.backend_fallback,
+        "sampleRate": loaded.info.sample_rate,
+        "maxSpeakers": loaded.info.max_speakers
+    })
 }
 
 fn transcript_segments_json(segments: &[transcribe_cpp::Segment]) -> Vec<Value> {
@@ -525,6 +612,7 @@ fn handle_request(
     current: &mut Option<LoadedModel>,
     streams: &mut HashMap<String, ActiveStream>,
     vad: &mut Option<VadSession>,
+    diarizer: &mut Option<LoadedDiarizer>,
     output: Arc<Mutex<io::Stdout>>,
 ) -> (Option<u64>, Result<Value, (String, String)>) {
     let id = request.get("id").and_then(Value::as_u64);
@@ -556,6 +644,116 @@ fn handle_request(
                 })).collect::<Vec<_>>(),
                 "backends": backends
             }))
+        }
+        "diarize-load" => {
+            let path = request
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let model_id = request
+                .get("modelId")
+                .and_then(Value::as_str)
+                .unwrap_or("diar-sortformer-4spk");
+            let preference = request
+                .get("backend")
+                .and_then(Value::as_str)
+                .unwrap_or("auto");
+            if path.is_empty() || model_id.is_empty() {
+                Err((
+                    "invalid_request".to_string(),
+                    "diarize-load requires modelId and path.".to_string(),
+                ))
+            } else {
+                let path = PathBuf::from(path);
+                let requested_backend = backend_for_preference(preference);
+                if diarizer.as_ref().is_some_and(|loaded| {
+                    loaded.id == model_id
+                        && loaded.path == path
+                        && loaded.requested_backend == requested_backend
+                }) {
+                    Ok(diarizer_info(diarizer.as_ref().expect("checked above")))
+                } else {
+                    *diarizer = None;
+                    let mut loaded = match load_diarizer_with_backend(&path, requested_backend) {
+                        Ok(loaded) => loaded,
+                        Err(error) => return (id, Err(("diarize_load_failed".to_string(), error))),
+                    };
+                    loaded.id = model_id.to_string();
+                    let info = diarizer_info(&loaded);
+                    *diarizer = Some(loaded);
+                    Ok(info)
+                }
+            }
+        }
+        "diarize-run" => {
+            let Some(loaded) = diarizer.as_mut() else {
+                return (
+                    id,
+                    Err((
+                        "diarize_not_loaded".to_string(),
+                        "Load a diarization model before running speaker detection.".to_string(),
+                    )),
+                );
+            };
+            let samples = if let Some(encoded) = request.get("wavBase64").and_then(Value::as_str) {
+                let wav = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        return (
+                            id,
+                            Err((
+                                "invalid_audio".to_string(),
+                                format!("Could not decode WAV payload: {error}"),
+                            )),
+                        )
+                    }
+                };
+                match audio_to_16khz(&wav) {
+                    Ok(samples) => samples,
+                    Err(message) => return (id, Err(("invalid_audio".to_string(), message))),
+                }
+            } else {
+                let encoded = request_pcm_base64(request);
+                if encoded.is_empty() {
+                    return (
+                        id,
+                        Err((
+                            "invalid_audio".to_string(),
+                            "diarize-run requires WAV or base64 16-bit PCM audio.".to_string(),
+                        )),
+                    );
+                }
+                match pcm16_base64_to_16khz(encoded, request_sample_rate(request)) {
+                    Ok(samples) => samples,
+                    Err(message) => return (id, Err(("invalid_audio".to_string(), message))),
+                }
+            };
+            let preset = request
+                .get("preset")
+                .and_then(Value::as_str)
+                .unwrap_or("very_high_latency");
+            let options = DiarizeOptions {
+                family: Some(DiarizeExtension::Sortformer(SortformerDiarizeOptions {
+                    preset: Some(diarize_preset(preset)),
+                })),
+            };
+            let started = std::time::Instant::now();
+            match loaded.session.run(&samples, &options) {
+                Ok(segments) => Ok(json!({
+                    "modelId": loaded.id,
+                    "backend": loaded.model.backend(),
+                    "backendFallback": loaded.backend_fallback,
+                    "sampleRate": loaded.info.sample_rate,
+                    "maxSpeakers": loaded.info.max_speakers,
+                    "durationMs": started.elapsed().as_millis(),
+                    "segments": speaker_segments_json(&segments)
+                })),
+                Err(error) => Err(("diarize_failed".to_string(), error.to_string())),
+            }
+        }
+        "diarize-unload" => {
+            *diarizer = None;
+            Ok(json!({ "unloaded": true, "loaded": false }))
         }
         "vad-load" => {
             let path = request
@@ -978,7 +1176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "engine": "transcribe-cpp",
             "protocol": 1,
             "streaming": true,
-            "diarization": false
+            "diarization": true
         });
         return write_message(&mut io::stdout().lock(), &payload).map_err(Into::into);
     }
@@ -988,6 +1186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut current: Option<LoadedModel> = None;
     let mut streams: HashMap<String, ActiveStream> = HashMap::new();
     let mut vad: Option<VadSession> = None;
+    let mut diarizer: Option<LoadedDiarizer> = None;
     for line in stdin.lock().lines() {
         let line = line?;
         if line.trim().is_empty() {
@@ -1008,6 +1207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut current,
             &mut streams,
             &mut vad,
+            &mut diarizer,
             Arc::clone(&stdout),
         );
         let response = match result {
@@ -1025,8 +1225,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        audio_to_16khz, backend_for_preference, handle_request, is_cpu_backend,
-        pcm16_base64_to_16khz, request_vocabulary, should_fallback_to_cpu,
+        audio_to_16khz, backend_for_preference, diarize_preset, handle_request, is_cpu_backend,
+        pcm16_base64_to_16khz, request_vocabulary, should_fallback_to_cpu, speaker_segments_json,
         transcript_segments_json,
     };
     use base64::Engine;
@@ -1041,8 +1241,9 @@ mod tests {
     ) -> (Option<u64>, Result<serde_json::Value, (String, String)>) {
         let mut streams = std::collections::HashMap::new();
         let mut vad = None;
+        let mut diarizer = None;
         let output = Arc::new(Mutex::new(io::stdout()));
-        handle_request(request, current, &mut streams, &mut vad, output)
+        handle_request(request, current, &mut streams, &mut vad, &mut diarizer, output)
     }
 
     fn wav(samples: &[i16], sample_rate: u32, channels: u16) -> Vec<u8> {
@@ -1075,6 +1276,100 @@ mod tests {
         assert_eq!(backend_for_preference("vulkan"), Backend::Vulkan);
         assert_eq!(backend_for_preference("cuda"), Backend::Cuda);
         assert_eq!(backend_for_preference("rocm"), Backend::Rocm);
+    }
+
+    #[test]
+    fn diarization_presets_map_to_the_runtime_operating_points() {
+        assert_eq!(
+            diarize_preset("low_latency"),
+            transcribe_cpp::SortformerPreset::LowLatency
+        );
+        assert_eq!(
+            diarize_preset("high_latency"),
+            transcribe_cpp::SortformerPreset::HighLatency
+        );
+        assert_eq!(
+            diarize_preset("very_high_latency"),
+            transcribe_cpp::SortformerPreset::VeryHighLatency
+        );
+        assert_eq!(
+            diarize_preset("unknown"),
+            transcribe_cpp::SortformerPreset::VeryHighLatency
+        );
+        assert_eq!(
+            diarize_preset("default"),
+            transcribe_cpp::SortformerPreset::VeryHighLatency
+        );
+    }
+
+    #[test]
+    fn diarization_segments_are_time_ordered_and_json_safe() {
+        let segments = vec![
+            transcribe_cpp::SpeakerSegment {
+                t0_ms: 2000,
+                t1_ms: 3000,
+                speaker_id: 2,
+                p: f32::NAN,
+            },
+            transcribe_cpp::SpeakerSegment {
+                t0_ms: 1000,
+                t1_ms: 1500,
+                speaker_id: 1,
+                p: 0.75,
+            },
+        ];
+        let json = speaker_segments_json(&segments);
+        assert_eq!(json[0]["t0Ms"], 1000);
+        assert_eq!(json[0]["t1Ms"], 1500);
+        assert_eq!(json[0]["startMs"], 1000);
+        assert_eq!(json[0]["endMs"], 1500);
+        assert_eq!(json[0]["speakerId"], 1);
+        assert_eq!(json[0]["confidence"], 0.75);
+        assert_eq!(json[1]["t0Ms"], 2000);
+        assert_eq!(json[1]["speakerId"], 2);
+        assert!(json[1]["confidence"].is_null());
+    }
+
+    #[test]
+    fn diarize_run_requires_a_loaded_diarizer() {
+        let request = serde_json::json!({ "id": 1, "command": "diarize-run" });
+        let mut current = None;
+        let (_, result) = call(&request, &mut current);
+        let (code, _) = result.unwrap_err();
+        assert_eq!(code, "diarize_not_loaded");
+    }
+
+    #[test]
+    fn diarize_load_requires_a_path() {
+        let request = serde_json::json!({ "id": 1, "command": "diarize-load" });
+        let mut current = None;
+        let (_, result) = call(&request, &mut current);
+        let (code, _) = result.unwrap_err();
+        assert_eq!(code, "invalid_request");
+    }
+
+    #[test]
+    fn diarize_load_failure_uses_a_diarizer_specific_code() {
+        let request = serde_json::json!({
+            "id": 1,
+            "command": "diarize-load",
+            "modelId": "diar-sortformer-4spk",
+            "path": "/definitely-missing-volyx-diarizer.gguf"
+        });
+        let mut current = None;
+        let (_, result) = call(&request, &mut current);
+        let (code, _) = result.unwrap_err();
+        assert_eq!(code, "diarize_load_failed");
+    }
+
+    #[test]
+    fn diarize_unload_reports_unloaded() {
+        let request = serde_json::json!({ "id": 1, "command": "diarize-unload" });
+        let mut current = None;
+        let (_, result) = call(&request, &mut current);
+        let result = result.unwrap();
+        assert_eq!(result["unloaded"], true);
+        assert_eq!(result["loaded"], false);
     }
 
     #[test]

@@ -21,6 +21,10 @@ const {
   removeModel: removeSpeechModel,
   isSpeechDetectorInstalled,
   prepareSpeechDetector,
+  speechDiarizerInfo,
+  isSpeechDiarizerInstalled,
+  prepareSpeechDiarizer,
+  removeSpeechDiarizer,
 } = require('./src/speech-model-registry');
 const { resolveSpeechWorkerBinary, defaultSpeechWorker } = require('./src/speech-worker');
 const { createLocalSpeechStreamManager } = require('./src/local-speech-stream-manager');
@@ -28,7 +32,7 @@ const { createSpeechOperationGate } = require('./src/speech-operation-gate');
 const { cancelOfflineTranscriptions } = require('./src/offline-stt');
 const { MODES, formatTranscript: formatPromptTranscript } = require('./src/prompts');
 const { createResponseRoute, chooseInitialProvider, streamWithFallback, classifyProviderError } = require('./src/response-router');
-const { rms16 } = require('./src/wav');
+const { rms16, pcmToWav } = require('./src/wav');
 const { planScreenInput } = require('./src/capabilities');
 const { mediaPermissionStatus, requestMediaPermission, PRIVACY_PANES } = require('./src/permissions');
 const { RealtimeTranscriptionManager } = require('./src/realtime-stt');
@@ -42,6 +46,7 @@ const { createPersonalContextStore, KINDS: PERSONAL_CONTEXT_KINDS } = require('.
 const { createWorkspaceIndex } = require('./src/workspace-index');
 const { readOptionalContext } = require('./src/optional-context');
 const { mapVadSegments } = require('./src/speech-segmentation');
+const { createDiarizationRecorder } = require('./src/diarization-session');
 const { parseContextDocument, MAX_FILE_BYTES } = require('./src/document-context');
 const { buildPersonalContext } = require('./src/personal-context');
 const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
@@ -103,6 +108,15 @@ const { buildRulesBlock } = require('./src/ai-rules');
 
 const chatHistory = createChatHistory();
 const speechModelDownloads = new Map();
+const diarizerDownloads = new Map();
+// Post-session speaker attribution is opt-in and memory-only. The recorder is
+// dropped (and zeroed) at every session boundary; the run config carries only
+// the preset/backend chosen when Listening started.
+let diarizationRecorder = null;
+let diarizationRunConfig = null;
+let diarizationSequence = 0;
+let diarizationAnalysisGeneration = 0;
+let diarizationAnalysisActive = false;
 const speechOperationGate = createSpeechOperationGate();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
 // The overlay has one fixed expanded size. There is no resize affordance and no
@@ -1820,6 +1834,11 @@ async function replayBufferedStartupAudio(manager, channel, chunks, isCurrent) {
 }
 
 async function startTranscriptionPipeline() {
+  // A restart that continues the same capture (New Session, Clear Transcript,
+  // retry) must not carry the previous meeting's diarization audio forward. If
+  // the boundary cleared the recorder, arm a fresh one from current settings;
+  // capture start already armed it, so this is a no-op there.
+  if (state.capturing && !diarizationRecorder) startDiarizationRecorder(store.getSettings().audio || {});
   stopFlushLoop();
   const previous = realtimeManager;
   realtimeManager = null;
@@ -2155,6 +2174,15 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
 const replayingChannels = new Set();
 
 function routePcm(channel, pcm) {
+  // The recorder keeps a copy of the Them system channel only; microphone audio
+  // never enters the diarization buffer, so the user's own speech is not sent to
+  // the speaker model.
+  if (channel === 'them' && diarizationRecorder) {
+    const wasTruncated = diarizationRecorder.truncated;
+    if (!diarizationRecorder.append(pcm) && !wasTruncated) {
+      send('status', { message: 'Speaker diarization reached its audio limit. This session will not be partially analyzed.' });
+    }
+  }
   // While startup audio replays, live audio must queue behind it. Appending
   // straight to the manager would let new speech reach the worker before
   // older buffered speech and reorder the transcript.
@@ -2370,6 +2398,140 @@ function restoreMeetingRecovery() {
   return { restored: true, turns: transcript.map(publicTranscriptTurn), startedAt: recovery.startedAt, updatedAt: recovery.updatedAt };
 }
 
+function clearDiarizationRecorder() {
+  diarizationRunConfig = null;
+  if (!diarizationRecorder) return;
+  diarizationRecorder.clear();
+  diarizationRecorder = null;
+}
+
+// Arming is deliberately narrow: opt-in, meeting history on (there is no record
+// to attach the result to otherwise), and system audio present. Sampling keeps
+// the existing 24 kHz pipeline format; the native worker resamples to 16 kHz.
+function startDiarizationRecorder(audio) {
+  clearDiarizationRecorder();
+  const transcription = store.getSettings().transcription || {};
+  const diarization = transcription.diarization || {};
+  if (diarization.enabled !== true || transcription.historyEnabled !== true || audio.systemEnabled === false) return;
+  diarizationRecorder = createDiarizationRecorder({
+    recordingId: `diar-${Date.now().toString(36)}-${++diarizationSequence}`,
+    sampleRate: AUDIO_SAMPLE_RATE,
+    maxMinutes: diarization.maxMinutes || 5,
+  });
+  diarizationRunConfig = {
+    preset: diarization.preset || 'very_high_latency',
+    backend: transcription.speechBackend || 'auto',
+  };
+}
+
+function restartDiarizationRecorderForContinuedCapture() {
+  if (!state.capturing) {
+    clearDiarizationRecorder();
+    return;
+  }
+  startDiarizationRecorder(store.getSettings().audio || {});
+}
+
+// Turning meeting history off withdraws consent for storing what was said, so
+// any in-flight analysis is invalidated and its audio is zeroed before the next
+// persistence step can run.
+function cancelDiarizationForHistoryChange() {
+  diarizationAnalysisGeneration += 1;
+  clearDiarizationRecorder();
+  if (diarizationAnalysisActive) {
+    defaultSpeechWorker.stop().catch((error) => {
+      console.warn('[diarization] worker cancellation failed', String(error && error.code || 'unknown').slice(0, 80));
+    });
+  }
+}
+
+async function analyzeDiarization(recordId) {
+  const recorder = diarizationRecorder;
+  const config = diarizationRunConfig;
+  diarizationRecorder = null;
+  diarizationRunConfig = null;
+  if (!recorder) return null;
+  const snapshot = recorder.snapshot();
+  recorder.clear();
+  if (!recordId) {
+    snapshot.pcm.fill(0);
+    return null;
+  }
+  const transcription = store.getSettings().transcription || {};
+  if (transcription.historyEnabled !== true) {
+    snapshot.pcm.fill(0);
+    return null;
+  }
+  const preset = config && ['low_latency', 'high_latency', 'very_high_latency'].includes(config.preset)
+    ? config.preset
+    : 'very_high_latency';
+  const backend = config && ['auto', 'cpu', 'gpu'].includes(config.backend)
+    ? config.backend
+    : 'auto';
+  const info = speechDiarizerInfo();
+  const base = {
+    version: 1,
+    recordingId: snapshot.recordingId,
+    sourceChannel: 'them',
+    status: 'unavailable',
+    modelId: info.id,
+    artifactSha256: info.artifact.sha256,
+    preset,
+    sampleRate: info.sampleRate,
+    durationMs: snapshot.durationMs,
+    segments: [],
+  };
+  let run = base;
+  let wav = null;
+  const analysisGeneration = ++diarizationAnalysisGeneration;
+  diarizationAnalysisActive = true;
+  try {
+    if (snapshot.truncated) {
+      // A recording that crossed the retention bound is unusable as a whole;
+      // never label a partial conversation with speaker turns.
+      run = { ...base, reason: 'duration_limit_exceeded' };
+    } else if (snapshot.durationMs < 1000) {
+      run = { ...base, reason: 'insufficient_system_audio' };
+    } else if (!isSpeechDiarizerInstalled()) {
+      run = { ...base, reason: 'diarizer_not_installed' };
+    } else {
+      // ASR and the diarizer can share the worker process but not a loaded
+      // model slot; release a warm transcription model before the Sortformer
+      // weights are mapped.
+      if (defaultSpeechWorker.loadedModelId) await defaultSpeechWorker.unloadModel();
+      wav = pcmToWav(snapshot.pcm, snapshot.sampleRate, 1);
+      const result = await defaultSpeechWorker.runDiarizer({
+        wav,
+        preset: base.preset,
+        backend,
+        isCancelled: () => analysisGeneration !== diarizationAnalysisGeneration
+          || store.getSettings().transcription.historyEnabled !== true,
+      });
+      run = { ...base, status: 'ready', segments: result.segments };
+    }
+  } catch (error) {
+    run = { ...base, status: 'failed', reason: String(error && error.code || 'diarization_failed').slice(0, 80) };
+  } finally {
+    diarizationAnalysisActive = false;
+    snapshot.pcm.fill(0);
+    if (wav) wav.fill(0);
+    try { await defaultSpeechWorker.unloadDiarizer(); } catch {}
+  }
+  const stillEnabled = (store.getSettings().transcription || {}).historyEnabled === true;
+  if (analysisGeneration !== diarizationAnalysisGeneration || !stillEnabled) return null;
+  if (typeof meetingStore.updateDiarization !== 'function') {
+    console.warn('[diarization] meeting store does not support diarization runs');
+    return null;
+  }
+  const updated = meetingStore.updateDiarization(recordId, run);
+  if (updated.updated && run.status === 'ready') {
+    send('status', { message: `Speaker activity analyzed locally: ${run.segments.length} system-audio segments.` });
+  } else if (updated.updated) {
+    send('status', { message: 'Speaker activity could not be completed. The transcript was saved without diarization.' });
+  }
+  return updated.updated ? run : null;
+}
+
 async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
   if (active) {
@@ -2392,6 +2554,7 @@ async function applyCaptureState(active) {
         return false;
       }
     }
+    startDiarizationRecorder(audio);
     state.capturing = true;
     // A listening session is a conversation boundary. Without this, the answers
     // from one meeting were replayed into the next one's first question, and a
@@ -2429,12 +2592,18 @@ async function applyCaptureState(active) {
   const reason = pendingStopReason;
   pendingStopImmediate = false;
   pendingStopReason = null;
+  // Immediate stops, sleep, and lock are not a completed meeting: drop the
+  // recording before anything can analyze or persist it.
+  if (immediate || reason === 'suspend' || reason === 'lock') clearDiarizationRecorder();
   send('capture:state', { active: false, ...(reason ? { reason } : {}) });
   await stopTranscriptionPipeline({ immediate });
   if (reason !== 'suspend' && reason !== 'lock') {
-    finalizeMeeting(reason || 'capture-stop', { startedAt: captureStartedAtEnd, endedAt: lastCaptureEndedAt });
+    const finalized = finalizeMeeting(reason || 'capture-stop', { startedAt: captureStartedAtEnd, endedAt: lastCaptureEndedAt });
     meetingDetector.reset();
     meetingDetectedNotified = false;
+    // Analyze only after the meeting is saved; a diarization failure must not
+    // undo the transcript that was just persisted.
+    if (!immediate) await speechOperationGate.run('diarization', () => analyzeDiarization(finalized.id || activeMeetingRecordId));
   }
   return false;
 }
@@ -2521,6 +2690,10 @@ async function shutdownAll() {
     clearTaskContext();
     resetTranscriptData();
     resetSidecar();
+    // Quit forfeits any pending analysis: invalidate the generation first, then
+    // zero the recording so a late native result cannot be persisted.
+    diarizationAnalysisGeneration += 1;
+    clearDiarizationRecorder();
     try {
       await defaultSpeechWorker.stop();
     } catch (error) {
@@ -2559,7 +2732,10 @@ function startNewSession() {
     resetSttErrorState();
     resetSidecar();
     const restartTranscription = state.capturing && desiredCapturing;
-    if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
+    if (state.capturing) {
+      await stopTranscriptionPipeline({ immediate: true });
+      clearDiarizationRecorder();
+    }
     finalizeMeeting('new-session');
     meetingRecovery.resume();
     pendingRestoredStartedAt = null;
@@ -2571,7 +2747,10 @@ function startNewSession() {
     retryQueues.you = []; retryQueues.them = [];
     state.transcribing.you = false;
     state.transcribing.them = false;
-    if (restartTranscription && state.capturing && desiredCapturing) await startTranscriptionPipeline();
+    if (restartTranscription && state.capturing && desiredCapturing) {
+      restartDiarizationRecorderForContinuedCapture();
+      await startTranscriptionPipeline();
+    }
     send('session:cleared', { capturing: state.capturing, generation: sessionGeneration });
     send('status', { message: state.capturing ? 'New session started. Listening continues with fresh context.' : 'New session started. Previous conversation context was cleared.' });
     return { capturing: state.capturing, generation: sessionGeneration };
@@ -3423,6 +3602,18 @@ function speechModelsWithStatus() {
   });
 }
 
+function speechDiarizerStatus() {
+  const runtime = localSpeechRuntimeStatus();
+  return {
+    ...speechDiarizerInfo(),
+    runtimeAvailable: runtime.gguf.available === true,
+    installed: isSpeechDiarizerInstalled(),
+    loaded: defaultSpeechWorker.diarizerLoaded,
+    backend: defaultSpeechWorker.activeDiarizerBackend,
+    backendFallback: defaultSpeechWorker.diarizerBackendFallback,
+  };
+}
+
 function isLocalSpeechInferenceActive() {
   return state.capturing
     || desiredCapturing
@@ -3468,6 +3659,7 @@ handleTrusted('settings:get', () => ({
   offlineWhisper: offlineWhisperStatus(),
   localSpeech: localSpeechRuntimeStatus(),
   speechModels: speechModelsWithStatus(),
+  speechDiarizer: speechDiarizerStatus(),
 }));
 handleTrusted('settings:set', (_e, patch = {}) => {
   const offlineWhisper = offlineWhisperStatus();
@@ -3491,6 +3683,7 @@ handleTrusted('settings:set', (_e, patch = {}) => {
   if (wasHistoryEnabled && !isHistoryEnabled) {
     // Stored transcripts stop being fair game the moment history is turned off:
     // cancel any cleanup or notes run that is already streaming them out.
+    cancelDiarizationForHistoryChange();
     abortActiveHistoryJob();
     cancelMeetingRecoverySave();
     meetingRecovery.clearBestEffort();
@@ -3507,6 +3700,14 @@ handleTrusted('settings:set', (_e, patch = {}) => {
     if (state.capturing) {
       send('status', { message: 'Transcription changes will apply the next time you stop and restart listening.' });
     }
+  }
+  // Diarization is a privacy switch as much as a quality one: turning it off or
+  // changing its retention bound mid-session must drop the audio already held,
+  // not wait for the next stop. A fresh recorder applies the new settings.
+  const previousDiarization = JSON.stringify((previous.transcription || {}).diarization || {});
+  const updatedDiarization = JSON.stringify((updated.transcription || {}).diarization || {});
+  if (state.capturing && previousDiarization !== updatedDiarization) {
+    restartDiarizationRecorderForContinuedCapture();
   }
   // A malformed hint used to vanish without a trace. Say what was skipped, so a
   // one-character typo is not mistaken for a vocabulary entry the recognizer has.
@@ -3537,7 +3738,7 @@ handleTrusted('settings:set', (_e, patch = {}) => {
   }
   // The notification toggle is also the switch that arms background checking.
   updateScheduler.sync();
-  return { ...store.getPublicSettings(), offlineWhisper, localSpeech, speechModels: speechModelsWithStatus() };
+  return { ...store.getPublicSettings(), offlineWhisper, localSpeech, speechModels: speechModelsWithStatus(), speechDiarizer: speechDiarizerStatus() };
 });
 handleTrusted('speech-models:get', () => speechModelsWithStatus());
 handleTrusted('speech-model:download', async (event, id) => {
@@ -3608,6 +3809,63 @@ handleTrusted('speech-model:unload', async (_event, id) => {
   return speechOperationGate.run('unload', async () => {
     const result = await defaultSpeechWorker.unloadModel(model.id);
     return { ...result, models: speechModelsWithStatus() };
+  });
+});
+handleTrusted('speech-diarizer:get', () => speechDiarizerStatus());
+handleTrusted('speech-diarizer:download', async (event) => {
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing the diarization model.');
+  const runtime = localSpeechRuntimeStatus();
+  if (!runtime.gguf.available) throw new Error(runtime.gguf.reason);
+  return speechOperationGate.run('diarizer-download', async () => {
+    if (diarizerDownloads.size) {
+      const error = new Error('The diarization model is already downloading.');
+      error.code = 'speech_model_download_in_progress';
+      throw error;
+    }
+    const controller = new AbortController();
+    diarizerDownloads.set(speechDiarizerInfo().id, controller);
+    try {
+      const result = await prepareSpeechDiarizer((progress) => {
+        if (event.sender.isDestroyed()) return;
+        try {
+          event.sender.send('speech:diarizer-progress', { progress });
+        } catch (error) {
+          console.warn('[speech-diarizer] progress notification failed', String(error && error.message || 'unknown').slice(0, 160));
+        }
+      }, { signal: controller.signal });
+      return { ...result, diarizer: speechDiarizerStatus() };
+    } finally {
+      diarizerDownloads.clear();
+    }
+  });
+});
+handleTrusted('speech-diarizer:cancel-download', () => {
+  const controller = diarizerDownloads.get(speechDiarizerInfo().id);
+  if (!controller) return { canceled: false };
+  controller.abort();
+  return { canceled: true };
+});
+handleTrusted('speech-diarizer:remove', async () => {
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before removing the diarization model.');
+  return speechOperationGate.run('diarizer-remove', async () => {
+    if (diarizerDownloads.size) throw new Error('Cancel the active diarizer download before removing it.');
+    if (defaultSpeechWorker.diarizerLoaded) await defaultSpeechWorker.unloadDiarizer();
+    const removed = await removeSpeechDiarizer();
+    return { removed, diarizer: speechDiarizerStatus() };
+  });
+});
+handleTrusted('speech-diarizer:warm', async () => {
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before loading the diarization model.');
+  return speechOperationGate.run('diarizer-warm', async () => {
+    await defaultSpeechWorker.loadDiarizer({ backend: (store.getSettings().transcription || {}).speechBackend || 'auto' });
+    return { diarizer: speechDiarizerStatus() };
+  });
+});
+handleTrusted('speech-diarizer:unload', async () => {
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before unloading the diarization model.');
+  return speechOperationGate.run('diarizer-unload', async () => {
+    await defaultSpeechWorker.unloadDiarizer();
+    return { diarizer: speechDiarizerStatus() };
   });
 });
 handleTrusted('credentials:clear', (_e, provider) => {
@@ -3727,6 +3985,9 @@ handleTrusted('transcript:clear', async () => {
     buffers.you = []; buffers.them = [];
     retryQueues.you = []; retryQueues.them = [];
     if (state.capturing) {
+      // Clear Transcript is a new meeting; the diarization recording from the
+      // cleared turns must not label the next one.
+      clearDiarizationRecorder();
       const stopped = await stopTranscriptionPipeline({ immediate: true });
       // A stop that was requested while this awaited must not be undone by a
       // restart into a session the user just ended. When the teardown was stale,

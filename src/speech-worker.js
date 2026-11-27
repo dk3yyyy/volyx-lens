@@ -9,6 +9,7 @@ const readline = require('node:readline');
 const {
   getModel, isInstalled, modelPaths, verifyModel,
   speechDetectorPaths, isSpeechDetectorInstalled, verifySpeechDetector,
+  speechDiarizerInfo, speechDiarizerPaths, isSpeechDiarizerInstalled, verifySpeechDiarizer,
 } = require('./speech-model-registry');
 
 const WORKER_NAME = 'volyx-speech-worker';
@@ -78,6 +79,28 @@ function normalizeBackend(value) {
   return ['auto', 'cpu', 'gpu'].includes(value) ? value : 'auto';
 }
 
+// Diarization is cancellable at every await point: a New Session, history-off,
+// or quit must not leave a recording of the meeting being analyzed or persisted
+// after the user ended it.
+function throwIfDiarizationCancelled(isCancelled) {
+  if (typeof isCancelled === 'function' && isCancelled()) {
+    throw workerError('diarization_cancelled', 'Speaker diarization was canceled.');
+  }
+}
+
+const DIARIZER_PROGRESS_TYPES = new Set([
+  'diarize-progress',
+  'diarization-progress',
+  'speech.diarize.progress',
+  'speech.diarizer.progress',
+]);
+
+function isDiarizerProgress(event) {
+  if (!event || typeof event !== 'object') return false;
+  const type = String(event.type || '').toLowerCase();
+  return DIARIZER_PROGRESS_TYPES.has(type) || (type.includes('diariz') && type.includes('progress'));
+}
+
 // Vocabulary is advisory: a malformed entry is dropped rather than failing a
 // transcription the user is waiting for. Mirrors the caps enforced by the
 // native worker so neither side can widen the other's budget.
@@ -145,6 +168,11 @@ function createSpeechWorker({
   let loadedBackendPreference = '';
   let activeBackend = '';
   let activeBackendFallback = false;
+  let diarizerLoaded = false;
+  let diarizerBackendPreference = '';
+  let diarizerStatus = null;
+  let activeDiarizerBackend = '';
+  let diarizerBackendFallback = false;
   const activeStreams = new Set();
   let idleTimer = null;
   let stderrTail = '';
@@ -165,6 +193,7 @@ function createSpeechWorker({
     warmedModelId = '';
     vadLoaded = false;
     clearActiveBackend();
+    clearDiarizerState();
     activeStreams.clear();
     rejectPending(error);
   }
@@ -188,6 +217,14 @@ function createSpeechWorker({
     activeBackendFallback = false;
   }
 
+  function clearDiarizerState() {
+    diarizerLoaded = false;
+    diarizerBackendPreference = '';
+    diarizerStatus = null;
+    activeDiarizerBackend = '';
+    diarizerBackendFallback = false;
+  }
+
   function recordBackendResult(result) {
     if (result && result.backend) activeBackend = String(result.backend).toLowerCase();
     if (result && result.backendFallback === true) activeBackendFallback = true;
@@ -206,7 +243,12 @@ function createSpeechWorker({
     clearIdleTimer();
     idleTimer = setTimeout(() => {
       idleTimer = null;
-      unloadModel().catch((error) => events.emit('runtime-error', error));
+      // The diarizer shares the worker process, so an idle window must release
+      // both models or the 139 MB Sortformer weights stay resident forever.
+      Promise.allSettled([unloadModel(), unloadDiarizer()]).then((results) => {
+        const failed = results.find((result) => result.status === 'rejected');
+        if (failed) events.emit('runtime-error', failed.reason);
+      });
     }, idleUnloadMs);
     if (typeof idleTimer.unref === 'function') idleTimer.unref();
   }
@@ -277,6 +319,7 @@ function createSpeechWorker({
       warmedModelId = '';
       vadLoaded = false;
       clearActiveBackend();
+      clearDiarizerState();
       activeStreams.clear();
       if (!expectedExit) {
         const detail = stderrTail.trim();
@@ -422,6 +465,98 @@ function createSpeechWorker({
     return result;
   }
 
+  async function loadDiarizer({ backend = 'auto', isCancelled } = {}) {
+    throwIfDiarizationCancelled(isCancelled);
+    const info = speechDiarizerInfo();
+    if (!isSpeechDiarizerInstalled()) {
+      throw workerError('speech_diarizer_not_installed', 'Download the Sortformer diarizer before using speaker attribution.');
+    }
+    const preference = normalizeBackend(backend);
+    const satisfied = diarizerLoaded && (
+      preference === diarizerBackendPreference
+      || (preference === 'gpu' && activeDiarizerBackend && activeDiarizerBackend !== 'cpu')
+    );
+    if (satisfied) return { ...diarizerStatus, loaded: true, cached: true };
+    const epochAtStart = stopEpoch;
+    if (!await verifySpeechDiarizer()) {
+      throw workerError('speech_diarizer_integrity_mismatch', 'The Sortformer diarizer failed its SHA-256 integrity check.');
+    }
+    // Artifact verification can take seconds; a stop or cancel during it must
+    // not spawn a worker or load weights the user already ended.
+    if (epochAtStart !== stopEpoch) {
+      throw workerError('speech_worker_stopped', 'Speech worker was stopped before the diarizer could load.');
+    }
+    throwIfDiarizationCancelled(isCancelled);
+    clearIdleTimer();
+    clearDiarizerState();
+    try {
+      const result = await request('diarize-load', {
+        modelId: info.id,
+        path: speechDiarizerPaths().model,
+        backend: preference,
+      }, modelOperationTimeoutMs);
+      throwIfDiarizationCancelled(isCancelled);
+      if (result.modelId !== info.id || result.maxSpeakers !== info.maxSpeakers || result.sampleRate !== info.sampleRate) {
+        throw workerError('speech_worker_protocol_error', 'Speech worker loaded an unexpected diarization model.');
+      }
+      diarizerLoaded = true;
+      diarizerBackendPreference = preference;
+      diarizerStatus = result;
+      activeDiarizerBackend = String(result.backend || '').toLowerCase();
+      diarizerBackendFallback = result.backendFallback === true;
+      return result;
+    } catch (error) {
+      clearDiarizerState();
+      if (child) {
+        try { await request('diarize-unload', {}, 10_000); } catch {}
+      }
+      throw error;
+    }
+  }
+
+  async function runDiarizer({ wav, preset = 'very_high_latency', backend = 'auto', isCancelled, onProgress } = {}) {
+    if (!Buffer.isBuffer(wav)) throw new TypeError('Speaker diarization requires a WAV Buffer.');
+    if (!['low_latency', 'high_latency', 'very_high_latency'].includes(preset)) {
+      throw new TypeError('Unsupported diarization preset.');
+    }
+    throwIfDiarizationCancelled(isCancelled);
+    // Native progress events arrive on the shared worker event stream. Scope the
+    // listener to this run so a renderer/status callback cannot leak into the
+    // next analysis or keep firing after cancellation.
+    const progressListener = typeof onProgress === 'function'
+      ? (event) => {
+        if (!isDiarizerProgress(event)) return;
+        try { onProgress(event); } catch {}
+      }
+      : null;
+    if (progressListener) events.on('event', progressListener);
+    try {
+      await loadDiarizer({ backend, isCancelled });
+      throwIfDiarizationCancelled(isCancelled);
+      const result = await request('diarize-run', {
+        wavBase64: wav.toString('base64'),
+        preset,
+      }, modelOperationTimeoutMs);
+      if (!Array.isArray(result.segments)) {
+        throw workerError('speech_worker_protocol_error', 'Speech worker omitted diarization segments.');
+      }
+      return result;
+    } finally {
+      if (progressListener) events.off('event', progressListener);
+      scheduleIdleUnload();
+    }
+  }
+
+  async function unloadDiarizer() {
+    if (!diarizerLoaded) {
+      clearDiarizerState();
+      return { unloaded: true, loaded: false };
+    }
+    const result = await request('diarize-unload', {}, modelOperationTimeoutMs);
+    clearDiarizerState();
+    return result;
+  }
+
   async function transcribe({ wav, modelId, language = '', backend = 'auto', vocabulary = [] } = {}) {
     if (!Buffer.isBuffer(wav)) throw new TypeError('Local speech transcription requires a WAV Buffer.');
     const model = getModel(modelId);
@@ -564,6 +699,7 @@ function createSpeechWorker({
     stopEpoch += 1;
     const generation = ++workerGeneration;
     vadLoaded = false;
+    clearDiarizerState();
     activeStreams.clear();
     if (!child) return;
     expectedExit = true;
@@ -612,11 +748,18 @@ function createSpeechWorker({
     loadVad,
     detectSpeech,
     unloadVad,
+    loadDiarizer,
+    runDiarizer,
+    diarize: runDiarizer,
+    unloadDiarizer,
     stop,
     get loadedModelId() { return loadedModelId; },
     get warmedModelId() { return warmedModelId; },
     get pid() { return child && Number.isInteger(child.pid) ? child.pid : null; },
     get vadLoaded() { return vadLoaded; },
+    get diarizerLoaded() { return diarizerLoaded; },
+    get activeDiarizerBackend() { return activeDiarizerBackend; },
+    get diarizerBackendFallback() { return diarizerBackendFallback; },
     get activeBackend() { return activeBackend; },
     get activeBackendFallback() { return activeBackendFallback; },
   };

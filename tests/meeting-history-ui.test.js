@@ -96,6 +96,24 @@ test('history panel loads on boot so the dock badge is accurate', () => {
   assert.match(icons, /history: '<path d="M3 12a9 9 0 1 0 9-9/);
 });
 
+test('history shows a diarization timeline that never implies a persistent identity', () => {
+  assert.match(html, /id="meeting-diarization"/);
+  assert.match(css, /\.history-diarization \{/);
+  assert.match(css, /\.history-diarization-list \{/);
+  assert.match(store, /function normalizeDiarizationRun\(run\)/);
+  assert.match(store, /function updateDiarization\(id, run\)/);
+  assert.match(store, /diarizationRuns: normalizeDiarizationRuns\(record\.diarizationRuns\)/);
+  assert.match(renderer, /function renderMeetingDiarization\(\)/);
+  assert.match(renderer, /System Speaker \$\{segment\.speakerId\}/);
+  assert.match(renderer, /Arrival-order labels are local to each recording/);
+  assert.match(renderer, /renderMeetingDiarization\(\);/);
+  // A diarization label must not be reachable through the transcript speaker
+  // label helper, so the two surfaces cannot be conflated.
+  const speakerLabel = renderer.match(/function speakerLabelFor\(channel\) \{[\s\S]*?\n  \}/);
+  assert.ok(speakerLabel, 'transcript speaker labels are defined separately');
+  assert.doesNotMatch(speakerLabel[0], /diarization/);
+});
+
 test('meeting memory is explicit, inspectable, and uses the trusted history bridge', () => {
   for (const id of ['meeting-memory-save', 'meeting-memory-list', 'meeting-memory-status']) {
     assert.match(html, new RegExp(`id="${id}"`));

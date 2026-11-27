@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('volyxLens', {
   speechModelRemove: (id) => ipcRenderer.invoke('speech-model:remove', id),
   speechModelWarm: (id) => ipcRenderer.invoke('speech-model:warm', id),
   speechModelUnload: (id) => ipcRenderer.invoke('speech-model:unload', id),
+  speechDiarizerGet: () => ipcRenderer.invoke('speech-diarizer:get'),
+  speechDiarizerDownload: () => ipcRenderer.invoke('speech-diarizer:download'),
+  speechDiarizerCancelDownload: () => ipcRenderer.invoke('speech-diarizer:cancel-download'),
+  speechDiarizerRemove: () => ipcRenderer.invoke('speech-diarizer:remove'),
+  speechDiarizerWarm: () => ipcRenderer.invoke('speech-diarizer:warm'),
+  speechDiarizerUnload: () => ipcRenderer.invoke('speech-diarizer:unload'),
   workspaceIndexGet: () => ipcRenderer.invoke('workspace-index:get'),
   workspaceIndexAdd: () => ipcRenderer.invoke('workspace-index:add'),
   workspaceIndexRefresh: (id) => ipcRenderer.invoke('workspace-index:refresh', id),
@@ -113,7 +119,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   relaunch: () => ipcRenderer.send('app:relaunch'),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['audio:level', 'capture:state', 'session:cleared', 'task-context:state', 'slide-tracking:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcript:gap', 'transcription:state', 'speech:model-progress', 'update:state', 'update:open', 'deeplink:open', 'window:dock-state', 'history:changed', 'history:recap-token', 'history:clean-progress', 'meeting:detected', 'meeting:cleared'];
+    const allowed = ['audio:level', 'capture:state', 'session:cleared', 'task-context:state', 'slide-tracking:state', 'transcript:cleared', 'transcript:update', 'transcript:remove', 'transcript:suppressed', 'question:detected', 'question:clear', 'llm:start', 'llm:provider', 'llm:token', 'llm:done', 'llm:error', 'llm:canceled', 'llm:confirm-task-context', 'status', 'transcript', 'transcript:partial', 'transcript:gap', 'transcription:state', 'speech:model-progress', 'speech:diarizer-progress', 'update:state', 'update:open', 'deeplink:open', 'window:dock-state', 'history:changed', 'history:recap-token', 'history:clean-progress', 'meeting:detected', 'meeting:cleared'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

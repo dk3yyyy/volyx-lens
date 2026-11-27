@@ -101,6 +101,21 @@ function recordB() {
     turns: [{ id: 4, channel: 'them', text: 'standalone note about Volyx Lens', rawText: 'standalone note about volyx lens', ts: 1700005001000 }],
     notes: null,
     cleaned: null,
+    diarizationRuns: [{
+      version: 1,
+      recordingId: 'diar-run-b',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'very_high_latency',
+      sampleRate: 16000,
+      durationMs: 5000,
+      segments: [
+        { speakerId: 2, t0Ms: 2500, t1Ms: 4000 },
+        { speakerId: 1, t0Ms: 100, t1Ms: 2000 },
+      ],
+    }],
   };
 }
 
@@ -629,9 +644,20 @@ app.whenReady().then(async () => {
   const processedOnly = await run(win, `({
     label: document.querySelector('#meeting-view-toggle').textContent,
     firstText: document.querySelector('#meeting-history-turns .history-text').textContent,
+    speaker: document.querySelector('#meeting-history-turns .history-speaker').textContent,
+    diarizationHidden: document.querySelector('#meeting-diarization').classList.contains('hidden'),
+    diarizationText: document.querySelector('#meeting-diarization').textContent,
+    diarizationItems: [...document.querySelectorAll('#meeting-diarization .history-diarization-list li')].map((item) => item.textContent),
   })`);
   assert.equal(processedOnly.label, 'Processed');
   assert.match(processedOnly.firstText, /Volyx Lens$/);
+  assert.equal(processedOnly.speaker, 'Ada Lovelace', 'diarization never relabels the capture channel');
+  assert.equal(processedOnly.diarizationHidden, false);
+  assert.match(processedOnly.diarizationText, /Arrival-order labels are local to each recording/);
+  assert.deepEqual(processedOnly.diarizationItems, [
+    'System Speaker 1 · 00:00–00:02',
+    'System Speaker 2 · 00:02–00:04',
+  ], 'segments are chronological and labelled by arrival-order slot');
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
   await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Raw'", 'the original wording for the rawText-only meeting');
   assert.match(await run(win, "document.querySelector('#meeting-history-turns .history-text').textContent"), /volyx lens$/);
