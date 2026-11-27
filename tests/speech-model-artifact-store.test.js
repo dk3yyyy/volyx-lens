@@ -93,6 +93,31 @@ test('artifact digest or size mismatches fail without leaving a partial installa
   assert.equal(fs.existsSync(fixture.store.paths(model).partialPath), false);
 });
 
+test('a receipt without its artifact file is not reported as installed', async (t) => {
+  const fixture = makeTempStore(async () => response(bytes));
+  t.after(fixture.cleanup);
+  const installed = await fixture.store.prepareModel(model);
+  assert.equal(fixture.store.isInstalled(model), true);
+
+  fs.rmSync(installed.path);
+
+  assert.equal(fs.existsSync(fixture.store.paths(model).receiptPath), true, 'the receipt alone still exists');
+  assert.equal(fixture.store.isInstalled(model), false, 'a receipt cannot vouch for a missing artifact');
+  assert.equal(await fixture.store.verifyModel(model), false);
+});
+
+test('a receipt with a wrong-size artifact file is not reported as installed', async (t) => {
+  const fixture = makeTempStore(async () => response(bytes));
+  t.after(fixture.cleanup);
+  const installed = await fixture.store.prepareModel(model);
+  assert.equal(fixture.store.isInstalled(model), true);
+
+  fs.writeFileSync(installed.path, Buffer.alloc(bytes.length + 1, 0x41));
+
+  assert.equal(fixture.store.isInstalled(model), false, 'the pinned byte length is checked before reporting installed');
+  assert.equal(await fixture.store.verifyModel(model), false);
+});
+
 test('cancellation during final artifact installation removes the installed model', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'volyx-speech-models-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

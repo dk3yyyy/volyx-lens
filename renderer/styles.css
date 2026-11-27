@@ -553,7 +553,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
    not push the rest of the history pane below the fold. */
 .history-diarization { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--bd-hair); border-radius: 10px; background: rgba(255,255,255,0.03); color: var(--tx-2); font-size: 10px; line-height: 1.45; }
 .history-diarization.hidden { display: none; }
-.history-diarization > strong { color: var(--tx-1); }
+.history-diarization > strong, .history-diarization > h3 { color: var(--tx-1); }
+.history-diarization > h3 { margin: 0 0 3px; font-size: 10px; font-weight: 600; }
 .history-diarization-note { margin: 3px 0 7px; color: var(--tx-mut); }
 .history-diarization-run + .history-diarization-run { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--bd-hair); }
 .history-diarization-run h3 { margin: 0 0 4px; font-size: 10px; color: var(--tx-1); }

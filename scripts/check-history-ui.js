@@ -687,7 +687,7 @@ app.whenReady().then(async () => {
   assert.equal(processedOnly.speaker, 'Ada Lovelace', 'diarization never relabels the capture channel');
   assert.match(processedOnly.participantHint, /may include more than one person/);
   assert.equal(processedOnly.diarizationHidden, false);
-  assert.match(processedOnly.diarizationText, /not names, and not arrival order/);
+  assert.match(processedOnly.diarizationText, /arrival order within this recording/);
   assert.match(processedOnly.diarizationText, /label all system audio as “Ada Lovelace”/);
   const expectedStart = new Date(1700005060000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const expectedEnd = new Date(1700005065000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });

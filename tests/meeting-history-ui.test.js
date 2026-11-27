@@ -106,7 +106,7 @@ test('history shows a diarization timeline that never implies a persistent ident
   assert.match(store, /audioStartOffsetMs/);
   assert.match(renderer, /function renderMeetingDiarization\(\)/);
   assert.match(renderer, /System Speaker \$\{segment\.speakerId\}/);
-  assert.match(renderer, /not names, and not arrival order/);
+  assert.match(renderer, /arrival order within this recording/);
   assert.match(renderer, /renderMeetingDiarization\(\);/);
   // Slots are anchored to the meeting clock, shifted by each run's own
   // recording start, not elapsed time that cannot be matched to a transcript row.

@@ -26,7 +26,30 @@ test('diarization recorder rejects malformed chunks and marks duration overflow 
   assert.equal(recorder.snapshot().truncated, true);
   // Overflow is sticky: even a smaller chunk cannot resume a partial recording.
   assert.equal(recorder.append(Buffer.alloc(2)), false);
-  assert.equal(recorder.snapshot().durationMs, 1000);
+  assert.equal(recorder.snapshot().durationMs, 0);
+});
+
+test('an over-limit recording releases its buffered prefix instead of retaining it until Stop', () => {
+  const recorder = createDiarizationRecorder({ recordingId: 'run-overflow', sampleRate: 24000, maxMinutes: 1 / 60 });
+  assert.equal(recorder.append(Buffer.alloc(24000, 5)), true);
+  assert.equal(recorder.append(Buffer.alloc(24000, 6)), true);
+  assert.equal(recorder.bytes, 48000);
+  assert.ok(recorder.snapshot().pcm.some((byte) => byte !== 0), 'a within-bound prefix is retained');
+
+  assert.equal(recorder.append(Buffer.alloc(2, 7)), false, 'crossing the bound refuses the chunk');
+  assert.equal(recorder.truncated, true, 'the overflow flag is sticky');
+  assert.equal(recorder.bytes, 0, 'the unusable prefix is released');
+  assert.equal(recorder.durationMs, 0);
+  const snapshot = recorder.snapshot();
+  assert.equal(snapshot.bytes, 0, 'the snapshot reports what is actually retained');
+  assert.equal(snapshot.durationMs, 0);
+  assert.equal(snapshot.pcm.length, 0);
+  assert.equal(snapshot.truncated, true);
+
+  // Later chunks are still refused, and the recorder never resumes buffering.
+  assert.equal(recorder.append(Buffer.alloc(24000, 8)), false);
+  assert.equal(recorder.snapshot().pcm.length, 0);
+  assert.equal(recorder.snapshot().truncated, true);
 });
 
 test('non-PCM input is rejected without tripping the retention limit', () => {

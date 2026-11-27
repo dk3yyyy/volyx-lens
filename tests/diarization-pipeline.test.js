@@ -40,7 +40,7 @@ function createPipelineHarness(overrides = {}) {
       calls.push('runDiarizer');
       wavs.push(options.wav);
       if (overrides.runDiarizer) return overrides.runDiarizer(options, context);
-      return { segments: [{ speakerId: 0, t0Ms: 0, t1Ms: 500 }] };
+      return { segments: [{ speakerId: 1, t0Ms: 0, t1Ms: 500 }] };
     },
     async unloadDiarizer() { calls.push('unloadDiarizer'); },
     async stop() { calls.push('stop'); },
@@ -57,7 +57,7 @@ function createPipelineHarness(overrides = {}) {
     },
     state,
     store: {
-      getSettings: () => settings,
+      getSettings: () => (overrides.getSettings ? overrides.getSettings(settings) : settings),
     },
     send: (channel, payload) => events.push({ channel, payload }),
     meetingStore: {
@@ -78,7 +78,9 @@ function createPipelineHarness(overrides = {}) {
     diarizationRuns: runs,
     defaultSpeechWorker: worker,
     isSpeechDiarizerInstalled: () => overrides.installed !== false,
-    speechDiarizerInfo: () => ({ id: 'diar-test', sampleRate: 16000, artifact: { sha256: 'abc' } }),
+    speechDiarizerInfo: () => (overrides.speechDiarizerInfo
+      ? overrides.speechDiarizerInfo(context)
+      : { id: 'diar-test', sampleRate: 16000, artifact: { sha256: 'abc' } }),
   });
   vm.runInContext(`
     let diarizationRecorder = null;
@@ -125,7 +127,7 @@ test('normal stop analyzes the Them recording and stores a ready run', async () 
   assert.equal(run.sampleRate, 16000);
   assert.equal(run.durationMs, 1000);
   assert.equal(run.audioStartOffsetMs, 0, 'a run with no known meeting start stays anchored at zero offset');
-  assert.deepEqual(run.segments, [{ speakerId: 0, t0Ms: 0, t1Ms: 500 }]);
+  assert.deepEqual(run.segments, [{ speakerId: 1, t0Ms: 0, t1Ms: 500 }]);
   assert.equal(harness.saved.length, 1);
   assert.equal(harness.saved[0].recordId, 'meeting-1');
   assert.deepEqual(harness.calls, ['runDiarizer', 'unloadDiarizer']);
@@ -134,6 +136,89 @@ test('normal stop analyzes the Them recording and stores a ready run', async () 
   // The WAV handed to the worker is zeroed once analysis finishes.
   assert.ok(harness.wavs.every((wav) => wav.every((byte) => byte === 0)));
   assert.match(harness.events.at(-1).payload.message, /Speaker activity analyzed locally: 1/);
+});
+
+test('speaker slots are renumbered by first appearance and already-consecutive ids stay put', async () => {
+  const shuffled = createPipelineHarness({
+    runDiarizer: async () => ({
+      segments: [
+        { speakerId: 3, t0Ms: 0, t1Ms: 400 },
+        { speakerId: 3, t0Ms: 500, t1Ms: 900 },
+        { speakerId: 1, t0Ms: 1000, t1Ms: 1400 },
+        { speakerId: 2, t0Ms: 1500, t1Ms: 1900 },
+      ],
+    }),
+  });
+  shuffled.api.startDiarizationRecorder({ systemEnabled: true });
+  shuffled.api.recorder.append(Buffer.alloc(48000));
+  const shuffledRun = await shuffled.api.analyzeDiarization('meeting-order');
+  assert.deepEqual(
+    Array.from(shuffledRun.segments, (segment) => segment.speakerId),
+    [1, 1, 2, 3],
+    'first-appearance order is 3, 1, 2 so the labels become 1, 2, 3',
+  );
+  assert.deepEqual(
+    Array.from(shuffledRun.segments, (segment) => [segment.t0Ms, segment.t1Ms]),
+    [[0, 400], [500, 900], [1000, 1400], [1500, 1900]],
+    'timing is untouched',
+  );
+
+  const consecutive = createPipelineHarness({
+    runDiarizer: async () => ({
+      segments: [
+        { speakerId: 1, t0Ms: 0, t1Ms: 400 },
+        { speakerId: 2, t0Ms: 500, t1Ms: 900 },
+        { speakerId: 3, t0Ms: 1000, t1Ms: 1400 },
+      ],
+    }),
+  });
+  consecutive.api.startDiarizationRecorder({ systemEnabled: true });
+  consecutive.api.recorder.append(Buffer.alloc(48000));
+  const consecutiveRun = await consecutive.api.analyzeDiarization('meeting-order-2');
+  assert.deepEqual(Array.from(consecutiveRun.segments, (segment) => segment.speakerId), [1, 2, 3]);
+});
+
+test('a prep failure still zeros the detached PCM', async () => {
+  // speechDiarizerInfo can throw on a bad manifest; the snapshot must not leak.
+  let held = null;
+  const infoHarness = createPipelineHarness({
+    speechDiarizerInfo: () => {
+      held = infoHarness.api.snapshot;
+      const error = new Error('bad manifest');
+      error.code = 'bad_manifest';
+      throw error;
+    },
+  });
+  infoHarness.api.startDiarizationRecorder({ systemEnabled: true });
+  infoHarness.api.recorder.append(Buffer.alloc(48000, 7));
+  const run = await infoHarness.api.analyzeDiarization('meeting-prep-1');
+  assert.equal(run.status, 'failed');
+  assert.equal(run.reason, 'bad_manifest');
+  assert.ok(held && held.pcm.length === 48000, 'the snapshot was published before prep threw');
+  assert.ok(held.pcm.every((byte) => byte === 0), 'the only retained copy is zeroed');
+  assert.equal(infoHarness.api.snapshot, null);
+  assert.equal(infoHarness.api.active, false);
+  assert.equal(infoHarness.calls.includes('unloadDiarizer'), true);
+
+  // A settings read is prep too: it now runs inside the guard.
+  let heldSettings = null;
+  let reads = 0;
+  const settingsHarness = createPipelineHarness({
+    getSettings: (settings) => {
+      reads += 1;
+      if (reads >= 2) {
+        if (!heldSettings) heldSettings = settingsHarness.api.snapshot;
+        throw new Error('settings unavailable');
+      }
+      return settings;
+    },
+  });
+  settingsHarness.api.startDiarizationRecorder({ systemEnabled: true });
+  settingsHarness.api.recorder.append(Buffer.alloc(48000, 9));
+  await assert.rejects(settingsHarness.api.analyzeDiarization('meeting-prep-2'), /settings unavailable/);
+  assert.ok(heldSettings && heldSettings.pcm.every((byte) => byte === 0));
+  assert.equal(settingsHarness.api.snapshot, null);
+  assert.equal(settingsHarness.api.active, false);
 });
 
 test('a recorder re-armed mid-meeting carries its own start offset into the run', async () => {
@@ -148,7 +233,7 @@ test('a recorder re-armed mid-meeting carries its own start offset into the run'
   recorder.append(Buffer.alloc(48000));
   const run = await harness.api.analyzeDiarization('meeting-offset');
   assert.equal(run.audioStartOffsetMs, 240000, 'the run is offset from the meeting by its own arming time');
-  assert.deepEqual(run.segments, [{ speakerId: 0, t0Ms: 0, t1Ms: 500 }], 'segment times stay relative to the recording');
+  assert.deepEqual(run.segments, [{ speakerId: 1, t0Ms: 0, t1Ms: 500 }], 'segment times stay relative to the recording');
   assert.equal(harness.saved[0].run.audioStartOffsetMs, 240000);
 });
 

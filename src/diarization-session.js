@@ -24,6 +24,12 @@ function createDiarizationRecorder({
   let bytes = 0;
   let truncated = false;
 
+  function releaseBuffered() {
+    for (const chunk of chunks) chunk.fill(0);
+    chunks = [];
+    bytes = 0;
+  }
+
   function append(pcm) {
     // A malformed chunk is refused without touching `truncated` or the byte
     // count: it is a caller bug, not retention pressure. Only real 16-bit PCM
@@ -31,9 +37,12 @@ function createDiarizationRecorder({
     if (!Buffer.isBuffer(pcm) || pcm.length === 0 || pcm.length % 2 !== 0) return false;
     // Once the bound is crossed the whole recording is unusable: analyzing a
     // prefix would attribute a partial conversation, so refuse every later
-    // chunk and let the caller report the limit instead.
+    // chunk and let the caller report the limit instead. The buffered prefix
+    // is zeroed immediately — keeping it would hold up to ten minutes of audio
+    // in RAM until Stop for a recording that can never be analyzed.
     if (truncated || bytes + pcm.length > maxBytes) {
       truncated = true;
+      releaseBuffered();
       return false;
     }
     chunks.push(Buffer.from(pcm));
@@ -42,6 +51,8 @@ function createDiarizationRecorder({
   }
 
   function snapshot() {
+    // `bytes`, `durationMs` and `pcm` describe only what is still retained.
+    // After an overflow that is nothing; `truncated` says why.
     return {
       recordingId,
       sampleRate: rate,

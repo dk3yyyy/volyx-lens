@@ -59,7 +59,7 @@ test('advertised copy says the binary is required', () => {
 });
 
 test('every offered whisper model has a published file', () => {
-  const select = html.match(/<select id="stt-whisper-model">([\s\S]*?)<\/select>/);
+  const select = html.match(/<select id="stt-whisper-model"[^>]*>([\s\S]*?)<\/select>/);
   assert.ok(select, 'renderer/index.html has the whisper model selector');
   const values = [...select[1].matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]);
   assert.ok(values.length > 0, 'the selector offers at least one model');
