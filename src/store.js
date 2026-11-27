@@ -398,6 +398,7 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'systemEnabled') && typeof value.systemEnabled === 'boolean') audio.systemEnabled = value.systemEnabled;
     if (Object.hasOwn(value, 'browserMicProcessing') && typeof value.browserMicProcessing === 'boolean') audio.browserMicProcessing = value.browserMicProcessing;
     if (Object.hasOwn(value, 'sensitivity') && ['quiet', 'balanced', 'noisy'].includes(value.sensitivity)) audio.sensitivity = value.sensitivity;
+    if (Object.hasOwn(value, 'speakerMode') && ['auto', 'speakers', 'headphones'].includes(value.speakerMode)) audio.speakerMode = value.speakerMode;
     if (Object.hasOwn(value, 'echoDelayMs')) audio.echoDelayMs = Math.max(0, Math.min(2000, Number(value.echoDelayMs) || 0));
     if (Object.hasOwn(value, 'silenceMs')) audio.silenceMs = Math.max(300, Math.min(2000, Number(value.silenceMs) || 700));
     if (Object.hasOwn(value, 'preRollMs')) audio.preRollMs = Math.max(0, Math.min(1000, Number(value.preRollMs) || 250));

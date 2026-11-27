@@ -73,6 +73,8 @@ const { createLinuxMonitorCapture } = require('./src/linux-monitor-capture');
 const { createThemSilenceWatchdog } = require('./renderer/them-silence-watchdog');
 const { createAcousticEchoFilter } = require('./src/acoustic-echo-filter');
 const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
+const { createAcousticCoupling } = require('./src/acoustic-coupling');
+const { createEchoGapFill } = require('./src/echo-gap-fill');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
 const { sanitizeProviderError } = require('./src/provider-error');
 const { createUpdateManager } = require('./src/update-manager');
@@ -225,6 +227,27 @@ const taskContext = createTaskContext({
 });
 const localOcr = createLocalOcr({ app });
 const acousticEchoFilter = createAcousticEchoFilter({ sampleRate: AUDIO_SAMPLE_RATE });
+// Cross-talk text dedupe may only remove You text while the call audio is
+// evidently reaching the mic (or the user said they use speakers). With
+// headphones a You turn that repeats the question is the user's real answer.
+const acousticCoupling = createAcousticCoupling({ mode: (store.getSettings().audio || {}).speakerMode });
+// Suppressed echo inside the user's own speech becomes silence instead of
+// being spliced out of the stream.
+const echoGapFill = createEchoGapFill();
+// You text removed as cross-talk, kept so it can be shown and restored.
+const MAX_SUPPRESSED_YOU_SEGMENTS = 200;
+const suppressedYouSegments = [];
+function rememberSuppressedYou(entry) {
+  suppressedYouSegments.push(entry);
+  if (suppressedYouSegments.length > MAX_SUPPRESSED_YOU_SEGMENTS) {
+    suppressedYouSegments.splice(0, suppressedYouSegments.length - MAX_SUPPRESSED_YOU_SEGMENTS);
+  }
+}
+function resetEchoState() {
+  acousticEchoFilter.reset();
+  acousticCoupling.reset();
+  echoGapFill.reset();
+}
 // Monitor capture on Linux arrives with more and less predictable latency than
 // the macOS helper, so its inspection window starts wider. Users can override
 // it from audio.echoDelayMs without a rebuild.
@@ -463,6 +486,7 @@ const transcriptionDiagnostics = {
   lastEchoLabel: 'local',
   lastEchoLocalShare: 0,
   micDelayDropped: 0,
+  echoGapFilled: 0,
 };
 
 function send(channel, data) {
@@ -961,6 +985,7 @@ function resetTranscriptData() {
   transcriptSegmentSequence = 0;
   finalizedSegmentWatermark = 0;
   transcriptionDiagnostics.crossTalkSuppressed = 0;
+  suppressedYouSegments.length = 0;
 }
 
 function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch, processingOptions = transcriptProcessingOptions) {
@@ -978,17 +1003,27 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
   const timestamp = Number.isFinite(ts) ? ts : Date.now();
   const receivedAt = Date.now();
   const candidate = { channel: normalizedChannel, text: clean, ts: timestamp };
-  const duplicate = findCrossTalkDuplicate(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt)
-    || findCrossTalkDuplicateAcrossCandidateWindow(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt);
+  // Without evidence that call audio reaches the mic, a You turn that repeats
+  // a Them turn is the user's own words, so nothing is deduplicated.
+  const dedupeAllowed = acousticCoupling.active(receivedAt);
+  const duplicate = dedupeAllowed
+    ? (findCrossTalkDuplicate(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt)
+      || findCrossTalkDuplicateAcrossCandidateWindow(recentTranscriptSegments, candidate, transcriptSegmentArrivalTimes, receivedAt))
+    : null;
   if (duplicate) {
     transcriptionDiagnostics.crossTalkSuppressed += 1;
     transcriptionDiagnostics.lastStatus = 'cross_talk_suppressed';
     transcriptionDiagnostics.lastStatusAt = receivedAt;
     if (normalizedChannel === 'you') {
-      send('transcript:suppressed', { channel: 'you', duplicateOf: duplicate.turn.turnId, reason: 'cross_talk' });
+      rememberSuppressedYou({ text: clean, ts: timestamp, duplicateOf: duplicate.turn.turnId, match: duplicate.match, reason: 'cross_talk' });
+      send('transcript:suppressed', { channel: 'you', duplicateOf: duplicate.turn.turnId, reason: 'cross_talk', text: clean, ts: timestamp });
       return;
     }
     for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
+      if (leakedSegment.channel === 'you') {
+        rememberSuppressedYou({ text: leakedSegment.text, ts: leakedSegment.ts, duplicateOf: null, match: duplicate.match, reason: 'cross_talk_late' });
+        send('transcript:suppressed', { channel: 'you', duplicateOf: duplicate.turn.turnId, reason: 'cross_talk_late', text: leakedSegment.text, ts: leakedSegment.ts });
+      }
       removeRecentTranscriptSegment(leakedSegment.id);
       const survivingTs = removeTranscriptSegment(leakedSegment);
       if (store.getSettings().transcription && store.getSettings().transcription.meetingDetection === true) {
@@ -1119,6 +1154,9 @@ function getSessionDiagnostics() {
       lastEchoLocalShare: Number(transcriptionDiagnostics.lastEchoLocalShare.toFixed(2)),
       maxEchoCorrelation: Number(transcriptionDiagnostics.maxEchoCorrelation.toFixed(3)),
       micDelayDropped: transcriptionDiagnostics.micDelayDropped,
+      echoGapFilled: transcriptionDiagnostics.echoGapFilled,
+      suppressedYouSegments: suppressedYouSegments.length,
+      acousticCoupling: acousticCoupling.status(),
     },
     audio: {
       microphoneEnabled: (settings.audio || {}).micEnabled !== false,
@@ -2311,7 +2349,7 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     const stopGeneration = sessionGeneration;
     const stopEpoch = (transcriptEpoch += 1);
     micEchoCoordinator.clear();
-    acousticEchoFilter.reset();
+    resetEchoState();
     if (manager) await Promise.allSettled([manager.stop()]);
     // The local speech worker is provider-independent, so it stops before the
     // staleness check can return early.
@@ -2360,6 +2398,7 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
       speechFinalizing = false;
     }
   }
+  acousticCoupling.reset();
   buffers.you = []; buffers.them = [];
   retryQueues.you = []; retryQueues.them = [];
   transcriptionMode = 'idle';
@@ -2405,11 +2444,18 @@ function processMicrophonePcm(pcm) {
     transcriptionDiagnostics.lastEchoLabel = echo.label || (echo.suppress ? 'bleed' : 'local');
     transcriptionDiagnostics.lastEchoLocalShare = Number(echo.localShare) || 0;
     transcriptionDiagnostics.maxEchoCorrelation = Math.max(transcriptionDiagnostics.maxEchoCorrelation, echo.correlation);
+    acousticCoupling.observe(echo.label || (echo.suppress ? 'bleed' : 'local'));
     if (echo.suppress) {
       transcriptionDiagnostics.acousticEchoSuppressed += 1;
+      const silence = echoGapFill.suppressed(pcm);
+      if (silence) {
+        transcriptionDiagnostics.echoGapFilled += 1;
+        routePcm('you', silence);
+      }
       return;
     }
   }
+  echoGapFill.routed(pcm);
   routePcm('you', pcm);
 }
 
@@ -2876,11 +2922,13 @@ async function applyCaptureState(active) {
     const audio = store.getSettings().audio || {};
     micEchoCoordinator.clear();
     micEchoCoordinator.delayMs = echoInspectionDelayMs(audio);
-    acousticEchoFilter.reset();
+    acousticCoupling.setMode(audio.speakerMode);
+    resetEchoState();
     transcriptionDiagnostics.acousticEchoSuppressed = 0;
     transcriptionDiagnostics.lastEchoCorrelation = 0;
     transcriptionDiagnostics.maxEchoCorrelation = 0;
     transcriptionDiagnostics.micDelayDropped = 0;
+    transcriptionDiagnostics.echoGapFilled = 0;
     if (audio.systemEnabled !== false) {
       const systemSource = process.platform === 'darwin'
         ? await systemAudioCapture.start()
@@ -2922,7 +2970,11 @@ async function applyCaptureState(active) {
   await linuxMonitorCapture.stop({ immediate: pendingStopImmediate });
   if (pendingStopImmediate) micEchoCoordinator.clear();
   else micEchoCoordinator.drain();
+  // Final stream and batch turns arrive after this point. Keep the coupling
+  // evidence until stopTranscriptionPipeline has drained them, or their echo
+  // escapes the dedupe.
   acousticEchoFilter.reset();
+  echoGapFill.reset();
   state.capturing = false;
   captureGeneration += 1;
   themSilenceWatchdog.disarm();
