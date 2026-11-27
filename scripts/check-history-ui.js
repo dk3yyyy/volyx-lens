@@ -104,8 +104,34 @@ function recordB() {
   };
 }
 
+function memoryEntry(id, content, updatedAt) {
+  return {
+    id,
+    endedAt: updatedAt - 1000,
+    memory: {
+      version: 1,
+      content,
+      enabled: true,
+      source: {
+        type: 'meeting-notes',
+        meetingId: id,
+        endedAt: updatedAt - 1000,
+        transcriptSource: 'raw',
+        transcriptHash: null,
+      },
+      createdAt: updatedAt - 2000,
+      updatedAt,
+    },
+  };
+}
+
 let records = [recordA(), recordB()];
-const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [] };
+let memories = [
+  memoryEntry('memory-a', 'Saved memory A.', 1_700_000_100_000),
+  memoryEntry('memory-b', 'Saved memory B.', 1_700_000_090_000),
+];
+let nextMemoryFailure = '';
+const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [], memoryList: 0, memoryEnable: [], memoryUpdate: [], memoryRemove: [] };
 let deletedRecords = [];
 
 function listedRecords() {
@@ -137,7 +163,52 @@ ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => listedRecords());
 ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: deletedRecords.length }));
-ipcMain.handle('history:memory-list', () => []);
+ipcMain.handle('history:memory-list', () => {
+  calls.memoryList += 1;
+  return JSON.parse(JSON.stringify(memories));
+});
+ipcMain.handle('history:memory-set-enabled', (_event, payload) => {
+  const id = payload && payload.id;
+  const enabled = payload && payload.enabled === true;
+  calls.memoryEnable.push({ id, enabled });
+  if (nextMemoryFailure === 'enable') {
+    nextMemoryFailure = '';
+    return { updated: false };
+  }
+  let memory = null;
+  memories = memories.map((entry) => {
+    if (entry.id !== id) return entry;
+    memory = { ...entry.memory, enabled };
+    return { ...entry, memory };
+  });
+  return memory ? { updated: true, memory } : { updated: false };
+});
+ipcMain.handle('history:memory-update', (_event, payload) => {
+  const id = payload && payload.id;
+  const content = String(payload && payload.content || '').trim();
+  calls.memoryUpdate.push({ id, content });
+  if (nextMemoryFailure === 'update') {
+    nextMemoryFailure = '';
+    return { updated: false };
+  }
+  let memory = null;
+  memories = memories.map((entry) => {
+    if (entry.id !== id) return entry;
+    memory = { ...entry.memory, content, updatedAt: Date.now() };
+    return { ...entry, memory };
+  });
+  return memory ? { updated: true, memory } : { updated: false };
+});
+ipcMain.handle('history:memory-remove', (_event, id) => {
+  calls.memoryRemove.push(id);
+  if (nextMemoryFailure === 'remove') {
+    nextMemoryFailure = '';
+    return { removed: false };
+  }
+  const before = memories.length;
+  memories = memories.filter((entry) => entry.id !== id);
+  return { removed: memories.length < before };
+});
 let nextMenuAction = null;
 ipcMain.handle('text:copy', (_event, text) => {
   calls.clipboard.push(text);
@@ -223,6 +294,9 @@ const guards = installHarnessGuards({
     `calls.participant=${JSON.stringify(calls.participant)}`,
     `calls.discard=${JSON.stringify(calls.discard)}`,
     `calls.deleteMany=${JSON.stringify(calls.deleteMany)}`,
+    `calls.memoryEnable=${JSON.stringify(calls.memoryEnable)}`,
+    `calls.memoryUpdate=${JSON.stringify(calls.memoryUpdate)}`,
+    `calls.memoryRemove=${JSON.stringify(calls.memoryRemove)}`,
     `calls.undo=${JSON.stringify(calls.undo)}`,
   ],
 });
@@ -587,7 +661,93 @@ app.whenReady().then(async () => {
   assert.equal(notesPwn.scripts, 0, 'a script-shaped note is rendered as text');
   assert.match(notesPwn.text, /<img src=x onerror=alert\(1\)>/, 'the payload is visible as the text it is');
 
-  console.log('History UI behavior passed: inactive window state, context menus, accessibility preferences, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, and backup/restore status.');
+  // Editing one memory must not erase unfinished edits in another when an
+  // enable/save/delete action rerenders the list.
+  await run(win, "document.querySelector('#more-btn').click()");
+  await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden') && document.querySelectorAll('#meeting-memory-list .memory-content-editor').length === 2", 'two inspectable memories');
+  await run(win, `(() => {
+    const editors = document.querySelectorAll('#meeting-memory-list .memory-content-editor');
+    editors[0].value = 'Unfinished draft A';
+    editors[0].dispatchEvent(new Event('input', { bubbles: true }));
+    const enabled = document.querySelectorAll('#meeting-memory-list .context-enable input')[1];
+    enabled.checked = false;
+    enabled.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitForHost(() => calls.memoryEnable.some((call) => call.id === 'memory-b' && call.enabled === false), 'the second memory toggle');
+  await waitFor(win, "document.querySelector('#meeting-memory-status').textContent === 'This memory is disabled and will not be included in answers.'", 'the second memory disabled');
+  let memoryValues = await run(win, "[...document.querySelectorAll('#meeting-memory-list .memory-content-editor')].map((editor) => editor.value)");
+  assert.deepEqual(memoryValues, ['Unfinished draft A', 'Saved memory B.'], 'an enable rerender preserves another entry’s unfinished draft');
+
+  await run(win, `(() => {
+    const editor = document.querySelectorAll('#meeting-memory-list .memory-content-editor')[1];
+    editor.value = 'Unfinished draft B';
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  nextMemoryFailure = 'enable';
+  await run(win, `(() => {
+    const enabled = document.querySelector('#meeting-memory-list .context-enable input');
+    enabled.checked = false;
+    enabled.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitForHost(() => calls.memoryEnable.some((call) => call.id === 'memory-a' && call.enabled === false), 'the failed first memory toggle');
+  await waitFor(win, "document.querySelector('#meeting-memory-status').textContent === 'This saved memory is no longer available.'", 'the failed enable notice');
+  let memoryListCount = calls.memoryList;
+  win.webContents.send('history:changed', {});
+  await waitForHost(() => calls.memoryList > memoryListCount, 'a rerender after the failed enable');
+  memoryValues = await run(win, "[...document.querySelectorAll('#meeting-memory-list .memory-content-editor')].map((editor) => editor.value)");
+  assert.deepEqual(memoryValues, ['Unfinished draft A', 'Unfinished draft B'], 'failed settings changes and rerenders preserve drafts');
+
+  await run(win, "document.querySelector('#meeting-memory-list .context-document .context-actions button').click()");
+  await waitForHost(() => calls.memoryUpdate.some((call) => call.id === 'memory-a' && call.content === 'Unfinished draft A'), 'the first memory save');
+  await waitFor(win, "document.querySelector('#meeting-memory-status').textContent === 'Saved memory updated.'", 'the first memory saved');
+  memoryValues = await run(win, "[...document.querySelectorAll('#meeting-memory-list .memory-content-editor')].map((editor) => editor.value)");
+  assert.deepEqual(memoryValues, ['Unfinished draft A', 'Unfinished draft B'], 'a successful save clears only its own draft and preserves the other');
+  memories = memories.map((entry) => entry.id === 'memory-a'
+    ? { ...entry, memory: { ...entry.memory, content: 'Persisted memory A.' } }
+    : entry);
+  memoryListCount = calls.memoryList;
+  win.webContents.send('history:changed', {});
+  await waitForHost(() => calls.memoryList > memoryListCount, 'a rerender after the successful save');
+  memoryValues = await run(win, "[...document.querySelectorAll('#meeting-memory-list .memory-content-editor')].map((editor) => editor.value)");
+  assert.deepEqual(memoryValues, ['Persisted memory A.', 'Unfinished draft B'], 'the saved draft stays cleared across later rerenders');
+
+  nextMemoryFailure = 'update';
+  await run(win, "document.querySelectorAll('#meeting-memory-list .context-document')[1].querySelector('.context-actions button').click()");
+  await waitForHost(() => calls.memoryUpdate.some((call) => call.id === 'memory-b' && call.content === 'Unfinished draft B'), 'the failed second memory save');
+  await waitFor(win, "document.querySelector('#meeting-memory-status').textContent === 'This saved memory is no longer available.'", 'the failed save notice');
+  memoryListCount = calls.memoryList;
+  win.webContents.send('history:changed', {});
+  await waitForHost(() => calls.memoryList > memoryListCount, 'a rerender after the failed save');
+  memoryValues = await run(win, "[...document.querySelectorAll('#meeting-memory-list .memory-content-editor')].map((editor) => editor.value)");
+  assert.deepEqual(memoryValues, ['Persisted memory A.', 'Unfinished draft B'], 'a failed save preserves the edited draft');
+
+  nextMemoryFailure = 'remove';
+  await run(win, "document.querySelectorAll('#meeting-memory-list .context-document')[1].querySelector('.context-actions button:last-child').click()");
+  await waitForHost(() => calls.memoryRemove.includes('memory-b'), 'the failed second memory delete');
+  await waitFor(win, "document.querySelector('#meeting-memory-status').textContent === 'This saved memory is no longer available.'", 'the failed delete notice');
+  memoryListCount = calls.memoryList;
+  win.webContents.send('history:changed', {});
+  await waitForHost(() => calls.memoryList > memoryListCount, 'a rerender after the failed delete');
+  memoryValues = await run(win, "[...document.querySelectorAll('#meeting-memory-list .memory-content-editor')].map((editor) => editor.value)");
+  assert.deepEqual(memoryValues, ['Persisted memory A.', 'Unfinished draft B'], 'a failed delete preserves the edited draft');
+
+  await run(win, "document.querySelector('#meeting-memory-list .context-document .context-actions button:last-child').click()");
+  await waitForHost(() => calls.memoryRemove.includes('memory-a'), 'the successful first memory delete');
+  await waitFor(win, "document.querySelectorAll('#meeting-memory-list .memory-content-editor').length === 1", 'one memory remains');
+  assert.equal(await run(win, "document.querySelector('#meeting-memory-list .memory-content-editor').value"), 'Unfinished draft B', 'deleting one memory preserves another draft');
+
+  await run(win, "document.querySelector('#meeting-memory-list .context-actions button:last-child').click()");
+  await waitForHost(() => calls.memoryRemove.filter((id) => id === 'memory-b').length === 2, 'the successful second memory delete');
+  await waitFor(win, "document.querySelectorAll('#meeting-memory-list .memory-content-editor').length === 0", 'both memories deleted');
+  memories = [memoryEntry('memory-b', 'Saved memory B.', 1_700_000_090_000)];
+  memoryListCount = calls.memoryList;
+  win.webContents.send('history:changed', {});
+  await waitForHost(() => calls.memoryList > memoryListCount, 'the deleted memory reloaded from storage');
+  assert.equal(await run(win, "document.querySelector('#meeting-memory-list .memory-content-editor').value"), 'Saved memory B.', 'a successful delete clears that entry’s draft');
+  await run(win, "document.querySelector('#s-close').click()");
+  await waitFor(win, "document.querySelector('#settings-scrim').classList.contains('hidden')", 'settings closed');
+
+  console.log('History UI behavior passed: inactive window state, context menus, accessibility preferences, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, backup/restore status, and inspectable memory draft preservation.');
   await guards.finish(0);
 }).catch(async (error) => {
   await guards.finish(1, error);

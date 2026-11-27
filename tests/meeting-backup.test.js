@@ -216,6 +216,46 @@ test('importRecords does not attach memory when persisted notes have no memory c
   assert.deepEqual(store.listMemories(), []);
 });
 
+test('backup restore preserves saved memory after source notes grow beyond the memory limit', (t) => {
+  const directory = temporaryDirectory();
+  const restoredDirectory = `${directory}-restored`;
+  t.after(() => {
+    fs.rmSync(directory, { recursive: true, force: true });
+    fs.rmSync(restoredDirectory, { recursive: true, force: true });
+  });
+  const sourceStore = createMeetingStore({ dir: directory });
+  const saved = sourceStore.finalize({
+    turns: [{ id: 1, channel: 'you', text: 'Orichalcum launch planning', ts: 1_700_000_000_000 }],
+    enabled: true,
+    endedAt: 1_700_000_000_000,
+  });
+  assert.equal(sourceStore.updateNotes(saved.id, { summary: 'Short launch note.' }).updated, true);
+  assert.equal(sourceStore.saveMemoryFromNotes(saved.id).saved, true);
+  const savedMemory = sourceStore.get(saved.id).memory;
+  const expandedNotes = {
+    summary: 'Expanded launch note. '.repeat(300),
+    keyPoints: [],
+    decisions: [],
+    actionItems: [],
+    followUp: [],
+  };
+  assert.ok(expandedNotes.summary.length > 4000);
+  assert.equal(sourceStore.updateNotes(saved.id, expandedNotes).updated, true);
+
+  const plan = buildBackupPlan(sourceStore.readAll().records);
+  const backup = readBackupFolder(plan.files.map((file) => ({ name: file.name, text: file.content }))).records;
+  assert.ok(backup[0].notes.summary.length > 4000, 'the backup contains the regenerated oversized notes');
+  const restoredStore = createMeetingStore({ dir: restoredDirectory });
+  const result = restoredStore.importRecords(backup);
+
+  assert.equal(result.imported, 1);
+  assert.deepEqual(result.skipped, [], 'oversized regenerated notes do not invalidate the saved memory source');
+  const restored = restoredStore.get(result.ids[0]);
+  assert.equal(restored.notes.summary, expandedNotes.summary, 'the expanded notes are restored intact');
+  assert.deepEqual(restored.memory, savedMemory, 'the previously validated memory is restored unchanged');
+  assert.equal(restoredStore.listMemories()[0].memory.content, savedMemory.content);
+});
+
 test('importRecords skips an empty transcript and never overwrites a newer meeting', () => {
   const directory = temporaryDirectory();
   const store = createMeetingStore({ dir: directory });

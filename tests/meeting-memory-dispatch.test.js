@@ -203,8 +203,18 @@ test('deferred screenshot revalidates saved memory controls before provider disp
 
       assert.equal(harness.dispatches.length, 1, 'the request reaches the provider once');
       const prompt = harness.dispatches[0].turns.map((turn) => turn.text).join('\n');
-      if (scenario.expectMemory) assert.match(prompt, /PRIVATE INSPECTABLE ORICHALCUM MEMORY/);
-      else assert.doesNotMatch(prompt, /PRIVATE INSPECTABLE ORICHALCUM MEMORY/, 'revoked memory is not dispatched');
+      const starts = harness.events.filter((event) => event.channel === 'llm:start');
+      assert.equal(starts.length, 1, 'the response badge is emitted once');
+      const expectedSources = scenario.expectMemory ? [new Date(now).toISOString().slice(0, 10)] : [];
+      assert.deepEqual(
+        Array.from(starts[0].payload.meetingMemorySources || []),
+        expectedSources,
+        'the badge names exactly the saved memories in the final provider prompt',
+      );
+      if (scenario.expectMemory) {
+        assert.match(prompt, /PRIVATE INSPECTABLE ORICHALCUM MEMORY/);
+        assert.ok(prompt.includes(`[Saved memory from meeting ${expectedSources[0]}]`), 'the dispatched source label matches the badge date');
+      } else assert.doesNotMatch(prompt, /PRIVATE INSPECTABLE ORICHALCUM MEMORY/, 'revoked memory is not dispatched');
       assert.equal(harness.events.some((event) => event.channel === 'llm:error'), false);
     });
   }

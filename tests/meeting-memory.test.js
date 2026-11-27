@@ -72,12 +72,14 @@ test('main only attaches previous meetings when history and meeting memory are e
   assert.match(main, /readOptionalContext\('saved meeting memory', \(\) => meetingStore\.searchMemories\(query\)/);
   assert.match(main, /match\.excerpt/);
   assert.match(main, /formatInspectableMemoryContext\(meetingMemoryMatches\)/);
-  assert.match(main, /const initialMeetingMemoryMatches = PREVIOUS_MEETINGS_MODES\.has\(mode\)/);
+  assert.doesNotMatch(main, /initialMeetingMemoryMatches/, 'the badge does not use a pre-screenshot memory snapshot');
   const finalLookup = main.indexOf('const meetingMemoryMatches = readMeetingMemoryMatches(memoryRelevanceQuery);');
   const screenshotAwait = main.indexOf('await captureScreenshot(', main.indexOf('async function runFeature('));
+  const badgeStart = main.indexOf("if (isCurrent()) send('llm:start'", finalLookup);
   const providerDispatch = main.indexOf('const fullAnswer = await streamWithFallback(', finalLookup);
   assert.ok(finalLookup > screenshotAwait, 'saved memory is retrieved again after screenshot capture');
-  assert.ok(providerDispatch > finalLookup, 'the refreshed memory is used for provider dispatch');
+  assert.ok(badgeStart > finalLookup, 'the source badge is built from the final memory lookup');
+  assert.ok(providerDispatch > badgeStart, 'the final memory sources are announced before provider dispatch');
   assert.equal(main.slice(finalLookup, providerDispatch).includes('await '), false, 'no await separates revalidation from dispatch');
   assert.match(main, /if entries conflict, state the conflict and cite the source meeting date/);
   assert.match(main, /meetingMemorySources/);

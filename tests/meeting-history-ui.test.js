@@ -107,7 +107,11 @@ test('meeting memory is explicit, inspectable, and uses the trusted history brid
     assert.match(main, new RegExp(`handleTrusted\\('history:${channel}'`));
   }
   assert.match(renderer, /volyxLens\.meetingMemorySave\(meetingDetail\.id\)/);
-  assert.match(renderer, /volyxLens\.meetingMemoryUpdate\(entry\.id, content\.value\)/);
+  assert.match(renderer, /volyxLens\.meetingMemoryUpdate\(entry\.id, draft\)/);
+  assert.match(renderer, /const meetingMemoryDrafts = new Map\(\)/);
+  assert.match(renderer, /content\.addEventListener\('input', \(\) => \{\s*meetingMemoryDrafts\.set\(entry\.id, content\.value\);/);
+  assert.match(renderer, /content\.value = meetingMemoryDrafts\.has\(entry\.id\)/);
+  assert.match(renderer, /if \(meetingMemoryDrafts\.get\(entry\.id\) === draft\) meetingMemoryDrafts\.delete\(entry\.id\);/);
   assert.match(renderer, /volyxLens\.meetingMemorySetEnabled\(entry\.id, enabled\.checked\)/);
   assert.match(renderer, /volyxLens\.meetingMemoryRemove\(entry\.id\)/);
   assert.match(renderer, /memoryButton\.disabled = !hasMeetingNotes\(meetingDetail && meetingDetail\.notes\);/);

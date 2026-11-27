@@ -9,7 +9,7 @@ const {
   normalizeMemoryContent,
   searchMeetingMemories,
   hasMemorySearchTerms,
-  buildMemoryContentFromNotes,
+  hasMemoryContentFromNotes,
 } = require('./inspectable-memory');
 
 const MAX_RECORDS = 200;
@@ -971,7 +971,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         const loaded = readRecordForUpdate(id);
         let validNotes = false;
         if (loaded.record && loaded.record.notes && typeof loaded.record.notes === 'object' && !Array.isArray(loaded.record.notes)) {
-          try { validNotes = Boolean(buildMemoryContentFromNotes(loaded.record.notes)); } catch {}
+          validNotes = hasMemoryContentFromNotes(loaded.record.notes);
         }
         if (!validNotes) {
           skipped.push({ id: label, reason: 'memory_source_missing' });

@@ -480,6 +480,9 @@
   let meetingDetail = null;
   let meetingNotesText = '';
   let meetingMemoryEntries = [];
+  // Unfinished editor text survives list rerenders. Entries leave this map only
+  // after their own save or delete succeeds.
+  const meetingMemoryDrafts = new Map();
   let meetingHistorySearchTimer = null;
   // How many records the store keeps, and how long a deleted one stays
   // recoverable. Both are fetched rather than hardcoded so the sentences the
@@ -2462,8 +2465,13 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       content.className = 'memory-content-editor';
       content.rows = 4;
       content.maxLength = 4000;
-      content.value = entry.memory.content;
+      content.value = meetingMemoryDrafts.has(entry.id)
+        ? meetingMemoryDrafts.get(entry.id)
+        : entry.memory.content;
       content.setAttribute('aria-label', `Edit saved meeting memory from ${sourceDate}`);
+      content.addEventListener('input', () => {
+        meetingMemoryDrafts.set(entry.id, content.value);
+      });
       const actions = document.createElement('div');
       actions.className = 'context-actions';
       const save = document.createElement('button');
@@ -2499,9 +2507,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
       save.addEventListener('click', async () => {
         save.disabled = true;
+        const draft = content.value;
+        meetingMemoryDrafts.set(entry.id, draft);
         try {
-          const result = await volyxLens.meetingMemoryUpdate(entry.id, content.value);
+          const result = await volyxLens.meetingMemoryUpdate(entry.id, draft);
           if (!result.updated) throw new Error(meetingMemoryFailureMessage(result));
+          if (meetingMemoryDrafts.get(entry.id) === draft) meetingMemoryDrafts.delete(entry.id);
           meetingMemoryEntries = meetingMemoryEntries.map((item) => item.id === entry.id
             ? { ...item, memory: result.memory }
             : item);
@@ -2520,6 +2531,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         try {
           const result = await volyxLens.meetingMemoryRemove(entry.id);
           if (!result.removed) throw new Error(meetingMemoryFailureMessage(result));
+          meetingMemoryDrafts.delete(entry.id);
           meetingMemoryEntries = meetingMemoryEntries.filter((item) => item.id !== entry.id);
           $('#meeting-memory-status').textContent = 'Saved memory deleted. The meeting transcript and notes were not changed.';
           renderMeetingMemoryEntries();

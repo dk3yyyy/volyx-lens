@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const {
   buildMemoryContentFromNotes,
+  hasMemoryContentFromNotes,
   createMeetingMemory,
   restoreMeetingMemory,
   searchMeetingMemories,
@@ -168,6 +169,16 @@ test('memory query construction preserves the question and newest transcript wit
   assert.match(query, /Acme pricing/);
   assert.match(query, /newest launch decision/);
   assert.ok(query.length <= 4000);
+});
+
+test('notes presence checks are non-throwing and do not apply the memory size limit', () => {
+  assert.equal(hasMemoryContentFromNotes(null), false);
+  assert.equal(hasMemoryContentFromNotes({ summary: ' ', decisions: ['  '] }), false);
+  assert.equal(hasMemoryContentFromNotes({ summary: 'x'.repeat(5000) }), true);
+  assert.equal(hasMemoryContentFromNotes({ actionItems: ['x'.repeat(5000)] }), true);
+  const unreadable = Object.defineProperty({}, 'summary', { get() { throw new Error('unreadable'); } });
+  assert.equal(hasMemoryContentFromNotes(unreadable), false);
+  assert.throws(() => buildMemoryContentFromNotes({ summary: 'x'.repeat(5000) }), /4000 characters/i, 'saving memory still enforces the limit');
 });
 
 test('notes content preserves labeled sections and rejects empty, excessive, or unsafe input', () => {

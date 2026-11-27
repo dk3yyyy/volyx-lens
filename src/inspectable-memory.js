@@ -36,8 +36,8 @@ function normalizeNotesList(value) {
     : [];
 }
 
-function buildMemoryContentFromNotes(notes) {
-  if (!notes || typeof notes !== 'object') return '';
+function memoryContentSectionsFromNotes(notes) {
+  if (!notes || typeof notes !== 'object') return [];
   const sections = [];
   const summary = String(notes.summary || '').replace(/\s+/g, ' ').trim();
   if (summary) sections.push(`Summary: ${summary}`);
@@ -45,6 +45,19 @@ function buildMemoryContentFromNotes(notes) {
     const items = normalizeNotesList(notes[key]);
     if (items.length) sections.push(`${label}:\n${items.map((item) => `- ${item}`).join('\n')}`);
   }
+  return sections;
+}
+
+// Restores need to know whether persisted notes still provide a source for an
+// already-validated memory. Regenerated notes can be longer than the memory
+// limit, so this presence check deliberately does not build or normalize a
+// bounded memory payload.
+function hasMemoryContentFromNotes(notes) {
+  try { return memoryContentSectionsFromNotes(notes).length > 0; } catch { return false; }
+}
+
+function buildMemoryContentFromNotes(notes) {
+  const sections = memoryContentSectionsFromNotes(notes);
   return sections.length ? normalizeMemoryContent(sections.join('\n')) : '';
 }
 
@@ -167,6 +180,7 @@ function searchMeetingMemories(memories, query, { limit = MAX_SEARCH_RESULTS } =
 
 module.exports = {
   buildMemoryContentFromNotes,
+  hasMemoryContentFromNotes,
   createMeetingMemory,
   restoreMeetingMemory,
   normalizeMemoryContent,
