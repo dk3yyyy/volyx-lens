@@ -895,11 +895,19 @@
       && meetingDetail.turns.some((turn) => typeof turn.rawText === 'string' && turn.rawText !== turn.text);
   }
 
+  // The deterministic processed copy is the saved turn.text. It deserves its own
+  // stop only when an AI-cleaned copy would otherwise be the only readable view
+  // and the recognizer's raw wording is also present.
+  function hasProcessedView() {
+    return hasCleanedView() && hasOriginalWording();
+  }
+
   function readableMeetingTurns() {
     if (!meetingDetail) return [];
     if (meetingViewMode === 'raw') {
       return meetingDetail.turns.map((turn) => turn.rawText ? { ...turn, text: turn.rawText } : turn);
     }
+    if (meetingViewMode === 'processed') return meetingDetail.turns;
     if (meetingViewMode !== 'cleaned' || !hasCleanedView()) return meetingDetail.turns;
     return meetingDetail.turns.map((turn, index) => ({
       ...turn,
@@ -907,13 +915,21 @@
     }));
   }
 
-  const VIEW_ORDER = ['cleaned', 'raw', 'changes'];
-  const VIEW_LABELS = { cleaned: 'Cleaned', raw: 'Raw', changes: 'Changes' };
+  const VIEW_ORDER = ['cleaned', 'raw', 'processed', 'changes'];
+  const VIEW_LABELS = { cleaned: 'Cleaned', raw: 'Raw', processed: 'Processed', changes: 'Changes' };
   const VIEW_TITLES = {
     cleaned: 'Showing the cleaned copy. Click for the exact wording that was heard.',
     raw: 'Showing the exact wording that was heard. Click to see what cleanup changed.',
+    processed: 'Showing the saved deterministic processing result. Click to see what cleanup changed.',
     changes: 'Showing only the turns where the wording changed. Click to return to the cleaned copy.',
   };
+
+  // Processed joins the cycle only when all three copies exist; with two copies
+  // the existing Cleaned/Raw (or Processed/Raw) cycle is unchanged.
+  function meetingViewOrder() {
+    if (!hasCleanedView()) return ['cleaned', 'raw'];
+    return hasProcessedView() ? VIEW_ORDER : ['cleaned', 'raw', 'changes'];
+  }
 
   function updateMeetingViewToggle() {
     const toggle = $('#meeting-view-toggle');
@@ -1160,7 +1176,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   $('#meeting-view-toggle').addEventListener('click', () => {
     if (!meetingDetail || (!hasCleanedView() && !hasOriginalWording())) return;
-    const order = hasCleanedView() ? VIEW_ORDER : ['cleaned', 'raw'];
+    const order = meetingViewOrder();
     const next = (order.indexOf(meetingViewMode) + 1) % order.length;
     meetingViewMode = order[next];
     renderMeetingTurns();

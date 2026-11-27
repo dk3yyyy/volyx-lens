@@ -34,3 +34,22 @@ test('fresh history turns retain original recognizer wording when processing cha
   assert.match(main, /const rawText = joinRawTranscriptSegments\(fresh\)/);
   assert.match(main, /rawText: rawText && rawText !== text \? rawText : undefined/);
 });
+
+test('transcript clear is serialized on the capture queue with New Session', () => {
+  const start = main.indexOf("handleTrusted('transcript:clear'");
+  const end = main.indexOf("handleTrusted('transcript:export'");
+  assert.ok(start >= 0 && end > start, 'the clear handler is present');
+  const handler = main.slice(start, end);
+  assert.match(handler, /const operation = async \(\) => \{/);
+  assert.match(handler, /captureTransition = captureTransition\.then\(operation, operation\);/);
+  assert.match(handler, /const stopped = await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
+  assert.match(handler, /stopped\.applied !== false && state\.capturing && desiredCapturing\) await startTranscriptionPipeline\(\)/);
+  // New Session and capture reconciliation use the same chain, which is what
+  // keeps a clear from overlapping the teardown it queued behind.
+  assert.match(main, /function startNewSession\(\)[\s\S]*?captureTransition = captureTransition\.then\(operation, operation\)/);
+});
+
+test('vocabulary parse rejections reach the renderer instead of disappearing', () => {
+  assert.match(main, /inspectVocabulary\(updatedVocabulary\)/);
+  assert.match(main, /Custom vocabulary skipped \$\{rejectedCount\}/);
+});

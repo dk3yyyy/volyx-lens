@@ -125,7 +125,9 @@ function buildSttTermList({ personalContext = '', customVocabulary = '', base = 
   const terms = [];
   for (const raw of candidates) {
     const term = String(raw || '').replace(/[\r\n,]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (term.length < 3 || term.length > maxTermCharacters) continue;
+    // Length policy belongs to parseVocabulary for custom terms; the only thing
+    // left to enforce here is the provider's per-term budget.
+    if (!term || term.length > maxTermCharacters) continue;
     const key = term.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);

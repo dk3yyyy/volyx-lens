@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  inspectVocabulary,
   parseVocabulary,
   parseTranscriptRules,
   postProcessTranscript,
@@ -13,6 +14,28 @@ test('vocabulary parsing accepts comma/newline lists, deduplicates, and bounds t
   assert.deepEqual(parseVocabulary(['One', 'Two, Three', 'one']), ['One', 'Two', 'Three']);
   assert.deepEqual(parseVocabulary('a\n' + 'x'.repeat(100)), []);
   assert.deepEqual(parseVocabulary(null), []);
+});
+
+test('vocabulary parsing keeps meaningful two-character hints such as AI, Q3, and X1', () => {
+  assert.deepEqual(parseVocabulary('AI, Q3, X1, 3D, ML'), ['AI', 'Q3', 'X1', '3D', 'ML']);
+  assert.deepEqual(parseVocabulary('ai, 42, a, xy, A1'), ['A1'], 'noise shorter than three characters is still rejected');
+});
+
+test('vocabulary parsing reports every entry it rejects instead of dropping it silently', () => {
+  const longTerm = 'y'.repeat(90);
+  const result = inspectVocabulary(`AI, Q3, a, 42, xy, ${longTerm}`);
+  assert.deepEqual(result.terms, ['AI', 'Q3']);
+  assert.equal(result.rejectedCount, 4);
+  assert.deepEqual(result.rejected.map((item) => [item.term, item.reason]), [
+    ['a', 'too_short'],
+    ['42', 'too_short'],
+    ['xy', 'too_short'],
+    [longTerm.slice(0, 40), 'too_long'],
+  ]);
+  const limited = inspectVocabulary('Alpha, Beta', { limit: 1 });
+  assert.deepEqual(limited.terms, ['Alpha']);
+  assert.deepEqual(limited.rejected.map((item) => [item.term, item.reason]), [['Beta', 'over_limit']]);
+  assert.equal(inspectVocabulary('').rejectedCount, 0, 'separators are not reported as rejected terms');
 });
 
 test('transcript rules parse heard-to-replacement lines and reject malformed input', () => {
@@ -49,4 +72,15 @@ test('post-processing trims, bounds output, and reports empty input', () => {
   const long = postProcessTranscript('x'.repeat(20000), { normalizeDigits: false });
   assert.equal(long.text.length, 12000);
   assert.equal(long.rawText.length, 12000);
+});
+
+test('vocabulary parsing rejects terms the realtime seed cannot carry', () => {
+  const { terms, rejected, rejectedCount } = inspectVocabulary('x'.repeat(41));
+  assert.equal(terms.length, 0, 'a term past the provider budget is not accepted');
+  assert.equal(rejectedCount, 1);
+  assert.equal(rejected[0].reason, 'too_long');
+});
+
+test('two-character hints in uncased scripts survive', () => {
+  assert.deepEqual(parseVocabulary('华为, AI, xy, 42'), ['华为', 'AI']);
 });

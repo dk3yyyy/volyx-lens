@@ -25,9 +25,10 @@ function mainFunction(startMarker, endMarker) {
   return main.slice(start, end);
 }
 
-function createFlushHarness() {
+function createFlushHarness(overrides = {}) {
   const transcriptions = [];
   const recorded = [];
+  const events = [];
   const context = {
     Buffer,
     console,
@@ -63,17 +64,18 @@ function createFlushHarness() {
     },
     recordTranscript: ({ text }) => recorded.push(text),
     handleSttError() {},
-    send() {},
+    send(channel, payload) { events.push({ channel, payload }); },
     updateTranscriptionDiagnostics() {},
     stopFlushLoop() {},
     cancelOfflineTranscriptions() {},
+    ...overrides,
   };
   vm.runInNewContext(
     `${mainFunction('async function flushChannel(', 'async function drainBatchBuffers()')}\n`
     + `${mainFunction('async function stopTranscriptionPipeline(', 'function routePcm(')}\n`,
     context,
   );
-  return { context, transcriptions, recorded };
+  return { context, transcriptions, recorded, events };
 }
 
 test('immediate teardown invalidates a deferred batch flush before the same session retries', async () => {
@@ -111,4 +113,31 @@ test('immediate teardown invalidates a deferred batch flush before the same sess
   assert.deepEqual(recorded, ['new audio']);
   assert.equal(context.state.transcribing.you, false);
   assert.equal(context.flushPromises.you, null);
+});
+
+test('a teardown that started before a newer pipeline run cannot clear its buffers', async () => {
+  const { context, events } = createFlushHarness();
+  const closed = deferred();
+  context.transcriptionMode = 'realtime';
+  context.realtimeManager = { stop: () => closed.promise };
+
+  const stopping = context.stopTranscriptionPipeline({ immediate: true });
+  assert.equal(context.transcriptEpoch, 12, 'the teardown invalidated its own pipeline run');
+
+  // While the provider is still closing, a second clear (or a New Session behind
+  // it) invalidates this run and a new pipeline starts capturing.
+  context.transcriptEpoch += 1;
+  context.buffers.them.push(Buffer.alloc(context.MIN_BYTES));
+  context.retryQueues.them.push(Buffer.alloc(context.MIN_BYTES));
+  context.state.transcribing.them = true;
+
+  closed.resolve();
+  const outcome = await stopping;
+
+  assert.equal(outcome && outcome.applied, false, 'the superseded teardown reports that it did nothing');
+  assert.equal(context.buffers.them.length, 1, 'the newer run keeps the audio it buffered');
+  assert.equal(context.retryQueues.them.length, 1, 'the newer run keeps its detached retry attempt');
+  assert.equal(context.state.transcribing.them, true, 'the stale teardown does not clear the new busy flag');
+  assert.equal(context.transcriptionMode, 'realtime', 'the stale teardown does not report the new run idle');
+  assert.equal(events.filter((event) => event.channel === 'transcription:state').length, 0);
 });

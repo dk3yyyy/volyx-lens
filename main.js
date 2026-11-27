@@ -31,7 +31,7 @@ const { buildPersonalContext } = require('./src/personal-context');
 const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, joinRawTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
-const { postProcessTranscript, parseTranscriptRules } = require('./src/transcript-postprocess');
+const { postProcessTranscript, parseTranscriptRules, inspectVocabulary } = require('./src/transcript-postprocess');
 const { drainPendingAudio, buildDrainGap } = require('./src/drain-batch-buffers');
 const { normalizeAnswerText } = require('./src/answer-normalize');
 const { createStreamingNormalizer } = require('./src/streaming-normalizer');
@@ -1509,9 +1509,10 @@ async function drainBatchBuffers() {
   let dropped = 0;
   const droppedChunks = {};
   for (const channel of outcome.abandoned) {
-    // A failed flush leaves its detached attempt in retryQueues; count the
-    // larger queue so abandoned audio is not counted twice.
-    const chunks = Math.max(buffers[channel].length, retryQueues[channel].length);
+    // A failed flush leaves its detached attempt in retryQueues while buffers
+    // holds PCM that arrived after the detach. Both are dropped, so the gap is
+    // their sum — Math.max reported only part of the lost speech.
+    const chunks = buffers[channel].length + retryQueues[channel].length;
     droppedChunks[channel] = chunks;
     dropped += chunks;
     buffers[channel] = [];
@@ -1687,12 +1688,18 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     // Retry and stop/start deliberately keep the session generation and visible
     // transcript. Invalidate the pipeline run instead, so a deferred batch STT
     // result cannot record into the restarted pipeline or clear its busy flag.
-    transcriptEpoch += 1;
+    const stopGeneration = sessionGeneration;
+    const stopEpoch = (transcriptEpoch += 1);
     micEchoCoordinator.clear();
     acousticEchoFilter.reset();
     if (manager) await Promise.allSettled([manager.stop()]);
+    // The provider close can take a while. If another clear or a New Session
+    // invalidated this run meanwhile, the buffers and state below belong to that
+    // newer pipeline; wiping them here would drop its audio and report it idle.
+    const drainingAtStop = [...drainingRealtimeManagers];
     await Promise.allSettled([...drainingRealtimeManagers].map((draining) => draining.stop()));
-    drainingRealtimeManagers.clear();
+    for (const drainingManager of drainingAtStop) drainingRealtimeManagers.delete(drainingManager);
+    if (stopGeneration !== sessionGeneration || stopEpoch !== transcriptEpoch) return { applied: false };
     buffers.you = []; buffers.them = [];
     retryQueues.you = []; retryQueues.them = [];
     flushPromises.you = null; flushPromises.them = null;
@@ -1701,7 +1708,7 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     transcriptionMode = 'idle';
     updateTranscriptionDiagnostics({ status: 'stopped' });
     send('transcription:state', { mode: 'idle', status: 'stopped' });
-    return;
+    return { applied: true };
   }
 
   if (manager) {
@@ -1717,6 +1724,7 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   transcriptionMode = 'idle';
   updateTranscriptionDiagnostics({ status: 'stopped' });
   send('transcription:state', { mode: 'idle', status: 'stopped' });
+  return { applied: true };
 }
 
 function routePcm(channel, pcm) {
@@ -2827,14 +2835,24 @@ function cancelLiveRealtimeDiagnostic() {
   liveRealtimeDiagnostic = null;
 }
 
-async function retryTranscription() {
-  if (!state.capturing) return { ok: false, message: 'Start listening before retrying Realtime.' };
-  resetSttErrorState();
-  await stopTranscriptionPipeline({ immediate: true });
-  if (!state.capturing) return { ok: false, message: 'Listening stopped before Realtime could restart.' };
-  await startTranscriptionPipeline();
-  send('status', { message: 'Realtime transcription connection restarted.' });
-  return { ok: true };
+function retryTranscription() {
+  // A retry rebuilds the same pipeline as a clear or New Session, so it takes
+  // the same capture boundary; running it off the queue could start a second
+  // pipeline while an older teardown is still awaiting the provider close.
+  const operation = async () => {
+    if (!state.capturing) return { ok: false, message: 'Start listening before retrying Realtime.' };
+    resetSttErrorState();
+    const stopped = await stopTranscriptionPipeline({ immediate: true });
+    if (stopped && stopped.applied === false) {
+      return { ok: false, message: 'Listening changed before Realtime could restart.' };
+    }
+    if (!state.capturing) return { ok: false, message: 'Listening stopped before Realtime could restart.' };
+    await startTranscriptionPipeline();
+    send('status', { message: 'Realtime transcription connection restarted.' });
+    return { ok: true };
+  };
+  captureTransition = captureTransition.then(operation, operation);
+  return captureTransition;
 }
 
 function transcriptionSettingsChanged(previous, updated) {
@@ -2944,6 +2962,26 @@ handleTrusted('settings:set', (_e, patch = {}) => {
       send('status', { message: 'Transcription changes will apply the next time you stop and restart listening.' });
     }
   }
+  // A malformed hint used to vanish without a trace. Say what was skipped, so a
+  // one-character typo is not mistaken for a vocabulary entry the recognizer has.
+  const previousVocabulary = previous.transcription && previous.transcription.customVocabulary;
+  const updatedVocabulary = updated.transcription && updated.transcription.customVocabulary;
+  if (typeof updatedVocabulary === 'string' && updatedVocabulary !== previousVocabulary) {
+    const { rejected, rejectedCount } = inspectVocabulary(updatedVocabulary);
+    if (rejectedCount > 0) {
+      // The terms themselves are free-form settings text; report counts and the
+      // rule, never the entered text, so nothing is echoed into logs or toasts.
+      const counts = new Map();
+      for (const item of rejected) counts.set(item.reason, (counts.get(item.reason) || 0) + 1);
+      const parts = [];
+      if (counts.get('too_short')) parts.push(`${counts.get('too_short')} shorter than 3 characters (2-character acronyms such as AI or Q3 are kept)`);
+      if (counts.get('too_long')) parts.push(`${counts.get('too_long')} longer than 40 characters`);
+      if (counts.get('over_limit')) parts.push(`${counts.get('over_limit')} over the entry limit`);
+      send('status', {
+        message: `Custom vocabulary skipped ${rejectedCount} entr${rejectedCount === 1 ? 'y' : 'ies'}: ${parts.join('; ')}.`,
+      });
+    }
+  }
   const wasSlideTrackingEnabled = previous.transcription && previous.transcription.slideTracking === true;
   const isSlideTrackingEnabled = updated.transcription && updated.transcription.slideTracking === true;
   if (wasSlideTrackingEnabled !== isSlideTrackingEnabled) {
@@ -3042,28 +3080,39 @@ handleTrusted('transcript:copy-turn', (_event, id) => {
   return { copied: true, id: turn.id, characters: text.length };
 });
 handleTrusted('transcript:clear', async () => {
-  // The renderer owns the busy state, so it must hear that the run ended. A
-  // silent invalidation left the composer disabled with an orphaned answer.
-  cancelActiveFeature('transcript-clear', { notify: true, invalidate: true });
-  clearSlideTrackingData();
-  const cleared = transcript.length;
-  transcriptEpoch += 1;
-  resetTranscriptData();
-  chatHistory.clear();
-  // A cleared transcript is a new meeting; later turns must not be appended to the
-  // record that was just cleared out of the view (VR-08).
-  activeMeetingRecordId = null;
-  cancelMeetingRecoverySave();
-  meetingRecovery.clearBestEffort();
-  pendingRestoredStartedAt = null;
-  buffers.you = []; buffers.them = [];
-  retryQueues.you = []; retryQueues.them = [];
-  if (state.capturing) {
-    await stopTranscriptionPipeline({ immediate: true });
-    await startTranscriptionPipeline();
-  }
-  send('transcript:cleared', {});
-  return { cleared };
+  // A clear owns the same capture boundary as a New Session. Serialising it on
+  // the capture queue keeps a second clear (or a session reset) from starting a
+  // pipeline while this one still awaits the provider close; otherwise the older
+  // teardown clears the newer pipeline's buffers and stops its manager.
+  const operation = async () => {
+    // The renderer owns the busy state, so it must hear that the run ended. A
+    // silent invalidation left the composer disabled with an orphaned answer.
+    cancelActiveFeature('transcript-clear', { notify: true, invalidate: true });
+    clearSlideTrackingData();
+    const cleared = transcript.length;
+    transcriptEpoch += 1;
+    resetTranscriptData();
+    chatHistory.clear();
+    // A cleared transcript is a new meeting; later turns must not be appended to the
+    // record that was just cleared out of the view (VR-08).
+    activeMeetingRecordId = null;
+    cancelMeetingRecoverySave();
+    meetingRecovery.clearBestEffort();
+    pendingRestoredStartedAt = null;
+    buffers.you = []; buffers.them = [];
+    retryQueues.you = []; retryQueues.them = [];
+    if (state.capturing) {
+      const stopped = await stopTranscriptionPipeline({ immediate: true });
+      // A stop that was requested while this awaited must not be undone by a
+      // restart into a session the user just ended. When the teardown was stale,
+      // a newer run already owns the pipeline, so leave it alone.
+      if (stopped.applied !== false && state.capturing && desiredCapturing) await startTranscriptionPipeline();
+    }
+    send('transcript:cleared', {});
+    return { cleared };
+  };
+  captureTransition = captureTransition.then(operation, operation);
+  return captureTransition;
 });
 handleTrusted('transcript:export', (_event, format) => exportTranscript(String(format || 'txt')));
 handleTrusted('history:list', () => meetingStore.list());

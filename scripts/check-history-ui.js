@@ -477,6 +477,15 @@ app.whenReady().then(async () => {
   assert.equal(calls.export.at(-1).source, 'raw');
 
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
+  await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Processed'", 'the processed view to render');
+  const processedView = await run(win, `({
+    label: document.querySelector('#meeting-view-toggle').textContent,
+    firstText: document.querySelector('#meeting-history-turns .history-text').textContent,
+  })`);
+  assert.equal(processedView.label, 'Processed');
+  assert.match(processedView.firstText, /roadmap/, 'the processed view shows the saved deterministic wording');
+
+  await run(win, "document.querySelector('#meeting-view-toggle').click()");
   await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Changes'", 'the changes view to render');
   const changesView = await run(win, `({
     label: document.querySelector('#meeting-view-toggle').textContent,
