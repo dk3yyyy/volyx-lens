@@ -13,6 +13,11 @@ const {
 
 const WORKER_NAME = 'volyx-speech-worker';
 const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+// Parakeet's boosting budget is small and finite: a long tail of terms dilutes
+// the rescoring pass instead of sharpening it, and long "terms" are phrases
+// the model cannot match as a unit.
+const MAX_VOCABULARY_TERMS = 40;
+const MAX_VOCABULARY_TERM_CHARACTERS = 40;
 
 function speechWorkerCandidates({
   env = process.env,
@@ -71,6 +76,26 @@ function workerError(code, message) {
 
 function normalizeBackend(value) {
   return ['auto', 'cpu', 'gpu'].includes(value) ? value : 'auto';
+}
+
+// Vocabulary is advisory: a malformed entry is dropped rather than failing a
+// transcription the user is waiting for. Mirrors the caps enforced by the
+// native worker so neither side can widen the other's budget.
+function sanitizeVocabulary(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const terms = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const term = entry.trim();
+    if (!term || term.length > MAX_VOCABULARY_TERM_CHARACTERS) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    terms.push(term);
+    if (terms.length >= MAX_VOCABULARY_TERMS) break;
+  }
+  return terms;
 }
 
 function speechWorkerEnvironment(env = process.env) {
@@ -397,17 +422,19 @@ function createSpeechWorker({
     return result;
   }
 
-  async function transcribe({ wav, modelId, language = '', backend = 'auto' } = {}) {
+  async function transcribe({ wav, modelId, language = '', backend = 'auto', vocabulary = [] } = {}) {
     if (!Buffer.isBuffer(wav)) throw new TypeError('Local speech transcription requires a WAV Buffer.');
     const model = getModel(modelId);
     if (!model || model.runtime !== 'transcribe-cpp') {
       throw workerError('speech_model_unsupported', `Unsupported local GGUF model: ${String(modelId || '')}`);
     }
+    const terms = sanitizeVocabulary(vocabulary);
     try {
       await warmModel(model.id, { backend });
       const result = await request('transcribe', {
         wavBase64: wav.toString('base64'),
         language: String(language || ''),
+        ...(terms.length ? { vocabulary: terms } : {}),
       });
       recordBackendResult(result);
       return { ...result, modelId: model.id, provider: 'local-gguf' };
@@ -419,7 +446,7 @@ function createSpeechWorker({
     }
   }
 
-  async function streamStart({ modelId, channel, language = '', backend = 'auto' } = {}) {
+  async function streamStart({ modelId, channel, language = '', backend = 'auto', vocabulary = [] } = {}) {
     const model = getModel(modelId);
     if (!model || model.runtime !== 'transcribe-cpp' || model.streaming !== true) {
       throw workerError('speech_model_streaming_unsupported', `The selected local model does not support streaming: ${String(modelId || '')}`);
@@ -429,6 +456,7 @@ function createSpeechWorker({
     if (!isInstalled(model.id)) {
       throw workerError('speech_model_not_installed', `Download ${model.name} before using it offline.`);
     }
+    const terms = sanitizeVocabulary(vocabulary);
     if (!await verifyModel(model.id)) {
       throw workerError('speech_model_integrity_mismatch', `The downloaded ${model.name} failed its SHA-256 integrity check. Download it again before use.`);
     }
@@ -449,6 +477,7 @@ function createSpeechWorker({
         channel,
         language: String(language || ''),
         backend: requestedBackend,
+        ...(terms.length ? { vocabulary: terms } : {}),
       }, modelOperationTimeoutMs);
       if (result.modelId !== model.id || !result.capabilities || result.capabilities.streaming !== true) {
         throw workerError('speech_worker_protocol_error', 'Speech worker started an unexpected model or omitted streaming capabilities.');
@@ -601,5 +630,6 @@ module.exports = {
   resolveSpeechWorkerBinary,
   createSpeechWorker,
   speechWorkerEnvironment,
+  sanitizeVocabulary,
   defaultSpeechWorker,
 };

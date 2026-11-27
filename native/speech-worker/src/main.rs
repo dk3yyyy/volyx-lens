@@ -34,6 +34,36 @@ struct ActiveStream {
     thread: JoinHandle<()>,
 }
 
+// Parakeet spends a small, finite boosting budget. These caps mirror the JS
+// client so a hand-written request cannot widen the budget either.
+const MAX_VOCABULARY_TERMS: usize = 40;
+const MAX_VOCABULARY_TERM_CHARACTERS: usize = 40;
+
+fn request_vocabulary(request: &Value) -> Vec<String> {
+    let Some(entries) = request.get("vocabulary").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut terms = Vec::new();
+    for entry in entries {
+        let Some(raw) = entry.as_str() else {
+            continue;
+        };
+        let term = raw.trim();
+        if term.is_empty() || term.chars().count() > MAX_VOCABULARY_TERM_CHARACTERS {
+            continue;
+        }
+        if !seen.insert(term.to_lowercase()) {
+            continue;
+        }
+        terms.push(term.to_string());
+        if terms.len() >= MAX_VOCABULARY_TERMS {
+            break;
+        }
+    }
+    terms
+}
+
 fn error_value(id: Option<u64>, code: &str, message: impl Into<String>) -> Value {
     json!({
         "id": id,
@@ -323,6 +353,7 @@ fn run_stream_thread(
     loaded: LoadedModel,
     channel: String,
     language: String,
+    vocabulary: Vec<String>,
     receiver: Receiver<StreamCommand>,
     ready: SyncSender<Result<Value, String>>,
     output: Arc<Mutex<io::Stdout>>,
@@ -341,6 +372,7 @@ fn run_stream_thread(
     if !language.is_empty() && !language.eq_ignore_ascii_case("auto") {
         run_options.language = Some(language.clone());
     }
+    run_options.vocabulary = vocabulary;
     let warmup = vec![0.0_f32; 8_000];
     if let Err(error) = session.run(&warmup, &run_options) {
         let _ = ready.send(Err(format!(
@@ -711,6 +743,7 @@ fn handle_request(
                     options.language = Some(language.to_string());
                 }
             }
+            options.vocabulary = request_vocabulary(request);
             let started = std::time::Instant::now();
             let (transcript, backend_fallback) =
                 match run_batch_with_cpu_fallback(current, &samples, &options) {
@@ -767,6 +800,7 @@ fn handle_request(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string();
+            let vocabulary = request_vocabulary(request);
             let preference = request
                 .get("backend")
                 .and_then(Value::as_str)
@@ -815,6 +849,7 @@ fn handle_request(
                     loaded,
                     channel_name,
                     language,
+                    vocabulary,
                     receiver,
                     ready_sender,
                     thread_output,
@@ -991,7 +1026,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::{
         audio_to_16khz, backend_for_preference, handle_request, is_cpu_backend,
-        pcm16_base64_to_16khz, should_fallback_to_cpu, transcript_segments_json,
+        pcm16_base64_to_16khz, request_vocabulary, should_fallback_to_cpu,
+        transcript_segments_json,
     };
     use base64::Engine;
     use hound::{SampleFormat, WavSpec, WavWriter};
@@ -1084,6 +1120,33 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.contains("CPU fallback failed"), "{error}");
+    }
+
+    #[test]
+    fn vocabulary_parsing_trims_dedupes_and_caps_terms() {
+        let mut entries = vec![
+            serde_json::json!("  Volyx  "),
+            serde_json::json!("volyx"),
+            serde_json::json!(""),
+            serde_json::json!("   "),
+            serde_json::json!(7),
+            serde_json::json!("x".repeat(41)),
+            serde_json::json!("Parakeet"),
+        ];
+        for index in 0..60 {
+            entries.push(serde_json::json!(format!("term-{index}")));
+        }
+        let request = serde_json::json!({ "vocabulary": entries });
+        let terms = request_vocabulary(&request);
+
+        assert_eq!(terms.first().map(String::as_str), Some("Volyx"));
+        assert_eq!(terms.get(1).map(String::as_str), Some("Parakeet"));
+        assert_eq!(terms.len(), 40);
+        assert!(!terms.iter().any(|term| term == "volyx"));
+        assert!(!terms.iter().any(|term| term.is_empty()));
+        assert!(!terms.iter().any(|term| term.chars().count() > 40));
+        assert!(request_vocabulary(&serde_json::json!({})).is_empty());
+        assert!(request_vocabulary(&serde_json::json!({ "vocabulary": "Volyx" })).is_empty());
     }
 
     #[test]

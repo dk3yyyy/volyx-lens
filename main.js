@@ -12,7 +12,7 @@ if (identityMigration.migrated.length) console.log(`[identity] migrated ${identi
 const store = require('./src/store');
 const { normalizeAccentTheme } = require('./src/appearance-themes');
 const { captureScreenshot, MAX_LONG_EDGE_PX, REQUEST_JPEG_QUALITY } = require('./src/screen');
-const { createSTT, resetSidecar, resolveTranscriptionMode } = require('./src/stt');
+const { createSTT, resetSidecar, resolveTranscriptionMode, clampLocalLanguage } = require('./src/stt');
 const {
   getModel: getSpeechModel,
   listModels: listSpeechModelDefinitions,
@@ -1582,11 +1582,20 @@ async function flushChannel(channel, { drain = false } = {}) {
     try {
       // Seed batch/offline STT with domain terms from the user's enabled
       // personal-context documents so model names and acronyms transcribe
-      // correctly (see src/transcript-hygiene.js).
+      // correctly (see src/transcript-hygiene.js). The GGUF runtime gets the
+      // discrete term list (no generic base glossary, so Parakeet's boosting
+      // budget is spent only on terms this user actually uses); whisper.cpp and
+      // the cloud providers keep the sentence-style initial prompt.
+      const enabledContext = personalContextStore.getEnabledDocuments().map((document) => document.text || '').join(' ');
       const stt = createSTT(settings, {
         vocab: buildSttVocab({
-          personalContext: personalContextStore.getEnabledDocuments().map((document) => document.text || '').join(' '),
+          personalContext: enabledContext,
           customVocabulary,
+        }),
+        terms: buildSttTermList({
+          personalContext: enabledContext,
+          customVocabulary,
+          base: '',
         }),
       });
       if (!stt.available) {
@@ -1863,13 +1872,22 @@ async function startTranscriptionPipeline() {
   }
   if (transcriptionRoute === 'local-stream') {
     const processingOptions = transcriptProcessingOptions;
+    // One term list for the whole session: both channels stream through the
+    // same model, and Parakeet applies the vocabulary on every finalize.
+    const localTerms = buildSttTermList({
+      personalContext: personalContextStore.getEnabledDocuments().map((document) => document.text || '').join(' '),
+      customVocabulary: activeCustomVocabulary,
+      base: '',
+    });
+    const localLanguage = clampLocalLanguage(transcription.language || '', localModel);
     let manager;
     let localFallbackStarted = false;
     manager = createLocalSpeechStreamManager({
       worker: defaultSpeechWorker,
       modelId: localModel.id,
       channels: enabledChannels,
-      language: transcription.language || '',
+      language: localLanguage,
+      vocabulary: localTerms,
       backend: transcription.speechBackend || 'auto',
       vad: resolveVadSettings(audio),
       onPartial: (event) => {
@@ -1931,6 +1949,13 @@ async function startTranscriptionPipeline() {
         } finally {
           replayingChannels.delete(channel);
         }
+        // Streaming can fail mid-replay and hand the session to batch mode.
+        // The queued audio is then the batch path's only copy: put it back
+        // before leaving, never drop it on the floor.
+        if (!stillCurrent()) {
+          buffers[channel] = [...remaining, ...(buffers[channel] || [])];
+          break;
+        }
         // Anything captured during the replay was queued in buffers. Feed it
         // after the older audio, never ahead of it.
         const late = buffers[channel];
@@ -1941,7 +1966,7 @@ async function startTranscriptionPipeline() {
           [...remaining, ...late],
           stillCurrent,
         );
-        if (unreplayed.length && stillCurrent()) {
+        if (unreplayed.length) {
           buffers[channel] = [...unreplayed, ...buffers[channel]];
         }
       }

@@ -76,6 +76,28 @@ test('stream manager forwards the selected compute backend to every channel', as
   await manager.stop();
 });
 
+test('stream manager forwards vocabulary and language to every channel', async () => {
+  const worker = fakeWorker();
+  const seen = [];
+  const originalStart = worker.streamStart;
+  worker.streamStart = async (options) => {
+    seen.push({ channel: options.channel, language: options.language, vocabulary: options.vocabulary });
+    return originalStart(options);
+  };
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    language: 'en',
+    vocabulary: ['Volyx', 'Kubernetes'],
+  });
+  await manager.start();
+  assert.deepEqual(seen, [
+    { channel: 'you', language: 'en', vocabulary: ['Volyx', 'Kubernetes'] },
+    { channel: 'them', language: 'en', vocabulary: ['Volyx', 'Kubernetes'] },
+  ]);
+  await manager.stop();
+});
+
 test('cancels the first stream when the second channel cannot load', async () => {
   const worker = fakeWorker({ failChannel: 'them' });
   const manager = createLocalSpeechStreamManager({ worker, modelId: 'nemotron-3.5-asr-streaming-0.6b' });
@@ -210,15 +232,15 @@ test('a heartbeat refreshes the channel lease without new audio', async () => {
     worker,
     modelId: 'parakeet-unified-en',
     channels: ['you'],
-    // Wide margins on purpose: the point is that a heartbeat re-arms the
-    // lease, not that a loaded CI runner can schedule a 35 ms sleep exactly.
-    leaseMs: 300,
+    // Wait past the original deadline but before the refreshed one, so a
+    // heartbeat that returns true without re-arming the timer still fails.
+    leaseMs: 2000,
     onError: (error) => errors.push(error),
   });
   await manager.start();
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 1200));
   assert.equal(manager.heartbeat('you'), true);
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   assert.deepEqual(errors, [], 'the refreshed lease has not expired yet');
   assert.equal(manager.ready, true);
