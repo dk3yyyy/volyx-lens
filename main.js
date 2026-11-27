@@ -1499,6 +1499,25 @@ function createWindow() {
 // flush to re-attempt before new data.
 const retryQueues = { you: [], them: [] };
 const MAX_RETRY_CHUNKS = MAX_BATCH_CHUNKS;
+// Recovered and failed audio is kept for retry, but not without limit: 120 s
+// matches what the stream manager accepts. Past it the oldest audio is dropped
+// with an explicit transcript gap rather than growing memory without bound.
+const MAX_RETRY_BYTES = AUDIO_SAMPLE_RATE * 2 * 120;
+
+function boundRetryQueue(channel) {
+  const queue = retryQueues[channel];
+  if (!Array.isArray(queue) || queue.length < 2) return;
+  let bytes = queue.reduce((total, chunk) => total + chunk.length, 0);
+  let dropped = 0;
+  while (queue.length > 1 && bytes > MAX_RETRY_BYTES) {
+    const chunk = queue.shift();
+    bytes -= chunk.length;
+    dropped += chunk.length;
+  }
+  if (dropped) {
+    send('transcript:gap', { ts: Date.now(), reason: 'retry-buffer-overflow', channels: [channel], bytes: dropped });
+  }
+}
 
 async function flushChannel(channel, { drain = false } = {}) {
   const generation = sessionGeneration;
@@ -1531,6 +1550,7 @@ async function flushChannel(channel, { drain = false } = {}) {
     const allChunks = pendingRetry.length ? [...pendingRetry, ...chunks] : chunks;
     // retryQueues holds this attempt's audio if it fails; it never owns newer PCM.
     retryQueues[channel] = allChunks;
+    boundRetryQueue(channel);
     const pcm = Buffer.concat(allChunks);
     if (pcm.length < MIN_BYTES) { retryQueues[channel] = allChunks; return; }
     const settings = store.getSettings();
@@ -1773,6 +1793,7 @@ function queueRecoveredAudioForBatch(channel, recovered) {
   const live = buffers[channel] || [];
   buffers[channel] = [];
   retryQueues[channel] = [...(retryQueues[channel] || []), ...recoveredChunks, ...live];
+  boundRetryQueue(channel);
 }
 
 // Replaying buffered startup audio is not live capture: a tight loop puts four
@@ -1896,23 +1917,32 @@ async function startTranscriptionPipeline() {
         return manager.stop();
       }
       transcriptionMode = 'local-stream';
+      const stillCurrent = () => localSpeechStreamManager === manager
+        && generation === sessionGeneration
+        && epoch === transcriptEpoch
+        && transcriptionMode === 'local-stream';
       for (const channel of enabledChannels) {
         const buffered = buffers[channel];
         buffers[channel] = [];
-        const remaining = await replayBufferedStartupAudio(
+        replayingChannels.add(channel);
+        let remaining = buffered;
+        try {
+          remaining = await replayBufferedStartupAudio(manager, channel, buffered, stillCurrent);
+        } finally {
+          replayingChannels.delete(channel);
+        }
+        // Anything captured during the replay was queued in buffers. Feed it
+        // after the older audio, never ahead of it.
+        const late = buffers[channel];
+        buffers[channel] = [];
+        const unreplayed = await replayBufferedStartupAudio(
           manager,
           channel,
-          buffered,
-          () => localSpeechStreamManager === manager
-            && generation === sessionGeneration
-            && epoch === transcriptEpoch
-            && transcriptionMode === 'local-stream',
+          [...remaining, ...late],
+          stillCurrent,
         );
-        if (remaining.length
-            && localSpeechStreamManager === manager
-            && generation === sessionGeneration
-            && epoch === transcriptEpoch) {
-          buffers[channel] = [...remaining, ...buffers[channel]];
+        if (unreplayed.length && stillCurrent()) {
+          buffers[channel] = [...unreplayed, ...buffers[channel]];
         }
       }
       if (localSpeechStreamManager !== manager
@@ -2085,8 +2115,14 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   return { applied: true };
 }
 
+const replayingChannels = new Set();
+
 function routePcm(channel, pcm) {
-  if (localSpeechStreamManager && localSpeechStreamManager.append(channel, pcm)) return;
+  // While startup audio replays, live audio must queue behind it. Appending
+  // straight to the manager would let new speech reach the worker before
+  // older buffered speech and reorder the transcript.
+  if (localSpeechStreamManager && !replayingChannels.has(channel)
+      && localSpeechStreamManager.append(channel, pcm)) return;
   if (transcriptionMode === 'realtime' && realtimeManager && realtimeManager.append(channel, pcm)) return;
   buffers[channel].push(pcm);
   if (buffers[channel].length > MAX_BATCH_CHUNKS) buffers[channel].splice(0, buffers[channel].length - MAX_BATCH_CHUNKS);

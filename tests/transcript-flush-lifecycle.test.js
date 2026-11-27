@@ -49,6 +49,8 @@ function createFlushHarness(overrides = {}) {
     RMS_GATE: 240,
     AUDIO_SAMPLE_RATE: 24000,
     MAX_RETRY_CHUNKS: 180,
+    MAX_RETRY_BYTES: 24000 * 2 * 120,
+    boundRetryQueue() {},
     transcriptionMode: 'batch',
     realtimeManager: null,
     drainingRealtimeManagers: new Set(),

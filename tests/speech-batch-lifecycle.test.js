@@ -18,6 +18,7 @@ function deferred() {
 function createFlushHarness({ vad = null, detectSpeech = null } = {}) {
   const requests = [];
   const recorded = [];
+  const sent = [];
   const vadCalls = { load: 0, detect: 0 };
   const context = {
     Buffer,
@@ -34,6 +35,7 @@ function createFlushHarness({ vad = null, detectSpeech = null } = {}) {
     sttFailures: 0,
     sttBackoffUntil: 0,
     MAX_RETRY_CHUNKS: 100,
+    MAX_RETRY_BYTES: 24000 * 2 * 120,
     MIN_BYTES: 1,
     AUDIO_SAMPLE_RATE: 24000,
     RMS_GATE: 100,
@@ -59,6 +61,7 @@ function createFlushHarness({ vad = null, detectSpeech = null } = {}) {
         return request.promise;
       },
     }),
+    send: (channel, payload) => sent.push({ channel, payload }),
     recordTranscript: (event, generation, epoch) => recorded.push({ event, generation, epoch }),
     handleSttError() {},
   };
@@ -68,11 +71,17 @@ function createFlushHarness({ vad = null, detectSpeech = null } = {}) {
   const queueStart = main.indexOf('function queueRecoveredAudioForBatch(');
   const queueEnd = main.indexOf('async function replayBufferedStartupAudio(', queueStart);
   assert.ok(queueStart >= 0 && queueEnd > queueStart, 'main.js preserves recovered fallback audio');
-  const [flushChannel, queueRecoveredAudioForBatch] = vm.runInNewContext(
-    `[(${main.slice(start, end)}), (${main.slice(queueStart, queueEnd)})]`,
+  const boundStart = main.indexOf('function boundRetryQueue(');
+  const boundEnd = main.indexOf('async function flushChannel(', boundStart);
+  assert.ok(boundStart >= 0 && boundEnd > boundStart, 'main.js bounds the retry queue');
+  const [flushChannel, queueRecoveredAudioForBatch, boundRetryQueue] = vm.runInNewContext(
+    `[(${main.slice(start, end)}), (${main.slice(queueStart, queueEnd)}), (${main.slice(boundStart, boundEnd)})]`,
     context,
   );
-  return { context, requests, recorded, vadCalls, flushChannel, queueRecoveredAudioForBatch };
+  // flushChannel resolves free names from the sandbox, so the bound helper has
+  // to live there too, not only in the returned tuple.
+  context.boundRetryQueue = boundRetryQueue;
+  return { context, requests, recorded, sent, vadCalls, flushChannel, queueRecoveredAudioForBatch, boundRetryQueue };
 }
 
 test('a same-epoch flush detaches old audio without erasing newer PCM', async () => {
@@ -255,7 +264,7 @@ test('startup replay yields between appends so buffered audio does not trip back
   const end = main.indexOf('async function startTranscriptionPipeline(', start);
   assert.ok(start >= 0 && end > start, 'main.js contains the startup replay helper');
   const replayBufferedStartupAudio = vm.runInNewContext(`(${main.slice(start, end)})`, { setImmediate });
-  assert.match(main, /const remaining = await replayBufferedStartupAudio\(/, 'startup uses the replay helper');
+  assert.match(main, /await replayBufferedStartupAudio\(/, 'startup uses the replay helper');
 
   let inFlight = 0;
   let maxInFlight = 0;
@@ -292,4 +301,19 @@ test('startup replay stops promptly when the run is no longer current', async ()
 
   assert.equal(appended.length, 3, 'a stop/reset ends the replay without draining the queue');
   assert.deepEqual(Array.from(remaining), chunks.slice(3), 'unreplayed audio is handed back instead of dropped');
+});
+
+
+test('the retry queue is bounded and reports a gap instead of growing forever', () => {
+  const { context, sent, boundRetryQueue } = createFlushHarness();
+  const oneSecond = Buffer.alloc(48_000);
+  context.retryQueues.you = Array.from({ length: 300 }, () => oneSecond);
+
+  boundRetryQueue('you');
+
+  const bytes = context.retryQueues.you.reduce((total, chunk) => total + chunk.length, 0);
+  assert.ok(bytes <= context.MAX_RETRY_BYTES + oneSecond.length, 'the queue stops at the bound');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.reason, 'retry-buffer-overflow');
+  assert.equal(sent[0].payload.channels[0], 'you');
 });

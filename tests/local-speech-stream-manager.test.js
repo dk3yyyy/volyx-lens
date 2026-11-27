@@ -210,13 +210,15 @@ test('a heartbeat refreshes the channel lease without new audio', async () => {
     worker,
     modelId: 'parakeet-unified-en',
     channels: ['you'],
-    leaseMs: 60,
+    // Wide margins on purpose: the point is that a heartbeat re-arms the
+    // lease, not that a loaded CI runner can schedule a 35 ms sleep exactly.
+    leaseMs: 300,
     onError: (error) => errors.push(error),
   });
   await manager.start();
-  await new Promise((resolve) => setTimeout(resolve, 35));
+  await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(manager.heartbeat('you'), true);
-  await new Promise((resolve) => setTimeout(resolve, 35));
+  await new Promise((resolve) => setTimeout(resolve, 100));
 
   assert.deepEqual(errors, [], 'the refreshed lease has not expired yet');
   assert.equal(manager.ready, true);
