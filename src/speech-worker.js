@@ -288,8 +288,12 @@ function createSpeechWorker({
       }
       return { modelId: model.id, loaded: true, backend: activeBackend, backendFallback: activeBackendFallback };
     }
+    const generation = workerGeneration;
     if (!await verifyModel(model.id)) {
       throw workerError('speech_model_integrity_mismatch', `The downloaded ${model.name} failed its SHA-256 integrity check. Download it again before use.`);
+    }
+    if (generation !== workerGeneration) {
+      throw workerError('speech_worker_stopped', 'Speech worker was stopped before the model could load.');
     }
     if (loadedModelId) await unloadModel();
     clearIdleTimer();
@@ -375,10 +379,13 @@ function createSpeechWorker({
   async function stop() {
     clearIdleTimer();
     if (stopPromise) return stopPromise;
+    // Invalidate in-flight work even when no child exists yet: a load can be
+    // awaiting artifact verification and would otherwise spawn a worker after
+    // the user already stopped.
+    const generation = ++workerGeneration;
     if (!child) return;
     expectedExit = true;
     const activeChild = child;
-    const generation = ++workerGeneration;
     if (lineReader) lineReader.close();
     child = null;
     lineReader = null;

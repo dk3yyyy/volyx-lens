@@ -39,10 +39,12 @@ function resolveTranscriptionMode(settings) {
   // Offline-first only owns the pipeline when it can actually transcribe.
   // Enabling it without a verified GGUF model (or the legacy whisper.cpp model)
   // used to disable a working realtime provider and fail every flush instead.
-  if (transcription.whisperModel) return 'batch';
   const models = settings && Array.isArray(settings.speechModels) ? settings.speechModels : [];
   const selected = models.find((model) => model.id === transcription.localModelId);
-  return selected && selected.installed === true ? 'batch' : 'realtime';
+  // A selected GGUF model decides on its own: if it is missing, realtime keeps
+  // working instead of silently substituting the legacy default Whisper name.
+  if (selected) return selected.installed === true ? 'batch' : 'realtime';
+  return transcription.whisperModel ? 'batch' : 'realtime';
 }
 
 // Start (or reuse) the sidecar singleton. The instance is only published to the

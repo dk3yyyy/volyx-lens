@@ -2954,9 +2954,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const unloadButton = $('#speech-model-unload');
     const removeButton = $('#speech-model-remove');
     const downloading = Boolean(model && activeSpeechModelDownload === model.id);
+    const anyDownloadActive = Boolean(activeSpeechModelDownload);
     downloadButton.disabled = !model || model.runtimeAvailable !== true || downloading;
     downloadButton.textContent = model && model.installed ? 'Verify model download' : 'Download model';
-    cancelButton.disabled = !downloading;
+    // A download keeps running while another model is selected, so Cancel must
+    // stay reachable for the model that is actually downloading.
+    cancelButton.disabled = !anyDownloadActive;
     warmButton.disabled = !model || model.runtimeAvailable !== true || model.installed !== true || downloading;
     unloadButton.disabled = !model || model.loaded !== true;
     removeButton.disabled = !model || model.installed !== true || downloading;
@@ -3311,16 +3314,19 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if (!model) return;
     const button = $('#speech-model-warm');
     button.disabled = true;
-    $('#speech-model-status').textContent = `Loading and warming ${model.name}…`;
     try {
+      // The backend dropdown is read from the store by the main process, so the
+      // choice has to be persisted before warming, not after.
+      await saveSettings();
+      $('#speech-model-status').textContent = `Loading and warming ${model.name}…`;
       const result = await volyxLens.speechModelWarm(model.id);
       if (Array.isArray(result.models)) settings.speechModels = result.models;
-      renderSpeechModelControls();
+      renderSpeechModelControls(settings.speechModels, model.id);
       $('#speech-model-status').textContent = `${model.name} is loaded and warmed for local inference.`;
     } catch (error) {
+      // Refresh first: rendering model details here used to overwrite the error.
+      renderSpeechModelControls(settings.speechModels, model.id);
       $('#speech-model-status').textContent = error && error.message ? error.message : 'The model could not be warmed up.';
-    } finally {
-      renderSpeechModelControls();
     }
   });
   $('#speech-model-unload').addEventListener('click', async () => {

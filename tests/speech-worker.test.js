@@ -365,3 +365,21 @@ test('a late exit from an old speech worker cannot destroy replacement model sta
   assert.equal(replacement.requests.some((request) => request.command === 'transcribe'), true);
   await worker.stop();
 });
+
+test('an immediate stop during artifact verification prevents a late spawn', async () => {
+  const previous = modelVerification;
+  let releaseVerification;
+  const verificationGate = new Promise((resolve) => { releaseVerification = resolve; });
+  modelVerification = async () => { await verificationGate; return true; };
+  const { worker, children } = fixture();
+  try {
+    const loading = worker.loadModel('fake-gguf');
+    await new Promise((resolve) => setImmediate(resolve));
+    await worker.stop();
+    releaseVerification();
+    await assert.rejects(loading, { code: 'speech_worker_stopped' });
+    assert.equal(children.length, 0, 'no worker may start after the stop');
+  } finally {
+    modelVerification = previous;
+  }
+});
