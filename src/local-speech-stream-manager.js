@@ -88,7 +88,8 @@ function createLocalSpeechStreamManager({
         error.code = code;
         reject(error);
       }, ms);
-      if (typeof timer.unref === 'function') timer.unref();
+      // Not unref'd: a finish deadline exists to make Stop settle, so it must
+      // keep the loop alive for its own duration instead of vanishing early.
       Promise.resolve(promise).then((value) => {
         clearTimeout(timer);
         resolve(value);
