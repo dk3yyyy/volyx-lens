@@ -1505,6 +1505,10 @@ async function flushChannel(channel, { drain = false } = {}) {
   const epoch = transcriptEpoch;
   const processingOptions = transcriptProcessingOptions;
   const customVocabulary = activeCustomVocabulary;
+  // VAD and provider waits can resume long after an immediate stop or session
+  // reset. Every resume point re-checks ownership instead of letting the stale
+  // attempt mark the replacement run busy or transcribe its detached audio.
+  const stale = () => generation !== sessionGeneration || epoch !== transcriptEpoch;
   const active = flushPromises[channel];
   if (active && active.generation === generation && active.epoch === epoch) return active.task;
   const task = (async () => {
@@ -1521,9 +1525,10 @@ async function flushChannel(channel, { drain = false } = {}) {
     retryQueues[channel] = [];
     if (!chunks.length && !pendingRetry.length) return;
     // Prepend any preserved retry chunks so older audio is not lost on error.
-    let allChunks = pendingRetry.length ? [...pendingRetry, ...chunks] : chunks;
-    // Trim allChunks itself to stay bounded BEFORE using it for both retryQueues and Buffer.concat.
-    if (allChunks.length > MAX_RETRY_CHUNKS) allChunks = allChunks.slice(-MAX_RETRY_CHUNKS);
+    // Recovered fallback audio can be far larger than the live buffer bound
+    // (the manager accepts up to 120 s), so keep every accepted chunk here and
+    // let the transcription loop below split it into provider-sized batches.
+    const allChunks = pendingRetry.length ? [...pendingRetry, ...chunks] : chunks;
     // retryQueues holds this attempt's audio if it fails; it never owns newer PCM.
     retryQueues[channel] = allChunks;
     const pcm = Buffer.concat(allChunks);
@@ -1537,13 +1542,19 @@ async function flushChannel(channel, { drain = false } = {}) {
         && isSpeechDetectorInstalled()) {
       try {
         await defaultSpeechWorker.loadVad();
+        if (stale()) return;
         const detected = await defaultSpeechWorker.detectSpeech(pcm);
+        if (stale()) return;
         hasSpeech = detected.speech === true;
         vadSegments = Array.isArray(detected.segments) ? detected.segments : [];
       } catch {
+        // A cancelled detector request after a stop/reset is not a VAD failure;
+        // the old attempt must exit instead of falling back to RMS.
+        if (stale()) return;
         // The neural detector is an enhancement; RMS remains the fail-safe.
       }
     }
+    if (stale()) return;
     if (!hasSpeech) { retryQueues[channel] = []; return; }
     const segmentRanges = vadSegments.length ? mapVadSegments(pcm, vadSegments) : [];
 
@@ -1566,19 +1577,63 @@ async function flushChannel(channel, { drain = false } = {}) {
         return;
       }
       const flushStartedAt = Date.now();
+      // Segment offsets describe audio captured before this flush began, so the
+      // base is when the clip was captured, not when transcription happened.
+      // Without this, a fast local model stamps speech into the future.
+      const bytesPerMs = (AUDIO_SAMPLE_RATE * 2) / 1000;
+      const captureStartedAt = flushStartedAt - Math.round(pcm.length / bytesPerMs);
+      const segments = [];
       let res;
       if (segmentRanges.length) {
-        const segments = [];
+        // Split unusually long detector ranges into provider-sized requests too.
+        const averageChunkBytes = Math.max(1, Math.round(pcm.length / allChunks.length));
+        const maxRangeBytes = Math.max(averageChunkBytes, MAX_RETRY_CHUNKS * averageChunkBytes);
         for (const range of segmentRanges) {
-          const part = await stt.transcribe(pcm.subarray(range.startByte, range.endByte));
-          if (part.error) { res = part; break; }
-          if (part.text && part.text.trim()) segments.push({ text: part.text.trim(), startMs: range.startMs, provider: part.provider });
+          const rangeBytes = Math.max(0, range.endByte - range.startByte);
+          for (let offset = 0; offset < rangeBytes; offset += maxRangeBytes) {
+            if (stale()) return;
+            const startByte = range.startByte + offset;
+            const endByte = Math.min(range.endByte, startByte + maxRangeBytes);
+            const part = await stt.transcribe(pcm.subarray(startByte, endByte));
+            if (stale()) return;
+            if (part.error) { res = part; break; }
+            if (part.text && part.text.trim()) {
+              segments.push({
+                text: part.text.trim(),
+                startMs: range.startMs + Math.round(offset / bytesPerMs),
+                provider: part.provider,
+              });
+            }
+          }
+          if (res) break;
         }
         if (!res) res = { text: segments.map((segment) => segment.text).join(' '), provider: segments[0] && segments[0].provider, segments };
+      } else if (allChunks.length > MAX_RETRY_CHUNKS) {
+        // Recovered audio can span many seconds. Transcribe it sequentially in
+        // bounded batches instead of trimming to the last provider-sized window.
+        let byteOffset = 0;
+        for (let start = 0; start < allChunks.length; start += MAX_RETRY_CHUNKS) {
+          if (stale()) return;
+          const batch = allChunks.slice(start, start + MAX_RETRY_CHUNKS);
+          const batchPcm = Buffer.concat(batch);
+          const part = await stt.transcribe(batchPcm);
+          if (stale()) return;
+          if (part.error) { res = part; break; }
+          if (part.text && part.text.trim()) {
+            segments.push({ text: part.text.trim(), startMs: Math.round(byteOffset / bytesPerMs), provider: part.provider });
+          }
+          byteOffset += batchPcm.length;
+        }
+        if (!res) {
+          res = segments.length
+            ? { text: segments.map((segment) => segment.text).join(' '), provider: segments[0].provider, segments }
+            : { text: '' };
+        }
       } else {
         res = await stt.transcribe(pcm);
+        if (stale()) return;
       }
-      if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
+      if (stale()) return;
       if (res.error) {
         if (res.error.code === 'offline_cancelled') return;
         handleSttError(res.error);
@@ -1591,7 +1646,7 @@ async function flushChannel(channel, { drain = false } = {}) {
       if (sttFailures || sttBackoffUntil) { sttFailures = 0; sttBackoffUntil = 0; } // recovered
       if (Array.isArray(res.segments) && res.segments.length) {
         for (const segment of res.segments) {
-          recordTranscript({ channel, text: segment.text, ts: flushStartedAt + segment.startMs }, generation, epoch, processingOptions);
+          recordTranscript({ channel, text: segment.text, ts: captureStartedAt + segment.startMs }, generation, epoch, processingOptions);
         }
       } else if (res.text && res.text.trim()) {
         recordTranscript({ channel, text: res.text }, generation, epoch, processingOptions);
@@ -1708,6 +1763,32 @@ function activateBatchTranscription(reason) {
   if (reason) send('status', { message: `Realtime transcription unavailable (${reason}). Using batch transcription for this listening session.` });
 }
 
+// The manager hands back every chunk it accepted before a stream failure. Keep
+// them in the retry queue rather than the live buffer (which is deliberately
+// capped), so flushChannel can transcribe the whole clip in bounded batches.
+function queueRecoveredAudioForBatch(channel, recovered) {
+  const recoveredChunks = Array.isArray(recovered)
+    ? recovered.filter((pcm) => Buffer.isBuffer(pcm) && pcm.length)
+    : [];
+  const live = buffers[channel] || [];
+  buffers[channel] = [];
+  retryQueues[channel] = [...(retryQueues[channel] || []), ...recoveredChunks, ...live];
+}
+
+// Replaying buffered startup audio is not live capture: a tight loop puts four
+// chunks in flight before any worker ack settles, then the fifth looks like
+// backpressure and abandons streaming. Give each append a turn to settle, and
+// stop early when the run is no longer current so Stop is never blocked behind
+// the replay.
+async function replayBufferedStartupAudio(manager, channel, chunks, isCurrent) {
+  for (let index = 0; index < chunks.length; index += 1) {
+    if (!isCurrent()) return chunks.slice(index);
+    if (!manager.append(channel, chunks[index])) return chunks.slice(index);
+    if (index + 1 < chunks.length) await new Promise((resolve) => setImmediate(resolve));
+  }
+  return [];
+}
+
 async function startTranscriptionPipeline() {
   stopFlushLoop();
   const previous = realtimeManager;
@@ -1795,18 +1876,14 @@ async function startTranscriptionPipeline() {
         manager.stop().then(() => {
           if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) return;
           localSpeechStreamManager = null;
-          for (const channel of enabledChannels) {
-            buffers[channel] = [...recoveredAudio[channel], ...buffers[channel]].slice(-MAX_BATCH_CHUNKS);
-          }
+          for (const channel of enabledChannels) queueRecoveredAudioForBatch(channel, recoveredAudio[channel]);
           transcriptionMode = 'batch';
           startFlushLoop();
         }).catch(async (stopError) => {
           await stopSpeechWorkerAfterStreamFailure(stopError);
           if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) return;
           localSpeechStreamManager = null;
-          for (const channel of enabledChannels) {
-            buffers[channel] = [...recoveredAudio[channel], ...buffers[channel]].slice(-MAX_BATCH_CHUNKS);
-          }
+          for (const channel of enabledChannels) queueRecoveredAudioForBatch(channel, recoveredAudio[channel]);
           transcriptionMode = 'batch';
           startFlushLoop();
         });
@@ -1814,7 +1891,7 @@ async function startTranscriptionPipeline() {
     });
     localSpeechStreamManager = manager;
     transcriptionMode = 'local-stream-starting';
-    manager.start().then(() => {
+    manager.start().then(async () => {
       if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) {
         return manager.stop();
       }
@@ -1822,13 +1899,26 @@ async function startTranscriptionPipeline() {
       for (const channel of enabledChannels) {
         const buffered = buffers[channel];
         buffers[channel] = [];
-        for (let index = 0; index < buffered.length; index += 1) {
-          if (!manager.append(channel, buffered[index])) {
-            buffers[channel] = buffered.slice(index);
-            break;
-          }
+        const remaining = await replayBufferedStartupAudio(
+          manager,
+          channel,
+          buffered,
+          () => localSpeechStreamManager === manager
+            && generation === sessionGeneration
+            && epoch === transcriptEpoch
+            && transcriptionMode === 'local-stream',
+        );
+        if (remaining.length
+            && localSpeechStreamManager === manager
+            && generation === sessionGeneration
+            && epoch === transcriptEpoch) {
+          buffers[channel] = [...remaining, ...buffers[channel]];
         }
       }
+      if (localSpeechStreamManager !== manager
+          || generation !== sessionGeneration
+          || epoch !== transcriptEpoch
+          || transcriptionMode !== 'local-stream') return;
       updateTranscriptionDiagnostics({ status: 'active' });
       send('transcription:state', { mode: 'local-stream', status: 'active', provider: 'local-gguf', modelId: localModel.id });
     }).catch(async (error) => {

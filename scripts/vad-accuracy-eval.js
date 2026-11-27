@@ -19,6 +19,7 @@
 //   npm run eval:vad -- --regenerate rebuild the cached audio fixtures
 //   npm run eval:vad -- --report     only re-evaluate the existing fixtures
 //   npm run eval:vad -- --check      exit 1 when metrics regress past thresholds
+//   npm run eval:vad -- --neural     also evaluate the pinned Silero detector
 //   npm run eval:vad -- --thresholds=file.json  override thresholds (JSON keys below)
 //
 // The generated WAVs live in node_modules/.cache/vad-eval (gitignored), so the
@@ -32,6 +33,10 @@ const { VoiceActivityDetector } = require('../src/voice-activity');
 const { AUDIO_SAMPLE_RATE } = require('../src/audio-config');
 const { rms16, pcmToWav } = require('../src/wav');
 const { validateOfflineConfig, transcribeOffline } = require('../src/offline-stt');
+const {
+  speechDetectorInfo, speechDetectorPaths, isSpeechDetectorInstalled,
+} = require('../src/speech-model-registry');
+const { createSpeechWorker, resolveSpeechWorkerBinary } = require('../src/speech-worker');
 
 const CACHE_DIR = path.join(__dirname, '..', 'node_modules', '.cache', 'vad-eval');
 
@@ -59,6 +64,10 @@ const TRAIL_MS = 1500;
 const DEFAULT_RATE = 150;
 const TRUNCATION_TOLERANCE_MS = 1500;
 const VAD_OPTIONS = { threshold: 160, silenceMs: 700, maxUtteranceMs: 20000 };
+// The speech worker resamples input to 16 kHz before running Silero, and
+// reports segment boundaries in samples at that rate.
+const NEURAL_SAMPLE_RATE = 16000;
+const NEURAL_OPTIONS = { threshold: 0.4, minSpeechMs: 160 };
 
 // -------- deterministic PRNG (mulberry32) --------
 function mulberry32(seed) {
@@ -310,6 +319,52 @@ function evaluatePcm(pcm, { sampleRate = AUDIO_SAMPLE_RATE, vadOptions = {}, fix
   return { events, starts, stops, utterances, durationMs: Math.round((pcm.length / 2 / sampleRate) * 1000) };
 }
 
+// Silero runs in the packaged speech worker, not in this process. Convert its
+// 16 kHz sample boundaries into the same shape evaluatePcm() returns so
+// buildRow() and summarize() score both detectors identically.
+function neuralSegmentsToResult(response, { pcm, sampleRate = AUDIO_SAMPLE_RATE } = {}) {
+  const segments = Array.isArray(response && response.segments) ? response.segments : [];
+  const utterances = segments
+    .map((segment) => ({
+      startMs: Math.round((Number(segment && segment.startSample) || 0) / NEURAL_SAMPLE_RATE * 1000),
+      endMs: Math.round((Number(segment && segment.endSample) || 0) / NEURAL_SAMPLE_RATE * 1000),
+      forced: false,
+    }))
+    .filter((utterance) => utterance.startMs >= 0 && utterance.endMs > utterance.startMs);
+  return {
+    starts: utterances.map((utterance) => utterance.startMs),
+    utterances,
+    durationMs: Math.round((pcm.length / 2 / sampleRate) * 1000),
+  };
+}
+
+async function evaluatePcmNeural(pcm, { worker, sampleRate = AUDIO_SAMPLE_RATE } = {}) {
+  if (!worker || typeof worker.detectSpeech !== 'function') {
+    throw new TypeError('Neural VAD evaluation requires a speech worker.');
+  }
+  const response = await worker.detectSpeech(pcm, NEURAL_OPTIONS);
+  return neuralSegmentsToResult(response, { pcm, sampleRate });
+}
+
+// Returns a human-readable reason when --neural cannot run, or null when the
+// detector and its worker are both installed. Checked before any fixture work
+// so the failure says what to install instead of a generic spawn error.
+function neuralDetectorProblem({
+  installed = isSpeechDetectorInstalled,
+  workerBinary = resolveSpeechWorkerBinary,
+  detector = speechDetectorInfo(),
+  paths = speechDetectorPaths(),
+} = {}) {
+  if (!installed()) {
+    return `--neural requires the pinned ${detector.name} detector, which is not installed. Install it from Settings or with prepareSpeechDetector(), then re-run. Expected: ${paths.model}`;
+  }
+  const binary = workerBinary();
+  if (!binary || !binary.available) {
+    return `--neural requires the local speech worker: ${(binary && binary.reason) || 'speech worker not found'}`;
+  }
+  return null;
+}
+
 function fixtureRegion(fixture) {
   // Expected speech region for boundary checks (cross-talk has two speakers and
   // is only checked for detection, not precise boundaries).
@@ -398,14 +453,19 @@ function staleFixtureIds(fixtures, manifestEntries = null) {
   return fixtures.filter((f) => hashById.get(f.id) !== fixtureHash(f)).map((f) => f.id);
 }
 
-async function runEvaluation(fixtures) {
+async function runEvaluation(fixtures, { neuralWorker = null } = {}) {
   const whisper = validateOfflineConfig(process.env);
   const rows = [];
+  const neuralRows = [];
   for (const fixture of fixtures) {
     const wav = fs.readFileSync(path.join(CACHE_DIR, `${fixture.id}.wav`));
     const { pcm, sampleRate } = decodeWav(wav);
     const result = evaluatePcm(pcm, { sampleRate, fixture });
     const row = buildRow(fixture, result);
+    if (neuralWorker) {
+      const neuralResult = await evaluatePcmNeural(pcm, { worker: neuralWorker, sampleRate });
+      neuralRows.push(buildRow(fixture, neuralResult));
+    }
     if (whisper.ready && fixture.kind === 'speech' && !fixture.overlay) {
       try {
         const transcript = await transcribeOffline(pcmToWav(pcm, sampleRate), {
@@ -422,7 +482,7 @@ async function runEvaluation(fixtures) {
     }
     rows.push(row);
   }
-  return { rows, whisperReady: whisper.ready };
+  return { rows, whisperReady: whisper.ready, neuralRows };
 }
 
 // One evaluated row. The detected end is the last utterance's endMs — a number
@@ -501,8 +561,25 @@ function coverageIssue(evaluatedFixtures, fullFixtures) {
   return null;
 }
 
-function printReport(summary, rows, whisperReady) {
+function printNeuralReport(label, summary, rows) {
+  console.log(`\n${label} — ${summary.fixtures} fixtures`);
+  console.log(`  empty-turn rate:      ${Math.round(summary.emptyTurnRate * 100)}%`);
+  console.log(`  false-negative rate:  ${Math.round(summary.falseNegativeRate * 100)}%`);
+  console.log(`  truncated utterances: ${summary.truncationCount}`);
+  console.log(`  mean boundary error:  start ${summary.meanStartErrorMs} ms, end ${summary.meanEndErrorMs} ms`);
+  for (const row of rows) {
+    const markers = [
+      row.kind === 'speech' && !row.detected ? 'MISSED' : null,
+      row.kind === 'empty' && row.detected ? 'FALSE-POSITIVE' : null,
+      row.endErrMs !== null && row.endErrMs > TRUNCATION_TOLERANCE_MS ? 'TRUNCATED' : null,
+    ].filter(Boolean);
+    console.log(`  ${row.id.padEnd(20)} ${row.category.padEnd(12)} ${String(row.utterances).padStart(2)} utt ${markers.length ? `[${markers.join(', ')}]` : ''}`);
+  }
+}
+
+function printReport(summary, rows, whisperReady, neural = null) {
   console.log(`\nVAD accuracy evaluation — ${summary.fixtures} fixtures`);
+  console.log('  detector:             RMS energy (fallback)');
   console.log(`  empty-turn rate:      ${Math.round(summary.emptyTurnRate * 100)}%`);
   console.log(`  false-negative rate:  ${Math.round(summary.falseNegativeRate * 100)}%`);
   console.log(`  truncated utterances: ${summary.truncationCount}`);
@@ -522,6 +599,7 @@ function printReport(summary, rows, whisperReady) {
     const werText = row.wer === undefined || row.wer === null ? '' : ` wer=${Math.round(row.wer * 100)}%`;
     console.log(`  ${row.id.padEnd(20)} ${row.category.padEnd(12)} ${String(row.utterances).padStart(2)} utt ${markers.length ? `[${markers.join(', ')}]` : ''}${werText}`);
   }
+  if (neural) printNeuralReport(neural.label, neural.summary, neural.rows);
 }
 
 async function main() {
@@ -529,11 +607,16 @@ async function main() {
   const regenerate = args.includes('--regenerate');
   const reportOnly = args.includes('--report');
   const enforce = args.includes('--check');
+  const neural = args.includes('--neural');
   const thresholdsArg = args.find((arg) => arg.startsWith('--thresholds='));
   let thresholds = THRESHOLDS;
   if (thresholdsArg) {
     const file = path.resolve(thresholdsArg.slice('--thresholds='.length));
     thresholds = JSON.parse(fs.readFileSync(file, 'utf8'));
+  }
+  if (neural) {
+    const problem = neuralDetectorProblem();
+    if (problem) throw new Error(problem);
   }
   const fixtures = buildFixtures().filter((fixture) => {
     if (fixture.kind !== 'speech') return true;
@@ -553,30 +636,49 @@ async function main() {
       return;
     }
   }
-  const { rows, whisperReady } = await runEvaluation(fixtures);
-  const summary = summarize(rows);
-  printReport(summary, rows, whisperReady);
-  if (enforce) {
-    const coverage = coverageIssue(fixtures, buildFixtures());
-    if (coverage) {
-      console.log(`\nCHECK REFUSED: ${coverage}; the gate would pass vacuously.`);
-      console.log('Install the missing macOS voices (or run on a machine with the full set) before --check.');
-      process.exitCode = 1;
-    } else {
-      const violations = checkThresholds(summary, thresholds);
-      if (violations.length) {
-        console.log('\nTHRESHOLD VIOLATIONS:');
-        for (const violation of violations) {
-          console.log(`  ${violation.name}: ${violation.actual} exceeds limit ${violation.limit}`);
-        }
+  let neuralWorker = null;
+  try {
+    if (neural) {
+      neuralWorker = createSpeechWorker();
+      await neuralWorker.loadVad();
+    }
+    const { rows, whisperReady, neuralRows } = await runEvaluation(fixtures, { neuralWorker });
+    const summary = summarize(rows);
+    const neuralReport = neural
+      ? { label: `Silero VAD (neural) — ${speechDetectorInfo().name}`, summary: summarize(neuralRows), rows: neuralRows }
+      : null;
+    printReport(summary, rows, whisperReady, neuralReport);
+    if (enforce) {
+      const coverage = coverageIssue(fixtures, buildFixtures());
+      if (coverage) {
+        console.log(`\nCHECK REFUSED: ${coverage}; the gate would pass vacuously.`);
+        console.log('Install the missing macOS voices (or run on a machine with the full set) before --check.');
         process.exitCode = 1;
       } else {
-        console.log('\nAll thresholds passed.');
+        const violations = checkThresholds(summary, thresholds);
+        if (violations.length) {
+          console.log('\nTHRESHOLD VIOLATIONS:');
+          for (const violation of violations) {
+            console.log(`  ${violation.name}: ${violation.actual} exceeds limit ${violation.limit}`);
+          }
+          process.exitCode = 1;
+        } else {
+          console.log('\nAll thresholds passed.');
+        }
       }
     }
+    const report = {
+      generatedAt: new Date().toISOString(),
+      summary,
+      thresholds,
+      rows,
+      ...(neuralReport ? { neural: { summary: neuralReport.summary, rows: neuralRows } } : {}),
+    };
+    fs.writeFileSync(path.join(CACHE_DIR, 'report.json'), JSON.stringify(report, null, 2));
+    console.log(`\nFull report: ${path.join(CACHE_DIR, 'report.json')}`);
+  } finally {
+    if (neuralWorker) await neuralWorker.stop();
   }
-  fs.writeFileSync(path.join(CACHE_DIR, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), summary, thresholds, rows }, null, 2));
-  console.log(`\nFull report: ${path.join(CACHE_DIR, 'report.json')}`);
 }
 
 if (require.main === module) {
@@ -599,6 +701,11 @@ module.exports = {
   staleFixtureIds,
   buildRow,
   evaluatePcm,
+  evaluatePcmNeural,
+  neuralSegmentsToResult,
+  neuralDetectorProblem,
+  NEURAL_SAMPLE_RATE,
+  NEURAL_OPTIONS,
   normalizeText,
   wer,
   summarize,

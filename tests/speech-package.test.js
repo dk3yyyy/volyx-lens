@@ -56,7 +56,9 @@ test('speech worker package identity and native build hooks are complete', () =>
   assert.ok(packageJson.build.mac.binaries.includes('Contents/Resources/native/volyx-speech-worker'));
   assert.match(fs.readFileSync(path.join(root, 'scripts', 'build-native.js'), 'utf8'), /buildSpeechWorker\(context\)/);
   assert.match(fs.readFileSync(path.join(root, 'scripts', 'before-pack.js'), 'utf8'), /Promise\.all\(\[buildVision\(context\), buildSpeech\(context\)\]\)/);
-  assert.equal(packageJson.scripts['eval:speech'], undefined);
+  // The benchmark doc points at `npm run eval:speech`; the script must exist and
+  // resolve to the speech benchmark. There is still no diarization evaluator.
+  assert.match(packageJson.scripts['eval:speech'], /speech-benchmark\.js/);
   assert.equal(packageJson.scripts['eval:diarization'], undefined);
 });
 

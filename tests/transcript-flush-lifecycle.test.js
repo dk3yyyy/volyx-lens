@@ -47,6 +47,7 @@ function createFlushHarness(overrides = {}) {
     STT_RETRY_MAX_MS: 120000,
     MIN_BYTES: 32,
     RMS_GATE: 240,
+    AUDIO_SAMPLE_RATE: 24000,
     MAX_RETRY_CHUNKS: 180,
     transcriptionMode: 'batch',
     realtimeManager: null,

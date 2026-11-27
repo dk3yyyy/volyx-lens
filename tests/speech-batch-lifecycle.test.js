@@ -15,7 +15,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function createFlushHarness({ vad = null } = {}) {
+function createFlushHarness({ vad = null, detectSpeech = null } = {}) {
   const requests = [];
   const recorded = [];
   const vadCalls = { load: 0, detect: 0 };
@@ -35,6 +35,7 @@ function createFlushHarness({ vad = null } = {}) {
     sttBackoffUntil: 0,
     MAX_RETRY_CHUNKS: 100,
     MIN_BYTES: 1,
+    AUDIO_SAMPLE_RATE: 24000,
     RMS_GATE: 100,
     rms16: () => 1_000,
     getSpeechModel: (id) => (vad && id === 'local-stream-model' ? { id, runtime: 'transcribe-cpp', streaming: true } : null),
@@ -42,10 +43,10 @@ function createFlushHarness({ vad = null } = {}) {
     mapVadSegments: (pcm, segments) => segments.map((segment) => ({ startByte: segment.startByte, endByte: segment.endByte, startMs: segment.startMs })),
     defaultSpeechWorker: {
       loadVad: async () => { vadCalls.load += 1; },
-      detectSpeech: async () => {
+      detectSpeech: detectSpeech || (async () => {
         vadCalls.detect += 1;
         return vad || { speech: true, segments: [] };
-      },
+      }),
     },
     store: { getSettings: () => ({ transcription: vad ? { offlineEnabled: true, localModelId: 'local-stream-model' } : {}, audio: {} }) },
     personalContextStore: { getEnabledDocuments: () => [] },
@@ -64,8 +65,14 @@ function createFlushHarness({ vad = null } = {}) {
   const start = main.indexOf('async function flushChannel(');
   const end = main.indexOf('async function drainBatchBuffers()', start);
   assert.ok(start >= 0 && end > start, 'main.js contains the batch flush function');
-  const flushChannel = vm.runInNewContext(`(${main.slice(start, end)})`, context);
-  return { context, requests, recorded, vadCalls, flushChannel };
+  const queueStart = main.indexOf('function queueRecoveredAudioForBatch(');
+  const queueEnd = main.indexOf('async function replayBufferedStartupAudio(', queueStart);
+  assert.ok(queueStart >= 0 && queueEnd > queueStart, 'main.js preserves recovered fallback audio');
+  const [flushChannel, queueRecoveredAudioForBatch] = vm.runInNewContext(
+    `[(${main.slice(start, end)}), (${main.slice(queueStart, queueEnd)})]`,
+    context,
+  );
+  return { context, requests, recorded, vadCalls, flushChannel, queueRecoveredAudioForBatch };
 }
 
 test('a same-epoch flush detaches old audio without erasing newer PCM', async () => {
@@ -163,4 +170,126 @@ test('VAD segments map to bounded per-range batches and per-segment transcript t
   assert.deepEqual(recorded.map((entry) => entry.event.text), ['first', 'second']);
   assert.equal(typeof recorded[0].event.ts, 'number');
   assert.ok(recorded[1].event.ts >= recorded[0].event.ts + 500);
+});
+
+test('VAD segment timestamps are anchored to when the audio was captured', async () => {
+  const bytesPerSecond = 24000 * 2;
+  const pcm = Buffer.alloc(bytesPerSecond * 4); // four seconds of buffered audio
+  const vad = {
+    speech: true,
+    segments: [{ startByte: bytesPerSecond, endByte: bytesPerSecond * 2, startMs: 1000 }],
+  };
+  const { context, requests, recorded, flushChannel } = createFlushHarness({ vad });
+  context.buffers.you.push(pcm);
+
+  const before = Date.now();
+  const flushing = flushChannel('you');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.length, 1);
+  requests[0].resolve({ text: 'past audio', provider: 'openai' });
+  await flushing;
+
+  const ts = recorded[0].event.ts;
+  // The segment starts one second into a clip captured four seconds before the
+  // flush: its timestamp must be in the past, not ~1s in the future.
+  assert.ok(ts < before, `expected a captured-time timestamp, got ${ts} (now ${before})`);
+  assert.ok(ts >= before - 4500, 'the captured-time base is the start of the buffered clip');
+});
+
+test('batch fallback keeps every recovered chunk and transcribes it in bounded batches', async () => {
+  const { context, requests, recorded, flushChannel, queueRecoveredAudioForBatch } = createFlushHarness();
+  const recovered = Array.from({ length: 250 }, (_, index) => Buffer.from([index % 251]));
+  context.buffers.you.push(Buffer.from([250]), Buffer.from([251]));
+
+  queueRecoveredAudioForBatch('you', recovered);
+
+  assert.match(main, /queueRecoveredAudioForBatch\(channel, recoveredAudio\[channel\]\)/, 'fallback queues the recovered audio');
+  assert.doesNotMatch(main, /slice\(-MAX_BATCH_CHUNKS\)/, 'fallback no longer trims recovered audio');
+  assert.equal(context.retryQueues.you.length, 252, 'recovered and live audio are both preserved');
+  assert.equal(context.buffers.you.length, 0, 'the live buffer no longer holds the queued audio');
+
+  const flushing = flushChannel('you');
+  const sizes = [];
+  for (let index = 0; index < 3; index += 1) {
+    while (requests.length <= index) await new Promise((resolve) => setImmediate(resolve));
+    sizes.push(requests[index].pcm.length);
+    requests[index].resolve({ text: `batch ${index + 1}` });
+  }
+  await flushing;
+
+  assert.deepEqual(sizes, [100, 100, 52], 'each request is capped at MAX_RETRY_CHUNKS, in order');
+  assert.deepEqual(recorded.map((entry) => entry.event.text), ['batch 1', 'batch 2', 'batch 3']);
+  assert.equal(context.retryQueues.you.length, 0, 'successful batches leave nothing to retry');
+});
+
+test('a VAD wait that resumes after a reset exits instead of transcribing stale audio', async () => {
+  const gate = deferred();
+  const { context, requests, recorded, flushChannel } = createFlushHarness({
+    vad: { speech: true, segments: [] },
+    detectSpeech: async () => {
+      await gate.promise;
+      const error = new Error('detector request was cancelled');
+      error.code = 'speech_vad_cancelled';
+      throw error;
+    },
+  });
+  context.buffers.you.push(Buffer.alloc(64));
+
+  const flushing = flushChannel('you');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // Immediate teardown / new session invalidates this flush while the detector
+  // is still pending. A stopped detector then rejects as an ordinary VAD error.
+  context.transcriptEpoch += 1;
+  context.state.transcribing.you = false;
+  gate.resolve();
+  await flushing;
+
+  assert.equal(requests.length, 0, 'stale audio never reaches the provider');
+  assert.deepEqual(recorded, [], 'stale audio is not recorded into the new session');
+  assert.equal(context.state.transcribing.you, false, 'the stale flush never marks the new run busy');
+});
+
+test('startup replay yields between appends so buffered audio does not trip backpressure', async () => {
+  const start = main.indexOf('async function replayBufferedStartupAudio(');
+  const end = main.indexOf('async function startTranscriptionPipeline(', start);
+  assert.ok(start >= 0 && end > start, 'main.js contains the startup replay helper');
+  const replayBufferedStartupAudio = vm.runInNewContext(`(${main.slice(start, end)})`, { setImmediate });
+  assert.match(main, /const remaining = await replayBufferedStartupAudio\(/, 'startup uses the replay helper');
+
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const appended = [];
+  const manager = {
+    append(channel, pcm) {
+      if (inFlight >= 4) return false;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      appended.push(pcm);
+      setImmediate(() => { inFlight -= 1; });
+      return true;
+    },
+  };
+  const chunks = Array.from({ length: 12 }, (_, index) => Buffer.from([index]));
+
+  const remaining = await replayBufferedStartupAudio(manager, 'you', chunks, () => true);
+
+  assert.equal(remaining.length, 0, 'every buffered chunk was replayed');
+  assert.equal(appended.length, 12);
+  assert.ok(maxInFlight <= 4, `the replay never exceeds the in-flight cap (saw ${maxInFlight})`);
+});
+
+test('startup replay stops promptly when the run is no longer current', async () => {
+  const start = main.indexOf('async function replayBufferedStartupAudio(');
+  const end = main.indexOf('async function startTranscriptionPipeline(', start);
+  const replayBufferedStartupAudio = vm.runInNewContext(`(${main.slice(start, end)})`, { setImmediate });
+
+  const appended = [];
+  const manager = { append(channel, pcm) { appended.push(pcm); return true; } };
+  const chunks = Array.from({ length: 8 }, (_, index) => Buffer.from([index]));
+
+  const remaining = await replayBufferedStartupAudio(manager, 'you', chunks, () => appended.length < 3);
+
+  assert.equal(appended.length, 3, 'a stop/reset ends the replay without draining the queue');
+  assert.deepEqual(Array.from(remaining), chunks.slice(3), 'unreplayed audio is handed back instead of dropped');
 });

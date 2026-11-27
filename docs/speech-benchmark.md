@@ -27,7 +27,9 @@ Evaluate the neural detector against the same corpus:
 npm run eval:vad -- --report --neural
 ```
 
-This requires the pinned Silero detector to be installed. RMS evaluation still runs alongside it, so the fallback remains covered.
+`--neural` runs the pinned Silero VAD v6.2 detector through the local speech worker in addition to the RMS energy detector, so the fallback stays covered in the same run. The RMS summary prints first, the Silero summary follows, and the JSON report keeps the neural summary and rows under `neural`.
+
+This requires the pinned Silero detector and the local speech worker binary to be installed. When either is missing, the command exits 1 with a message naming what is missing (for the detector, its expected path); it does not silently fall back to RMS. `--check` still gates only the RMS metrics.
 
 ## Corpus
 

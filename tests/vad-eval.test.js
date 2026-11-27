@@ -4,6 +4,7 @@ const {
   mulberry32, decodeWav, silencePcm, noisePcm, scaleToRms, mixPcm, insertSilenceGap,
   buildFixtures, fixtureHash, staleFixtureIds, buildRow, evaluatePcm, summarize, coverageIssue, normalizeText, wer,
   THRESHOLDS, checkThresholds,
+  neuralSegmentsToResult, evaluatePcmNeural, neuralDetectorProblem, NEURAL_OPTIONS,
 } = require('../scripts/vad-accuracy-eval');
 const { pcmToWav } = require('../src/wav');
 
@@ -191,4 +192,73 @@ test('evaluatePcm keeps speech continuing after the maxUtteranceMs cap', () => {
   assert.ok(result.utterances[0].endMs <= 500);
   assert.equal(result.utterances.at(-1).forced, false);
   assert.ok(result.utterances.at(-1).endMs >= 950, 'continuation reaches the end of the buffer');
+});
+
+test('neuralSegmentsToResult converts 16 kHz sample offsets to milliseconds', () => {
+  // 3 seconds at 24 kHz: 500 ms lead, 1 s speech, 1.5 s trail.
+  const pcm = Buffer.alloc(24000 * 2 * 3);
+  const result = neuralSegmentsToResult({
+    segments: [
+      { startSample: 8000, endSample: 24000 }, // 500 ms to 1500 ms at 16 kHz
+      { startSample: 40000, endSample: 40000 }, // zero-length, dropped
+      { startSample: 48000, endSample: 32000 }, // inverted, dropped
+    ],
+  }, { pcm, sampleRate: 24000 });
+  assert.deepEqual(result.utterances, [{ startMs: 500, endMs: 1500, forced: false }]);
+  assert.deepEqual(result.starts, [500]);
+  assert.equal(result.durationMs, 3000);
+});
+
+test('neural rows flow through buildRow and summarize like RMS rows', () => {
+  const pcm = Buffer.alloc(24000 * 2 * 3);
+  const speechFixture = { id: 'neural-speech', category: 'technical', kind: 'speech', text: 'a fixture' };
+  const speechRow = buildRow(speechFixture, neuralSegmentsToResult({
+    segments: [{ startSample: 8000, endSample: 24000 }],
+  }, { pcm, sampleRate: 24000 }));
+  assert.equal(speechRow.detected, true);
+  assert.equal(speechRow.startErrMs, 0);
+  assert.equal(speechRow.endErrMs, 0, 'exact end boundary must produce zero error');
+
+  const emptyFixture = { id: 'neural-empty', category: 'empty', kind: 'empty', empty: 'silence' };
+  const missedRow = buildRow(speechFixture, neuralSegmentsToResult({ segments: [] }, { pcm, sampleRate: 24000 }));
+  const falsePositiveRow = buildRow(emptyFixture, neuralSegmentsToResult({
+    segments: [{ startSample: 0, endSample: 16000 }],
+  }, { pcm, sampleRate: 24000 }));
+  const summary = summarize([missedRow, falsePositiveRow]);
+  assert.equal(summary.falseNegativeRate, 1, 'a speech fixture with no segment is a false negative');
+  assert.equal(summary.emptyTurnRate, 1, 'an empty fixture with a segment is a false positive');
+});
+
+test('evaluatePcmNeural sends Silero options to the worker and maps its response', async () => {
+  let received = null;
+  const worker = {
+    detectSpeech: async (pcm, options) => {
+      received = { length: pcm.length, options };
+      return { speech: true, segments: [{ startSample: 8000, endSample: 24000 }] };
+    },
+  };
+  const result = await evaluatePcmNeural(Buffer.alloc(24000 * 2 * 3), { worker, sampleRate: 24000 });
+  assert.deepEqual(received.options, NEURAL_OPTIONS);
+  assert.equal(result.utterances.length, 1);
+  await assert.rejects(evaluatePcmNeural(Buffer.alloc(4)), /speech worker/);
+});
+
+test('neuralDetectorProblem explains which piece is missing', () => {
+  const detector = { name: 'Silero VAD v6.2' };
+  const paths = { model: '/models/silero-vad-v6.2-F32.gguf' };
+  const missingDetector = neuralDetectorProblem({
+    installed: () => false, workerBinary: () => ({ available: true }), detector, paths,
+  });
+  assert.match(missingDetector, /Silero VAD v6\.2/);
+  assert.match(missingDetector, /prepareSpeechDetector/);
+  assert.match(missingDetector, /silero-vad-v6\.2-F32\.gguf/);
+
+  assert.equal(neuralDetectorProblem({
+    installed: () => true, workerBinary: () => ({ available: true }), detector, paths,
+  }), null);
+
+  const missingWorker = neuralDetectorProblem({
+    installed: () => true, workerBinary: () => ({ available: false, reason: 'not built for linux/arm64' }), detector, paths,
+  });
+  assert.match(missingWorker, /not built for linux\/arm64/);
 });
