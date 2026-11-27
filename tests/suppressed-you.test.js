@@ -114,6 +114,9 @@ test('main and preload expose validated suppressed restore and checkpoint the ch
   assert.match(main, /restoreSuppressedYouSegment\(transcript, entry[\s\S]*?persistMeetingRecovery\(\{ immediate: true \}\)/);
   const restore = main.slice(main.indexOf('function restoreSuppressedYou('), main.indexOf('// Opt-in automatic assistance'));
   assert.doesNotMatch(restore, /rememberTranscriptSegment/, 'an explicit restore is never eligible for automatic echo removal again');
+  assert.doesNotMatch(restore, /finalizedSegmentWatermark = 0/, 'one restore does not resend every saved turn');
+  assert.match(main, /refreshedMeetingTurnSnapshots\.clear\(\)/, 'refresh markers do not survive a save');
+  assert.match(main, /refreshedIds\.has\(turn\.id\) \? segments : segments\.filter/, 'only affected turns are sent in full');
   assert.match(restore, /remapped = \[\]/, 'a split turn keeps the dedupe index aligned');
   assert.match(main, /const lateSuppressed = \[\];[\s\S]{0,800}if \(duplicate\)/, 'accepted finals do not throw when there is no duplicate');
   assert.match(preload, /transcriptRestoreSuppressed: \(id\) => ipcRenderer\.invoke\('transcript:restore-suppressed', id\)/);

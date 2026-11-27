@@ -422,6 +422,7 @@ const transcript = []; // grouped turns: { id, channel, text, rawText?, ts, segm
 const recentTranscriptSegments = []; // bounded processed finals used only for cross-talk detection
 const transcriptSegmentArrivalTimes = new Map();
 const refreshedMeetingTurnIds = new Set();
+const refreshedMeetingTurnSnapshots = new Map();
 const detectedQuestionsByTurn = new Map();
 let transcriptSegmentSequence = 0;
 let captureWarningTimer = null;
@@ -996,6 +997,7 @@ function resetTranscriptData() {
   suppressedYouSegments.length = 0;
   suppressedYouSequence = 0;
   refreshedMeetingTurnIds.clear();
+  refreshedMeetingTurnSnapshots.clear();
 }
 
 function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch, processingOptions = transcriptProcessingOptions) {
@@ -1104,6 +1106,9 @@ function restoreSuppressedYou(idOrIndex) {
   const index = findSuppressedYouIndex(suppressedYouSegments, idOrIndex);
   if (index < 0) return { restored: false, reason: 'not_found' };
   const [entry] = suppressedYouSegments.splice(index, 1);
+  const beforeRestore = new Map(transcript.map((turn) => [turn.id, {
+    id: turn.id, channel: turn.channel, ts: turn.ts, text: turn.text,
+  }]));
   const segmentId = ++transcriptSegmentSequence;
   const { turn, updated, remapped = [] } = restoreSuppressedYouSegment(transcript, entry, {
     segmentId,
@@ -1112,17 +1117,20 @@ function restoreSuppressedYou(idOrIndex) {
   // A split changes the turn id of later segments. Keep the dedupe index in
   // sync, but never add the explicitly restored line itself: a later matching
   // Them final must not delete the user's explicit restore a second time.
-  if (updated) refreshedMeetingTurnIds.add(turn.id);
+  if (updated) {
+    refreshedMeetingTurnIds.add(turn.id);
+    const snapshot = beforeRestore.get(turn.id);
+    if (snapshot) refreshedMeetingTurnSnapshots.set(turn.id, snapshot);
+  }
   for (const mapping of remapped) {
     refreshedMeetingTurnIds.add(mapping.oldTurnId);
+    const snapshot = beforeRestore.get(mapping.oldTurnId);
+    if (snapshot) refreshedMeetingTurnSnapshots.set(mapping.oldTurnId, snapshot);
     const movedIds = new Set(mapping.segments.map((segment) => segment.id));
     for (const recent of recentTranscriptSegments) {
       if (movedIds.has(recent.id)) recent.turnId = mapping.newTurnId;
     }
   }
-  // The surrounding turns changed text or grouping, so the next history write
-  // must refresh them instead of appending only the new line.
-  finalizedSegmentWatermark = 0;
   if (transcript.length > MAX_TRANSCRIPT_TURNS) {
     const removed = [];
     while (transcript.length > MAX_TRANSCRIPT_TURNS) {
@@ -2574,10 +2582,13 @@ function scheduleCaptureTimers() {
 }
 
 // -------- Meeting history --------
-function pendingFinalizeTurns() {
+function pendingFinalizeTurns(refreshedIds = new Set()) {
   const turns = [];
   for (const turn of transcript) {
-    const fresh = (turn.segments || []).filter((segment) => Number.isFinite(segment.id) && segment.id > finalizedSegmentWatermark);
+    const segments = (turn.segments || []).filter((segment) => Number.isFinite(segment.id));
+    // A restore can change a turn whose segments were already saved. Send that
+    // whole turn for replacement; every other turn keeps the normal delta.
+    const fresh = refreshedIds.has(turn.id) ? segments : segments.filter((segment) => segment.id > finalizedSegmentWatermark);
     if (!fresh.length) continue;
     const text = joinTranscriptSegments(fresh);
     if (!String(text || '').trim()) continue;
@@ -2612,10 +2623,11 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   // known capture start/end.
   const startedAt = opts.startedAt || captureStartedAt || lastCaptureStartedAt;
   const endedAt = opts.endedAt || lastCaptureEndedAt;
-  const pendingTurns = pendingFinalizeTurns();
+  const pendingTurns = pendingFinalizeTurns(refreshedMeetingTurnIds);
   const result = meetingStore.finalize({
     turns: pendingTurns,
     refreshedTurnIds: [...refreshedMeetingTurnIds],
+    refreshedTurns: [...refreshedMeetingTurnSnapshots.values()],
     suppressedYouSegments,
     enabled: true,
     reason,
@@ -2630,6 +2642,10 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   // A new session means the next stop belongs to a fresh record.
   if (reason === 'new-session') activeMeetingRecordId = null;
   advanceFinalizeWatermark();
+  if (result.saved || result.reason === 'no_new_content') {
+    refreshedMeetingTurnIds.clear();
+    refreshedMeetingTurnSnapshots.clear();
+  }
   // Anything dropped before this boundary can no longer be recovered, and the
   // draft is rebuilt from the new boundary, so the loss counter starts over.
   transcriptDroppedTurns = 0;
@@ -2668,7 +2684,7 @@ function writeMeetingRecovery() {
     // as finalize. Restoring a draft must never re-save finalized history.
     meetingRecovery.save({
       enabled: historyEnabled,
-      turns: pendingFinalizeTurns(),
+      turns: pendingFinalizeTurns(refreshedMeetingTurnIds),
       suppressedYouSegments,
       droppedTurns: transcriptDroppedTurns,
       clippedTurns: transcriptClippedTurns,
