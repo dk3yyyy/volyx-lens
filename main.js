@@ -312,8 +312,8 @@ async function restartThemAudioSource() {
   themSilenceWatchdog.reset();
   try {
     let result = null;
-    const restartEpoch = transcriptEpoch;
-    const stillWanted = () => state.capturing && desiredCapturing && transcriptEpoch === restartEpoch
+    const restartCapture = captureGeneration;
+    const stillWanted = () => state.capturing && desiredCapturing && captureGeneration === restartCapture
       && (store.getSettings().audio || {}).systemEnabled !== false;
     if (process.platform === 'darwin') {
       await systemAudioCapture.stop({ immediate: true });
@@ -378,6 +378,9 @@ function activeDisplayId() {
 
 // -------- capture / transcript state --------
 const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
+// Bumped only when capture itself starts or stops. A new transcript session
+// (New Session, Clear Transcript) must not cancel a source restart.
+let captureGeneration = 0;
 let sttDisabled = false; // hard-stop latch; set only for auth/model errors (401/403/model_not_found)
 let sttFailures = 0; // consecutive transient failures, drives exponential backoff
 let sttBackoffUntil = 0; // epoch ms; batch flushing is skipped while now < this
@@ -2890,6 +2893,7 @@ async function applyCaptureState(active) {
     }
     startDiarizationRecorder(audio);
     state.capturing = true;
+    captureGeneration += 1;
     // A listening session is a conversation boundary. Without this, the answers
     // from one meeting were replayed into the next one's first question, and a
     // "What should I say?" answer could be spoken in front of new participants
@@ -2920,6 +2924,7 @@ async function applyCaptureState(active) {
   else micEchoCoordinator.drain();
   acousticEchoFilter.reset();
   state.capturing = false;
+  captureGeneration += 1;
   themSilenceWatchdog.disarm();
   stopSlideTracking();
   lastCaptureEndedAt = Date.now();
@@ -3030,6 +3035,7 @@ async function shutdownAll() {
     state.busy = false;
     desiredCapturing = false;
     state.capturing = false;
+    captureGeneration += 1;
     lastCaptureEndedAt = Date.now();
     captureStartedAt = null;
     updateScheduler.stop();

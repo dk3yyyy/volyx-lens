@@ -175,12 +175,12 @@ test('main feeds and resets the watchdog around the capture lifecycle', () => {
   assert.match(main, /const \{ createThemSilenceWatchdog \} = require\('\.\/renderer\/them-silence-watchdog'\)/);
   assert.match(main, /themSilenceWatchdog\.feed\(rms16\(pcm\)\)/);
   assert.match(main, /themSilenceWatchdog\.arm\(audio\.systemEnabled !== false\)/);
-  assert.match(main, /state\.capturing = false;\s*\n\s*themSilenceWatchdog\.disarm\(\)/);
+  assert.match(main, /state\.capturing = false;[\s\S]{0,80}themSilenceWatchdog\.disarm\(\)/);
   assert.match(main, /async function restartThemAudioSource\(\)[\s\S]*?themSilenceWatchdog\.reset\(\)[\s\S]*?systemAudioCapture\.stop\(\{ immediate: true \}\)[\s\S]*?systemAudioCapture\.start\(\)/);
   // Linux stop() resolves before the child exits; the restart must wait for the
   // stopped state instead of racing start() against a held child.
   assert.ok(main.includes('if (!(await stopped))'), 'a stop timeout is not treated as a clean stop');
-  assert.ok(main.includes('stillWanted()'), 'a restart re-checks capture state after awaiting');
+  assert.ok(main.includes('captureGeneration === restartCapture'), 'a restart is cancelled by capture changes, not by a new transcript session');
   assert.ok(main.includes('result = await linuxMonitorCapture.start()'));
   assert.match(main, /sourceState === 'stopped' \|\| sourceState === 'failed'\) resolveLinuxSourceStopWaiters\(\)/);
   assert.match(main, /audio\.systemEnabled === false\) return null/);
