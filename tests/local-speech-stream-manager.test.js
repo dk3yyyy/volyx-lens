@@ -76,6 +76,28 @@ test('stream manager forwards the selected compute backend to every channel', as
   await manager.stop();
 });
 
+test('stream manager forwards vocabulary and language to every channel', async () => {
+  const worker = fakeWorker();
+  const seen = [];
+  const originalStart = worker.streamStart;
+  worker.streamStart = async (options) => {
+    seen.push({ channel: options.channel, language: options.language, vocabulary: options.vocabulary });
+    return originalStart(options);
+  };
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    language: 'en',
+    vocabulary: ['Volyx', 'Kubernetes'],
+  });
+  await manager.start();
+  assert.deepEqual(seen, [
+    { channel: 'you', language: 'en', vocabulary: ['Volyx', 'Kubernetes'] },
+    { channel: 'them', language: 'en', vocabulary: ['Volyx', 'Kubernetes'] },
+  ]);
+  await manager.stop();
+});
+
 test('cancels the first stream when the second channel cannot load', async () => {
   const worker = fakeWorker({ failChannel: 'them' });
   const manager = createLocalSpeechStreamManager({ worker, modelId: 'nemotron-3.5-asr-streaming-0.6b' });
@@ -210,15 +232,15 @@ test('a heartbeat refreshes the channel lease without new audio', async () => {
     worker,
     modelId: 'parakeet-unified-en',
     channels: ['you'],
-    // Wide margins on purpose: the point is that a heartbeat re-arms the
-    // lease, not that a loaded CI runner can schedule a 35 ms sleep exactly.
-    leaseMs: 300,
+    // Wait past the original deadline but before the refreshed one, so a
+    // heartbeat that returns true without re-arming the timer still fails.
+    leaseMs: 2000,
     onError: (error) => errors.push(error),
   });
   await manager.start();
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 1200));
   assert.equal(manager.heartbeat('you'), true);
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   assert.deepEqual(errors, [], 'the refreshed lease has not expired yet');
   assert.equal(manager.ready, true);
@@ -366,6 +388,55 @@ test('a final keeps audio captured after its boundary', async () => {
   const recovered = manager.takeRecoveryAudio();
   assert.equal(recovered.you.length, 1, 'only the post-boundary chunk remains for fallback');
   assert.deepEqual(recovered.you[0], next);
+  await manager.stop();
+});
+
+test('queues a boundary per final and keeps audio from after the last one', async () => {
+  const worker = fakeWorker();
+  const events = worker.events;
+  // Boundaries are fire-and-forget and finals are asynchronous: two VAD stops
+  // can happen before either final arrives. Record only; emit the finals by
+  // hand afterwards, in the order the worker would.
+  worker.streamBoundary = async (channel) => {
+    worker.calls.push(['boundary', channel]);
+    return { queued: true };
+  };
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    maxInFlight: 16,
+    vad: { sampleRate: 24000, threshold: 100, silenceMs: 100, minSpeechMs: 20 },
+  });
+  await manager.start();
+
+  const speech = (value) => {
+    const chunk = Buffer.alloc(4800 * 2);
+    for (let i = 0; i < 4800; i += 1) chunk.writeInt16LE(value, i * 2);
+    return chunk;
+  };
+  const loudA = speech(6000);
+  const quiet1 = Buffer.alloc(4800 * 2);
+  const loudB = speech(6500);
+  const quiet2 = Buffer.alloc(4800 * 2);
+  const post = speech(7000);
+
+  assert.equal(manager.append('you', loudA), true);
+  assert.equal(manager.append('you', quiet1), true);   // boundary #1 at 2 chunks
+  assert.equal(manager.append('you', loudB), true);
+  assert.equal(manager.append('you', quiet2), true);   // boundary #2 at 4 chunks
+  assert.equal(manager.append('you', post), true);     // belongs after boundary #2
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 2);
+
+  // The first final must consume only the first two chunks and leave the
+  // second utterance intact; the second consumes that and leaves `post`.
+  events.emit('event', { type: 'speech.final', channel: 'you', data: { text: 'first' } });
+  events.emit('event', { type: 'speech.final', channel: 'you', data: { text: 'second' } });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const recovered = manager.takeRecoveryAudio();
+  assert.equal(recovered.you.length, 1, 'audio after the last boundary survives both finals');
+  assert.deepEqual(recovered.you[0], post);
   await manager.stop();
 });
 

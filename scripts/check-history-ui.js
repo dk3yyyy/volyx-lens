@@ -101,6 +101,36 @@ function recordB() {
     turns: [{ id: 4, channel: 'them', text: 'standalone note about Volyx Lens', rawText: 'standalone note about volyx lens', ts: 1700005001000 }],
     notes: null,
     cleaned: null,
+    diarizationRuns: [{
+      version: 1,
+      recordingId: 'diar-run-b',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'very_high_latency',
+      sampleRate: 16000,
+      durationMs: 5000,
+      // This recorder was re-armed a minute into the meeting, so its times must
+      // start a minute after the meeting clock, not at the meeting start.
+      audioStartOffsetMs: 60000,
+      segments: [
+        { speakerId: 2, t0Ms: 2500, t1Ms: 4000 },
+        { speakerId: 1, t0Ms: 100, t1Ms: 2000 },
+      ],
+    }, {
+      // A legacy sidecar has no offset and must still render from the meeting start.
+      version: 1,
+      recordingId: 'diar-run-b-legacy',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'very_high_latency',
+      sampleRate: 16000,
+      durationMs: 0,
+      segments: [],
+    }],
   };
 }
 
@@ -154,6 +184,14 @@ function listedRecords() {
 }
 
 ipcMain.handle('settings:get', () => settings);
+ipcMain.handle('speech-diarizer:get', () => ({
+  id: 'diar-sortformer-4spk',
+  name: 'Sortformer 4-speaker diarizer',
+  runtimeAvailable: true,
+  installed: false,
+  artifact: { bytes: 139310336 },
+  license: { name: 'NVIDIA Open Model License' },
+}));
 ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
 ipcMain.handle('personal-context:get', () => ({ documents: { resume: { present: false, enabled: false }, jobDescription: { present: false, enabled: false } }, secure: true, locked: false }));
 ipcMain.handle('transcript:get', () => []);
@@ -629,9 +667,58 @@ app.whenReady().then(async () => {
   const processedOnly = await run(win, `({
     label: document.querySelector('#meeting-view-toggle').textContent,
     firstText: document.querySelector('#meeting-history-turns .history-text').textContent,
+    speaker: document.querySelector('#meeting-history-turns .history-speaker').textContent,
+    participantHint: document.querySelector('#meeting-participant-hint')?.textContent || '',
+    diarizationHidden: document.querySelector('#meeting-diarization').classList.contains('hidden'),
+    diarizationText: document.querySelector('#meeting-diarization').textContent,
+    diarizationTitle: document.querySelector('#meeting-diarization .history-diarization-run h3')?.textContent || '',
+    diarizationTitles: [...document.querySelectorAll('#meeting-diarization .history-diarization-run h3')].map((node) => node.textContent),
+    diarizationItems: [...document.querySelectorAll('#meeting-diarization .history-diarization-list li')].map((item) => item.textContent),
+    diarizationSlots: [...document.querySelectorAll('#meeting-diarization .history-diarization-list li')].map((item) => item.className),
+    diarizationList: (() => {
+      const list = document.querySelector('#meeting-diarization .history-diarization-list');
+      if (!list) return null;
+      const style = getComputedStyle(list);
+      return { listStyle: style.listStyleType, overflowY: style.overflowY, maxHeight: style.maxHeight };
+    })(),
   })`);
   assert.equal(processedOnly.label, 'Processed');
   assert.match(processedOnly.firstText, /Volyx Lens$/);
+  assert.equal(processedOnly.speaker, 'Ada Lovelace', 'diarization never relabels the capture channel');
+  assert.match(processedOnly.participantHint, /may include more than one person/);
+  assert.equal(processedOnly.diarizationHidden, false);
+  assert.match(processedOnly.diarizationText, /not names, and not arrival order/);
+  assert.match(processedOnly.diarizationText, /label all system audio as “Ada Lovelace”/);
+  const expectedStart = new Date(1700005060000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const expectedEnd = new Date(1700005065000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  assert.ok(
+    processedOnly.diarizationTitle.startsWith('Recording 1 · System audio · ')
+      && processedOnly.diarizationTitle.includes(expectedStart)
+      && processedOnly.diarizationTitle.includes(expectedEnd),
+    'the run header is anchored to the meeting clock plus the recording offset',
+  );
+  // A run without an offset stays anchored to the meeting start, as before.
+  const meetingStart = new Date(1700005000000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  assert.ok(
+    processedOnly.diarizationTitles.length === 2
+      && processedOnly.diarizationTitles[1].startsWith('Recording 2 · System audio · ')
+      && processedOnly.diarizationTitles[1].includes(meetingStart),
+    'a legacy run without an offset still starts at the meeting start',
+  );
+  assert.deepEqual(processedOnly.diarizationItems.map((item) => item.replace(/ · .*$/, '')), [
+    'System Speaker 1',
+    'System Speaker 2',
+  ], 'segments are chronological and labelled by model slot');
+  for (const item of processedOnly.diarizationItems) {
+    assert.match(item, /^System Speaker \d · \d{1,2}:\d{2}:\d{2}/, 'segment rows use the meeting wall clock');
+  }
+  assert.deepEqual(processedOnly.diarizationSlots, [
+    'history-diarization-segment speaker-slot-1',
+    'history-diarization-segment speaker-slot-2',
+  ], 'speaker slots are visually distinguishable');
+  assert.equal(processedOnly.diarizationList.listStyle, 'none', 'the ordered-list marker cannot be mistaken for a speaker number');
+  assert.equal(processedOnly.diarizationList.overflowY, 'auto', 'a long timeline scrolls instead of stretching the pane');
+  assert.notEqual(processedOnly.diarizationList.maxHeight, 'none', 'the timeline is height-capped');
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
   await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Raw'", 'the original wording for the rawText-only meeting');
   assert.match(await run(win, "document.querySelector('#meeting-history-turns .history-text').textContent"), /volyx lens$/);

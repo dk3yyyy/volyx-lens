@@ -59,6 +59,7 @@ function createFlushHarness(overrides = {}) {
     store: { getSettings: () => ({}) },
     personalContextStore: { getEnabledDocuments: () => [] },
     buildSttVocab: () => '',
+    buildSttTermList: () => [],
     rms16: () => 1000,
     getSpeechModel: () => null,
     isSpeechDetectorInstalled: () => false,
@@ -78,6 +79,7 @@ function createFlushHarness(overrides = {}) {
     updateTranscriptionDiagnostics() {},
     stopFlushLoop() {},
     cancelOfflineTranscriptions() {},
+    stopLocalSpeechLeaseRefresh() {},
     ...overrides,
   };
   vm.runInNewContext(

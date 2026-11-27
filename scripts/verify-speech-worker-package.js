@@ -96,7 +96,7 @@ function validateSelfTestPayload(payload) {
     && payload.engine === 'transcribe-cpp'
     && payload.protocol === 1
     && payload.streaming === true
-    && payload.diarization === false);
+    && payload.diarization === true);
 }
 
 function verifySpeechWorkerPackage({

@@ -14,6 +14,14 @@ const {
 
 const MAX_RECORDS = 200;
 const MAX_RECORD_TURNS = 5000;
+const MAX_DIARIZATION_RUNS = 20;
+const MAX_DIARIZATION_SEGMENTS = 5000;
+const MAX_DIARIZATION_DURATION_MS = 10 * 60 * 1000;
+// A run can start after its meeting began (recorder restarted mid-meeting), but
+// the offset plus the audio itself must still fit inside one plausible meeting.
+// A recovered draft can be continued days after it started, so the span is
+// generous; it only exists to reject nonsense values.
+const MAX_DIARIZATION_MEETING_SPAN_MS = 30 * 24 * 60 * 60 * 1000;
 // Deleting a saved meeting leaves a sanitized undo copy here, so a mistake costs
 // nothing for a month. Linked memory is removed from that copy before the live
 // record is deleted and is intentionally not restored by Undo. Clear all also
@@ -48,6 +56,63 @@ function snapshotTurns(turns) {
     normalized.push(turn);
   }
   return normalized.slice(-MAX_RECORD_TURNS);
+}
+
+// Speaker activity is a sidecar, never a participant identity: speakerId is an
+// arrival-order slot inside one recording, so every run is validated on its own
+// and stored without audio. Anything malformed is dropped rather than repaired,
+// because a partial timeline would misattribute who was speaking.
+function normalizeDiarizationRun(run) {
+  if (!run || typeof run !== 'object' || run.version !== 1) return null;
+  if (!isSafeId(run.recordingId) || run.sourceChannel !== 'them') return null;
+  if (!['ready', 'failed', 'unavailable'].includes(run.status)) return null;
+  if (run.modelId !== 'diar-sortformer-4spk' || !/^[a-f0-9]{64}$/i.test(String(run.artifactSha256 || ''))) return null;
+  if (!['low_latency', 'high_latency', 'very_high_latency'].includes(run.preset)) return null;
+  if (run.sampleRate !== 16000 || !Number.isSafeInteger(run.durationMs) || run.durationMs < 0 || run.durationMs > MAX_DIARIZATION_DURATION_MS) return null;
+  // Absent means a run written before the field existed: it starts with the
+  // meeting. A present value must be an exact non-negative integer. Segments
+  // stay relative to the recording and are never shifted by this offset.
+  const audioStartOffsetMs = run.audioStartOffsetMs === undefined ? 0 : run.audioStartOffsetMs;
+  if (!Number.isSafeInteger(audioStartOffsetMs) || audioStartOffsetMs < 0) return null;
+  if (audioStartOffsetMs + run.durationMs > MAX_DIARIZATION_MEETING_SPAN_MS) return null;
+  const segments = [];
+  const source = Array.isArray(run.segments) ? run.segments : [];
+  if (source.length > MAX_DIARIZATION_SEGMENTS) return null;
+  for (const raw of source) {
+    if (!raw || typeof raw !== 'object') return null;
+    const speakerId = raw.speakerId;
+    const t0Ms = raw.t0Ms;
+    const t1Ms = raw.t1Ms;
+    if (!Number.isSafeInteger(speakerId) || speakerId < 1 || speakerId > 4) return null;
+    if (!Number.isSafeInteger(t0Ms) || !Number.isSafeInteger(t1Ms) || t0Ms < 0 || t1Ms <= t0Ms || t1Ms > run.durationMs) return null;
+    segments.push({ speakerId, t0Ms, t1Ms });
+  }
+  segments.sort((left, right) => left.t0Ms - right.t0Ms || left.t1Ms - right.t1Ms || left.speakerId - right.speakerId);
+  const normalized = {
+    version: 1,
+    recordingId: run.recordingId,
+    sourceChannel: 'them',
+    status: run.status,
+    modelId: run.modelId,
+    artifactSha256: String(run.artifactSha256).toLowerCase(),
+    preset: run.preset,
+    sampleRate: 16000,
+    durationMs: run.durationMs,
+    audioStartOffsetMs,
+    segments,
+  };
+  if (run.status !== 'ready') normalized.reason = String(run.reason || 'diarization_unavailable').replace(/[\r\n]+/g, ' ').trim().slice(0, 200) || 'diarization_unavailable';
+  return normalized;
+}
+
+function normalizeDiarizationRuns(value) {
+  if (!Array.isArray(value)) return [];
+  const byRecording = new Map();
+  for (const raw of value.slice(-MAX_DIARIZATION_RUNS)) {
+    const run = normalizeDiarizationRun(raw);
+    if (run) byRecording.set(run.recordingId, run);
+  }
+  return [...byRecording.values()];
 }
 
 function fingerprint(turns) {
@@ -301,6 +366,8 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       // A cleaned, readable copy of the same turns, written only when the user
       // asks for it. `turns` above always keeps the recognizer's wording.
       cleaned: null,
+      // Speaker-activity timelines for the system channel. Audio is never kept.
+      diarizationRuns: [],
     };
     const target = recordPath(id);
     const tmp = `${target}.tmp`;
@@ -337,6 +404,26 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       return { updated: false, reason: 'write_failed' };
     }
     return { updated: true, participant: record.participant };
+  }
+
+  // Attach one speaker-activity timeline. Runs are keyed by recordingId so a
+  // retried analysis replaces its earlier attempt instead of stacking duplicates.
+  // The transcript turns are never touched: this is a sidecar, not a relabel.
+  function updateDiarization(id, run) {
+    const normalized = normalizeDiarizationRun(run);
+    if (!normalized) return { updated: false, reason: 'invalid_run' };
+    const loaded = readRecordForUpdate(id);
+    if (!loaded.record) return { updated: false, reason: loaded.reason };
+    const runs = normalizeDiarizationRuns(loaded.record.diarizationRuns)
+      .filter((entry) => entry.recordingId !== normalized.recordingId);
+    runs.push(normalized);
+    loaded.record.diarizationRuns = runs.slice(-MAX_DIARIZATION_RUNS);
+    try {
+      writeRecord(loaded.target, loaded.record, loaded.stat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
+    }
+    return { updated: true, run: normalized };
   }
 
   // Drop the readable copy and keep everything else. The raw transcript is the
@@ -432,7 +519,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       endedAt: record.endedAt,
       now: Number.isFinite(record.endedAt) ? record.endedAt : now(),
     });
-    return { ...record, turns, cleaned, memory };
+    return { ...record, turns, cleaned, memory, diarizationRuns: normalizeDiarizationRuns(record.diarizationRuns) };
   }
 
   function readRecordForUpdate(id) {
@@ -954,6 +1041,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         participant: null,
         notes: null,
         cleaned: null,
+        diarizationRuns: normalizeDiarizationRuns(candidate.diarizationRuns),
       };
       const target = recordPath(id);
       try {
@@ -1041,6 +1129,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     listMemories,
     searchMemories,
     updateParticipant,
+    updateDiarization,
     clearCleaned,
     pruneOlderThan,
     recordPath,
@@ -1050,4 +1139,4 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   };
 }
 
-module.exports = { createMeetingStore, snapshotTurns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };
+module.exports = { createMeetingStore, snapshotTurns, normalizeDiarizationRun, normalizeDiarizationRuns, fingerprint, MAX_RECORDS, MAX_RECORD_TURNS, isSafeId };

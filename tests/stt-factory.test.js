@@ -92,14 +92,23 @@ test('offline-first falls back to local batch when the native worker is unavaila
   }, { speechWorkerAvailable: false, hasAudioChannels: true }), 'batch');
 });
 
-test('offline-first without an installed model leaves realtime in charge', () => {
+test('offline-first never falls back to cloud realtime for an uninstalled model without opt-in', () => {
   const settings = {
     apiKeys: { openai: 'sk-test' },
     transcription: { mode: 'realtime', offlineEnabled: true, localModelId: 'qwen3-asr-0.6b' },
     speechModels: [{ id: 'qwen3-asr-0.6b', installed: false }],
   };
-  assert.equal(resolveTranscriptionMode(settings, { speechWorkerAvailable: true, hasAudioChannels: true }), 'realtime');
-  assert.equal(resolveTranscriptionMode({ ...settings, speechModels: [] }, {}), 'realtime');
+  // The selected model cannot run and cloud fallback is unchecked: a distinct
+  // route keeps the pipeline from opening a Realtime socket.
+  assert.equal(resolveTranscriptionMode(settings, { speechWorkerAvailable: true, hasAudioChannels: true }), 'offline-unavailable');
+  assert.equal(resolveTranscriptionMode({ ...settings, speechModels: [] }, {}), 'offline-unavailable');
+});
+
+test('offline-first uses cloud realtime for a missing model only with explicit fallback', () => {
+  assert.equal(resolveTranscriptionMode({
+    transcription: { offlineEnabled: true, offlineCloudFallback: true, localModelId: 'qwen3-asr-0.6b' },
+    speechModels: [{ id: 'qwen3-asr-0.6b', installed: false }],
+  }, { speechWorkerAvailable: true, hasAudioChannels: true }), 'realtime');
 });
 
 test('offline-first keeps legacy Whisper on the local batch path', () => {
@@ -181,3 +190,90 @@ test('STT factory returns empty chain when no keys present', () => {
   assert.ok(!stt.available);
   assert.equal(stt.providers.length, 0);
 });
+
+test('STT factory forwards vocabulary terms to a local GGUF model', async () => {
+  const calls = [];
+  const stt = createSTT({
+    apiKeys: {},
+    transcription: {
+      offlineEnabled: true,
+      offlineCloudFallback: false,
+      localModelId: 'parakeet-unified-en',
+      language: 'en',
+    },
+  }, {
+    env: {},
+    terms: ['Volyx', 'Kubernetes'],
+    speechWorker: {
+      transcribe: async (request) => {
+        calls.push(request);
+        return { text: 'ok' };
+      },
+    },
+  });
+  assert.deepEqual(stt.providers, ['local-gguf']);
+  await stt.transcribe(Buffer.alloc(4000, 1));
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].vocabulary, ['Volyx', 'Kubernetes']);
+});
+
+test('STT factory clamps an unsupported language for an English-only local model', async () => {
+  const calls = [];
+  const stt = createSTT({
+    apiKeys: {},
+    transcription: {
+      offlineEnabled: true,
+      offlineCloudFallback: false,
+      localModelId: 'parakeet-unified-en',
+      language: 'es',
+    },
+  }, {
+    env: {},
+    speechWorker: {
+      transcribe: async (request) => {
+        calls.push(request);
+        return { text: 'ok' };
+      },
+    },
+  });
+  await stt.transcribe(Buffer.alloc(4000, 1));
+  assert.equal(calls[0].language, 'en');
+});
+
+test('STT factory keeps a supported language on a multilingual local model', async () => {
+  const calls = [];
+  const stt = createSTT({
+    apiKeys: {},
+    transcription: {
+      offlineEnabled: true,
+      offlineCloudFallback: false,
+      localModelId: 'qwen3-asr-0.6b',
+      language: 'es',
+    },
+  }, {
+    env: {},
+    speechWorker: {
+      transcribe: async (request) => {
+        calls.push(request);
+        return { text: 'ok' };
+      },
+    },
+  });
+  await stt.transcribe(Buffer.alloc(4000, 1));
+  assert.equal(calls[0].language, 'es');
+});
+
+test('clampLocalLanguage leaves auto-detect and undeclared language lists alone', () => {
+  const { clampLocalLanguage } = require('../src/stt');
+  const englishOnly = { languages: ['en'] };
+  const undeclared = { languages: [] };
+  assert.equal(clampLocalLanguage('', englishOnly), '');
+  assert.equal(clampLocalLanguage('auto', englishOnly), 'auto');
+  assert.equal(clampLocalLanguage('es', englishOnly), 'en');
+  assert.equal(clampLocalLanguage('EN', englishOnly), 'EN');
+  assert.equal(clampLocalLanguage('fr', undeclared), 'fr');
+  assert.equal(clampLocalLanguage('fr', { languages: ['de', 'fr'] }), 'fr');
+  assert.equal(clampLocalLanguage('ja', { languages: ['de', 'fr'] }), 'de');
+  assert.equal(clampLocalLanguage('ja', { languages: ['de', 'en', 'fr'] }), 'en');
+});
+

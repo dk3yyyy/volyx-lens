@@ -1,6 +1,7 @@
 'use strict';
 
 const { escapeSubtitle } = require('./transcript-tools');
+const { normalizeDiarizationRuns } = require('./meeting-store');
 
 // Turn labels are local, like the header. They used to be UTC while localStamp
 // was local, so one exported document could show 14:05 in its header and 18:05 on
@@ -179,6 +180,9 @@ function formatMeetingRecord(record = {}, format = 'md', exportedAt = Date.now()
       exportedAt: new Date(exportedAt).toISOString(),
       turns: normalizeTurns(record),
     };
+    // The sidecar travels as validated metadata only; no audio is ever attached.
+    const diarizationRuns = normalizeDiarizationRuns(record.diarizationRuns);
+    if (diarizationRuns.length) payload.diarizationRuns = diarizationRuns;
     // JSON keeps the raw transcript authoritative and carries the readable copy
     // beside it, so a consumer can diff what was said against what was cleaned.
     const stored = record && record.cleaned;

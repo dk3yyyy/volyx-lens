@@ -30,8 +30,16 @@ test('sleep, lock, shutdown, and quit stop capture without silently restarting o
 test('capture transitions and active New Session replacement share one serialized queue', () => {
   assert.match(main, /captureTransition = captureTransition\.then\(reconcileCaptureState/);
   assert.match(main, /function startNewSession[\s\S]*captureTransition = captureTransition\.then\(operation, operation\)/);
-  assert.match(main, /if \(state\.capturing\) await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
-  assert.match(main, /if \(restartTranscription && state\.capturing && desiredCapturing\) await startTranscriptionPipeline\(\)/);
+  assert.match(main, /if \(state\.capturing\) \{\s*await stopTranscriptionPipeline\(\{ immediate: true \}\);\s*clearDiarizationRecorder\(\);\s*\}/);
+  assert.match(main, /if \(restartTranscription && state\.capturing && desiredCapturing\) \{\s*restartDiarizationRecorderForContinuedCapture\(\);\s*await startTranscriptionPipeline\(\);\s*\}/);
+});
+
+test('sleep, lock, and immediate stops drop the unanswered diarization recording', () => {
+  assert.match(main, /powerMonitor\.on\('suspend'[\s\S]*?stopCaptureForSystem\('suspend'\)/);
+  assert.match(main, /powerMonitor\.on\('lock-screen'[\s\S]*?stopCaptureForSystem\('lock'\)/);
+  assert.match(main, /const droppedStop = immediate \|\| reason === 'suspend' \|\| reason === 'lock';/);
+  assert.match(main, /if \(droppedStop\) clearDiarizationRecorder\(\)/);
+  assert.match(main, /if \(reason !== 'suspend' && reason !== 'lock'\) \{[\s\S]*?finalizeMeeting/);
 });
 
 test('capture, retry, New Session, and transcript clear all await pipeline startup', () => {
