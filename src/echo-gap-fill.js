@@ -35,23 +35,25 @@ class EchoGapFill {
     hangoverMs = DEFAULT_HANGOVER_MS,
     holdMs = DEFAULT_HOLD_MS,
     voicedRms = DEFAULT_VOICED_RMS,
+    sampleRate = 24000,
     now = () => Date.now(),
   } = {}) {
     this.hangoverMs = Math.max(0, Number(hangoverMs) || 0);
     this.holdMs = Math.max(0, Number(holdMs) || 0);
     this.voicedRms = Math.max(0, Number(voicedRms) || 0);
+    this.maxFillBytes = Math.max(0, Math.round((Number(sampleRate) || 24000) * 2 * this.holdMs / 1000));
     this.now = now;
     this.reset();
   }
 
   reset() {
     this.lastVoicedAt = null;
-    this.fillStartedAt = null;
+    this.fillBytes = 0;
   }
 
   // Call for every mic chunk that is routed normally.
   routed(pcm, at = this.now()) {
-    this.fillStartedAt = null;
+    this.fillBytes = 0;
     if (pcmRms(pcm) >= this.voicedRms) this.lastVoicedAt = at;
   }
 
@@ -59,10 +61,15 @@ class EchoGapFill {
   // to drop the chunk.
   suppressed(pcm, at = this.now()) {
     if (!Buffer.isBuffer(pcm) || !pcm.length || this.lastVoicedAt === null) return null;
-    if (at - this.lastVoicedAt > this.hangoverMs && this.fillStartedAt === null) return null;
-    if (this.fillStartedAt === null) this.fillStartedAt = at;
-    if (at - this.fillStartedAt > this.holdMs) return null;
-    return Buffer.alloc(pcm.length);
+    if (at - this.lastVoicedAt > this.hangoverMs) return null;
+    // The cap is audio duration, not elapsed clock time: queued chunks can be
+    // drained back-to-back with the same timestamp and must not exceed holdMs.
+    const remaining = this.maxFillBytes - this.fillBytes;
+    if (remaining <= 0) return null;
+    const length = Math.min(pcm.length, remaining - (remaining % 2));
+    if (length <= 0) return null;
+    this.fillBytes += length;
+    return Buffer.alloc(length);
   }
 }
 
