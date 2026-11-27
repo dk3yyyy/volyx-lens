@@ -109,5 +109,43 @@ test('main and preload expose validated suppressed restore and checkpoint the ch
   assert.match(main, /handleTrusted\('transcript:restore-suppressed'/);
   assert.match(main, /function restoreSuppressedYou\([\s\S]*?findSuppressedYouIndex[\s\S]*?suppressedYouSegments\.splice/);
   assert.match(main, /restoreSuppressedYouSegment\(transcript, entry[\s\S]*?persistMeetingRecovery\(\{ immediate: true \}\)/);
+  const restore = main.slice(main.indexOf('function restoreSuppressedYou('), main.indexOf('// Opt-in automatic assistance'));
+  assert.doesNotMatch(restore, /rememberTranscriptSegment/, 'an explicit restore is never eligible for automatic echo removal again');
+  assert.match(restore, /remapped = \[\]/, 'a split turn keeps the dedupe index aligned');
+  assert.match(main, /const lateSuppressed = \[\];[\s\S]{0,800}if \(duplicate\)/, 'accepted finals do not throw when there is no duplicate');
   assert.match(preload, /transcriptRestoreSuppressed: \(id\) => ipcRenderer\.invoke\('transcript:restore-suppressed', id\)/);
+});
+
+test('restoring before a different-speaker turn does not join a later You turn', () => {
+  const { turns, nextSegmentId, nextTurnId } = conversation();
+  const originalThemId = turns[0].id;
+  restoreSuppressedYouSegment(turns, { text: 'Before their question.', ts: 5 }, {
+    segmentId: nextSegmentId(), createTurnId: nextTurnId,
+  });
+
+  assert.deepEqual(turns.map((turn) => turn.channel), ['you', 'them', 'you', 'them']);
+  assert.equal(turns[1].id, originalThemId);
+  assert.deepEqual(turns.map((turn) => turn.ts), [5, 10, 20, 40]);
+});
+
+test('restoring inside a grouped Them turn splits the surrounding speech', () => {
+  const turns = [];
+  let turnId = 0;
+  let segmentId = 0;
+  const append = (text, ts) => appendConversationSegment(turns, {
+    id: ++segmentId, channel: 'them', text, ts,
+  }, () => ++turnId);
+  append('Before the answer.', 10);
+  append('After the answer.', 30);
+
+  const { turn, remapped } = restoreSuppressedYouSegment(turns, {
+    text: 'My answer.', ts: 20,
+  }, { segmentId: ++segmentId, createTurnId: () => ++turnId });
+
+  assert.equal(turn.channel, 'you');
+  assert.deepEqual(turns.map((entry) => entry.channel), ['them', 'you', 'them']);
+  assert.deepEqual(turns.map((entry) => entry.ts), [10, 20, 30]);
+  assert.equal(remapped.length, 1);
+  assert.equal(remapped[0].segments[0].turnId, turns[2].id);
+  assert.deepEqual(turns.map((entry) => entry.text), ['Before the answer.', 'My answer.', 'After the answer.']);
 });

@@ -57,28 +57,80 @@ function appendConversationSegment(turns, segment, createTurnId, beforeTurn = nu
 }
 
 // A restored line keeps its original timestamp rather than becoming the newest
-// turn. Use the same grouping path as a live final, but choose the adjacent
-// same-speaker turn at that point in time and then order its raw segments.
+// turn. Insert at the first later segment, splitting a surrounding turn when
+// necessary so grouped speech does not jump ahead of the restored answer.
 function insertConversationSegment(turns, segment, createTurnId) {
   if (!Array.isArray(turns)) throw new TypeError('turns must be an array');
   const channel = segment && segment.channel === 'you' ? 'you' : 'them';
   const timestamp = Number.isFinite(segment && segment.ts) ? segment.ts : Date.now();
   segment.ts = timestamp;
-  const nextIndex = turns.findIndex((turn) => {
-    const segments = Array.isArray(turn.segments) ? turn.segments : [];
-    return segments.length ? segments[segments.length - 1].ts >= timestamp : turn.ts >= timestamp;
-  });
-  const nextTurn = nextIndex >= 0 ? turns[nextIndex] : null;
-  const previousTurn = nextIndex > 0 ? turns[nextIndex - 1] : nextIndex < 0 ? turns[turns.length - 1] : null;
-  const target = nextTurn && nextTurn.channel === channel
-    ? nextTurn
-    : previousTurn && previousTurn.channel === channel ? previousTurn : null;
-  const result = appendConversationSegment(turns, segment, createTurnId, target || nextTurn);
-  if (target) {
-    target.segments.sort((left, right) => left.ts - right.ts);
-    refreshConversationTurn(target);
+
+  let location = null;
+  for (let turnIndex = 0; turnIndex < turns.length && !location; turnIndex += 1) {
+    const segments = Array.isArray(turns[turnIndex].segments) ? turns[turnIndex].segments : [];
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+      if (segments[segmentIndex].ts > timestamp) {
+        location = { turnIndex, segmentIndex };
+        break;
+      }
+    }
   }
-  return result;
+
+  const remapped = [];
+  const makeTurn = () => ({
+    id: createTurnId(), channel, text: '', ts: timestamp, segments: [],
+  });
+
+  if (!location) {
+    const previousTurn = turns[turns.length - 1];
+    if (previousTurn && previousTurn.channel === channel) {
+      return appendConversationSegment(turns, segment, createTurnId);
+    }
+    const turn = makeTurn();
+    segment.turnId = turn.id;
+    turn.segments.push(segment);
+    refreshConversationTurn(turn);
+    turns.push(turn);
+    return { turn, updated: false, remapped };
+  }
+
+  const { turnIndex, segmentIndex } = location;
+  const surrounding = turns[turnIndex];
+  const segments = Array.isArray(surrounding.segments) ? surrounding.segments : [];
+  if (surrounding.channel === channel) {
+    surrounding.segments.push(segment);
+    segment.turnId = surrounding.id;
+    surrounding.segments.sort((left, right) => left.ts - right.ts);
+    refreshConversationTurn(surrounding);
+    return { turn: surrounding, updated: true, remapped };
+  }
+
+  if (segmentIndex > 0 && surrounding.channel !== channel) {
+    const prefix = surrounding.segments.slice(0, segmentIndex);
+    const suffix = surrounding.segments.slice(segmentIndex);
+    const suffixTurn = {
+      id: createTurnId(), channel: surrounding.channel, text: '', ts: suffix[0].ts, segments: suffix,
+    };
+    surrounding.segments = prefix;
+    refreshConversationTurn(surrounding);
+    for (const entry of suffix) entry.turnId = suffixTurn.id;
+    refreshConversationTurn(suffixTurn);
+    remapped.push({ oldTurnId: surrounding.id, newTurnId: suffixTurn.id, segments: suffix });
+
+    const restored = makeTurn();
+    segment.turnId = restored.id;
+    restored.segments.push(segment);
+    refreshConversationTurn(restored);
+    turns.splice(turnIndex + 1, 0, restored, suffixTurn);
+    return { turn: restored, updated: false, remapped };
+  }
+
+  const restored = makeTurn();
+  segment.turnId = restored.id;
+  restored.segments.push(segment);
+  refreshConversationTurn(restored);
+  turns.splice(turnIndex, 0, restored);
+  return { turn: restored, updated: false, remapped };
 }
 
 module.exports = { cleanSegmentText, appendSegmentText, joinTranscriptSegments, joinRawTranscriptSegments, appendConversationSegment, insertConversationSegment };

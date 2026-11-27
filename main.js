@@ -1011,6 +1011,7 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
   const timestamp = Number.isFinite(ts) ? ts : Date.now();
   const receivedAt = Date.now();
   const candidate = { channel: normalizedChannel, text: clean, ts: timestamp };
+  const lateSuppressed = [];
   // Without evidence that call audio reaches the mic, a You turn that repeats
   // a Them turn is the user's own words, so nothing is deduplicated.
   const dedupeAllowed = acousticCoupling.active(receivedAt);
@@ -1028,7 +1029,6 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
       persistMeetingRecovery();
       return;
     }
-    const lateSuppressed = [];
     for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
       if (leakedSegment.channel === 'you') {
         lateSuppressed.push(rememberSuppressedYou({ text: leakedSegment.text, ts: leakedSegment.ts, duplicateOf: null, match: duplicate.match, reason: 'cross_talk_late' }));
@@ -1103,12 +1103,19 @@ function restoreSuppressedYou(idOrIndex) {
   if (index < 0) return { restored: false, reason: 'not_found' };
   const [entry] = suppressedYouSegments.splice(index, 1);
   const segmentId = ++transcriptSegmentSequence;
-  const { turn, updated } = restoreSuppressedYouSegment(transcript, entry, {
+  const { turn, updated, remapped = [] } = restoreSuppressedYouSegment(transcript, entry, {
     segmentId,
     createTurnId: () => ++transcriptSequence,
   });
-  const segment = turn.segments.find((candidate) => candidate.id === segmentId);
-  rememberTranscriptSegment(segment, Date.now());
+  // A split changes the turn id of later segments. Keep the dedupe index in
+  // sync, but never add the explicitly restored line itself: a later matching
+  // Them final must not delete the user's explicit restore a second time.
+  for (const mapping of remapped) {
+    const movedIds = new Set(mapping.segments.map((segment) => segment.id));
+    for (const recent of recentTranscriptSegments) {
+      if (movedIds.has(recent.id)) recent.turnId = mapping.newTurnId;
+    }
+  }
   if (transcript.length > MAX_TRANSCRIPT_TURNS) {
     const removed = [];
     while (transcript.length > MAX_TRANSCRIPT_TURNS) {
