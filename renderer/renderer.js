@@ -2464,7 +2464,13 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   volyxLens.on('history:changed', (event = {}) => {
     if (event.deleted && meetingDetail && event.id === meetingDetail.id) closeMeetingDetail();
     else if (event.cleared) closeMeetingDetail();
-    else if (event.id && meetingDetail && event.id === meetingDetail.id) refreshMeetingDiarization(event.id);
+    else if (event.id && meetingDetail && event.id === meetingDetail.id) {
+      // A late diarization result only changes the timeline and must not wipe a
+      // name being typed. Anything else (new turns appended to a resumed
+      // meeting) has to re-render the pane or it stays stale.
+      if (event.reason === 'diarization') refreshMeetingDiarization(event.id);
+      else openMeetingDetail(event.id);
+    }
     if (event.pruned > 0) showHistoryPruneNotice(event.pruned);
     loadMeetingHistory({ quiet: true });
     loadMeetingMemoryEntries();
