@@ -458,3 +458,174 @@ test('stop settles when the worker never answers cancel', async () => {
   });
   assert.ok(Date.now() - startedAt < 1000, 'stop settles instead of waiting on cancel');
 });
+
+// 100 ms of 24 kHz mono 16-bit PCM.
+const WINDOW_CHUNK_MS = 100;
+const WINDOW_CHUNK_SAMPLES = 2_400;
+
+function speechChunk() {
+  const chunk = Buffer.alloc(WINDOW_CHUNK_SAMPLES * 2);
+  for (let index = 0; index < WINDOW_CHUNK_SAMPLES; index += 1) chunk.writeInt16LE(2_000, index * 2);
+  return chunk;
+}
+
+function boundaryFeedPositions(worker) {
+  return worker.calls
+    .map(([kind], index) => (kind === 'boundary'
+      ? worker.calls.slice(0, index).filter(([call]) => call === 'feed').length
+      : null))
+    .filter((position) => position !== null);
+}
+
+test('cuts 30 s of continuous speech at the default 25 s window', async () => {
+  const worker = fakeWorker();
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    // Enough in-flight room for a synchronous burst, and a VAD max utterance
+    // far past the window so only the forced cut can fire.
+    maxInFlight: 512,
+    vad: { threshold: 100, silenceMs: 1_000, maxUtteranceMs: 600_000 },
+  });
+  await manager.start();
+  const speech = speechChunk();
+
+  for (let index = 0; index < 300; index += 1) {
+    assert.equal(manager.append('you', speech), true);
+  }
+
+  const boundaries = worker.calls.filter(([kind]) => kind === 'boundary');
+  assert.equal(boundaries.length, 1, 'one monologue produces exactly one forced cut');
+  // 30 s fed in 100 ms chunks; the cut lands on the chunk that reaches 25 s.
+  assert.deepEqual(boundaryFeedPositions(worker), [25_000 / WINDOW_CHUNK_MS]);
+  assert.equal(manager.windowMs.you, 5_000, 'the counter restarts at the boundary');
+  assert.equal(manager.ready, true, 'the stream keeps running after a forced cut');
+  await manager.stop();
+});
+
+test('a VAD boundary resets the forced window', async () => {
+  const worker = fakeWorker();
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    maxInFlight: 512,
+    vad: { threshold: 100, silenceMs: 100, minSpeechMs: 20, maxUtteranceMs: 600_000 },
+  });
+  await manager.start();
+  const speech = speechChunk();
+  const silence = Buffer.alloc(WINDOW_CHUNK_SAMPLES * 2);
+
+  // 20 s of speech, then a 100 ms pause: the VAD closes the utterance long
+  // before the 25 s window bound.
+  for (let index = 0; index < 200; index += 1) {
+    assert.equal(manager.append('you', speech), true);
+  }
+  assert.equal(manager.append('you', silence), true);
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 1);
+  // Let the boundary call settle; a real stream feeds across ticks, and the
+  // forced cut waits for an in-flight boundary to resolve.
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // 24 s more is inside the restarted window, so no forced cut yet.
+  for (let index = 0; index < 240; index += 1) {
+    assert.equal(manager.append('you', speech), true);
+  }
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 1);
+
+  for (let index = 0; index < 10; index += 1) {
+    assert.equal(manager.append('you', speech), true);
+  }
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 2);
+  assert.deepEqual(boundaryFeedPositions(worker), [201, 451]);
+  await manager.stop();
+});
+
+test('a refused append does not advance the window or queue a boundary', async () => {
+  let releaseFeed;
+  const worker = fakeWorker({
+    feed: () => new Promise((resolve) => { releaseFeed = resolve; }),
+  });
+  const errors = [];
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    maxInFlight: 1,
+    maxWindowMs: 1_000,
+    vad: { threshold: 100, silenceMs: 1_000, maxUtteranceMs: 600_000 },
+    onError: (error) => errors.push(error),
+  });
+  await manager.start();
+  const speech = speechChunk();
+
+  assert.equal(manager.append('you', speech), true);
+  assert.equal(manager.append('you', speech), false, 'the stalled worker refuses audio');
+  assert.equal(errors[0].code, 'speech_stream_backpressure');
+  assert.equal(manager.windowMs.you, WINDOW_CHUNK_MS, 'only accepted audio counts');
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 0);
+
+  releaseFeed();
+  await manager.stop();
+});
+
+test('does not queue a forced boundary while one is still in flight', async () => {
+  let resolveBoundary;
+  const worker = fakeWorker();
+  worker.streamBoundary = (channel) => {
+    worker.calls.push(['boundary', channel]);
+    return new Promise((resolve) => { resolveBoundary = resolve; });
+  };
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    maxInFlight: 512,
+    maxWindowMs: 1_000,
+    vad: { threshold: 100, silenceMs: 1_000, maxUtteranceMs: 600_000 },
+  });
+  await manager.start();
+  const speech = speechChunk();
+
+  for (let index = 0; index < 10; index += 1) manager.append('you', speech);
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 1);
+  assert.equal(manager.windowMs.you, 0);
+
+  // Two more windows' worth of audio while the first cut is unresolved: the
+  // manager must wait rather than stack a duplicate boundary behind it.
+  for (let index = 0; index < 20; index += 1) manager.append('you', speech);
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 1);
+  assert.equal(manager.windowMs.you, 2_000, 'audio keeps counting while the cut is in flight');
+
+  resolveBoundary();
+  await new Promise((resolve) => setImmediate(resolve));
+  manager.append('you', speech);
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 2);
+  assert.equal(manager.windowMs.you, 0, 'the delayed cut still resets the window');
+  await manager.stop();
+});
+
+test('stop clears the window so nothing cuts after the stream ends', async () => {
+  const worker = fakeWorker();
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    maxInFlight: 32,
+    maxWindowMs: 1_000,
+    vad: { threshold: 100, silenceMs: 1_000, maxUtteranceMs: 600_000 },
+  });
+  await manager.start();
+  const speech = speechChunk();
+
+  for (let index = 0; index < 9; index += 1) assert.equal(manager.append('you', speech), true);
+  assert.equal(manager.windowMs.you, 900);
+  await manager.stop();
+
+  assert.deepEqual(manager.windowMs, { you: 0 });
+  assert.equal(manager.append('you', speech), false);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(worker.calls.filter(([kind]) => kind === 'boundary').length, 0);
+});
+

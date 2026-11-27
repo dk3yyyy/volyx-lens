@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   platform: process.platform,
   initialAccentTheme: initialAccentTheme(),
   audioConfig: Object.freeze({ sampleRate: AUDIO_SAMPLE_RATE }),
+  systemInfo: () => ipcRenderer.invoke('system:info'),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
   clearCredential: (provider) => ipcRenderer.invoke('credentials:clear', provider),

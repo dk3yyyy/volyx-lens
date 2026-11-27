@@ -8,6 +8,7 @@ const {
   trackRendererConsole,
   waitFor,
   waitForEntryAnimation,
+  waitForHost,
   waitForPaint,
   waitForRendererReady,
 } = require('./ui-harness-helpers');
@@ -15,6 +16,43 @@ const {
 const root = path.join(__dirname, '..');
 const screenshotDir = process.env.VOLYX_LENS_ONBOARDING_SCREENSHOT_DIR || '';
 const emptyContext = { count: 0, maxCaptures: null, maxTotalBytes: 96 * 1024 * 1024, totalBytes: 0, pinnedCount: 0, revision: 0 };
+// Local-speech fixtures are real catalog ids and real artifact sizes so the
+// recommendation, size label, and estimate are exercised, not stubbed strings.
+const speechCatalog = [
+  {
+    id: 'parakeet-unified-en', name: 'Parakeet Unified English', runtime: 'transcribe-cpp',
+    streaming: true, languageCoverage: 'English', languages: ['en'],
+    artifact: { format: 'gguf', bytes: 731357568, estimatedSizeMb: 698, filename: 'parakeet-unified-en-0.6b-Q8_0.gguf' },
+  },
+  {
+    id: 'qwen3-asr-0.6b', name: 'Qwen3-ASR 0.6B', runtime: 'transcribe-cpp',
+    streaming: false, languageCoverage: '30 languages', languages: ['en', 'zh'],
+    artifact: { format: 'gguf', bytes: 850423456, estimatedSizeMb: 811, filename: 'Qwen3-ASR-0.6B-Q8_0.gguf' },
+  },
+  {
+    id: 'sensevoice-small', name: 'SenseVoiceSmall', runtime: 'transcribe-cpp',
+    streaming: false, languageCoverage: 'Chinese, English, Cantonese, Japanese, Korean', languages: ['en', 'zh', 'yue', 'ja', 'ko'],
+    artifact: { format: 'gguf', bytes: 252684608, estimatedSizeMb: 241, filename: 'SenseVoiceSmall-Q8_0.gguf' },
+  },
+];
+const installedSpeechModels = new Set(['qwen3-asr-0.6b']);
+let ggufRuntimeAvailable = true;
+let systemMemoryMb = 16384;
+let releaseSpeechDownload = null;
+let rejectSpeechDownload = null;
+let cancelSpeechDownloadRequested = false;
+const downloadedSpeechModels = [];
+function buildSpeechModels() {
+  return speechCatalog.map((model) => ({
+    ...model,
+    artifact: { ...model.artifact },
+    runtimeAvailable: ggufRuntimeAvailable,
+    installed: installedSpeechModels.has(model.id),
+    loaded: false,
+    warmed: false,
+  }));
+}
+
 const settings = {
   provider: 'openai', fallbackProvider: '', smart: false, onboarded: false, questionDetection: true, assistContext: 'both',
   credentialStatus: { present: {}, secure: true, backend: 'safeStorage' },
@@ -24,8 +62,62 @@ const settings = {
   audio: { inputDeviceId: '', micEnabled: true, systemEnabled: true, sensitivity: 'balanced', silenceMs: 700, costWarningMinutes: 30, maxSessionMinutes: 60 }
 };
 
-ipcMain.handle('settings:get', () => settings);
-ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
+ipcMain.handle('settings:get', () => ({
+  ...settings,
+  speechModels: buildSpeechModels(),
+  localSpeech: {
+    available: true,
+    whisper: { available: true },
+    gguf: { available: ggufRuntimeAvailable, reason: ggufRuntimeAvailable ? '' : 'no bundled GGUF worker for this platform' },
+  },
+}));
+ipcMain.handle('settings:set', (_event, patch) => {
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && settings[key] && typeof settings[key] === 'object') {
+      settings[key] = { ...settings[key], ...value };
+    } else {
+      settings[key] = value;
+    }
+  }
+  return { ...settings, speechModels: buildSpeechModels() };
+});
+ipcMain.handle('system:info', () => ({ totalMemMb: systemMemoryMb, platform: process.platform, arch: process.arch }));
+ipcMain.handle('speech-models:get', () => buildSpeechModels());
+ipcMain.handle('speech-diarizer:get', () => ({ installed: false, runtimeAvailable: false, artifact: { bytes: 139310336 } }));
+ipcMain.handle('speech-model:download', async (event, id) => {
+  downloadedSpeechModels.push(id);
+  cancelSpeechDownloadRequested = false;
+  const model = buildSpeechModels().find((entry) => entry.id === id);
+  if (!model) throw new Error('Unknown speech model.');
+  if (model.installed) return { path: '/fixture/model.gguf', modelId: id, models: buildSpeechModels() };
+  event.sender.send('speech:model-progress', { id, progress: 0.2, bytesPerSecond: 1153434, resumedFrom: 0 });
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  // Mirrors the artifact store's (fraction, detail) callback shape once the
+  // main process forwards it: throughput in bytes/second and resumedFrom bytes.
+  event.sender.send('speech:model-progress', { id, progress: 0.75, bytesPerSecond: 2411724.8, resumedFrom: 1048576 });
+  await new Promise((resolve, reject) => {
+    if (cancelSpeechDownloadRequested) {
+      reject(new Error('Speech model download was cancelled.'));
+      return;
+    }
+    releaseSpeechDownload = resolve;
+    rejectSpeechDownload = reject;
+  }).finally(() => {
+    releaseSpeechDownload = null;
+    rejectSpeechDownload = null;
+  });
+  installedSpeechModels.add(id);
+  return { path: '/fixture/model.gguf', modelId: id, models: buildSpeechModels() };
+});
+ipcMain.handle('speech-model:cancel-download', () => {
+  cancelSpeechDownloadRequested = true;
+  if (rejectSpeechDownload) {
+    const reject = rejectSpeechDownload;
+    rejectSpeechDownload = null;
+    reject(new Error('Speech model download was cancelled.'));
+  }
+  return { canceled: true };
+});
 ipcMain.handle('personal-context:get', () => ({ documents: {}, secure: true, locked: false }));
 ipcMain.handle('workspace-index:get', () => []);
 ipcMain.handle('transcript:get', () => []);
@@ -93,7 +185,7 @@ app.whenReady().then(async () => {
     () => { win.show(); win.focus(); win.webContents.focus(); },
   );
 
-  const names = ['welcome', 'permissions', 'provider', 'sharing', 'ready'];
+  const names = ['welcome', 'permissions', 'provider', 'speech', 'sharing', 'ready'];
   const heights = [];
   for (let index = 0; index < names.length; index += 1) {
     // overlayIn scales the dialog while it runs, so sampling geometry before the
@@ -109,12 +201,14 @@ app.whenReady().then(async () => {
         footerHeight: document.querySelector('.ob-footer').getBoundingClientRect().height,
         viewport: { width: innerWidth, height: innerHeight },
         contentOverflowY: content.scrollHeight > content.clientHeight,
+        contentScrollHeight: content.scrollHeight,
+        contentClientHeight: content.clientHeight,
         documentOverflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth
       };
     })()`);
     assert.equal(state.active, 'ob-title', `${names[index]} should focus its heading`);
     assert.equal(state.documentOverflowX, false, `${names[index]} must not overflow horizontally`);
-    assert.equal(state.contentOverflowY, false, `${names[index]} must not scroll at production size`);
+    assert.equal(state.contentOverflowY, false, `${names[index]} must not scroll at production size (${state.contentScrollHeight}px content in ${state.contentClientHeight}px pane)`);
     assert.ok(Math.abs(state.footerHeight - 54) < 0.1, `${names[index]} should use the compact single-row footer`);
     assert.ok(state.dialog.x >= 0 && state.dialog.y >= 0 && state.dialog.right <= state.viewport.width && state.dialog.bottom <= state.viewport.height, `${names[index]} dialog must fit viewport`);
     heights.push(state.dialog.height);
@@ -126,9 +220,139 @@ app.whenReady().then(async () => {
       assert.equal(providerOpen.guideHidden, true, 'opening provider settings should pause the guide');
       assert.equal(settings.onboarded, false, 'opening provider settings must not complete onboarding');
       await win.webContents.executeJavaScript("document.querySelector('#s-close').click()");
-      await waitFor(win, "document.querySelector('#onboard-scrim').classList.contains('hidden') === false && document.querySelector('#ob-step-count').textContent === '3 of 5'", 'closing settings should resume the guide at the same step');
+      await waitFor(win, "document.querySelector('#onboard-scrim').classList.contains('hidden') === false && document.querySelector('#ob-step-count').textContent === '3 of 6'", 'closing settings should resume the guide at the same step');
       const resumed = await win.webContents.executeJavaScript(`({ step: document.querySelector('#ob-step-count').textContent, active: document.activeElement && document.activeElement.id })`);
-      assert.equal(resumed.step, '3 of 5', 'guide should resume at the provider step');
+      assert.equal(resumed.step, '3 of 6', 'guide should resume at the provider step');
+    }
+    if (index === 3) {
+      // 16 GB fixture recommends the streaming English model, with its real
+      // artifact size and an estimate that is labelled approximate.
+      await waitFor(win, "document.querySelector('#ob-speech-card') && document.querySelector('#ob-speech-card').dataset.model === 'parakeet-unified-en'", '16 GB speech recommendation');
+      const recommended = await win.webContents.executeJavaScript(`(() => {
+        const card = document.querySelector('#ob-speech-card');
+        return {
+          label: document.querySelector('#ob-step-label').textContent,
+          model: card.dataset.model,
+          badge: document.querySelector('#ob-speech-badge').textContent,
+          meta: document.querySelector('#ob-speech-meta').textContent,
+          why: document.querySelector('#ob-speech-why').textContent,
+          downloadDisabled: document.querySelector('#ob-speech-download').disabled,
+          useDisabled: document.querySelector('#ob-speech-use').disabled,
+          cancelHidden: document.querySelector('#ob-speech-cancel').classList.contains('hidden'),
+          progressHidden: document.querySelector('#ob-speech-progress').classList.contains('hidden')
+        };
+      })()`);
+      assert.equal(recommended.label, 'Speech on this device');
+      assert.equal(recommended.model, 'parakeet-unified-en', '16 GB should recommend Parakeet Unified English');
+      assert.equal(recommended.badge, 'Recommended');
+      assert.match(recommended.meta, /697 MB/, `the size label should come from the artifact (got: ${recommended.meta})`);
+      assert.match(recommended.meta, /about 5 min at 20 Mbps/, 'the estimate should use 20 Mbps');
+      assert.match(recommended.meta, /approximate/, 'the estimate must be labelled approximate');
+      assert.match(recommended.why, /16 GB or more/, 'the step should explain the recommendation');
+      assert.equal(recommended.downloadDisabled, false, 'Download should be enabled when the runtime is available');
+      assert.equal(recommended.useDisabled, true, 'Use must wait for an installed model');
+      assert.equal(recommended.cancelHidden, true);
+      assert.equal(recommended.progressHidden, true);
+      await capture(win, 'speech');
+
+      // Cancel must stop the download without enabling anything.
+      await win.webContents.executeJavaScript("document.querySelector('#ob-speech-download').click()");
+      await waitFor(win, "!document.querySelector('#ob-speech-cancel').classList.contains('hidden')", 'cancel action during download');
+      await win.webContents.executeJavaScript("document.querySelector('#ob-speech-cancel').click()");
+      await waitFor(win, "document.querySelector('#ob-speech-status').textContent.includes('cancelled') && document.querySelector('#ob-speech-progress').classList.contains('hidden')", 'cancelled download state');
+      const cancelled = await win.webContents.executeJavaScript(`({
+        status: document.querySelector('#ob-speech-status').textContent,
+        downloadDisabled: document.querySelector('#ob-speech-download').disabled,
+        useDisabled: document.querySelector('#ob-speech-use').disabled,
+        downloaded: document.querySelector('#ob-speech-badge').textContent
+      })`);
+      assert.match(cancelled.status, /current transcription setup is unchanged/, 'cancel should say nothing changed');
+      assert.equal(cancelled.downloadDisabled, false, 'Download should be available again after cancelling');
+      assert.equal(cancelled.useDisabled, true, 'cancel must not enable Use');
+      assert.equal(cancelled.downloaded, 'Recommended', 'a cancelled download must not look installed');
+
+      await win.webContents.executeJavaScript("document.querySelector('#ob-speech-download').click()");
+      await waitFor(win, "!document.querySelector('#ob-speech-cancel').classList.contains('hidden') && !document.querySelector('#ob-speech-progress').classList.contains('hidden')", 'download progress UI');
+      await waitFor(win, "document.querySelector('#ob-speech-progress').getAttribute('aria-valuenow') === '75'", '75% download progress');
+      const progress = await win.webContents.executeJavaScript(`({
+        percent: document.querySelector('#ob-speech-progress').getAttribute('aria-valuenow'),
+        status: document.querySelector('#ob-speech-status').textContent,
+        downloadHidden: document.querySelector('#ob-speech-download').classList.contains('hidden'),
+        cancelHidden: document.querySelector('#ob-speech-cancel').classList.contains('hidden')
+      })`);
+      assert.equal(progress.percent, '75');
+      assert.match(progress.status, /75%/, 'progress should show a percent');
+      assert.match(progress.status, /2\.3 MB\/s/, 'progress should show speed when the payload carries it');
+      assert.match(progress.status, /resumed/, 'progress should say when the transfer resumed');
+      assert.equal(progress.downloadHidden, true, 'Download should be replaced by Cancel while bytes arrive');
+      assert.equal(progress.cancelHidden, false);
+      await capture(win, 'speech-progress');
+      assert.ok(releaseSpeechDownload, 'the download should be parked for the progress assertions');
+      releaseSpeechDownload();
+      releaseSpeechDownload = null;
+      await waitFor(win, "document.querySelector('#ob-speech-card').dataset.installed === 'true' && document.querySelector('#ob-speech-badge').textContent === 'Installed'", 'installed model after download');
+      const installed = await win.webContents.executeJavaScript(`({
+        useDisabled: document.querySelector('#ob-speech-use').disabled,
+        downloadDisabled: document.querySelector('#ob-speech-download').disabled,
+        status: document.querySelector('#ob-speech-status').textContent
+      })`);
+      assert.deepEqual(downloadedSpeechModels, ['parakeet-unified-en', 'parakeet-unified-en'], 'Download and retry should use the existing speech-model IPC');
+      assert.equal(installed.useDisabled, false, 'Use should be enabled once the model is installed');
+      assert.equal(installed.downloadDisabled, true, 'Download should be disabled for an installed model');
+      assert.match(installed.status, /installed and verified/i);
+
+      await win.webContents.executeJavaScript("document.querySelector('#ob-speech-use').click()");
+      await waitForHost(() => settings.transcription.offlineEnabled === true && settings.transcription.localModelId === 'parakeet-unified-en', 'local speech activation');
+      await waitFor(win, "document.querySelector('#ob-speech-use').textContent.includes('Local speech is on')", 'activation reflected in the step');
+      const activation = await win.webContents.executeJavaScript(`({ status: document.querySelector('#ob-speech-status').textContent, useDisabled: document.querySelector('#ob-speech-use').disabled })`);
+      assert.match(activation.status, /Audio stays on this machine/);
+      assert.equal(activation.useDisabled, true, 'Use should not run twice');
+
+      // 12 GB fixture: the multilingual model, already installed, offers Use
+      // without a download.
+      systemMemoryMb = 12288;
+      await win.webContents.executeJavaScript("document.querySelector('#ob-back').click(); document.querySelector('#ob-next').click()");
+      await waitFor(win, "document.querySelector('#ob-speech-card') && document.querySelector('#ob-speech-card').dataset.model === 'qwen3-asr-0.6b' && document.querySelector('#ob-speech-card').dataset.installed === 'true'", '8-15 GB installed recommendation');
+      const midTier = await win.webContents.executeJavaScript(`({
+        why: document.querySelector('#ob-speech-why').textContent,
+        useDisabled: document.querySelector('#ob-speech-use').disabled,
+        downloadDisabled: document.querySelector('#ob-speech-download').disabled,
+        badge: document.querySelector('#ob-speech-badge').textContent
+      })`);
+      assert.match(midTier.why, /8–15 GB/);
+      assert.match(midTier.why, /SenseVoiceSmall/, 'the smaller multilingual alternative should be named');
+      assert.equal(midTier.badge, 'Installed');
+      assert.equal(midTier.useDisabled, false, 'an installed model should offer Use');
+      assert.equal(midTier.downloadDisabled, true);
+      await capture(win, 'speech-installed');
+
+      // Less than 8 GB keeps the streaming English model and states its memory
+      // need instead of hiding it.
+      systemMemoryMb = 6144;
+      await win.webContents.executeJavaScript("document.querySelector('#ob-back').click(); document.querySelector('#ob-next').click()");
+      await waitFor(win, "document.querySelector('#ob-speech-card') && document.querySelector('#ob-speech-card').dataset.model === 'parakeet-unified-en'", 'low memory recommendation');
+      const lowTier = await win.webContents.executeJavaScript(`({ why: document.querySelector('#ob-speech-why').textContent })`);
+      assert.match(lowTier.why, /Less than 8 GB/);
+      assert.match(lowTier.why, /1\.2 GB/, 'low-memory devices should see the free-memory requirement');
+
+      // An unavailable runtime must say so and disable both actions.
+      ggufRuntimeAvailable = false;
+      await win.webContents.executeJavaScript("document.querySelector('#ob-back').click(); document.querySelector('#ob-next').click()");
+      await waitFor(win, "document.querySelector('#ob-speech-badge') && document.querySelector('#ob-speech-badge').textContent === 'Unavailable'", 'unavailable runtime state');
+      const unavailable = await win.webContents.executeJavaScript(`({
+        status: document.querySelector('#ob-speech-status').textContent,
+        downloadDisabled: document.querySelector('#ob-speech-download').disabled,
+        useDisabled: document.querySelector('#ob-speech-use').disabled
+      })`);
+      assert.match(unavailable.status, /not available on this platform/);
+      assert.match(unavailable.status, /no bundled GGUF worker/);
+      assert.equal(unavailable.downloadDisabled, true, 'Download must be disabled without a runtime');
+      assert.equal(unavailable.useDisabled, true, 'Use must be disabled without a runtime');
+      await capture(win, 'speech-unavailable');
+      ggufRuntimeAvailable = true;
+      systemMemoryMb = 16384;
+      await win.webContents.executeJavaScript("document.querySelector('#ob-back').click(); document.querySelector('#ob-next').click()");
+      await waitFor(win, "document.querySelector('#ob-speech-card').dataset.model === 'parakeet-unified-en' && document.querySelector('#ob-speech-badge').textContent === 'Installed'", 'restored speech step');
     }
     if (index === 1) {
       await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
@@ -177,7 +401,7 @@ app.whenReady().then(async () => {
     }
     if (index < names.length - 1) {
       await win.webContents.executeJavaScript("document.querySelector('#ob-next').click()");
-      await waitFor(win, `document.activeElement && document.activeElement.id === 'ob-title' && document.querySelector('#ob-step-count').textContent === '${index + 2} of 5'`, `${names[index + 1]} heading focus`);
+      await waitFor(win, `document.activeElement && document.activeElement.id === 'ob-title' && document.querySelector('#ob-step-count').textContent === '${index + 2} of ${names.length}'`, `${names[index + 1]} heading focus`);
     }
   }
   assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, `all onboarding steps should keep a stable shell height: ${heights.join(', ')}`);
@@ -209,10 +433,10 @@ app.whenReady().then(async () => {
   assert.deepEqual(modalIsolation, { onboardOpen: true, settingsOpen: false }, 'global Settings shortcut must be suppressed while onboarding is open');
 
   const replayed = await win.webContents.executeJavaScript("document.querySelector('#ob-step-count').textContent");
-  assert.match(replayed, /^1 of 10$/, 'reopening the guide from the logo should walk all tutorial topics');
-  for (let i = 0; i < 9; i += 1) {
+  assert.match(replayed, /^1 of 11$/, 'reopening the guide from the logo should walk all tutorial topics');
+  for (let i = 0; i < 10; i += 1) {
     await win.webContents.executeJavaScript("document.querySelector('#ob-next').click()");
-    await waitFor(win, `document.querySelector('#ob-step-count').textContent === '${i + 2} of 10'`, 'replayed guide advance');
+    await waitFor(win, `document.querySelector('#ob-step-count').textContent === '${i + 2} of 11'`, 'replayed guide advance');
   }
   const replayFinal = await win.webContents.executeJavaScript("document.querySelector('#ob-next').textContent");
   assert.equal(replayFinal, 'Done', 'replayed guide should finish with Done rather than Start using Lens');
@@ -240,7 +464,7 @@ app.whenReady().then(async () => {
   await capture(win, 'compact');
 
   await win.webContents.executeJavaScript("document.querySelector('#ob-back').click()");
-  await waitFor(win, "document.querySelector('#ob-step-count').textContent === '1 of 10'", 'compact welcome step');
+  await waitFor(win, "document.querySelector('#ob-step-count').textContent === '1 of 11'", 'compact welcome step');
   await waitForEntryAnimation(win, '#onboard', FIRST_PAINT_TIMEOUT_MS);
   const compactWelcome = await win.webContents.executeJavaScript(`(() => {
     const content = document.querySelector('#ob-content');
@@ -252,7 +476,7 @@ app.whenReady().then(async () => {
   assert.ok(compactWelcome.bodyBottom <= compactWelcome.contentBottom + 1, 'compact welcome body must stay inside the content pane');
   await capture(win, 'compact-welcome');
 
-  console.log('Onboarding UI behavior passed: 5 stable steps, provider settings pause/resume, focus trap/restoration, modal isolation, and compact layout.');
+  console.log('Onboarding UI behavior passed: 6 stable steps (including hardware-aware local speech), provider settings pause/resume, focus trap/restoration, modal isolation, and compact layout.');
   await guards.finish(0);
 }).catch(async (error) => {
   await guards.finish(1, error);

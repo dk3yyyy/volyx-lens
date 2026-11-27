@@ -3245,7 +3245,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if (document.activeElement !== target) setTimeout(() => target.focus({ preventScroll: true }), 0);
     if (obResumeAfterSettings) {
       obResumeAfterSettings = false;
-      showOnboard({ full: obSteps.length > 5, resumeIndex: obIndex, preservePreviousFocus: true });
+      showOnboard({ full: obFull, resumeIndex: obIndex, preservePreviousFocus: true });
     }
   }
   async function closeSettings() {
@@ -4657,6 +4657,392 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       obPermissionStatus.classList.remove('hidden');
     }
   }
+  // ---- onboarding: local speech on this device ---------------------------
+  // The recommendation depends on installed memory, nothing else. The bands are
+  // deliberately coarse because the catalog's memory figures are rough
+  // estimates; a finer split would claim precision the app does not have.
+  const OB_SPEECH_BANDS = Object.freeze([
+    { minTotalMemMb: 16384, modelId: 'parakeet-unified-en' },
+    { minTotalMemMb: 8192, modelId: 'qwen3-asr-0.6b' },
+    { minTotalMemMb: 0, modelId: 'parakeet-unified-en' },
+  ]);
+  const OB_SPEECH_ESTIMATE_MBPS = 20;
+  const OB_SPEECH_MULTILINGUAL_ALTERNATIVE = 'sensevoice-small';
+  const OB_SPEECH_LOW_MEMORY_NOTE = 'about 1.2 GB free while it runs';
+
+  let obSpeechData = {
+    models: Array.isArray(settings && settings.speechModels) ? settings.speechModels : [],
+    runtime: (settings && settings.localSpeech) || null,
+    totalMemMb: null,
+    platform: '',
+    loading: null,
+  };
+  let obSpeechPhase = 'idle';
+  let obSpeechMessage = '';
+  let obSpeechError = false;
+  let obSpeechPercent = 0;
+  let obSpeechSpeedMbps = null;
+  let obSpeechResumed = null;
+  let obSpeechDownloadId = '';
+  let obSpeechProgressAt = 0;
+  let obSpeechLastPercent = -1;
+
+  function onboardSpeechBand(totalMemMb) {
+    const total = Number(totalMemMb);
+    const known = Number.isFinite(total) && total > 0;
+    return {
+      known,
+      totalMemMb: known ? total : 0,
+      modelId: (OB_SPEECH_BANDS.find((band) => known && total >= band.minTotalMemMb) || OB_SPEECH_BANDS[OB_SPEECH_BANDS.length - 1]).modelId,
+    };
+  }
+
+  function onboardSpeechModels() {
+    return Array.isArray(obSpeechData.models) ? obSpeechData.models : [];
+  }
+
+  function currentOnboardSpeechModel() {
+    const band = onboardSpeechBand(obSpeechData.totalMemMb);
+    const models = onboardSpeechModels();
+    return models.find((model) => model.id === band.modelId)
+      || models.find((model) => model.runtime === 'transcribe-cpp')
+      || null;
+  }
+
+  function onboardSpeechSize(model) {
+    const bytes = Number(model && model.artifact && model.artifact.bytes);
+    if (Number.isFinite(bytes) && bytes > 0) return `${Math.round(bytes / 1048576)} MB`;
+    const estimated = Number(model && model.artifact && model.artifact.estimatedSizeMb);
+    return Number.isFinite(estimated) && estimated > 0 ? `${Math.round(estimated)} MB` : '';
+  }
+
+  // 20 Mbps is 2.5 MB/s; the label says "approximate" because throughput on a
+  // real connection is not the nominal link rate.
+  function onboardSpeechEstimate(model) {
+    const bytes = Number(model && model.artifact && model.artifact.bytes);
+    if (!Number.isFinite(bytes) || bytes <= 0) return '';
+    const seconds = (bytes * 8) / (OB_SPEECH_ESTIMATE_MBPS * 1000 * 1000);
+    if (seconds < 60) return `about ${Math.max(1, Math.round(seconds))} sec at 20 Mbps`;
+    const minutes = Math.ceil(seconds / 60);
+    if (minutes < 60) return `about ${minutes} min at 20 Mbps`;
+    return `about ${Math.round((minutes / 60) * 10) / 10} hr at 20 Mbps`;
+  }
+
+  function onboardSpeechUnavailableReason(model) {
+    if (!model) return 'No on-device GGUF model is included in this build.';
+    if (model.runtimeAvailable === true) return '';
+    const localSpeech = obSpeechData.runtime || (settings && settings.localSpeech);
+    const reported = localSpeech && localSpeech.gguf && localSpeech.gguf.reason;
+    const reason = reported ? String(reported).replace(/[.\s]+$/, '') : '';
+    return `Local transcription is not available on this platform${reason ? `: ${reason}` : ''}.`;
+  }
+
+  function onboardSpeechGuidance(band) {
+    if (!band.known) {
+      return 'Memory could not be detected. Parakeet Unified English is the smallest streaming option.';
+    }
+    if (band.totalMemMb >= 16384) {
+      return '16 GB or more of memory detected. Parakeet Unified English streams English as you speak.';
+    }
+    if (band.totalMemMb >= 8192) {
+      const smaller = onboardSpeechModels().find((model) => model.id === OB_SPEECH_MULTILINGUAL_ALTERNATIVE);
+      const smallerSize = smaller ? onboardSpeechSize(smaller) : '';
+      return `8–15 GB of memory detected. Qwen3-ASR 0.6B transcribes 30 languages${smallerSize ? `; SenseVoiceSmall (${smallerSize}) is a smaller alternative` : ''}.`;
+    }
+    return `Less than 8 GB of memory detected. Parakeet Unified English needs ${OB_SPEECH_LOW_MEMORY_NOTE}.`;
+  }
+
+  function setObButtonCopy(button, label, detail) {
+    if (!button) return;
+    const strong = button.querySelector('.ob-button-copy strong');
+    const small = button.querySelector('.ob-button-copy small');
+    if (strong) strong.textContent = label;
+    if (small) small.textContent = detail;
+  }
+
+  function onboardSpeechStatusLine({ model, unavailable, installed, busy }) {
+    if (unavailable) return `${unavailable} You can keep your current transcription setup.`;
+    if (obSpeechPhase === 'downloading') {
+      const parts = [`Downloading ${model ? model.name : 'local model'} · ${Math.round(obSpeechPercent)}%`];
+      if (Number.isFinite(obSpeechSpeedMbps) && obSpeechSpeedMbps > 0) parts.push(`${obSpeechSpeedMbps.toFixed(1)} MB/s`);
+      if (obSpeechResumed === true) parts.push('resumed');
+      else if (obSpeechResumed === false) parts.push('started fresh');
+      return parts.join(' · ');
+    }
+    if (obSpeechPhase === 'checking') return 'Checking the existing download…';
+    if (obSpeechMessage) return obSpeechMessage;
+    if (installed) return 'Installed on this device. Use local speech for Listening below.';
+    return busy ? 'Working…' : 'Not downloaded yet.';
+  }
+
+  function updateOnboardSpeech() {
+    const card = $('#ob-speech-card');
+    if (!card) return;
+    const model = currentOnboardSpeechModel();
+    const band = onboardSpeechBand(obSpeechData.totalMemMb);
+    const unavailable = onboardSpeechUnavailableReason(model);
+    const installed = Boolean(model && model.installed === true);
+    const downloading = obSpeechPhase === 'downloading';
+    const checking = obSpeechPhase === 'checking';
+    const busy = downloading || checking;
+    card.dataset.model = model ? model.id : '';
+    card.dataset.installed = installed ? 'true' : 'false';
+    card.dataset.phase = obSpeechPhase;
+    $('#ob-speech-model').textContent = model ? model.name : 'No local model';
+    const badge = $('#ob-speech-badge');
+    badge.textContent = unavailable ? 'Unavailable' : installed ? 'Installed' : downloading ? 'Downloading' : 'Recommended';
+    badge.className = `ob-speech-badge${unavailable ? ' off' : installed ? ' installed' : ''}`;
+    const meta = [];
+    if (model) {
+      const size = onboardSpeechSize(model);
+      if (size) meta.push(size);
+      const estimate = onboardSpeechEstimate(model);
+      if (estimate) meta.push(estimate);
+      meta.push('approximate');
+    }
+    $('#ob-speech-meta').textContent = meta.join(' · ');
+    $('#ob-speech-why').textContent = onboardSpeechGuidance(band);
+    const progress = $('#ob-speech-progress');
+    progress.classList.toggle('hidden', !busy);
+    if (busy) {
+      const percent = Math.max(0, Math.min(100, Math.round(obSpeechPercent)));
+      progress.setAttribute('aria-valuenow', String(percent));
+      progress.setAttribute('aria-valuetext', `${percent}%`);
+      $('#ob-speech-progress-fill').style.width = `${percent}%`;
+    }
+    const status = $('#ob-speech-status');
+    status.className = `ob-speech-status${obSpeechError ? ' error' : ''}`;
+    status.textContent = onboardSpeechStatusLine({ model, unavailable, installed, busy });
+    const onForListening = Boolean(model && settings && settings.transcription
+      && settings.transcription.offlineEnabled === true
+      && String(settings.transcription.localModelId || '') === model.id);
+    const download = $('#ob-speech-download');
+    const cancel = $('#ob-speech-cancel');
+    const use = $('#ob-speech-use');
+    if (!download || !cancel || !use) return;
+    const size = onboardSpeechSize(model);
+    download.classList.toggle('hidden', busy);
+    cancel.classList.toggle('hidden', !downloading);
+    download.disabled = Boolean(unavailable) || installed || busy;
+    setObButtonCopy(download,
+      installed ? 'Downloaded' : 'Download model',
+      installed ? `${size} on this device; integrity checked` : `Download ${size || 'this model'} to this computer`);
+    use.disabled = Boolean(unavailable) || !installed || busy || onForListening;
+    setObButtonCopy(use,
+      onForListening ? 'Local speech is on' : 'Use local speech for Listening',
+      onForListening ? 'Applies the next time you start Listening'
+        : installed ? 'Keeps audio on this machine while Listening' : 'Download the model first');
+  }
+
+  async function refreshOnboardSpeechData() {
+    if (obSpeechData.loading) return obSpeechData.loading;
+    obSpeechData.loading = (async () => {
+      try {
+        const [models, info, current] = await Promise.all([
+          volyxLens.speechModelsGet().catch(() => null),
+          volyxLens.systemInfo().catch(() => null),
+          volyxLens.settingsGet().catch(() => null),
+        ]);
+        if (Array.isArray(models)) {
+          obSpeechData.models = models;
+          settings.speechModels = models;
+        }
+        if (current && current.localSpeech) {
+          // The runtime reason is part of the settings snapshot; refresh it so
+          // an unavailable runtime explains itself instead of only disabling.
+          obSpeechData.runtime = current.localSpeech;
+          settings.localSpeech = current.localSpeech;
+        }
+        if (current && current.transcription) settings.transcription = { ...settings.transcription, ...current.transcription };
+        if (info && Number.isFinite(Number(info.totalMemMb))) {
+          obSpeechData.totalMemMb = Number(info.totalMemMb);
+          obSpeechData.platform = String(info.platform || '');
+        }
+      } finally {
+        obSpeechData.loading = null;
+      }
+      if (obSteps[obIndex] && obSteps[obIndex].kind === 'speech') updateOnboardSpeech();
+    })();
+    return obSpeechData.loading;
+  }
+
+  async function downloadOnboardSpeechModel() {
+    const model = currentOnboardSpeechModel();
+    if (!model || onboardSpeechUnavailableReason(model)) return;
+    const wasInstalled = model.installed === true;
+    obSpeechDownloadId = model.id;
+    obSpeechPhase = wasInstalled ? 'checking' : 'downloading';
+    obSpeechPercent = 0;
+    obSpeechSpeedMbps = null;
+    obSpeechResumed = null;
+    obSpeechError = false;
+    obSpeechMessage = '';
+    obSpeechProgressAt = 0;
+    obSpeechLastPercent = -1;
+    updateOnboardSpeech();
+    try {
+      const result = await volyxLens.speechModelDownload(model.id);
+      const models = result && Array.isArray(result.models)
+        ? result.models
+        : await volyxLens.speechModelsGet().catch(() => null);
+      if (Array.isArray(models)) {
+        obSpeechData.models = models;
+        settings.speechModels = models;
+      }
+      const after = currentOnboardSpeechModel();
+      if (after && after.installed === true) {
+        obSpeechPhase = 'installed';
+        obSpeechPercent = 100;
+        obSpeechMessage = `${after.name} is installed and verified. Use local speech for Listening below.`;
+      } else {
+        // Never call a download successful on the promise alone: the installed
+        // flag comes from the verified artifact, and the UI must match it.
+        obSpeechPhase = 'idle';
+        obSpeechError = true;
+        obSpeechMessage = 'The download finished, but the model is not marked as installed. Check Listening settings.';
+      }
+    } catch (error) {
+      const message = error && error.message ? error.message : 'The model download failed.';
+      const canceled = /cancel|abort/i.test(message);
+      obSpeechPhase = 'idle';
+      obSpeechError = !canceled;
+      obSpeechMessage = canceled
+        ? 'Download cancelled. Your current transcription setup is unchanged.'
+        : message;
+    } finally {
+      if (obSpeechDownloadId === model.id) obSpeechDownloadId = '';
+      updateOnboardSpeech();
+    }
+  }
+
+  async function cancelOnboardSpeechDownload() {
+    if (!obSpeechDownloadId) return;
+    try {
+      await volyxLens.speechModelCancelDownload(obSpeechDownloadId);
+      const status = $('#ob-speech-status');
+      if (status) status.textContent = 'Cancelling the download…';
+    } catch (error) {
+      const status = $('#ob-speech-status');
+      if (status) status.textContent = error && error.message ? error.message : 'The download could not be cancelled.';
+    }
+  }
+
+  async function activateOnboardLocalSpeech() {
+    const model = currentOnboardSpeechModel();
+    if (!model || model.installed !== true) return;
+    const use = $('#ob-speech-use');
+    if (use) use.disabled = true;
+    try {
+      let updated = await volyxLens.settingsSet({ transcription: { offlineEnabled: true, localModelId: model.id } });
+      if (!updated || !updated.transcription) updated = await volyxLens.settingsGet().catch(() => null);
+      if (updated && updated.transcription) settings = { ...settings, ...updated };
+      const applied = Boolean(settings && settings.transcription
+        && settings.transcription.offlineEnabled === true
+        && String(settings.transcription.localModelId || '') === model.id);
+      obSpeechError = !applied;
+      obSpeechMessage = applied
+        ? `Local speech is on for Listening: ${model.name}. Audio stays on this machine.`
+        : 'This build could not turn on local speech. Check Listening settings.';
+    } catch (error) {
+      obSpeechError = true;
+      obSpeechMessage = error && error.message ? error.message : 'Local speech could not be enabled.';
+    } finally {
+      updateOnboardSpeech();
+    }
+  }
+
+  // Progress payloads are a fraction today. A payload may also carry a
+  // throughput figure and how many bytes a resumed transfer started from.
+  // Flatten a nested progress object so both `{ progress, bytesPerSecond }`
+  // and `{ progress: { percent, bytesPerSecond } }` read the same way, and
+  // never invent values the source did not send.
+  function readOnboardSpeechProgress(payload) {
+    if (typeof payload === 'number') {
+      const fraction = Math.max(0, Math.min(1, payload));
+      return { percent: fraction * 100, speedMbps: null, resumed: null };
+    }
+    const envelope = payload && typeof payload === 'object' ? payload : {};
+    const source = envelope.progress && typeof envelope.progress === 'object'
+      ? { ...envelope, ...envelope.progress }
+      : envelope;
+    let percent = null;
+    const fraction = Number(source.progress);
+    if (Number.isFinite(fraction)) percent = Math.max(0, Math.min(1, fraction)) * 100;
+    else if (Number.isFinite(Number(source.percent))) percent = Math.max(0, Math.min(100, Number(source.percent)));
+    let speed = null;
+    for (const key of ['mbPerSecond', 'megabytesPerSecond', 'mbPerSec', 'speedMbps', 'mbps']) {
+      const value = Number(source[key]);
+      if (Number.isFinite(value) && value > 0) { speed = value; break; }
+    }
+    if (speed === null && Number.isFinite(Number(source.bytesPerSecond)) && Number(source.bytesPerSecond) > 0) {
+      speed = Number(source.bytesPerSecond) / (1024 * 1024);
+    }
+    const resumedFrom = Number(source.resumedFrom);
+    const resumed = source.resumed === true || source.resumedFromPartial === true
+      || Number(source.resumedBytes) > 0 || (Number.isFinite(resumedFrom) && resumedFrom > 0)
+      ? true
+      : source.resumed === false || source.resumedFromPartial === false || resumedFrom === 0
+        ? false
+        : null;
+    return { percent, speedMbps: speed, resumed };
+  }
+
+  function handleOnboardSpeechProgress(event) {
+    if (!obSpeechDownloadId || !event || event.id !== obSpeechDownloadId) return;
+    const parsed = readOnboardSpeechProgress(event);
+    if (parsed.percent !== null) obSpeechPercent = parsed.percent;
+    if (parsed.speedMbps !== null) obSpeechSpeedMbps = parsed.speedMbps;
+    if (parsed.resumed !== null) obSpeechResumed = parsed.resumed;
+    // One event per network chunk is far more than the status line needs.
+    // Announcement-worthy changes are a new whole percent or new detail
+    // (speed, resume); the rest only cost a repaint.
+    const percent = Math.round(obSpeechPercent);
+    const changed = percent !== obSpeechLastPercent;
+    const detail = parsed.speedMbps !== null || parsed.resumed !== null;
+    obSpeechLastPercent = percent;
+    if (!changed && !detail) return;
+    const now = Date.now();
+    if (percent < 100 && now - obSpeechProgressAt < 100) return;
+    obSpeechProgressAt = now;
+    updateOnboardSpeech();
+  }
+  volyxLens.on('speech:model-progress', handleOnboardSpeechProgress);
+
+  function renderOnboardSpeech() {
+    // Entering the step starts a fresh view of the recommendation. An in-flight
+    // download keeps its phase so Cancel stays reachable if the user navigates
+    // back and forth while bytes are still arriving.
+    if (obSpeechPhase !== 'downloading' && obSpeechPhase !== 'checking') {
+      obSpeechPhase = 'idle';
+      obSpeechMessage = '';
+      obSpeechError = false;
+    }
+    const body = $('#ob-body');
+    if (!document.getElementById('ob-speech-card')) {
+      const card = document.createElement('div');
+      card.id = 'ob-speech-card';
+      card.className = 'ob-speech-card';
+      card.innerHTML = '<div class="ob-speech-head"><strong id="ob-speech-model"></strong><span id="ob-speech-badge" class="ob-speech-badge">Recommended</span></div>'
+        + '<div class="ob-speech-meta" id="ob-speech-meta"></div>'
+        + '<div class="ob-speech-why" id="ob-speech-why"></div>'
+        + '<div class="ob-speech-progress hidden" id="ob-speech-progress" role="progressbar" aria-label="Model download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="ob-speech-progress-fill" id="ob-speech-progress-fill"></div></div>'
+        + '<div class="ob-speech-status" id="ob-speech-status" role="status" aria-live="polite"></div>';
+      body.appendChild(card);
+      const note = document.createElement('div');
+      note.className = 'ob-note';
+      note.textContent = 'Estimates are approximate; Continue keeps your current transcription setup.';
+      body.appendChild(note);
+    }
+    const btns = $('#ob-buttons');
+    btns.replaceChildren(
+      obActionButton({ id: 'ob-speech-download', icon: 'chevron-down', label: 'Download model', detail: 'Download to this computer', action: downloadOnboardSpeechModel }),
+      obActionButton({ id: 'ob-speech-cancel', icon: 'power', label: 'Cancel download', detail: 'Stop and discard the partial file', action: cancelOnboardSpeechDownload }),
+      obActionButton({ id: 'ob-speech-use', icon: 'zap', label: 'Use local speech for Listening', detail: 'Download the model first', action: activateOnboardLocalSpeech })
+    );
+    updateOnboardSpeech();
+    void refreshOnboardSpeechData();
+  }
+
   const OB_STEPS = [
     {
       stepLabel: 'Welcome',
@@ -4690,6 +5076,15 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         obScrim.classList.add('hidden');
         await openSettings();
       } }]
+    },
+    {
+      stepLabel: 'Speech on this device',
+      icon: 'mic',
+      kind: 'speech',
+      kicker: 'Audio stays here',
+      note: 'Local transcription runs on this machine; your audio is not uploaded.',
+      title: 'Speech on this device.',
+      body: '<p>Local transcription keeps your audio on this machine.</p>'
     },
     {
       stepLabel: 'Screen sharing',
@@ -4756,8 +5151,38 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   let obIndex = 0;
   let obFromSettings = false;
   let obReplay = false;
+  let obFull = false;
   let obSteps = OB_STEPS;
   $('#ob-brand-mark').innerHTML = brandLogo('onboarding-brand-logo');
+  function obActionButton(definition) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    if (definition.id) button.id = definition.id;
+    if (definition.kind) button.dataset.permissionKind = definition.kind;
+    const buttonIcon = document.createElement('span');
+    buttonIcon.className = 'ob-button-icon';
+    buttonIcon.innerHTML = icon(definition.icon, { size: 16, stroke: 1.8 });
+    const copy = document.createElement('span');
+    copy.className = 'ob-button-copy';
+    const label = document.createElement('strong');
+    label.textContent = definition.label;
+    const detail = document.createElement('small');
+    detail.textContent = definition.detail;
+    copy.append(label, detail);
+    const trailing = document.createElement('span');
+    if (definition.kind) {
+      const state = permissionStates[definition.kind];
+      trailing.className = `ob-permission-state ${state.className}`.trim();
+      trailing.textContent = state.text;
+    } else {
+      trailing.className = 'ob-button-arrow';
+      trailing.textContent = '›';
+    }
+    button.append(buttonIcon, copy, trailing);
+    button.addEventListener('click', definition.action);
+    if (definition.disabled === true) button.disabled = true;
+    return button;
+  }
   function renderOnboard() {
     const step = obSteps[obIndex];
     const onboardingIcon = $('#ob-icon');
@@ -4773,35 +5198,13 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#ob-title').textContent = step.title;
     $('#ob-body').innerHTML = localizeShortcutText(step.body);
     const btns = $('#ob-buttons'); btns.replaceChildren();
+    btns.classList.toggle('ob-buttons-compact', step.kind === 'speech');
     obPermissionStatus.textContent = '';
     obPermissionStatus.className = 'ob-permission-status hidden';
     (step.buttons || []).forEach((definition) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      if (definition.kind) button.dataset.permissionKind = definition.kind;
-      const buttonIcon = document.createElement('span');
-      buttonIcon.className = 'ob-button-icon';
-      buttonIcon.innerHTML = icon(definition.icon, { size: 16, stroke: 1.8 });
-      const copy = document.createElement('span');
-      copy.className = 'ob-button-copy';
-      const label = document.createElement('strong');
-      label.textContent = definition.label;
-      const detail = document.createElement('small');
-      detail.textContent = definition.detail;
-      copy.append(label, detail);
-      const trailing = document.createElement('span');
-      if (definition.kind) {
-        const state = permissionStates[definition.kind];
-        trailing.className = `ob-permission-state ${state.className}`.trim();
-        trailing.textContent = state.text;
-      } else {
-        trailing.className = 'ob-button-arrow';
-        trailing.textContent = '›';
-      }
-      button.append(buttonIcon, copy, trailing);
-      button.addEventListener('click', definition.action);
-      btns.appendChild(button);
+      btns.appendChild(obActionButton(definition));
     });
+    if (step.kind === 'speech') renderOnboardSpeech();
     const dots = $('#ob-dots'); dots.replaceChildren();
     obSteps.forEach((item, index) => {
       const dot = document.createElement('span');
@@ -4867,6 +5270,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         : $('#logo-btn');
     }
     obSteps = full ? OB_STEPS : OB_STEPS.filter((step) => step.firstRun !== false);
+    obFull = full;
     obIndex = Math.max(0, Math.min(resumeIndex, obSteps.length - 1));
     renderOnboard();
     obScrim.classList.remove('hidden');

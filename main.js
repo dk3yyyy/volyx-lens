@@ -3908,6 +3908,14 @@ handleTrusted('settings:get', () => ({
   speechModels: speechModelsWithStatus(),
   speechDiarizer: speechDiarizerStatus(),
 }));
+// Onboarding recommends a local speech model from the machine it runs on. The
+// renderer gets only the three values the recommendation needs — no hostname,
+// user, or device identifiers.
+handleTrusted('system:info', () => ({
+  totalMemMb: Math.round(os.totalmem() / (1024 * 1024)),
+  platform: process.platform,
+  arch: process.arch,
+}));
 handleTrusted('settings:set', (_e, patch = {}) => {
   const offlineWhisper = offlineWhisperStatus();
   const localSpeech = localSpeechRuntimeStatus();
@@ -4010,10 +4018,14 @@ handleTrusted('speech-model:download', async (event, id) => {
     const controller = new AbortController();
     speechModelDownloads.set(model.id, controller);
     try {
-      const result = await prepareSpeechModel(model.id, (progress) => {
+      const result = await prepareSpeechModel(model.id, (progress, details) => {
         if (event.sender.isDestroyed()) return;
         try {
-          event.sender.send('speech:model-progress', { id: model.id, progress });
+          event.sender.send('speech:model-progress', {
+            id: model.id,
+            progress,
+            ...(details && typeof details === 'object' ? details : {}),
+          });
         } catch (error) {
           console.warn('[speech-model] progress notification failed', String(error && error.message || 'unknown').slice(0, 160));
         }
