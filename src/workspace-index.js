@@ -289,11 +289,22 @@ function createWorkspaceIndex({
   }
 
   function hasPrivateAncestor(root) {
+    // Windows temp lives under AppData. A project inside the system temp tree is
+    // scratch, not app data, so only the OS app-data names are waived there;
+    // dot-private folders keep blocking wherever they appear.
+    const insideSystemTemp = isWithinRoot(path.resolve(os.tmpdir()), root);
     let current = path.resolve(root);
     while (true) {
       const parent = path.dirname(current);
       if (parent === current) return false;
-      if (PRIVATE_ANCESTOR_NAMES.has(path.basename(parent).toLowerCase())) return true;
+      const name = path.basename(parent).toLowerCase();
+      if (PRIVATE_ANCESTOR_NAMES.has(name)) {
+        if (insideSystemTemp && (name === 'appdata' || name === 'application support')) {
+          current = parent;
+          continue;
+        }
+        return true;
+      }
       current = parent;
     }
   }
@@ -393,7 +404,10 @@ function createWorkspaceIndex({
   async function refreshWorkspace(id) {
     const workspace = getWorkspace(id);
     database.prepare('UPDATE workspaces SET index_complete = 0 WHERE id = ?').run(workspace.id);
-    const root = canonicalPath(workspace.root_path);
+    // Resolve with the same async API used for every file below; on Windows the
+    // sync and async realpath calls can disagree on 8.3 versus long names, and a
+    // mismatch here made the walk reject its own root.
+    const root = await fs.promises.realpath(workspace.root_path);
     if (!fs.statSync(root).isDirectory()) throw new Error('The selected workspace folder is no longer available.');
     if (root !== workspace.root_path) {
       // A different path is a retarget, not a spelling fix: refuse it so refresh

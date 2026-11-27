@@ -860,3 +860,17 @@ test('refresh refuses a workspace root retargeted to a different folder', async 
     index.close();
   }
 });
+
+test('a project inside the system temp tree is not treated as app data', () => {
+  const directory = temporaryDirectory();
+  const root = path.join(directory, 'AppData', 'Local', 'Temp', 'project');
+  fs.mkdirSync(root, { recursive: true });
+  write(root, 'README.md', 'tempmarker\n');
+  const index = createIndex(directory);
+  try {
+    const workspace = index.add(root);
+    assert.ok(workspace && workspace.id);
+  } finally {
+    index.close();
+  }
+});
