@@ -110,18 +110,17 @@ These captures come from the current Electron UI test harness. Provider values s
 
 ## Download
 
-### Current release: v0.8.9
+### Current release: v0.9.0
 
 What changed in this release:
 
-- **Local Whisper starts again.** The packaged whisper-server no longer receives the unsupported `--temp` flag. The app uses a valid TCP port, a two-minute startup budget, and deterministic temperature in the inference request.
-- **Long downloads can be cancelled.** Model downloads are abortable, clean up partial files, forward progress, and cannot spawn a server after the user stops listening.
-- **Startup failures are fast and readable.** A child that exits during startup reports its exit code and stderr instead of waiting for the full timeout. Concurrent starts share one process.
-- **The model picker is honest.** It offers only the 16 models with published files, removes the unavailable `large-v3.en` and `distil-large-v3` choices, and labels multilingual quantized models correctly.
-- **The local engine is still private.** Audio stays on the machine after the model download. Cloud fallback remains opt-in and is off by default.
+- **Local GGUF speech engine.** Run Parakeet, Whisper, Qwen3-ASR, Cohere, SenseVoice or Nemotron on-device through a separate Rust worker. Models are version-pinned and SHA-256 verified, with CPU fallback and optional GPU acceleration.
+- **Streaming and batch transcription.** Parakeet and Nemotron stream with Silero VAD, bounded windows, vocabulary boosting and per-model language handling. Other models run local batch inference.
+- **You and Them stay separate.** Microphone and system audio use independent channels. Speaker echo is suppressed without dropping overlapping speech, silent system capture is detected, and hidden echo lines can be shown and restored.
+- **Speaker diarization.** Optional post-session Sortformer analysis separates system speakers with bounded in-memory audio and no audio written to disk.
+- **Local-first setup.** Onboarding recommends a model from available RAM, downloads resume after interruption, and Listening exposes Speakers / Headphones / Auto plus a Faster live text option.
 
-
-v0.8.9 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Signed and notarized macOS DMGs replace the unsigned ones once release signing credentials are configured. Windows, Linux, and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. Auto-update metadata follows signing on Windows and macOS: an unsigned Windows installer publishes no `latest.yml` and has no update channel, and the macOS updater ships only with the signed DMGs. Linux is the exception: tag-triggered releases publish per-architecture metadata (`latest-x64-linux.yml`, `latest-arm64-linux-arm64.yml`) for the unsigned AppImages, so they do update in place.
+v0.9.0 publishes a Windows NSIS installer, Linux AppImages (x64 and arm64), and unsigned macOS DMGs for Apple Silicon and Intel. Windows, Linux and the attached macOS DMGs are all unsigned; Windows shows a SmartScreen warning and macOS needs the right-click Open step below. This unsigned beta ships no updater metadata on any platform, so updates are manual until signed release credentials are configured.
 
 ### Install with one command
 
@@ -141,27 +140,27 @@ irm https://volyxlens.pages.dev/install.ps1 | iex
 
 [View install.ps1](https://github.com/dk3yyyy/volyx-lens/blob/main/website/install.ps1)
 
-The installer resolves the newest release, downloads the asset for your OS and architecture, verifies the published SHA-256, and installs it — `/Applications` on macOS (or `~/Applications` with `--user`), `~/.local/bin` plus a desktop entry on Linux, and the per-user installer on Windows. It needs no Node or package manager. Pass `--version v0.8.9` to install a specific release, `--dry-run` to see the URL, or `--no-launch` to skip opening the app.
+The installer resolves the newest release, downloads the asset for your OS and architecture, verifies the published SHA-256, and installs it — `/Applications` on macOS (or `~/Applications` with `--user`), `~/.local/bin` plus a desktop entry on Linux, and the per-user installer on Windows. It needs no Node or package manager. Pass `--version v0.9.0` to install a specific release, `--dry-run` to see the URL, or `--no-launch` to skip opening the app.
 
 | Mac | Installer |
 |---|---|
-| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.8.9 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.9/volyx-lens-0.8.9-mac-arm64-unsigned.dmg) · right-click Open |
-| **Intel** | [v0.8.9 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.8.9/volyx-lens-0.8.9-mac-x64-unsigned.dmg) · right-click Open |
+| **Apple Silicon:** M1, M2, M3, M4, or newer | [v0.9.0 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.9.0/volyx-lens-0.9.0-mac-arm64-unsigned.dmg) · right-click Open |
+| **Intel** | [v0.9.0 unsigned DMG](https://github.com/dk3yyyy/volyx-lens/releases/download/v0.9.0/volyx-lens-0.9.0-mac-x64-unsigned.dmg) · right-click Open |
 
 | Windows / Linux | Installer |
 |---|---|
-| **Windows (x64)** | `volyx-lens-0.8.9-win-x64.exe` |
-| **Linux (x64)** | `volyx-lens-0.8.9-linux-x86_64.AppImage` |
-| **Linux (arm64)** | `volyx-lens-0.8.9-linux-arm64.AppImage` |
+| **Windows (x64)** | `volyx-lens-0.9.0-win-x64.exe` |
+| **Linux (x64)** | `volyx-lens-0.9.0-linux-x86_64.AppImage` |
+| **Linux (arm64)** | `volyx-lens-0.9.0-linux-arm64.AppImage` |
 
-**[Open the v0.8.9 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.8.9)**
+**[Open the v0.9.0 release and download the matching installer →](https://github.com/dk3yyyy/volyx-lens/releases/tag/v0.9.0)**
 
-The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. Later tag-triggered releases publish per-file checksum and SBOM files alongside the installers. Signed and notarized builds will replace them once release signing credentials are configured.
+The Windows installer is unsigned and shows a SmartScreen "Unknown publisher" warning on first launch; the Linux AppImages are unsigned but run directly after `chmod +x`. This release includes per-file SHA-256 checksums and CycloneDX SBOMs alongside the installers. Signed and notarized builds with auto-update will replace them once release signing credentials are configured.
 
 ### Install on Windows and Linux
 
-1. **Windows:** run `volyx-lens-0.8.9-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
-2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.8.9-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
+1. **Windows:** run `volyx-lens-0.9.0-win-x64.exe` and follow the installer. If SmartScreen warns the publisher is unknown, choose **More info → Run anyway** after verifying the published SHA-256 checksum.
+2. **Linux:** make the matching AppImage executable (`chmod +x volyx-lens-0.9.0-linux-x86_64.AppImage` or `...-linux-arm64.AppImage`) and run it. The Them channel additionally needs `pactl` and `parec` (`pulseaudio-utils`, or PipeWire's PulseAudio compatibility) and an active default audio sink.
 
 ### Install the DMG
 
