@@ -137,6 +137,7 @@ ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => listedRecords());
 ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: deletedRecords.length }));
+ipcMain.handle('history:memory-list', () => []);
 let nextMenuAction = null;
 ipcMain.handle('text:copy', (_event, text) => {
   calls.clipboard.push(text);

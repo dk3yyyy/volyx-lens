@@ -479,6 +479,7 @@
   let meetingHistoryRequest = 0;
   let meetingDetail = null;
   let meetingNotesText = '';
+  let meetingMemoryEntries = [];
   let meetingHistorySearchTimer = null;
   // How many records the store keeps, and how long a deleted one stays
   // recoverable. Both are fetched rather than hardcoded so the sentences the
@@ -638,12 +639,14 @@
       remove.title = 'Delete this meeting';
       remove.setAttribute('aria-label', 'Delete meeting');
       remove.addEventListener('click', async () => {
-        if (!window.confirm('Delete this saved meeting? You can undo this right after.')) return;
+        if (!window.confirm('Delete this saved meeting? Any saved memory linked to it will also be deleted and will not return on Undo.')) return;
         try {
           const result = await volyxLens.historyDelete(record.id);
           meetingSelected.delete(record.id);
           setHistoryUndo(result && result.removed ? [record.id] : []);
-          showStatus(result && result.removed ? 'Meeting deleted. Undo is in the history pane.' : 'That meeting is no longer available.');
+          showStatus(result && result.removed
+            ? `Meeting deleted.${result.memoryRemoved ? ' Its saved memory was also deleted.' : ''} Undo is in the history pane.`
+            : 'That meeting is no longer available.');
           await refreshHistoryLimits();
           await loadMeetingHistory();
         } catch (error) { showStatus(error && error.message ? error.message : 'The meeting could not be deleted.'); }
@@ -866,15 +869,18 @@
   $('#meeting-history-delete-selected').addEventListener('click', async () => {
     const ids = [...meetingSelected];
     if (!ids.length) return;
-    if (!window.confirm(`Delete ${ids.length} saved meeting${ids.length === 1 ? '' : 's'}? You can undo this right after.`)) return;
+    if (!window.confirm(`Delete ${ids.length} saved meeting${ids.length === 1 ? '' : 's'}? Any linked memories will also be deleted and will not return on Undo.`)) return;
     try {
       const result = await volyxLens.historyDeleteMany(ids);
       meetingSelected.clear();
       meetingSelectMode = false;
       setHistoryUndo(result && result.removed ? (Array.isArray(result.ids) ? result.ids : ids) : []);
+      const memoryFailureNotice = result && result.memoryFailures
+        ? ` ${result.memoryFailures} meeting${result.memoryFailures === 1 ? '' : 's'} could not be deleted with its linked memory.`
+        : '';
       showStatus(result && result.removed
-        ? `Deleted ${result.removed} saved meeting${result.removed === 1 ? '' : 's'}. Undo is in the history pane.`
-        : 'Nothing was deleted.');
+        ? `Deleted ${result.removed} saved meeting${result.removed === 1 ? '' : 's'}${result.memoriesRemoved ? ` and ${result.memoriesRemoved} linked memor${result.memoriesRemoved === 1 ? 'y' : 'ies'}` : ''}.${memoryFailureNotice} Undo is in the history pane.`
+        : memoryFailureNotice || 'Nothing was deleted.');
       await refreshHistoryLimits();
       await loadMeetingHistory();
       updateMeetingSelectionUi();
@@ -1014,11 +1020,21 @@
 
   let meetingDetailOpenerId = null;
 
+  function hasMeetingNotes(notes) {
+    return Boolean(notes && (
+      notes.summary || notes.keyPoints?.length || notes.decisions?.length
+      || notes.actionItems?.length || notes.followUp?.length
+    ));
+  }
+
   async function openMeetingDetail(id) {
     try {
       const record = await volyxLens.historyGet(id);
       if (!record) { showStatus('That meeting is no longer available.'); return; }
       meetingDetail = record;
+      const memoryButton = $('#meeting-memory-save');
+      memoryButton.disabled = !hasMeetingNotes(record.notes);
+      memoryButton.textContent = record.memory ? 'Update saved memory' : 'Save notes to memory';
       meetingDetailOpenerId = id;
       meetingNotesText = '';
       meetingViewMode = 'cleaned';
@@ -1026,7 +1042,7 @@
       out.classList.add('hidden');
       out.textContent = '';
       renderMeetingTurns();
-      if (record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length)) {
+      if (hasMeetingNotes(record.notes)) {
         const out = $('#meeting-notes-output');
         out.innerHTML = renderNotesHtml(record.notes, '');
         const source = document.createElement('p');
@@ -1075,7 +1091,7 @@
 
   $('#meeting-history-delete').addEventListener('click', async () => {
     if (!meetingDetail) return;
-    if (!window.confirm('Delete this saved meeting? You can undo this right after.')) return;
+    if (!window.confirm('Delete this saved meeting? Any saved memory linked to it will also be deleted and will not return on Undo.')) return;
     const deletedId = meetingDetail.id;
     try {
       const result = await volyxLens.historyDelete(meetingDetail.id);
@@ -1083,13 +1099,15 @@
       await refreshHistoryLimits();
       closeMeetingDetail();
       await loadMeetingHistory();
-      showStatus(result && result.removed ? 'Meeting deleted.' : 'That meeting is no longer available.');
+      showStatus(result && result.removed
+        ? `Meeting deleted.${result.memoryRemoved ? ' Its saved memory was also deleted.' : ''}`
+        : 'That meeting is no longer available.');
     } catch (error) { showStatus(error && error.message ? error.message : 'The meeting could not be deleted.'); }
   });
 
   $('#meeting-history-clear').addEventListener('click', async () => {
     if (!meetingHistoryRecords.length) return;
-    if (!window.confirm('Delete ALL saved meetings? This cannot be undone, and it permanently removes the undo copies of earlier deletes.')) return;
+    if (!window.confirm('Delete ALL saved meetings and their linked memories? This cannot be undone, and it permanently removes the undo copies of earlier deletes.')) return;
     try {
       const result = await volyxLens.historyClear();
       setHistoryUndo([]);
@@ -1102,7 +1120,7 @@
       const cleanupNotice = result.recoveryDraftCleared === false
         ? ' The on-device recovery draft could not be removed and will be offered again on the next launch.'
         : '';
-      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'}.${recoveredNotice}${cleanupNotice}`);
+      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'} and their linked memories.${recoveredNotice}${cleanupNotice}`);
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting history could not be cleared.'); }
   });
 
@@ -1110,6 +1128,7 @@
 $('#meeting-notes-generate').addEventListener('click', async () => {
     if (!meetingDetail) return;
     const button = $('#meeting-notes-generate');
+    const memoryButton = $('#meeting-memory-save');
     const original = button.textContent;
     meetingNotesGenerating = true;
     button.disabled = true;
@@ -1123,6 +1142,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         const result = await volyxLens.historyRecap(meetingDetail.id, confirmed);
         if (result && result.ok) {
           meetingNotesText = result.text || '';
+          meetingDetail = { ...meetingDetail, notes: result.notes };
+          memoryButton.disabled = !hasMeetingNotes(result.notes);
+          memoryButton.textContent = meetingDetail.memory ? 'Update saved memory' : 'Save notes to memory';
           out.innerHTML = renderNotesHtml(result.notes || null, meetingNotesText);
           out.classList.remove('hidden');
           showStatus('Meeting notes ready.');
@@ -1141,7 +1163,23 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         break;
       }
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting notes could not be generated.'); }
-    finally { meetingNotesGenerating = false; button.disabled = false; button.textContent = original; }
+    finally { meetingNotesGenerating = false; button.disabled = false; button.textContent = original; memoryButton.disabled = !hasMeetingNotes(meetingDetail && meetingDetail.notes); }
+  });
+
+  $('#meeting-memory-save').addEventListener('click', async () => {
+    if (!meetingDetail || !meetingDetail.notes) return;
+    const button = $('#meeting-memory-save');
+    button.disabled = true;
+    try {
+      const result = await volyxLens.meetingMemorySave(meetingDetail.id);
+      meetingDetail = { ...meetingDetail, memory: result.memory };
+      button.textContent = 'Update saved memory';
+      showStatus(result.created ? 'Meeting notes saved to inspectable memory.' : 'Saved memory updated from meeting notes.');
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'Meeting notes could not be saved to memory.');
+    } finally {
+      button.disabled = false;
+    }
   });
 
   $('#meeting-view-toggle').addEventListener('click', () => {
@@ -1301,17 +1339,19 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   function contextUsagePrefix(badge) {
     const labels = [];
     if (badge.dataset.contextSources) labels.push(`Personal context selected: ${badge.dataset.contextSources}`);
+    if (badge.dataset.meetingMemorySources) labels.push(`Saved meeting memory: ${badge.dataset.meetingMemorySources}`);
     const taskCount = Math.max(0, Number(badge.dataset.taskContextCount) || 0);
     const taskTotal = Math.max(taskCount, Number(badge.dataset.taskContextTotalCount) || 0);
     if (taskCount) labels.push(taskTotal > taskCount ? `Task context: ${taskCount} of ${taskTotal} saved screens attached` : `Task context: ${taskCount} saved ${taskCount === 1 ? 'screen' : 'screens'} attached`);
     return labels.length ? `${labels.join(' · ')} · ` : '';
   }
 
-  function addContextUsage(sources, taskContextCount, taskContextTotalCount, responseProvider) {
+  function addContextUsage(sources, meetingMemorySources, taskContextCount, taskContextTotalCount, responseProvider) {
     const badge = document.createElement('div');
     badge.className = 'context-usage';
     badge.id = 'response-provider-usage';
     badge.dataset.contextSources = Array.isArray(sources) ? sources.join(' + ') : '';
+    badge.dataset.meetingMemorySources = Array.isArray(meetingMemorySources) ? meetingMemorySources.join(' + ') : '';
     badge.dataset.taskContextCount = String(Math.max(0, Number(taskContextCount) || 0));
     badge.dataset.taskContextTotalCount = String(Math.max(0, Number(taskContextTotalCount) || 0));
     badge.textContent = `${contextUsagePrefix(badge)}Response provider: ${responseProvider || settings.provider}`;
@@ -2131,10 +2171,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       $('#transcript-latency').textContent = 'Latency —';
     }
   });
-  volyxLens.on('llm:start', ({ userBubble, small, contextSources, taskContextCount, taskContextTotalCount, responseProvider }) => {
+  volyxLens.on('llm:start', ({ userBubble, small, contextSources, meetingMemorySources, taskContextCount, taskContextTotalCount, responseProvider }) => {
     clearMessages();
     if (userBubble) addUserBubble(userBubble);
-    addContextUsage(contextSources, taskContextCount, taskContextTotalCount, responseProvider);
+    addContextUsage(contextSources, meetingMemorySources, taskContextCount, taskContextTotalCount, responseProvider);
     startAi(!!small);
     const inferredMode = String(userBubble || '').startsWith('Assist') ? 'assist' : activeRequestMode;
     setBusy(true, inferredMode);
@@ -2211,6 +2251,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     else if (event.cleared) closeMeetingDetail();
     if (event.pruned > 0) showHistoryPruneNotice(event.pruned);
     loadMeetingHistory({ quiet: true });
+    loadMeetingMemoryEntries();
   });
   volyxLens.on('history:recap-token', ({ id, text }) => {
     if (!meetingDetail || meetingDetail.id !== id) return;
@@ -2380,6 +2421,129 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       : (state.secure ? 'Extracted text is encrypted with safeStorage / macOS Keychain.' : 'Warning: safeStorage is unavailable; extracted text uses a local 0600 plaintext fallback.');
     const warning = state.warning ? ` ${state.warning}` : '';
     $('#context-storage-status').textContent = `PDF, DOCX, TXT, or Markdown · 5 MB maximum. ${storage}${warning} Relevant excerpts are sent only when you request an answer.`;
+  }
+
+  function renderMeetingMemoryEntries() {
+    const list = $('#meeting-memory-list');
+    list.replaceChildren();
+    if (!meetingMemoryEntries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'context-meta';
+      empty.textContent = 'No saved meeting memories. Open a meeting with generated notes and choose “Save notes to memory”.';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const entry of meetingMemoryEntries) {
+      const card = document.createElement('div');
+      card.className = 'context-document';
+      const head = document.createElement('div');
+      head.className = 'context-document-head';
+      const title = document.createElement('strong');
+      const sourceDate = Number.isFinite(entry.memory.source.endedAt)
+        ? new Date(entry.memory.source.endedAt).toLocaleString()
+        : 'date unavailable';
+      title.textContent = `Meeting notes · ${sourceDate}`;
+      const enabledLabel = document.createElement('label');
+      enabledLabel.className = 'context-enable';
+      const enabled = document.createElement('input');
+      enabled.type = 'checkbox';
+      enabled.checked = entry.memory.enabled;
+      enabled.setAttribute('aria-label', `Use memory from ${sourceDate} in answers`);
+      enabledLabel.append(enabled, document.createTextNode(' Use in answers'));
+      head.append(title, enabledLabel);
+
+      const source = document.createElement('div');
+      source.className = 'context-meta';
+      const transcriptSource = entry.memory.source.transcriptSource;
+      const provenance = ['cleaned', 'raw', 'processed'].includes(transcriptSource) ? transcriptSource : 'unknown provenance';
+      source.textContent = `Source: saved meeting notes from the ${provenance} transcript.`;
+      const content = document.createElement('textarea');
+      content.className = 'memory-content-editor';
+      content.rows = 4;
+      content.maxLength = 4000;
+      content.value = entry.memory.content;
+      content.setAttribute('aria-label', `Edit saved meeting memory from ${sourceDate}`);
+      const actions = document.createElement('div');
+      actions.className = 'context-actions';
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.textContent = 'Save edits';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'context-remove';
+      remove.textContent = 'Delete memory';
+      actions.append(save, remove);
+      card.append(head, source, content, actions);
+      list.appendChild(card);
+
+      enabled.addEventListener('change', async () => {
+        enabled.disabled = true;
+        try {
+          const result = await volyxLens.meetingMemorySetEnabled(entry.id, enabled.checked);
+          if (!result.updated) throw new Error(meetingMemoryFailureMessage(result));
+          meetingMemoryEntries = meetingMemoryEntries.map((item) => item.id === entry.id
+            ? { ...item, memory: result.memory }
+            : item);
+          $('#meeting-memory-status').textContent = result.memory.enabled
+            ? 'This memory may be included in relevant live requests when saved meeting context is enabled.'
+            : 'This memory is disabled and will not be included in answers.';
+          renderMeetingMemoryEntries();
+        } catch (error) {
+          enabled.checked = entry.memory.enabled;
+          $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Memory settings could not be updated.';
+        } finally {
+          enabled.disabled = false;
+        }
+      });
+
+      save.addEventListener('click', async () => {
+        save.disabled = true;
+        try {
+          const result = await volyxLens.meetingMemoryUpdate(entry.id, content.value);
+          if (!result.updated) throw new Error(meetingMemoryFailureMessage(result));
+          meetingMemoryEntries = meetingMemoryEntries.map((item) => item.id === entry.id
+            ? { ...item, memory: result.memory }
+            : item);
+          $('#meeting-memory-status').textContent = 'Saved memory updated.';
+          renderMeetingMemoryEntries();
+        } catch (error) {
+          $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Saved memory could not be updated.';
+        } finally {
+          save.disabled = false;
+        }
+      });
+
+      remove.addEventListener('click', async () => {
+        if (!window.confirm(`Delete the saved memory from ${sourceDate}? The meeting transcript and notes will remain.`)) return;
+        remove.disabled = true;
+        try {
+          const result = await volyxLens.meetingMemoryRemove(entry.id);
+          if (!result.removed) throw new Error(meetingMemoryFailureMessage(result));
+          meetingMemoryEntries = meetingMemoryEntries.filter((item) => item.id !== entry.id);
+          $('#meeting-memory-status').textContent = 'Saved memory deleted. The meeting transcript and notes were not changed.';
+          renderMeetingMemoryEntries();
+        } catch (error) {
+          $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Saved memory could not be deleted.';
+          remove.disabled = false;
+        }
+      });
+    }
+  }
+
+  function meetingMemoryFailureMessage(result) {
+    if (result && result.reason === 'read_failed') return 'The source meeting could not be read from this device.';
+    if (result && result.reason === 'write_failed') return 'The saved memory could not be written to this device.';
+    return 'This saved memory is no longer available.';
+  }
+
+  async function loadMeetingMemoryEntries() {
+    try {
+      meetingMemoryEntries = await volyxLens.meetingMemoryList();
+      renderMeetingMemoryEntries();
+    } catch (error) {
+      $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Saved meeting memory could not be loaded.';
+    }
   }
 
   // Glyph shortcuts that render differently on Windows. main.js registers the
@@ -2656,6 +2820,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       try { personalContext = await volyxLens.personalContextGet(); }
       catch (error) { showStatus(error && error.message ? error.message : 'Personal context could not be loaded.'); }
     }
+    await loadMeetingMemoryEntries();
     providerView = settings.provider || 'openai';
     fillSettings();
     clearProviderTestResult();

@@ -815,6 +815,7 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .context-document-head { display: flex; align-items: center; justify-content: space-between; color: var(--tx-1); font-size: 12px; }
 .context-enable { display: inline-flex; align-items: center; gap: 5px; color: var(--tx-2); font-size: 11px; }
 .context-enable input { accent-color: var(--accent); }
+.memory-content-editor { width: 100%; min-height: 72px; resize: vertical; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 8px; background: rgba(0,0,0,0.18); color: var(--tx-1); font: inherit; font-size: 11px; line-height: 1.45; }
 .context-meta { color: var(--tx-mut); font-size: 11px; overflow-wrap: anywhere; }
 .context-preview { max-height: 96px; overflow: auto; white-space: pre-wrap; margin: 0; padding: 7px; border-radius: 6px; background: rgba(0,0,0,0.2); color: var(--tx-2); font: 10px/1.35 var(--font); }
 .context-actions { display: flex; gap: 7px; }
@@ -1108,8 +1109,8 @@ body:has(#onboard-scrim:not(.hidden)) #app {
   .ob-actions { grid-column: 2; grid-row: 2; }
 }
 @media (max-width: 560px) and (max-height: 560px) {
-  #ob-content { padding: 14px 22px 2px; }
-  .ob-title { font-size: 22px; margin-bottom: 6px; }
+  #ob-content { padding: 10px 22px 2px; }
+  .ob-title { font-size: 22px; margin-bottom: 4px; }
   .ob-body { font-size: 12.5px; }
   .ob-body p { margin-bottom: 8px; }
   .ob-feature-grid { gap: 6px; margin-top: 6px; }

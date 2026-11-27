@@ -3,12 +3,21 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {
+  createMeetingMemory,
+  restoreMeetingMemory,
+  normalizeMemoryContent,
+  searchMeetingMemories,
+  hasMemorySearchTerms,
+  buildMemoryContentFromNotes,
+} = require('./inspectable-memory');
 
 const MAX_RECORDS = 200;
 const MAX_RECORD_TURNS = 5000;
-// Deleting a saved meeting moves it here, so a mistake costs nothing for a
-// month. Clear all is the exception: it is the privacy action and removes the
-// undo copies too.
+// Deleting a saved meeting leaves a sanitized undo copy here, so a mistake costs
+// nothing for a month. Linked memory is removed from that copy before the live
+// record is deleted and is intentionally not restored by Undo. Clear all also
+// removes the undo copies.
 const TRASH_RETENTION_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Trash entries are named <deletedAt>-<originalMtime>-<id>.json. Both stamps
@@ -70,6 +79,9 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   // writes) can make prune() unable to order records by mtime alone. Stamping
   // each record with a strictly increasing mtime keeps prune deterministic.
   let lastWriteMs = 0;
+  let memoryCache = null;
+
+  function invalidateMemoryCache() { memoryCache = null; }
 
   function ensureDir() {
     fsImpl.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -110,28 +122,44 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     if (originalStat && Number.isFinite(originalStat.atimeMs)) {
       try { fsImpl.utimesSync(target, originalStat.atimeMs / 1000, originalStat.mtimeMs / 1000); } catch {}
     }
+    invalidateMemoryCache();
   }
 
   // Temp files are only meaningful while a write is in flight. A file this old
   // belongs to a writer that died, so it is swept; anything newer may belong to
-  // another running instance and is left alone.
+  // another running instance and is left alone. Undo copies are written through
+  // the same temp-plus-rename path, so their crashed writes need the same sweep.
   const STALE_TEMP_MS = 60 * 1000;
 
-  function sweepTemporaryFiles() {
+  function sweepTemporaryFiles(targetDir = dir, at = null) {
+    const reference = Number.isFinite(at) ? at : now();
     let entries;
     try {
-      entries = fsImpl.readdirSync(dir);
+      entries = fsImpl.readdirSync(targetDir);
     } catch {
-      return;
+      return 0;
     }
+    let removed = 0;
     for (const name of entries) {
       if (!/\.json(\..*)?\.tmp$/.test(name)) continue;
-      const file = path.join(dir, name);
+      const file = path.join(targetDir, name);
       try {
         const stat = fsImpl.statSync(file);
-        if (now() - stat.mtimeMs < STALE_TEMP_MS) continue;
+        if (reference - stat.mtimeMs < STALE_TEMP_MS) continue;
         fsImpl.unlinkSync(file);
+        removed += 1;
       } catch {}
+    }
+    return removed;
+  }
+
+  function removeTemporaryFilesFor(target) {
+    const prefix = `${path.basename(target)}.`;
+    let names;
+    try { names = fsImpl.readdirSync(dir); } catch { return; }
+    for (const name of names) {
+      if (!name.startsWith(prefix) || !name.endsWith('.tmp')) continue;
+      try { fsImpl.unlinkSync(path.join(dir, name)); } catch {}
     }
   }
 
@@ -172,11 +200,13 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       if (keep.has(entry.name)) continue;
       try {
         fsImpl.unlinkSync(path.join(dir, entry.name));
+        removeTemporaryFilesFor(path.join(dir, entry.name));
         removed += 1;
       } catch {
         // Best-effort pruning; the record is still readable elsewhere.
       }
     }
+    invalidateMemoryCache();
     return { removed };
   }
 
@@ -256,6 +286,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     const tmp = `${target}.tmp`;
     fsImpl.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
     fsImpl.renameSync(tmp, target);
+    invalidateMemoryCache();
     const writeStamp = Math.max(now(), lastWriteMs + 1);
     lastWriteMs = writeStamp;
     try { fsImpl.utimesSync(target, writeStamp / 1000, writeStamp / 1000); } catch {}
@@ -376,33 +407,186 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         cleaned = { ...stored, texts: stored.texts.map((text) => String(text || '').slice(0, 12000)) };
       }
     }
-    return { ...record, turns, cleaned };
+    const memory = restoreMeetingMemory(record.memory, {
+      meetingId: id,
+      endedAt: record.endedAt,
+      now: Number.isFinite(record.endedAt) ? record.endedAt : now(),
+    });
+    return { ...record, turns, cleaned, memory };
+  }
+
+  function readRecordForUpdate(id) {
+    if (!isSafeId(id)) return { record: null, target: null, stat: null, reason: 'invalid_id' };
+    const target = recordPath(id);
+    try {
+      const stat = fsImpl.statSync(target);
+      const record = JSON.parse(fsImpl.readFileSync(target, 'utf8'));
+      if (!isRecordShape(record)) return { record: null, target, stat, reason: 'not_found' };
+      return { record, target, stat, reason: null };
+    } catch (error) {
+      return { record: null, target, stat: null, reason: error && error.code === 'ENOENT' ? 'not_found' : 'read_failed' };
+    }
+  }
+
+  function saveMemoryFromNotes(id) {
+    const loaded = readRecordForUpdate(id);
+    if (!loaded.record) return { saved: false, reason: loaded.reason };
+    if (!loaded.record.notes || typeof loaded.record.notes !== 'object') return { saved: false, reason: 'notes_not_found' };
+    const timestamp = now();
+    const previous = restoreMeetingMemory(loaded.record.memory, {
+      meetingId: id,
+      endedAt: loaded.record.endedAt,
+      now: timestamp,
+    });
+    const memory = createMeetingMemory({
+      meetingId: id,
+      endedAt: loaded.record.endedAt,
+      notes: loaded.record.notes,
+      existing: previous,
+      now: timestamp,
+    });
+    try {
+      loaded.record.memory = memory;
+      writeRecord(loaded.target, loaded.record, loaded.stat);
+    } catch {
+      return { saved: false, reason: 'write_failed' };
+    }
+    return { saved: true, created: !previous, memory };
+  }
+
+  function updateMemory(id, content) {
+    const loaded = readRecordForUpdate(id);
+    if (!loaded.record) return { updated: false, reason: loaded.reason };
+    const memory = restoreMeetingMemory(loaded.record.memory, { meetingId: id, endedAt: loaded.record.endedAt, now: now() });
+    if (!memory) return { updated: false, reason: 'not_found' };
+    memory.content = normalizeMemoryContent(content);
+    memory.updatedAt = now();
+    try {
+      loaded.record.memory = memory;
+      writeRecord(loaded.target, loaded.record, loaded.stat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
+    }
+    return { updated: true, memory };
+  }
+
+  function setMemoryEnabled(id, enabled) {
+    if (typeof enabled !== 'boolean') throw new TypeError('Memory enabled state must be a boolean.');
+    const loaded = readRecordForUpdate(id);
+    if (!loaded.record) return { updated: false, reason: loaded.reason };
+    const memory = restoreMeetingMemory(loaded.record.memory, { meetingId: id, endedAt: loaded.record.endedAt, now: now() });
+    if (!memory) return { updated: false, reason: 'not_found' };
+    if (memory.enabled === enabled) return { updated: true, changed: false, memory };
+    memory.enabled = enabled;
+    memory.updatedAt = now();
+    try {
+      loaded.record.memory = memory;
+      writeRecord(loaded.target, loaded.record, loaded.stat);
+    } catch {
+      return { updated: false, reason: 'write_failed' };
+    }
+    return { updated: true, changed: true, memory };
+  }
+
+  function removeMemory(id) {
+    const loaded = readRecordForUpdate(id);
+    if (!loaded.record) return { removed: false, reason: loaded.reason };
+    if (!loaded.record.memory) return { removed: false, reason: 'not_found' };
+    loaded.record.memory = null;
+    try {
+      writeRecord(loaded.target, loaded.record, loaded.stat);
+    } catch {
+      return { removed: false, reason: 'write_failed' };
+    }
+    removeTemporaryFilesFor(loaded.target);
+    sweepTemporaryFiles();
+    return { removed: true };
+  }
+
+  function memoryDirectorySignature() {
+    try {
+      return fsImpl.readdirSync(dir)
+        .filter((name) => name.endsWith('.json') && isSafeId(name.slice(0, -'.json'.length)))
+        .map((name) => {
+          const stat = fsImpl.statSync(path.join(dir, name));
+          return `${name}:${stat.mtimeMs}:${Number(stat.ctimeMs) || 0}:${stat.size}`;
+        })
+        .sort()
+        .join('|');
+    } catch {
+      return null;
+    }
+  }
+
+  function listMemories() {
+    let names;
+    try {
+      names = fsImpl.readdirSync(dir);
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return [];
+      throw new Error(`Saved meeting memory could not be listed: ${error && error.message ? error.message : 'unknown error'}`);
+    }
+    const signature = memoryDirectorySignature();
+    if (signature !== null && memoryCache && memoryCache.signature === signature) return memoryCache.entries;
+    const memories = [];
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue;
+      const id = name.slice(0, -'.json'.length);
+      if (!isSafeId(id)) continue;
+      let record;
+      try {
+        record = JSON.parse(fsImpl.readFileSync(path.join(dir, name), 'utf8'));
+      } catch (error) {
+        if (error && error.code === 'ENOENT') continue;
+        if (error instanceof SyntaxError) continue;
+        throw new Error(`Saved meeting memory could not be read: ${error && error.message ? error.message : 'unknown error'}`);
+      }
+      if (!isRecordShape(record)) continue;
+      const memory = restoreMeetingMemory(record.memory, { meetingId: id, endedAt: record.endedAt, now: now() });
+      if (memory) memories.push({ id, endedAt: record.endedAt, memory });
+    }
+    const sorted = memories.sort((left, right) => right.memory.updatedAt - left.memory.updatedAt);
+    if (signature !== null) memoryCache = { signature, entries: sorted };
+    return sorted;
+  }
+
+  function searchMemories(query, options) {
+    if (!hasMemorySearchTerms(query)) return [];
+    return searchMeetingMemories(listMemories(), query, options);
   }
 
   function remove(id) {
     if (!isSafeId(id)) throw new Error(`Invalid meeting id: ${String(id).slice(0, 40)}`);
-    const target = recordPath(id);
-    try {
-      for (const name of fsImpl.readdirSync(dir)) {
-        if (name.startsWith(`${path.basename(target)}.`) && name.endsWith('.tmp')) {
-          try { fsImpl.unlinkSync(path.join(dir, name)); } catch {}
-        }
-      }
-    } catch {}
-    // The record moves to the trash rather than being unlinked, so a confirm
-    // clicked by mistake is recoverable for TRASH_RETENTION_DAYS. Both stamps
-    // ride in the filename: when it was deleted, and the mtime it had, so a
-    // restore keeps its place in the list instead of jumping to the top.
-    let originalMtime = now();
-    try { originalMtime = fsImpl.statSync(target).mtimeMs; } catch {}
+    const loaded = readRecordForUpdate(id);
+    if (!loaded.record) return { removed: false, reason: loaded.reason };
+    const hadMemory = Boolean(loaded.record.memory);
+    const target = loaded.target;
+    const originalMtime = loaded.stat.mtimeMs;
+
+    // Write the undo copy first, with linked memory already removed. The live
+    // record is untouched until that sanitized copy is durable, so a failed
+    // delete or rollback can never destroy memory or move it into trash.
     try {
       ensureTrashDir();
+      sweepTemporaryFiles(trashDir);
       const name = `${Math.round(now())}-${Math.round(originalMtime)}-${id}.json`;
-      fsImpl.renameSync(target, path.join(trashDir, name));
+      const trashPath = path.join(trashDir, name);
+      writeRecord(trashPath, { ...loaded.record, memory: null }, loaded.stat);
+      try {
+        fsImpl.unlinkSync(target);
+      } catch (error) {
+        try { fsImpl.unlinkSync(trashPath); } catch {}
+        return { removed: false, reason: String(error && error.message || 'delete_failed') };
+      }
+      removeTemporaryFilesFor(target);
+      sweepTemporaryFiles();
+      invalidateMemoryCache();
       lastSavedFingerprint = null;
-      return { removed: true, trashed: true };
-    } catch {
-      return { removed: false };
+      return hadMemory
+        ? { removed: true, trashed: true, memoryRemoved: true }
+        : { removed: true, trashed: true };
+    } catch (error) {
+      return { removed: false, reason: String(error && error.message || 'delete_failed') };
     }
   }
 
@@ -488,16 +672,32 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       .map((entry) => entry.id);
   }
 
+  function clearTrash() {
+    let names;
+    try { names = fsImpl.readdirSync(trashDir); } catch { return 0; }
+    let removed = 0;
+    for (const name of names) {
+      try {
+        fsImpl.unlinkSync(path.join(trashDir, name));
+        removed += 1;
+      } catch {
+        // Best effort; a later clear retries anything still present.
+      }
+    }
+    return removed;
+  }
+
   // Undo is a convenience with a lifetime. Anything older than the window is
   // gone for good, which is what makes the week-long window a real promise.
   function purgeTrash({ keepMs = TRASH_RETENTION_DAYS * DAY_MS, at = null } = {}) {
     const reference = Number.isFinite(at) ? at : now();
     const keepWindow = Number.isFinite(keepMs) && keepMs > 0 ? keepMs : 0;
+    const removedTemporary = sweepTemporaryFiles(trashDir, reference);
     let names = [];
     try {
       names = fsImpl.readdirSync(trashDir);
     } catch {
-      return { removed: 0 };
+      return { removed: removedTemporary };
     }
     let removed = 0;
     for (const name of names) {
@@ -511,7 +711,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         // Best effort; the next pass tries again.
       }
     }
-    return { removed };
+    return { removed: removed + removedTemporary };
   }
 
   function clear() {
@@ -535,7 +735,8 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     lastSavedFingerprint = null;
     // Clear all is the privacy action: it removes the undo copies too, so the
     // records do not survive in a folder the user was told was empty.
-    const trashCleared = purgeTrash({ keepMs: 0 }).removed;
+    const trashCleared = clearTrash();
+    invalidateMemoryCache();
     return { cleared, trashCleared };
   }
 
@@ -545,6 +746,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   function pruneOlderThan(days, options = {}) {
     const window = Number(days);
     if (!Number.isFinite(window) || window <= 0) return { removed: 0 };
+    sweepTemporaryFiles();
     const reference = Number.isFinite(options.now) ? options.now : now();
     const cutoff = reference - window * 24 * 60 * 60 * 1000;
     let entries;
@@ -562,11 +764,13 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         const endedAt = Number.isFinite(record && record.endedAt) ? record.endedAt : null;
         if (endedAt === null || endedAt >= cutoff) continue;
         fsImpl.unlinkSync(path.join(dir, name));
+        removeTemporaryFilesFor(path.join(dir, name));
         removed += 1;
       } catch {
         // A record that cannot be read is left for the next pass.
       }
     }
+    invalidateMemoryCache();
     return { removed };
   }
 
@@ -742,7 +946,14 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       // list instead of jumping to the top as if it were just recorded.
       try { fsImpl.utimesSync(target, endedAt / 1000, endedAt / 1000); } catch {}
       if (typeof candidate.participant === 'string') updateParticipant(id, candidate.participant);
-      if (candidate.notes && typeof candidate.notes === 'object') updateNotes(id, candidate.notes);
+      let notesPersisted = true;
+      if (candidate.notes && typeof candidate.notes === 'object' && !Array.isArray(candidate.notes)) {
+        const notesResult = updateNotes(id, candidate.notes);
+        if (!notesResult.updated) {
+          skipped.push({ id: label, reason: 'notes_write_failed' });
+          notesPersisted = false;
+        }
+      }
       if (candidate.cleaned && Array.isArray(candidate.cleaned.texts) && candidate.cleaned.texts.length === normalized.length) {
         const cleaned = candidate.cleaned;
         // sourceHash is recomputed from the stored turns; passing the backup's
@@ -756,6 +967,27 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
           texts: cleaned.texts,
         });
       }
+      if (candidate.memory && notesPersisted) {
+        const loaded = readRecordForUpdate(id);
+        let validNotes = false;
+        if (loaded.record && loaded.record.notes && typeof loaded.record.notes === 'object' && !Array.isArray(loaded.record.notes)) {
+          try { validNotes = Boolean(buildMemoryContentFromNotes(loaded.record.notes)); } catch {}
+        }
+        if (!validNotes) {
+          skipped.push({ id: label, reason: 'memory_source_missing' });
+        } else {
+          const memory = restoreMeetingMemory(candidate.memory, { meetingId: id, endedAt, now: now() });
+          if (!memory) skipped.push({ id: label, reason: 'invalid_memory' });
+          else {
+            try {
+              loaded.record.memory = memory;
+              writeRecord(loaded.target, loaded.record, loaded.stat);
+            } catch {
+              skipped.push({ id: label, reason: 'memory_write_failed' });
+            }
+          }
+        }
+      }
       written.push(id);
     }
 
@@ -767,6 +999,8 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { imported: ids.length, ids, skipped, blocked: 0, capacity, pruned: removed };
   }
 
+  sweepTemporaryFiles();
+  sweepTemporaryFiles(trashDir);
   return {
     finalize,
     list,
@@ -780,6 +1014,12 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     clear,
     updateNotes,
     updateCleaned,
+    saveMemoryFromNotes,
+    updateMemory,
+    setMemoryEnabled,
+    removeMemory,
+    listMemories,
+    searchMemories,
     updateParticipant,
     clearCleaned,
     pruneOlderThan,

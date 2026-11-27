@@ -38,6 +38,7 @@ ipcMain.handle('task-context:get', () => emptyTaskContext);
 // "No handler registered" noise that can mask a real error.
 ipcMain.handle('history:list', () => []);
 ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: 0 }));
+ipcMain.handle('history:memory-list', () => []);
 ipcMain.handle('recovery:get', () => recoveryDraft);
 ipcMain.handle('recovery:discard', () => ({ cleared: true }));
 ipcMain.handle('task-context:list', () => ({ ...emptyTaskContext, captures: [], offset: 0, limit: 50, total: 0 }));
