@@ -1950,10 +1950,16 @@ async function startTranscriptionPipeline() {
           replayingChannels.delete(channel);
         }
         // Streaming can fail mid-replay and hand the session to batch mode.
-        // The queued audio is then the batch path's only copy: put it back
-        // before leaving, never drop it on the floor.
+        // Chunks that were never appended exist nowhere else, so they go to the
+        // front of the retry queue, which flushChannel drains before buffers.
+        // If the session itself changed, the audio belongs to a cleared run and
+        // must be dropped rather than resurrected into the next one.
         if (!stillCurrent()) {
-          buffers[channel] = [...remaining, ...(buffers[channel] || [])];
+          const sameRun = generation === sessionGeneration && epoch === transcriptEpoch;
+          if (sameRun && remaining.length) {
+            retryQueues[channel] = [...remaining, ...(retryQueues[channel] || [])];
+            boundRetryQueue(channel);
+          }
           break;
         }
         // Anything captured during the replay was queued in buffers. Feed it
@@ -1967,7 +1973,13 @@ async function startTranscriptionPipeline() {
           stillCurrent,
         );
         if (unreplayed.length) {
-          buffers[channel] = [...unreplayed, ...buffers[channel]];
+          const sameRun = generation === sessionGeneration && epoch === transcriptEpoch;
+          if (sameRun && transcriptionMode === 'batch') {
+            retryQueues[channel] = [...unreplayed, ...(retryQueues[channel] || [])];
+            boundRetryQueue(channel);
+          } else if (sameRun) {
+            buffers[channel] = [...unreplayed, ...buffers[channel]];
+          }
         }
       }
       if (localSpeechStreamManager !== manager
