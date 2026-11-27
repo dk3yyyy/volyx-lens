@@ -307,7 +307,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   // Stopping and starting Listening inside one meeting used to write a second
   // record, so each row held half the conversation and recap or notes worked on a
   // fragment (VR-08). `recordId` says which record the new turns belong to.
-  function appendToRecord(id, turns, { endedAt = null, meeting = false, suppressedYouSegments, replaceTurnIds = [], refreshedTurns = [] } = {}) {
+  function appendToRecord(id, turns, { endedAt = null, meeting = false, suppressedYouSegments, replaceAllTurns = false } = {}) {
     if (!isSafeId(id)) return null;
     const target = recordPath(id);
     let existing = null;
@@ -319,36 +319,37 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       return null;
     }
     if (!isRecordShape(existing)) return null;
-    // Turn ids restart with each capture, so the same words at the same moment on
-    // the same channel are the only reliable sign of an already-saved turn.
-    const seen = new Set(existing.turns.map((turn) => `${turn.ts}:${turn.channel}:${turn.text}`));
-    const existingIds = new Set(existing.turns.map((turn) => turn.id));
-    const replaceIds = new Set((Array.isArray(replaceTurnIds) ? replaceTurnIds : []).map(Number));
-    const refreshByKey = new Map((Array.isArray(refreshedTurns) ? refreshedTurns : [])
-      .filter((turn) => replaceIds.has(turn.id))
-      .map((turn) => [turn.id, turn]));
-    const identity = (turn) => `${turn.ts}:${turn.channel}:${turn.text}`;
-    const replacements = new Map();
-    for (const incoming of turns) {
-      if (!replaceIds.has(incoming.id)) continue;
-      const expected = refreshByKey.get(incoming.id);
-      if (!expected) continue;
-      const matchedExisting = existing.turns.find((turn) => turn.id === incoming.id && identity(turn) === identity(expected));
-      // Ids restart across Listening sessions. Replace only the saved turn
-      // whose content still matches the pre-restore snapshot; a new-session
-      // turn with the same id must be appended, never overwrite old speech.
-      if (matchedExisting) replacements.set(matchedExisting.id, incoming);
+    if (replaceAllTurns) {
+      // A restore can split or reorder already-saved turns. Rewriting the
+      // bounded live transcript is simpler and safer than trying to infer a
+      // delta across restarted turn ids and changed segment boundaries.
+      const mergedTurns = [...turns].sort((left, right) =>
+        (Number.isFinite(left.ts) ? left.ts : Infinity) - (Number.isFinite(right.ts) ? right.ts : Infinity));
+      const nextSuppressed = Array.isArray(suppressedYouSegments)
+        ? normalizeSuppressedYouSegments(suppressedYouSegments)
+        : normalizeSuppressedYouSegments(existing.suppressedYouSegments);
+      const existingEnd = Number(existing.endedAt);
+      const merged = {
+        ...existing,
+        endedAt: Number.isFinite(endedAt) ? Math.max(Number.isFinite(existingEnd) ? existingEnd : 0, endedAt) : existing.endedAt,
+        meeting: existing.meeting === true || meeting === true,
+        turnCount: mergedTurns.length,
+        turns: mergedTurns,
+        suppressedYouSegments: nextSuppressed,
+      };
+      writeRecord(target, merged, stat);
+      return { saved: true, id, turnCount: merged.turns.length, pruned: 0, appended: true };
     }
-    const additions = turns.filter((turn) => !replacements.has(turn.id) && !seen.has(`${turn.ts}:${turn.channel}:${turn.text}`));
+    const seen = new Set(existing.turns.map((turn) => `${turn.ts}:${turn.channel}:${turn.text}`));
+    const additions = turns.filter((turn) => !seen.has(`${turn.ts}:${turn.channel}:${turn.text}`));
     const nextSuppressed = Array.isArray(suppressedYouSegments)
       ? normalizeSuppressedYouSegments(suppressedYouSegments)
       : normalizeSuppressedYouSegments(existing.suppressedYouSegments);
     const suppressedChanged = JSON.stringify(nextSuppressed) !== JSON.stringify(normalizeSuppressedYouSegments(existing.suppressedYouSegments));
-    if (!additions.length && !replacements.size && !suppressedChanged) return { saved: false, reason: 'no_new_content', id };
+    if (!additions.length && !suppressedChanged) return { saved: false, reason: 'no_new_content', id };
     const existingEnd = Number(existing.endedAt);
-    const replaced = existing.turns.map((turn) => replacements.get(turn.id) || turn);
-    const mergedTurns = additions.length || replacements.size
-      ? [...replaced, ...additions].sort((left, right) => (Number.isFinite(left.ts) ? left.ts : Infinity) - (Number.isFinite(right.ts) ? right.ts : Infinity))
+    const mergedTurns = additions.length
+      ? [...existing.turns, ...additions].sort((left, right) => (Number.isFinite(left.ts) ? left.ts : Infinity) - (Number.isFinite(right.ts) ? right.ts : Infinity))
       : existing.turns;
     const merged = {
       ...existing,
@@ -364,7 +365,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     return { saved: true, id, turnCount: merged.turnCount, pruned: 0, appended: true };
   }
 
-  function finalize({ turns = [], suppressedYouSegments = [], refreshedTurnIds = [], refreshedTurns = [], enabled = false, reason = 'capture-stop', meeting = false, startedAt = null, endedAt = null, recordId = null } = {}) {
+  function finalize({ turns = [], suppressedYouSegments = [], replaceAllTurns = false, enabled = false, reason = 'capture-stop', meeting = false, startedAt = null, endedAt = null, recordId = null } = {}) {
     if (!enabled) return { saved: false, reason: 'disabled' };
     const normalized = snapshotTurns(turns);
     if (!normalized.length && !recordId) return { saved: false, reason: 'empty' };
@@ -375,7 +376,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     }
     if (recordId) {
       try {
-        const appended = appendToRecord(recordId, normalized, { endedAt, meeting, suppressedYouSegments: normalizedSuppressed, replaceTurnIds: refreshedTurnIds, refreshedTurns });
+        const appended = appendToRecord(recordId, normalized, { endedAt, meeting, suppressedYouSegments: normalizedSuppressed, replaceAllTurns });
         if (appended) {
           if (appended.saved) lastSavedFingerprint = fp;
           return appended;

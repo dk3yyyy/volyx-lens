@@ -411,7 +411,7 @@ test('an unanswered recovery draft survives quitting and starting a session', ()
   const main = read('main.js');
   const finalize = main.match(/function finalizeMeeting\(reason = 'capture-stop'[\s\S]*?\n\}\n/)?.[0] || '';
 
-  assert.match(finalize, /const pendingTurns = pendingFinalizeTurns\(refreshedMeetingTurnIds\);/);
+  assert.match(finalize, /const pendingTurns = historyRewriteRequired \? fullTranscriptTurns\(\) : pendingFinalizeTurns\(\);/);
   assert.match(finalize, /if \(result\.saved \|\| pendingTurns\.length\) \{/);
   assert.match(finalize, /cancelMeetingRecoverySave\(\);\s*meetingRecovery\.clearBestEffort\(\);/);
 });
@@ -421,7 +421,7 @@ test('checkpoints exclude turns that are already saved to history', () => {
   const write = main.match(/function writeMeetingRecovery\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   const record = main.match(/^function recordTranscript[\s\S]*?\n\}/m)?.[0] || '';
 
-  assert.match(write, /turns: pendingFinalizeTurns\(refreshedMeetingTurnIds\)/);
+  assert.match(write, /turns: historyRewriteRequired \? fullTranscriptTurns\(\) : pendingFinalizeTurns\(\)/);
   assert.match(write, /droppedTurns: transcriptDroppedTurns/);
   assert.doesNotMatch(write, /turns: transcript\.map\(publicTranscriptTurn\)/);
   assert.match(record, /transcriptDroppedTurns \+= countUnsavedTurns\(removed, finalizedSegmentWatermark\);/);

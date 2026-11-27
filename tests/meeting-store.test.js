@@ -906,8 +906,7 @@ test('refreshing a split turn replaces saved surrounding speech instead of dupli
     });
     store.finalize({
       recordId: saved.id,
-      refreshedTurnIds: [1],
-      refreshedTurns: [{ id: 1, channel: 'them', text: 'Before the answer. After the answer.', ts: 10 }],
+      replaceAllTurns: true,
       turns: [
         { id: 1, channel: 'them', text: 'Before the answer.', ts: 10 },
         { id: 2, channel: 'you', text: 'My answer.', ts: 20 },
@@ -927,19 +926,43 @@ test('refreshing a split turn replaces saved surrounding speech instead of dupli
   }
 });
 
-test('a refreshed id from a later session appends when no saved turn has that id', () => {
+test('a full history rewrite keeps new-session turns even when ids repeat', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
   const store = createMeetingStore({ dir });
   try {
     const saved = store.finalize({ turns: [{ id: 1, channel: 'them', text: 'Earlier session', ts: 1000 }], enabled: true });
     store.finalize({
       recordId: saved.id,
-      refreshedTurnIds: [1],
-      refreshedTurns: [{ id: 1, channel: 'you', text: 'Different new-session turn', ts: 2000 }],
-      turns: [{ id: 1, channel: 'you', text: 'Unsaved restored answer', ts: 2000 }],
+      replaceAllTurns: true,
+      turns: [
+        { id: 1, channel: 'them', text: 'Earlier session', ts: 1000 },
+        { id: 1, channel: 'you', text: 'Unsaved restored answer', ts: 2000 },
+      ],
       enabled: true,
     });
     assert.deepEqual(store.get(saved.id).turns.map((entry) => entry.text), ['Earlier session', 'Unsaved restored answer']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a restore after resuming rewrites extended speech without repeating its saved prefix', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({
+      turns: [{ id: 1, channel: 'you', text: 'First answer.', ts: 20 }],
+      enabled: true,
+    });
+    store.finalize({
+      recordId: saved.id,
+      replaceAllTurns: true,
+      turns: [{ id: 1, channel: 'you', text: 'First answer. New words. Restored line.', ts: 20 }],
+      enabled: true,
+    });
+    const record = store.get(saved.id);
+    assert.equal(record.turns.length, 1);
+    assert.equal(record.turns[0].text, 'First answer. New words. Restored line.');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
