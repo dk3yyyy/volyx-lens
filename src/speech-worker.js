@@ -6,7 +6,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const readline = require('node:readline');
-const { getModel, isInstalled, modelPaths, verifyModel } = require('./speech-model-registry');
+const {
+  getModel, isInstalled, modelPaths, verifyModel,
+  speechDetectorPaths, isSpeechDetectorInstalled, verifySpeechDetector,
+} = require('./speech-model-registry');
 
 const WORKER_NAME = 'volyx-speech-worker';
 const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
@@ -113,9 +116,11 @@ function createSpeechWorker({
   let stopPromise = null;
   let loadedModelId = '';
   let warmedModelId = '';
+  let vadLoaded = false;
   let loadedBackendPreference = '';
   let activeBackend = '';
   let activeBackendFallback = false;
+  const activeStreams = new Set();
   let idleTimer = null;
   let stderrTail = '';
   const pending = new Map();
@@ -133,7 +138,9 @@ function createSpeechWorker({
     if (generation !== workerGeneration) return;
     loadedModelId = '';
     warmedModelId = '';
+    vadLoaded = false;
     clearActiveBackend();
+    activeStreams.clear();
     rejectPending(error);
   }
 
@@ -205,6 +212,10 @@ function createSpeechWorker({
         if (!activeChild.killed) activeChild.kill();
         return;
       }
+      if (message && message.event === true) {
+        events.emit('event', message);
+        return;
+      }
       const entry = message && pending.get(message.id);
       if (!entry) return;
       clearTimeout(entry.timer);
@@ -239,7 +250,9 @@ function createSpeechWorker({
       lineReader = null;
       loadedModelId = '';
       warmedModelId = '';
+      vadLoaded = false;
       clearActiveBackend();
+      activeStreams.clear();
       if (!expectedExit) {
         const detail = stderrTail.trim();
         failWorker(workerError(
@@ -355,6 +368,35 @@ function createSpeechWorker({
     return request('hardware-info', {}, 10_000);
   }
 
+  async function loadVad() {
+    if (vadLoaded) return { loaded: true, cached: true };
+    if (!isSpeechDetectorInstalled()) throw workerError('speech_vad_not_installed', 'Download the Silero speech detector before using neural VAD.');
+    if (!await verifySpeechDetector()) throw workerError('speech_vad_integrity_mismatch', 'The Silero speech detector failed its SHA-256 integrity check.');
+    const result = await request('vad-load', { path: speechDetectorPaths().model }, modelOperationTimeoutMs);
+    if (result.loaded !== true) throw workerError('speech_vad_load_failed', 'Speech detector load did not complete.');
+    vadLoaded = true;
+    return result;
+  }
+
+  async function detectSpeech(pcm, { threshold = 0.4, minSpeechMs = 160 } = {}) {
+    if (!vadLoaded) throw workerError('speech_vad_not_loaded', 'Load the speech detector before detecting speech.');
+    if (!Buffer.isBuffer(pcm) || pcm.length === 0 || pcm.length % 2 !== 0) {
+      throw new TypeError('Neural VAD requires non-empty 16-bit PCM audio.');
+    }
+    return request('vad-detect', {
+      pcm16Base64: pcm.toString('base64'),
+      threshold: Math.max(0.01, Math.min(0.99, Number(threshold) || 0.4)),
+      minSpeechMs: Math.max(0, Math.min(2000, Number(minSpeechMs) || 160)),
+    }, 30_000);
+  }
+
+  async function unloadVad() {
+    if (!vadLoaded) return { unloaded: true, loaded: false };
+    const result = await request('vad-unload', {}, modelOperationTimeoutMs);
+    vadLoaded = false;
+    return result;
+  }
+
   async function transcribe({ wav, modelId, language = '', backend = 'auto' } = {}) {
     if (!Buffer.isBuffer(wav)) throw new TypeError('Local speech transcription requires a WAV Buffer.');
     const model = getModel(modelId);
@@ -377,18 +419,106 @@ function createSpeechWorker({
     }
   }
 
+  async function streamStart({ modelId, channel, language = '', backend = 'auto' } = {}) {
+    const model = getModel(modelId);
+    if (!model || model.runtime !== 'transcribe-cpp' || model.streaming !== true) {
+      throw workerError('speech_model_streaming_unsupported', `The selected local model does not support streaming: ${String(modelId || '')}`);
+    }
+    if (!['you', 'them'].includes(channel)) throw new TypeError('Local speech streaming requires a valid audio channel.');
+    if (activeStreams.has(channel)) throw workerError('speech_stream_already_started', `A local speech stream is already active for ${channel}.`);
+    if (!isInstalled(model.id)) {
+      throw workerError('speech_model_not_installed', `Download ${model.name} before using it offline.`);
+    }
+    if (!await verifyModel(model.id)) {
+      throw workerError('speech_model_integrity_mismatch', `The downloaded ${model.name} failed its SHA-256 integrity check. Download it again before use.`);
+    }
+    clearIdleTimer();
+    const preferredBackend = normalizeBackend(backend);
+    if (loadedModelId && !backendPreferenceSatisfied(preferredBackend)) {
+      if (activeStreams.size > 0) {
+        throw workerError('speech_backend_change_active', 'Stop active local speech streams before changing the compute backend.');
+      }
+      await unloadModel();
+    }
+    const reuseCpuFallback = preferredBackend === 'gpu' && activeBackendFallback && activeBackend === 'cpu';
+    const requestedBackend = reuseCpuFallback ? 'cpu' : preferredBackend;
+    try {
+      const result = await request('stream-start', {
+        modelId: model.id,
+        path: modelPaths(model.id).model,
+        channel,
+        language: String(language || ''),
+        backend: requestedBackend,
+      }, modelOperationTimeoutMs);
+      if (result.modelId !== model.id || !result.capabilities || result.capabilities.streaming !== true) {
+        throw workerError('speech_worker_protocol_error', 'Speech worker started an unexpected model or omitted streaming capabilities.');
+      }
+      loadedModelId = model.id;
+      loadedBackendPreference = preferredBackend;
+      activeBackend = String(result.backend || '').toLowerCase();
+      activeBackendFallback = result.backendFallback === true || reuseCpuFallback;
+      warmedModelId = model.id;
+      activeStreams.add(channel);
+      return result;
+    } catch (error) {
+      if (activeStreams.size === 0) {
+        loadedModelId = '';
+        warmedModelId = '';
+        clearActiveBackend();
+      }
+      throw error;
+    }
+  }
+
+  async function streamFeed(channel, pcm) {
+    if (!activeStreams.has(channel)) throw workerError('speech_stream_not_started', `No local speech stream is active for ${channel}.`);
+    if (!Buffer.isBuffer(pcm) || pcm.length === 0 || pcm.length % 2 !== 0) {
+      throw new TypeError('Local speech streaming requires non-empty 16-bit PCM audio.');
+    }
+    return request('stream-feed', { channel, pcm16Base64: pcm.toString('base64') }, 30_000);
+  }
+
+  async function streamFinish(channel) {
+    return endStream(channel, 'stream-finish');
+  }
+
+  async function streamBoundary(channel) {
+    if (!activeStreams.has(channel)) throw workerError('speech_stream_not_started', `No local speech stream is active for ${channel}.`);
+    return request('stream-boundary', { channel }, 30_000);
+  }
+
+  async function streamCancel(channel) {
+    return endStream(channel, 'stream-cancel');
+  }
+
+  async function endStream(channel, command) {
+    if (!activeStreams.has(channel)) return { finished: false, active: false };
+    try {
+      return await request(command, { channel }, 120_000);
+    } finally {
+      activeStreams.delete(channel);
+      if (activeStreams.size === 0) {
+        loadedModelId = '';
+        warmedModelId = '';
+        clearActiveBackend();
+      }
+    }
+  }
+
   async function unloadModel(modelId = '') {
     clearIdleTimer();
     if (modelId && loadedModelId && modelId !== loadedModelId) {
       throw workerError('speech_model_not_loaded', `Cannot unload ${modelId}; ${loadedModelId} is currently loaded.`);
     }
-    if (!child || !loadedModelId) {
+    if (!child || (!loadedModelId && activeStreams.size === 0)) {
       loadedModelId = '';
       warmedModelId = '';
       clearActiveBackend();
+      activeStreams.clear();
       return { unloaded: true, loaded: false };
     }
     const result = await request('unload');
+    activeStreams.clear();
     loadedModelId = '';
     warmedModelId = '';
     clearActiveBackend();
@@ -404,6 +534,8 @@ function createSpeechWorker({
     // must not cancel a sibling channel's load.
     stopEpoch += 1;
     const generation = ++workerGeneration;
+    vadLoaded = false;
+    activeStreams.clear();
     if (!child) return;
     expectedExit = true;
     const activeChild = child;
@@ -441,12 +573,21 @@ function createSpeechWorker({
     loadModel,
     warmModel,
     transcribe,
+    streamStart,
+    streamFeed,
+    streamBoundary,
+    streamFinish,
+    streamCancel,
     unloadModel,
     hardwareInfo,
+    loadVad,
+    detectSpeech,
+    unloadVad,
     stop,
     get loadedModelId() { return loadedModelId; },
     get warmedModelId() { return warmedModelId; },
     get pid() { return child && Number.isInteger(child.pid) ? child.pid : null; },
+    get vadLoaded() { return vadLoaded; },
     get activeBackend() { return activeBackend; },
     get activeBackendFallback() { return activeBackendFallback; },
   };

@@ -35,6 +35,7 @@ test('hard session boundaries await speech teardown and clear retry audio before
   const immediateBlock = stopBlock.slice(immediateStart, stopBlock.indexOf('\n  if (manager) {', immediateStart));
   assert.match(immediateBlock, /if \(manager\) await Promise\.allSettled\(\[manager\.stop\(\)\]\)/);
   assert.match(immediateBlock, /await defaultSpeechWorker\.stop\(\)/);
+  assert.match(immediateBlock, /if \(localManager\)[\s\S]*localManager\.stop\(\)/, 'local streams stop before the shared worker');
   assert.match(immediateBlock, /await Promise\.allSettled\(\[\.\.\.drainingRealtimeManagers\]/);
   assert.match(immediateBlock, /transcriptEpoch \+= 1/);
   assert.doesNotMatch(immediateBlock, /transcript\.length = 0/, 'immediate teardown invalidates work without clearing visible transcript');

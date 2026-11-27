@@ -51,7 +51,7 @@ function main() {
   const checks = [
     { name: 'volyx-lens-vision-ocr', validate: (p) => p.ok === true && p.engine === 'macos-vision' && p.version === 1 },
     { name: 'volyx-lens-system-audio', validate: (p) => p.ok === true && p.engine === 'ScreenCaptureKit' && p.protocol === 1 && p.sampleRate === 24000 && p.channels === 1 && p.frameSamples === 480 },
-    { name: 'volyx-speech-worker', validate: (p) => p.ok === true && p.engine === 'transcribe-cpp' && p.protocol === 1 && p.streaming === false && p.diarization === false },
+    { name: 'volyx-speech-worker', validate: (p) => p.ok === true && p.engine === 'transcribe-cpp' && p.protocol === 1 && p.streaming === true && p.diarization === false },
   ];
   for (const check of checks) {
     const helper = findHelper(packageDirectory, check.name);

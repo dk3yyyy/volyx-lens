@@ -57,6 +57,13 @@ function createFlushHarness(overrides = {}) {
     personalContextStore: { getEnabledDocuments: () => [] },
     buildSttVocab: () => '',
     rms16: () => 1000,
+    getSpeechModel: () => null,
+    isSpeechDetectorInstalled: () => false,
+    mapVadSegments: () => [],
+    defaultSpeechWorker: { loadVad: async () => {}, detectSpeech: async () => ({ speech: true, segments: [] }), stop: async () => {} },
+    localSpeechStreamManager: null,
+    localManager: undefined,
+    stopSpeechWorkerAfterStreamFailure: async () => true,
     createSTT: () => {
       const transcription = deferred();
       transcriptions.push(transcription);

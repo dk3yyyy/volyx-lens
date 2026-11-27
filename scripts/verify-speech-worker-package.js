@@ -95,7 +95,7 @@ function validateSelfTestPayload(payload) {
     && payload.ok === true
     && payload.engine === 'transcribe-cpp'
     && payload.protocol === 1
-    && payload.streaming === false
+    && payload.streaming === true
     && payload.diarization === false);
 }
 

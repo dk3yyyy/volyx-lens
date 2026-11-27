@@ -133,18 +133,20 @@ Realtime transcription runs on four providers. Batch transcription is a fallback
 | `gemini` | Batch | Gemini batch transcription |
 | `groq` | Batch | Groq Whisper, enabled by a Groq key rather than a separate selector |
 | `local Whisper` | Offline batch | whisper.cpp server; bundled on Windows x64 and Linux x64/arm64; disabled by default |
-| `local GGUF` | Offline batch | Cross-platform desktop worker backed by pinned `transcribe.cpp`; Parakeet, Whisper large-v3-turbo, Qwen3-ASR, Cohere Transcribe, SenseVoice, and Nemotron ASR |
+| `local GGUF` | Offline batch or native streaming | Cross-platform desktop worker backed by pinned `transcribe.cpp`; Parakeet, Whisper large-v3-turbo, Qwen3-ASR, Cohere Transcribe, SenseVoice, and Nemotron ASR |
 
 `REALTIME_PROVIDERS` in `provider-config.js` lists the four realtime keys. The batch fallback order lives in `src/stt.js`. Local Whisper is gated by `transcription.offlineEnabled` and needs a `whisper-server` binary. Packaging provisions the pinned whisper.cpp server for Windows x64 and Linux x64/arm64 through `scripts/prepare-whisper-runtime.js`: it downloads the pinned release (v1.9.5, nightly tag `b5454`), verifies the SHA-256 of the archive and of every extracted file, and installs the server plus its shared libraries into `native-bin/` for `electron-builder` to ship. `VOLYX_LENS_SKIP_WHISPER_RUNTIME=1` skips that step. whisper.cpp publishes no macOS server, so the legacy Local Whisper path stays off there unless `VOLYX_LENS_WHISPER_SIDECAR_BIN` points at one. The Windows build needs the Microsoft Visual C++ 2015-2022 Redistributable at runtime for that legacy server. The model is downloaded into a private cache when one is not present.
 
 The local GGUF path is separate from the legacy whisper.cpp server:
 
-- `src/speech-model-registry.js` is the single source of truth for ASR model metadata, immutable Hugging Face revisions, file sizes, SHA-256 digests, language coverage, and license links. Adding a model does not add model-specific inference branches.
+- `src/speech-model-registry.js` is the single source of truth for model metadata, immutable Hugging Face revisions, file sizes, SHA-256 digests, language coverage, streaming capability, and license links. Adding a model does not add model-specific inference branches.
 - `src/speech-model-artifact-store.js` downloads only on explicit request, writes into `~/.volyx-lens/speech-models/<model>/<revision>/`, verifies the pinned size and digest, installs atomically, and supports cancellation and removal across all cached revisions. The worker verifies the full digest again before loading.
-- `src/speech-worker.js` owns the JSON-lines worker process and lifecycle. `native/speech-worker/src/main.rs` uses the pinned `transcribe.cpp` runtime for hardware discovery, model loading, warm-up, batch inference, and unload.
+- `src/speech-worker.js` owns the JSON-lines worker process and lifecycle. `native/speech-worker/src/main.rs` uses the pinned `transcribe.cpp` runtime for model loading, warm-up, batch inference, streaming feed/finalize, and unload.
+- `src/local-speech-stream-manager.js` routes **You** and **Them** PCM independently. Parakeet and Nemotron expose native streaming. For two-channel streaming, the app attempts a separate model session per channel; if the second session cannot load, buffered audio is preserved for one-model local batch fallback. Each channel holds a 10-second lease that refreshes on audio or an explicit heartbeat; an idle channel is cancelled with `speech_stream_lease_expired` instead of holding its model forever. Undelivered audio is bounded at 120 seconds per channel (further audio is refused with `speech_stream_backlog_exceeded`), and `stream-finish` settles within 3 seconds or the channel is cancelled so Stop cannot hang. A runtime stream failure cancels active streams, reports a transcript gap, and switches to that batch path.
 - `scripts/build-speech-worker.js` builds the packaged worker for macOS x64/arm64, Windows x64, and Linux x64/arm64. CPU builds disable host-native SIMD and system BLAS; macOS enables Metal, while Windows/Linux Vulkan is an explicit source-build option.
-- The worker accepts `auto`, `cpu`, or `gpu` backend preferences. Auto uses the best compiled backend; an unavailable requested GPU or a batch warm-up/inference OOM retries once on CPU. The fallback is cached for the loaded model so CPU-only systems do not reload between utterances, and Settings reports the active backend/fallback.
-- `scripts/verify-speech-worker-package.js` inspects ELF/PE/Mach-O architecture, rejects unsafe POSIX permissions, and runs the packaged worker's model-free self-test whenever the host matches the target. The self-test declares the batch-only protocol and disabled optional features.
+- The worker exposes `hardware-info` and accepts `auto`, `cpu`, or `gpu` backend preferences. Auto uses the best compiled backend; an unavailable requested GPU or a batch warm-up/inference OOM retries once on CPU. The fallback is cached for the loaded model so CPU-only systems do not reload between utterances, and Settings reports the active backend/fallback.
+- `scripts/verify-speech-worker-package.js` inspects ELF/PE/Mach-O architecture, rejects unsafe POSIX permissions, and runs the packaged worker's model-free self-test whenever the host matches the target.
+- Silero VAD v6.2 runs on the CPU inside the native worker for batch speech gating. Its pinned artifact is downloaded with a transcription model; RMS remains the fallback when the detector or worker is unavailable.
 - Each model retains its own license metadata and the Settings UI asks users to review the license. The pinned Cohere artifact is the selected public GGUF conversion; upstream model license terms still apply.
 
 - `src/transcript-postprocess.js` applies bounded, deterministic correction rules and optional spoken-digit normalization once inside `recordTranscript()`, after the generation guard and before cross-talk detection/grouping. Configuration is snapshotted when a transcription pipeline starts; partials, diagnostics, restored drafts, imports, and exports are never reprocessed.
@@ -166,8 +168,8 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 
 - **Trigger:** user toggles capture or starts a session.
 - **Format:** raw PCM, resampled to 24 kHz mono in the audio worklet.
-- **Transport:** renderer sends `mic:pcm` IPC messages with `ArrayBuffer` payloads. The main process feeds PCM to the active realtime transcription provider or the offline batch pipeline.
-- **Processing:** realtime providers stream partial → confirmed transcript turns; offline mode transcribes bounded audio batches. Turns are tagged as **You**.
+- **Transport:** renderer sends `mic:pcm` IPC messages with `ArrayBuffer` payloads. The main process feeds PCM to the active realtime provider or, when offline local streaming is selected, to the native local worker.
+- **Processing:** realtime providers and streaming-capable local models emit partial → confirmed transcript turns. Other local models use bounded batch buffers. Turns are tagged as **You**.
 
 ### System audio (Them channel)
 
@@ -176,7 +178,7 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 - **Windows:** Chromium system-audio loopback (no extra permission needed).
 - **Linux:** PulseAudio/PipeWire monitor source via `pactl` / `parec` (best-effort; fails gracefully if unavailable).
 - **Format:** raw PCM, kept separate from the microphone channel.
-- **Transport:** renderer sends `system:pcm` IPC messages. The main process feeds PCM to the selected realtime provider or offline batch pipeline and tags turns as **Them**.
+- **Transport:** renderer sends `system:pcm` IPC messages. The main process feeds PCM to the selected realtime provider or local worker and tags turns as **Them**.
 
 ### Capture exclusion
 

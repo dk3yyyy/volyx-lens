@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain, globalShortcut, screen, session, desk
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const { pathToFileURL } = require('url');
 const { migrateLegacyUserData } = require('./src/identity-migration');
 const currentUserDataPath = app.getPath('userData');
@@ -18,8 +19,11 @@ const {
   isInstalled: isSpeechModelInstalled,
   prepareModel: prepareSpeechModel,
   removeModel: removeSpeechModel,
+  isSpeechDetectorInstalled,
+  prepareSpeechDetector,
 } = require('./src/speech-model-registry');
 const { resolveSpeechWorkerBinary, defaultSpeechWorker } = require('./src/speech-worker');
+const { createLocalSpeechStreamManager } = require('./src/local-speech-stream-manager');
 const { createSpeechOperationGate } = require('./src/speech-operation-gate');
 const { cancelOfflineTranscriptions } = require('./src/offline-stt');
 const { MODES, formatTranscript: formatPromptTranscript } = require('./src/prompts');
@@ -37,6 +41,7 @@ const { createShortcutValidator, sanitizeShortcutsPatch, applyShortcuts, normali
 const { createPersonalContextStore, KINDS: PERSONAL_CONTEXT_KINDS } = require('./src/personal-context-store');
 const { createWorkspaceIndex } = require('./src/workspace-index');
 const { readOptionalContext } = require('./src/optional-context');
+const { mapVadSegments } = require('./src/speech-segmentation');
 const { parseContextDocument, MAX_FILE_BYTES } = require('./src/document-context');
 const { buildPersonalContext } = require('./src/personal-context');
 const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
@@ -302,6 +307,7 @@ const MAX_BATCH_CHUNKS = 180; // ~15 seconds per speaker at 2048 samples/chunk (
 const MAX_TRANSCRIPT_TURNS = 500;
 let flushTimer = null;
 let realtimeManager = null;
+let localSpeechStreamManager = null;
 let transcriptProcessingOptions = { enabled: true, normalizeDigits: true, rules: [] };
 let activeCustomVocabulary = '';
 const drainingRealtimeManagers = new Set();
@@ -1523,7 +1529,23 @@ async function flushChannel(channel, { drain = false } = {}) {
     const pcm = Buffer.concat(allChunks);
     if (pcm.length < MIN_BYTES) { retryQueues[channel] = allChunks; return; }
     const settings = store.getSettings();
-    if (rms16(pcm) < RMS_GATE) { retryQueues[channel] = []; return; } // silence gate
+    const selectedLocalModel = getSpeechModel((settings.transcription || {}).localModelId || (settings.transcription || {}).whisperModel || '');
+    let hasSpeech = rms16(pcm) >= RMS_GATE;
+    let vadSegments = [];
+    if ((settings.transcription || {}).offlineEnabled === true
+        && selectedLocalModel && selectedLocalModel.runtime === 'transcribe-cpp'
+        && isSpeechDetectorInstalled()) {
+      try {
+        await defaultSpeechWorker.loadVad();
+        const detected = await defaultSpeechWorker.detectSpeech(pcm);
+        hasSpeech = detected.speech === true;
+        vadSegments = Array.isArray(detected.segments) ? detected.segments : [];
+      } catch {
+        // The neural detector is an enhancement; RMS remains the fail-safe.
+      }
+    }
+    if (!hasSpeech) { retryQueues[channel] = []; return; }
+    const segmentRanges = vadSegments.length ? mapVadSegments(pcm, vadSegments) : [];
 
     state.transcribing[channel] = true;
     try {
@@ -1543,7 +1565,19 @@ async function flushChannel(channel, { drain = false } = {}) {
         }
         return;
       }
-      const res = await stt.transcribe(pcm);
+      const flushStartedAt = Date.now();
+      let res;
+      if (segmentRanges.length) {
+        const segments = [];
+        for (const range of segmentRanges) {
+          const part = await stt.transcribe(pcm.subarray(range.startByte, range.endByte));
+          if (part.error) { res = part; break; }
+          if (part.text && part.text.trim()) segments.push({ text: part.text.trim(), startMs: range.startMs, provider: part.provider });
+        }
+        if (!res) res = { text: segments.map((segment) => segment.text).join(' '), provider: segments[0] && segments[0].provider, segments };
+      } else {
+        res = await stt.transcribe(pcm);
+      }
       if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
       if (res.error) {
         if (res.error.code === 'offline_cancelled') return;
@@ -1555,7 +1589,13 @@ async function flushChannel(channel, { drain = false } = {}) {
       // the detached buffers array and survives for the next flush.
       if (retryQueues[channel] === allChunks) retryQueues[channel] = [];
       if (sttFailures || sttBackoffUntil) { sttFailures = 0; sttBackoffUntil = 0; } // recovered
-      if (res.text && res.text.trim()) recordTranscript({ channel, text: res.text }, generation, epoch, processingOptions);
+      if (Array.isArray(res.segments) && res.segments.length) {
+        for (const segment of res.segments) {
+          recordTranscript({ channel, text: segment.text, ts: flushStartedAt + segment.startMs }, generation, epoch, processingOptions);
+        }
+      } else if (res.text && res.text.trim()) {
+        recordTranscript({ channel, text: res.text }, generation, epoch, processingOptions);
+      }
     } catch (e) {
       if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
       console.log('[stt] unexpected error', String(e && e.code || 'unknown').slice(0, 80));
@@ -1640,6 +1680,18 @@ function resolveVadSettings(audio = {}) {
   };
 }
 
+async function stopSpeechWorkerAfterStreamFailure(error) {
+  console.error('[stt:local-stream] stream cleanup failed', String(error && error.code || 'unknown').slice(0, 80));
+  try {
+    await defaultSpeechWorker.stop();
+    return true;
+  } catch (stopError) {
+    console.error('[stt:local-stream] worker shutdown failed', String(stopError && stopError.code || 'unknown').slice(0, 80));
+    send('status', { message: 'The local speech worker could not release its model. Stop Listening and restart it before continuing offline transcription.' });
+    return false;
+  }
+}
+
 function activateBatchTranscription(reason) {
   if (!state.capturing || transcriptionMode === 'batch') return;
   const previous = realtimeManager;
@@ -1661,6 +1713,13 @@ async function startTranscriptionPipeline() {
   const previous = realtimeManager;
   realtimeManager = null;
   if (previous) previous.stop();
+  const previousLocal = localSpeechStreamManager;
+  localSpeechStreamManager = null;
+  if (previousLocal) {
+    try { await previousLocal.stop(); } catch (error) {
+      console.warn('[stt:local-stream] previous stream did not stop cleanly', String(error && error.code || 'unknown').slice(0, 80));
+    }
+  }
   if (!state.capturing) return;
   buffers.you = []; buffers.them = [];
   retryQueues.you = []; retryQueues.them = [];
@@ -1680,7 +1739,14 @@ async function startTranscriptionPipeline() {
 
   const localModelId = transcription.localModelId || transcription.whisperModel || '';
   const localModel = getSpeechModel(localModelId);
-  const transcriptionRoute = resolveTranscriptionMode(settings, {});
+  // resolveTranscriptionMode needs live install/streaming status, which the
+  // persisted settings do not carry.
+  const transcriptionRoute = resolveTranscriptionMode({ ...settings, speechModels: speechModelsWithStatus() }, {
+    speechWorkerAvailable: resolveSpeechWorkerBinary().available,
+    hasAudioChannels: enabledChannels.length > 0,
+    channelCount: enabledChannels.length,
+    memoryLimitMb: Math.floor(os.totalmem() / (1024 * 1024) * 0.6),
+  });
   if (transcriptionRoute === 'batch') {
     transcriptionMode = 'batch';
     startFlushLoop();
@@ -1690,6 +1756,95 @@ async function startTranscriptionPipeline() {
       status: 'active',
       provider: localModel && localModel.runtime === 'transcribe-cpp' ? 'local-gguf' : 'local-whisper',
       ...(localModel ? { modelId: localModel.id } : {}),
+    });
+    return;
+  }
+  if (transcriptionRoute === 'local-stream') {
+    const processingOptions = transcriptProcessingOptions;
+    let manager;
+    let localFallbackStarted = false;
+    manager = createLocalSpeechStreamManager({
+      worker: defaultSpeechWorker,
+      modelId: localModel.id,
+      channels: enabledChannels,
+      language: transcription.language || '',
+      backend: transcription.speechBackend || 'auto',
+      vad: resolveVadSettings(audio),
+      onPartial: (event) => {
+        if (generation !== sessionGeneration || epoch !== transcriptEpoch || localSpeechStreamManager !== manager) return;
+        const text = event.full || event.tentative || '';
+        if (text) send('transcript:partial', { channel: event.channel, text, ts: Date.now() });
+      },
+      onFinal: (event) => {
+        if (generation !== sessionGeneration || epoch !== transcriptEpoch || localSpeechStreamManager !== manager) return;
+        if (event.text && event.text.trim()) recordTranscript({ channel: event.channel, text: event.text }, generation, epoch, processingOptions);
+      },
+      onState: (event) => {
+        if (generation !== sessionGeneration || epoch !== transcriptEpoch || localSpeechStreamManager !== manager) return;
+        send('transcription:state', { mode: 'local-stream', provider: 'local-gguf', modelId: localModel.id, ...event });
+      },
+      onError: (error) => {
+        if (localFallbackStarted || localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch || !state.capturing) return;
+        localFallbackStarted = true;
+        const recoveredAudio = manager.takeRecoveryAudio();
+        console.warn('[stt:local-stream] falling back to batch transcription', String(error && error.code || 'unknown').slice(0, 80));
+        transcriptionMode = 'local-stream-fallback';
+        send('transcript:gap', { ts: Date.now(), reason: 'local-stream-fallback', channels: enabledChannels });
+        send('status', { message: 'Local streaming could not continue. Switching to single-model batch transcription; audio remains on this device unless cloud fallback is enabled.' });
+        send('transcription:state', { mode: 'batch', status: 'fallback', provider: 'local-gguf', reason: String(error && error.code || 'speech_stream_failed') });
+        manager.stop().then(() => {
+          if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) return;
+          localSpeechStreamManager = null;
+          for (const channel of enabledChannels) {
+            buffers[channel] = [...recoveredAudio[channel], ...buffers[channel]].slice(-MAX_BATCH_CHUNKS);
+          }
+          transcriptionMode = 'batch';
+          startFlushLoop();
+        }).catch(async (stopError) => {
+          await stopSpeechWorkerAfterStreamFailure(stopError);
+          if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) return;
+          localSpeechStreamManager = null;
+          for (const channel of enabledChannels) {
+            buffers[channel] = [...recoveredAudio[channel], ...buffers[channel]].slice(-MAX_BATCH_CHUNKS);
+          }
+          transcriptionMode = 'batch';
+          startFlushLoop();
+        });
+      },
+    });
+    localSpeechStreamManager = manager;
+    transcriptionMode = 'local-stream-starting';
+    manager.start().then(() => {
+      if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) {
+        return manager.stop();
+      }
+      transcriptionMode = 'local-stream';
+      for (const channel of enabledChannels) {
+        const buffered = buffers[channel];
+        buffers[channel] = [];
+        for (let index = 0; index < buffered.length; index += 1) {
+          if (!manager.append(channel, buffered[index])) {
+            buffers[channel] = buffered.slice(index);
+            break;
+          }
+        }
+      }
+      updateTranscriptionDiagnostics({ status: 'active' });
+      send('transcription:state', { mode: 'local-stream', status: 'active', provider: 'local-gguf', modelId: localModel.id });
+    }).catch(async (error) => {
+      if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) return;
+      localFallbackStarted = true;
+      console.warn('[stt:local-stream] startup failed; using local batch transcription', String(error && error.code || 'unknown').slice(0, 80));
+      try { await manager.stop(); } catch (stopError) {
+        await stopSpeechWorkerAfterStreamFailure(stopError);
+      }
+      if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) return;
+      localSpeechStreamManager = null;
+      transcriptionMode = 'batch';
+      startFlushLoop();
+      updateTranscriptionDiagnostics({ status: 'fallback' });
+      send('status', { message: 'The local model could not start streaming for both audio channels. Using single-model batch transcription instead.' });
+      send('transcription:state', { mode: 'batch', status: 'fallback', provider: 'local-gguf', modelId: localModel.id });
     });
     return;
   }
@@ -1773,6 +1928,8 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   const previousMode = transcriptionMode;
   const manager = realtimeManager;
   realtimeManager = null;
+  const localManager = localSpeechStreamManager;
+  if (immediate) localSpeechStreamManager = null;
 
   if (immediate) {
     // Retry and stop/start deliberately keep the session generation and visible
@@ -1785,6 +1942,11 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     if (manager) await Promise.allSettled([manager.stop()]);
     // The local speech worker is provider-independent, so it stops before the
     // staleness check can return early.
+    if (localManager) {
+      try { await localManager.stop(); } catch (error) {
+        console.warn('[stt:local-stream] immediate stop failed', String(error && error.code || 'unknown').slice(0, 80));
+      }
+    }
     try { await defaultSpeechWorker.stop(); } catch (error) {
       console.warn('[speech-worker] immediate stop failed', String(error && error.code || 'unknown').slice(0, 80));
     }
@@ -1811,7 +1973,13 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     await manager.stop({ graceMs: 750 });
     drainingRealtimeManagers.delete(manager);
   }
-  if (previousMode === 'batch' || flushPromises.you || flushPromises.them || buffers.you.length || buffers.them.length || retryQueues.you.length || retryQueues.them.length) {
+  if (localManager) {
+    try { await localManager.stop({ finish: true }); } catch (error) {
+      await stopSpeechWorkerAfterStreamFailure(error);
+    }
+    if (localSpeechStreamManager === localManager) localSpeechStreamManager = null;
+  }
+  if (previousMode === 'batch' || previousMode === 'local-stream-fallback' || flushPromises.you || flushPromises.them || buffers.you.length || buffers.them.length || retryQueues.you.length || retryQueues.them.length) {
     speechFinalizing = true;
     try {
       await drainBatchBuffers();
@@ -1828,6 +1996,7 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
 }
 
 function routePcm(channel, pcm) {
+  if (localSpeechStreamManager && localSpeechStreamManager.append(channel, pcm)) return;
   if (transcriptionMode === 'realtime' && realtimeManager && realtimeManager.append(channel, pcm)) return;
   buffers[channel].push(pcm);
   if (buffers[channel].length > MAX_BATCH_CHUNKS) buffers[channel].splice(0, buffers[channel].length - MAX_BATCH_CHUNKS);
@@ -3231,6 +3400,11 @@ handleTrusted('speech-model:download', async (event, id) => {
           console.warn('[speech-model] progress notification failed', String(error && error.message || 'unknown').slice(0, 160));
         }
       }, { signal: controller.signal });
+      if (!isSpeechDetectorInstalled()) {
+        prepareSpeechDetector().catch((error) => {
+          console.warn('[speech-vad] background detector download failed', String(error && error.message || 'unknown').slice(0, 160));
+        });
+      }
       return { ...result, models: speechModelsWithStatus() };
     } finally {
       if (speechModelDownloads.get(model.id) === controller) speechModelDownloads.delete(model.id);

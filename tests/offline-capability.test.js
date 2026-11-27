@@ -35,11 +35,13 @@ test('offline-first pipeline routing is applied before any cloud realtime manage
   const end = main.indexOf('async function stopTranscriptionPipeline(', start);
   assert.ok(start >= 0 && end > start, 'transcription pipeline functions exist');
   const block = main.slice(start, end);
-  assert.match(block, /resolveTranscriptionMode\(settings,/);
+  assert.match(block, /resolveTranscriptionMode\(\{ \.\.\.settings, speechModels: speechModelsWithStatus\(\) \}/);
   const batchBranch = block.indexOf("transcriptionRoute === 'batch'");
+  const localStreamBranch = block.indexOf("transcriptionRoute === 'local-stream'");
   const realtimeStart = block.indexOf("transcriptionMode = 'realtime'");
   assert.ok(batchBranch >= 0, 'offline batch routing has an explicit branch');
-  assert.ok(realtimeStart > batchBranch, 'cloud realtime starts only after offline routing is handled');
+  assert.ok(localStreamBranch > batchBranch, 'streaming routing sits beside the batch branch');
+  assert.ok(realtimeStart > batchBranch && realtimeStart > localStreamBranch, 'cloud realtime starts only after offline routing is handled');
 });
 
 test('the settings UI disables the toggle and explains why', () => {

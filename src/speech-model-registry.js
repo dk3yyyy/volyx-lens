@@ -7,6 +7,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const MODEL_ARTIFACT_STORE = createSpeechModelArtifactStore();
+const SPEECH_DETECTOR = Object.freeze({
+  id: 'silero-vad-v6.2',
+  name: 'Silero VAD v6.2',
+  runtime: 'transcribe-cpp-vad',
+  artifact: Object.freeze({
+    format: 'gguf',
+    filename: 'silero-vad-v6.2-F32.gguf',
+    repository: 'handy-computer/silero-vad-v6.2-gguf',
+    revision: 'a9b2d61c20ae4ddf3644edb34969e8185a485448',
+    bytes: 1241056,
+    sha256: '0d871a800c420fdd5d1b17a3aea4296d1c39608f0ff4a9295eb76457eb1c88e6',
+  }),
+  license: Object.freeze({ name: 'MIT', url: 'https://github.com/snakers4/silero-vad' }),
+});
 const TRANSCRIBE_CPP_MODELS = [
   {
     id: 'parakeet-unified-en',
@@ -16,7 +30,7 @@ const TRANSCRIBE_CPP_MODELS = [
     languages: ['en'],
     languageCoverage: 'English',
     languageDetection: false,
-    streaming: false,
+    streaming: true,
     license: { name: 'NVIDIA Open Model License', url: 'https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/' },
     artifact: {
       format: 'gguf',
@@ -105,13 +119,13 @@ const TRANSCRIBE_CPP_MODELS = [
   },
   {
     id: 'nemotron-3.5-asr-streaming-0.6b',
-    name: 'Nemotron 3.5 ASR 0.6B',
+    name: 'Nemotron 3.5 ASR Streaming 0.6B',
     family: 'nemotron-asr',
     version: '3.5-streaming-0.6b-q8_0',
     languages: ['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'tr', 'ru', 'uk', 'pl', 'cs', 'sk', 'bg', 'hr', 'ro', 'hu', 'sv', 'da', 'fi', 'et', 'ar', 'hi', 'ja', 'ko', 'zh', 'vi'],
     languageCoverage: '27 languages',
     languageDetection: false,
-    streaming: false,
+    streaming: true,
     license: { name: 'OpenMDW-1.1', url: 'https://openmdw.ai/license/1-1/' },
     artifact: {
       format: 'gguf',
@@ -250,6 +264,35 @@ function listModels() {
   }));
 }
 
+function speechDetectorInfo() {
+  return { ...SPEECH_DETECTOR, artifact: { ...SPEECH_DETECTOR.artifact }, license: { ...SPEECH_DETECTOR.license } };
+}
+
+function speechDetectorPaths() {
+  const stored = MODEL_ARTIFACT_STORE.paths(SPEECH_DETECTOR);
+  return {
+    model: stored.modelPath,
+    index: stored.receiptPath,
+    partial: stored.partialPath,
+  };
+}
+
+function isSpeechDetectorInstalled() {
+  return MODEL_ARTIFACT_STORE.isInstalled(SPEECH_DETECTOR);
+}
+
+function verifySpeechDetector() {
+  return MODEL_ARTIFACT_STORE.verifyModel(SPEECH_DETECTOR);
+}
+
+function prepareSpeechDetector(onProgress = () => {}, options = {}) {
+  return MODEL_ARTIFACT_STORE.prepareModel(SPEECH_DETECTOR, onProgress, options);
+}
+
+function removeSpeechDetector() {
+  return MODEL_ARTIFACT_STORE.removeModel(SPEECH_DETECTOR);
+}
+
 module.exports = {
   MODELS,
   getModel,
@@ -259,5 +302,11 @@ module.exports = {
   prepareModel,
   removeModel,
   modelPaths,
+  speechDetectorInfo,
+  speechDetectorPaths,
+  isSpeechDetectorInstalled,
+  verifySpeechDetector,
+  prepareSpeechDetector,
+  removeSpeechDetector,
   MODEL_ARTIFACT_STORE,
 };

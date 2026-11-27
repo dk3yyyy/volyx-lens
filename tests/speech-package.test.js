@@ -14,13 +14,13 @@ const mainSource = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const rendererSource = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
 const preloadSource = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
 
-test('packaged macOS verification includes the batch-only speech worker', () => {
+test('packaged macOS verification includes the streaming speech worker', () => {
   assert.match(verifier, /name: 'volyx-speech-worker'/);
   assert.match(verifier, /engine === 'transcribe-cpp'/);
   assert.match(verifier, /protocol === 1/);
-  assert.match(verifier, /streaming === false/);
+  assert.match(verifier, /streaming === true/);
   assert.match(verifier, /p\.diarization === false/);
-  assert.match(nativeWorker, /"streaming": false/);
+  assert.match(nativeWorker, /"streaming": true/);
   assert.match(nativeWorker, /"diarization": false/);
 });
 
@@ -70,12 +70,15 @@ test('preload exposes only local speech model management methods', () => {
   assert.match(preloadSource, /'speech:model-progress'/);
 });
 
-test('native worker source contains only the batch command surface', () => {
-  assert.doesNotMatch(nativeWorker, /StreamCommand|ActiveStream|run_stream_thread|VadSession|DiarizeSession/);
-  assert.doesNotMatch(nativeWorker, /"(?:vad|diarize|stream)-[a-z-]+"/);
-  for (const command of ['hardware-info', 'load', 'warm', 'transcribe', 'unload']) {
-    assert.match(nativeWorker, new RegExp(`"${command}" =>`));
+test('native worker source exposes batch, VAD, and streaming commands without diarization', () => {
+  assert.match(nativeWorker, /StreamCommand|ActiveStream/);
+  assert.match(nativeWorker, /VadSession/);
+  assert.doesNotMatch(nativeWorker, /DiarizeSession|DiarizeInfo|Sortformer|speakerId/);
+  assert.doesNotMatch(nativeWorker, /"diarize-[a-z-]+"/);
+  for (const command of ['hardware-info', 'load', 'warm', 'transcribe', 'unload', 'vad-load', 'vad-detect', 'vad-unload', 'stream-start', 'stream-feed', 'stream-boundary']) {
+    assert.match(nativeWorker, new RegExp(`"${command}" =>`), `${command} is dispatched`);
   }
+  assert.match(nativeWorker, /"stream-finish" \| "stream-cancel" =>/, 'finish and cancel share a dispatch arm');
 });
 
 test('speech backend status belongs only to the loaded model', () => {

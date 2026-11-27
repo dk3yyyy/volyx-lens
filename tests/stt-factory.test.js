@@ -53,14 +53,30 @@ test('STT factory includes Groq when offline mode has cloud fallback enabled', (
   assert.ok(stt.providers.includes('groq'));
 });
 
-test('offline-first routes every GGUF model to local batch instead of cloud realtime', () => {
-  for (const localModelId of ['qwen3-asr-0.6b', 'parakeet-unified-en', 'nemotron-3.5-asr-streaming-0.6b']) {
-    assert.equal(resolveTranscriptionMode({
-      apiKeys: { openai: 'sk-test' },
-      transcription: { mode: 'realtime', offlineEnabled: true, offlineCloudFallback: false, localModelId },
-      speechModels: [{ id: localModelId, installed: true }],
-    }, { speechWorkerAvailable: true, hasAudioChannels: true }), 'batch');
-  }
+test('offline-first routes a non-streaming GGUF model to local batch instead of cloud realtime', () => {
+  assert.equal(resolveTranscriptionMode({
+    apiKeys: { openai: 'sk-test' },
+    transcription: { mode: 'realtime', offlineEnabled: true, offlineCloudFallback: false, localModelId: 'qwen3-asr-0.6b' },
+    speechModels: [{ id: 'qwen3-asr-0.6b', installed: true, streaming: false }],
+  }, { speechWorkerAvailable: true, hasAudioChannels: true }), 'batch');
+});
+
+test('offline-first uses native local streaming when the selected model and worker support it', () => {
+  assert.equal(resolveTranscriptionMode({
+    transcription: { offlineEnabled: true, localModelId: 'parakeet-unified-en' },
+    speechModels: [{ id: 'parakeet-unified-en', installed: true, runtime: 'transcribe-cpp', streaming: true }],
+  }, { speechWorkerAvailable: true, hasAudioChannels: true }), 'local-stream');
+});
+
+test('local streaming falls back to batch outside the memory budget or without the worker', () => {
+  const settings = {
+    transcription: { offlineEnabled: true, localModelId: 'parakeet-unified-en' },
+    speechModels: [{ id: 'parakeet-unified-en', installed: true, runtime: 'transcribe-cpp', streaming: true, hardware: { estimatedMemoryMb: 1000 } }],
+  };
+  assert.equal(resolveTranscriptionMode(settings, {
+    speechWorkerAvailable: true, hasAudioChannels: true, channelCount: 2, memoryLimitMb: 1999,
+  }), 'batch');
+  assert.equal(resolveTranscriptionMode(settings, { speechWorkerAvailable: false, hasAudioChannels: true }), 'batch');
 });
 
 test('cloud realtime remains the default when offline-first is disabled', () => {

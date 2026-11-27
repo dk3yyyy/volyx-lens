@@ -116,13 +116,16 @@ test('cancellation during final artifact installation removes the installed mode
   assert.equal(fs.existsSync(store.paths(model).receiptPath), false);
 });
 
-test('registry exports only ASR catalog and artifact operations', () => {
+test('registry exports the ASR catalog, detector operations, and artifact operations', () => {
   const registry = require('../src/speech-model-registry');
   assert.deepEqual(Object.keys(registry).sort(), [
-    'MODELS', 'MODEL_ARTIFACT_STORE', 'getModel', 'isInstalled', 'listModels',
-    'modelPaths', 'prepareModel', 'removeModel', 'verifyModel',
+    'MODELS', 'MODEL_ARTIFACT_STORE', 'getModel', 'isInstalled', 'isSpeechDetectorInstalled',
+    'listModels', 'modelPaths', 'prepareModel', 'prepareSpeechDetector', 'removeModel',
+    'removeSpeechDetector', 'speechDetectorInfo', 'speechDetectorPaths', 'verifyModel',
+    'verifySpeechDetector',
   ]);
-  assert.ok(listModels().every((model) => model.streaming === false));
+  const streaming = listModels().filter((model) => model.streaming === true).map((model) => model.id).sort();
+  assert.deepEqual(streaming, ['nemotron-3.5-asr-streaming-0.6b', 'parakeet-unified-en']);
 });
 
 test('every registered GGUF model can be checked for installation without throwing', () => {

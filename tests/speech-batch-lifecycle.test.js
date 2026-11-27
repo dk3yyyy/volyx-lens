@@ -15,9 +15,10 @@ function deferred() {
   return { promise, resolve };
 }
 
-function createFlushHarness() {
+function createFlushHarness({ vad = null } = {}) {
   const requests = [];
   const recorded = [];
+  const vadCalls = { load: 0, detect: 0 };
   const context = {
     Buffer,
     console: { log() {}, warn() {} },
@@ -36,7 +37,17 @@ function createFlushHarness() {
     MIN_BYTES: 1,
     RMS_GATE: 100,
     rms16: () => 1_000,
-    store: { getSettings: () => ({ transcription: {}, audio: {} }) },
+    getSpeechModel: (id) => (vad && id === 'local-stream-model' ? { id, runtime: 'transcribe-cpp', streaming: true } : null),
+    isSpeechDetectorInstalled: () => Boolean(vad),
+    mapVadSegments: (pcm, segments) => segments.map((segment) => ({ startByte: segment.startByte, endByte: segment.endByte, startMs: segment.startMs })),
+    defaultSpeechWorker: {
+      loadVad: async () => { vadCalls.load += 1; },
+      detectSpeech: async () => {
+        vadCalls.detect += 1;
+        return vad || { speech: true, segments: [] };
+      },
+    },
+    store: { getSettings: () => ({ transcription: vad ? { offlineEnabled: true, localModelId: 'local-stream-model' } : {}, audio: {} }) },
     personalContextStore: { getEnabledDocuments: () => [] },
     buildSttVocab: () => '',
     createSTT: () => ({
@@ -54,7 +65,7 @@ function createFlushHarness() {
   const end = main.indexOf('async function drainBatchBuffers()', start);
   assert.ok(start >= 0 && end > start, 'main.js contains the batch flush function');
   const flushChannel = vm.runInNewContext(`(${main.slice(start, end)})`, context);
-  return { context, requests, recorded, flushChannel };
+  return { context, requests, recorded, vadCalls, flushChannel };
 }
 
 test('a same-epoch flush detaches old audio without erasing newer PCM', async () => {
@@ -112,4 +123,44 @@ test('an immediate-teardown epoch fence rejects stale results without clearing t
   assert.equal(context.state.transcribing.you, false);
   assert.equal(context.flushPromises.you, null);
   assert.deepEqual([...context.retryQueues.you], []);
+});
+
+test('the neural VAD gate drops detector-silent audio without calling the STT provider', async () => {
+  const { context, requests, vadCalls, flushChannel } = createFlushHarness({ vad: { speech: false, segments: [] } });
+  context.buffers.you.push(Buffer.from([0, 0, 0, 0]));
+
+  await flushChannel('you');
+
+  assert.equal(vadCalls.load, 1, 'the detector is loaded before detection');
+  assert.equal(vadCalls.detect, 1);
+  assert.equal(requests.length, 0, 'silent audio never reaches the batch provider');
+  assert.deepEqual([...context.retryQueues.you], [], 'silent audio is dropped, not retried');
+  assert.equal(context.state.transcribing.you, false);
+});
+
+test('VAD segments map to bounded per-range batches and per-segment transcript turns', async () => {
+  const vad = {
+    speech: true,
+    segments: [
+      { startByte: 0, endByte: 4, startMs: 0 },
+      { startByte: 4, endByte: 8, startMs: 500 },
+    ],
+  };
+  const { context, requests, recorded, flushChannel } = createFlushHarness({ vad });
+  context.buffers.you.push(Buffer.from('abcdefgh'));
+
+  const flushing = flushChannel('you');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.length, 1, 'ranges are transcribed one at a time');
+  requests[0].resolve({ text: 'first', provider: 'openai' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.length, 2);
+  requests[1].resolve({ text: 'second', provider: 'openai' });
+  await flushing;
+
+  assert.equal(requests[0].pcm.toString(), 'abcd');
+  assert.equal(requests[1].pcm.toString(), 'efgh');
+  assert.deepEqual(recorded.map((entry) => entry.event.text), ['first', 'second']);
+  assert.equal(typeof recorded[0].event.ts, 'number');
+  assert.ok(recorded[1].event.ts >= recorded[0].event.ts + 500);
 });

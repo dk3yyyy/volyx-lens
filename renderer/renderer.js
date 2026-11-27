@@ -3292,7 +3292,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       const option = document.createElement('option');
       option.value = model.id;
       const sizeMb = model.artifact && model.artifact.estimatedSizeMb;
-      option.textContent = `${model.name}${sizeMb ? ` · ${sizeMb} MB` : ''}`;
+      option.textContent = `${model.name}${sizeMb ? ` · ${sizeMb} MB` : ''}${model.streaming ? ' · streaming-capable' : ''}`;
       option.disabled = model.runtimeAvailable !== true;
       options.push(option);
     }
@@ -3327,7 +3327,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       model.loaded ? (model.warmed ? 'Loaded and warmed' : 'Loaded') : '',
       model.loaded && model.backend ? `Backend: ${model.backend}` : '',
       model.loaded && model.backendFallback ? 'CPU fallback active' : '',
-      'Utterance batch transcription',
+      model.streaming ? 'Streaming-capable model' : 'Utterance transcription',
     ].filter(Boolean);
     if (model.runtimeAvailable !== true) details.push('Runtime unavailable on this build');
     status.textContent = `${details.join(' · ')}.${model.runtimeAvailable !== true ? ' The local GGUF worker is unavailable in this build.' : ''}`;
