@@ -474,6 +474,14 @@
         <div class="s-field"><label for="stt-speech-backend">Compute backend</label>
           <select id="stt-speech-backend"><option value="auto">Automatic</option><option value="cpu">CPU only</option><option value="gpu">GPU when available</option></select>
         </div>
+        <div class="s-field"><label for="stt-speaker-mode">Audio output</label>
+          <select id="stt-speaker-mode">
+            <option value="auto">Auto (detect speaker echo)</option>
+            <option value="speakers">Speakers</option>
+            <option value="headphones">Headphones</option>
+          </select>
+          <span class="s-hint">With speakers, the other side can leak into your microphone; echoed text is removed. With headphones nothing is removed. Auto decides from the audio.</span>
+        </div>
         <div class="s-field"><label for="stt-faster-live">Faster live text</label>
           <input id="stt-faster-live" type="checkbox" />
           <span class="s-hint">Local streaming only. Shorter windows cut latency at the cost of more compute; falls back to the model's default window if the model rejects the setting.</span>
