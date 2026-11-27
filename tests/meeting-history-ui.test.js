@@ -54,7 +54,7 @@ test('renderer opens a detail view, exports, deletes, clears, and closes back to
   assert.match(renderer, /volyxLens\.historyGet\(id\)/);
   assert.match(renderer, /renderMeetingTurns\(\)/);
   assert.match(renderer, /function closeMeetingDetail\(\)/);
-  assert.match(renderer, /volyxLens\.historyExport\(meetingDetail\.id, \$\('#meeting-history-export-format'\)\.value, meetingViewMode === 'raw' \? 'raw' : 'auto'\)/);
+  assert.match(renderer, /volyxLens\.historyExport\(meetingDetail\.id, \$\('#meeting-history-export-format'\)\.value, exportSource\)/);
   assert.match(renderer, /volyxLens\.historyDelete\(meetingDetail\.id\)/);
   assert.match(renderer, /volyxLens\.historyClear\(\)/);
   assert.match(renderer, /meeting-history-list'\)\.classList\.add\('hidden'\)/);

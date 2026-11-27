@@ -224,3 +224,17 @@ test('a meeting with no named participant still reads as Them', () => {
   assert.match(formatMeetingRecord(record, 'md'), /Them:/);
   assert.doesNotMatch(formatMeetingRecord(record, 'md'), /Participants:/);
 });
+
+test('processed export keeps the saved deterministic wording over the cleaned copy', () => {
+  const record = {
+    turns: [{ channel: 'you', text: 'Volyx Lens', rawText: 'volyx lens', ts: 1 }],
+    cleaned: { texts: ['Volyx Lens, cleaned'] },
+  };
+  const automatic = resolveTurns(record);
+  assert.equal(automatic.turns[0].text, 'Volyx Lens, cleaned', 'auto prefers the AI-cleaned copy');
+  assert.equal(automatic.cleaned, true);
+
+  const processed = resolveTurns(record, { source: 'processed' });
+  assert.equal(processed.cleaned, false);
+  assert.equal(processed.turns[0].text, 'Volyx Lens', 'the selected Processed view is what gets exported');
+});

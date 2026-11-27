@@ -951,7 +951,7 @@ async function exportTranscript(format) {
 
 async function exportMeetingRecord(id, format, source) {
   const normalizedFormat = ['txt', 'md', 'json', 'srt', 'vtt'].includes(format) ? format : 'md';
-  const normalizedSource = source === 'raw' ? 'raw' : 'auto';
+  const normalizedSource = source === 'raw' || source === 'processed' ? source : 'auto';
   const record = meetingStore.get(String(id || ''));
   if (!record) throw new Error('That meeting record is no longer available.');
   const result = await dialog.showSaveDialog(win, {

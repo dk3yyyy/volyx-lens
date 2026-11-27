@@ -1097,7 +1097,8 @@
     if (!meetingDetail) return;
     const button = $('#meeting-history-export'); button.disabled = true;
     try {
-      const result = await volyxLens.historyExport(meetingDetail.id, $('#meeting-history-export-format').value, meetingViewMode === 'raw' ? 'raw' : 'auto');
+      const exportSource = meetingViewMode === 'raw' ? 'raw' : (meetingViewMode === 'processed' ? 'processed' : 'auto');
+      const result = await volyxLens.historyExport(meetingDetail.id, $('#meeting-history-export-format').value, exportSource);
       if (result && !result.canceled) showStatus(`Exported ${result.turns} ${result.turns === 1 ? 'turn' : 'turns'} to ${result.filename}.`);
     } catch (error) { showStatus(error && error.message ? error.message : 'This meeting could not be exported.'); }
     finally { button.disabled = false; }

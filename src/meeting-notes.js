@@ -99,6 +99,15 @@ function meetingHeader(record = {}, { cleaned = false } = {}) {
  */
 function resolveTurns(record = {}, { source = 'auto' } = {}) {
   const normalized = normalizeTurns(record);
+  if (source === 'processed') {
+    // The saved turn text is the deterministic processing result; it must not
+    // silently fall back to the AI-cleaned copy the way 'auto' does.
+    return {
+      turns: normalized,
+      cleaned: false,
+      processed: normalized.some((turn) => Boolean(turn.rawText)),
+    };
+  }
   if (source === 'raw') {
     return {
       turns: normalized.map((turn) => turn.rawText ? { ...turn, text: turn.rawText } : turn),
