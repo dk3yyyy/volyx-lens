@@ -874,3 +874,37 @@ test('a project inside the system temp tree is not treated as app data', () => {
     index.close();
   }
 });
+
+test('short password assignments are refused even below the generic length floor', () => {
+  assert.equal(containsLikelySecret('password: "P@ssw0rd!"'), true);
+  assert.equal(containsLikelySecret('db_password = hunter2'), true);
+  assert.equal(containsLikelySecret('password: ${DB_PASSWORD}'), false, 'an env reference is not a value');
+  assert.equal(containsLikelySecret('password: change_me'), false, 'a placeholder is not a secret');
+});
+
+test('removing one workspace frees the shared byte cap for another', async () => {
+  const directory = temporaryDirectory();
+  const firstRoot = path.join(directory, 'first');
+  const secondRoot = path.join(directory, 'second');
+  fs.mkdirSync(firstRoot);
+  fs.mkdirSync(secondRoot);
+  write(firstRoot, 'README.md', 'firstmarker-content\n');
+  write(secondRoot, 'README.md', 'secondmarker-content\n');
+  const index = createIndex(directory, { maxTotalBytes: 24 });
+  try {
+    const first = index.add(firstRoot);
+    await index.refresh(first.id);
+    index.setEnabled(first.id, true);
+
+    const second = index.add(secondRoot);
+    index.setEnabled(second.id, true);
+    index.remove(first.id);
+
+    const result = await index.refresh(second.id);
+    assert.equal(result.incomplete, false, 'space freed by the removal is reusable');
+    assert.equal(index.search('secondmarker').length, 1);
+    assert.equal(index.search('firstmarker').length, 0);
+  } finally {
+    index.close();
+  }
+});

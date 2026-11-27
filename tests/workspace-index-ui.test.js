@@ -53,3 +53,10 @@ test('workspace settings disclose local plaintext storage and use safe DOM text 
   assert.match(renderer, /title\.textContent = workspace\.name/);
   assert.doesNotMatch(renderer, /enabled\.disabled = !workspace\.indexComplete/);
 });
+
+test('workspace snippets are re-read after capture, like meeting memory', () => {
+  const workspaceRead = main.indexOf("readOptionalContext('workspace'");
+  const captureDone = main.indexOf('currentScreen = await captureScreenshot');
+  assert.ok(workspaceRead > 0 && captureDone > 0);
+  assert.ok(workspaceRead > captureDone, 'a folder disabled during capture must not be uploaded');
+});

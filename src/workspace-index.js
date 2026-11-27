@@ -145,7 +145,11 @@ function containsLikelySecret(text) {
       || ['apikey', 'privatekey'].includes(parts.join(''));
     if (!sensitiveName) continue;
     const secret = (match[2] ?? match[3] ?? match[4]) || '';
-    if (secret.length < 12) continue;
+    // A password is short often enough that the generic length floor let real
+    // ones through; the placeholder checks below still reject obvious filler.
+    const passwordField = parts.some((part) => ['password', 'passwd'].includes(part));
+    if (!passwordField && secret.length < 12) continue;
+    if (passwordField && !secret.trim()) continue;
     if (/^(?:process\.env|import\.meta\.env|deno\.env|env(?:\.|\[)|os\.environ|getenv\s*\(|\$\{|<|your[_ -]|example|sample|test|mock|dummy|fake|change[_ -]?me|replace[_ -]?me|todo|tbd)/i.test(secret)) continue;
     return true;
   }
@@ -443,6 +447,10 @@ function createWorkspaceIndex({
         reconcileResult = await reconcileMissingRows(workspace.id, root);
         totalBytes -= reconcileResult.freed;
         result.removed += reconcileResult.removed;
+        // Another workspace may have been removed while this scan was reading
+        // files; take the stored total again so freed bytes are not still
+        // counted against the shared cap.
+        totalBytes = Number(database.prepare('SELECT COALESCE(SUM(size), 0) AS total FROM workspace_files').get().total) || 0;
       }
       return reconcileResult;
     };
