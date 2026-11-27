@@ -45,6 +45,7 @@ function createCaptureHarness({ gateBusy = false } = {}) {
     linuxMonitorCapture: { stop: async () => {} },
     micEchoCoordinator: { clear() {}, drain() {} },
     acousticEchoFilter: { reset() {} },
+    resetEchoState: () => {},
     stopSlideTracking() {},
     captureStartedAt: 1000,
     lastCaptureEndedAt: 2000,

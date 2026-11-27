@@ -1,5 +1,7 @@
 'use strict';
 
+const { createEnvelopeDoubleTalkDetector, DEFAULT_MARGIN_DB: DEFAULT_ENVELOPE_MARGIN_DB } = require('./echo-double-talk');
+
 const DEFAULT_SAMPLE_RATE = 24000;
 const DEFAULT_DOWNSAMPLE_FACTOR = 8;
 const DEFAULT_HISTORY_MS = 2000;
@@ -11,6 +13,12 @@ const DEFAULT_LOCAL_FRAME_MARGIN_DB = 8;
 const DEFAULT_LOCAL_RESIDUAL_SHARE = 0.4;
 const DEFAULT_LOCAL_SHARE_THRESHOLD = 0.25;
 const DEFAULT_DOUBLE_TALK_CORRELATION_THRESHOLD = 0.5;
+// 'residual' is the waveform residual test. 'envelope' (experimental) uses the
+// reverb-aware power detector in src/echo-double-talk.js once it has learned
+// the echo path, and the residual test before that. Two synthetic room models
+// rank them differently (scripts/eval-echo.js), so the default stays 'residual'
+// until recorded speaker-mode sessions decide.
+const DEFAULT_DOUBLE_TALK_MODE = 'residual';
 
 function pcm16ToDownsampled(pcm, factor) {
   if (!Buffer.isBuffer(pcm) || pcm.length < 2) return new Float32Array(0);
@@ -197,6 +205,8 @@ class AcousticEchoFilter {
     localShareThreshold = DEFAULT_LOCAL_SHARE_THRESHOLD,
     silenceFloorRms = minRms,
     doubleTalkCorrelationThreshold = DEFAULT_DOUBLE_TALK_CORRELATION_THRESHOLD,
+    doubleTalkMode = DEFAULT_DOUBLE_TALK_MODE,
+    envelopeMarginDb = DEFAULT_ENVELOPE_MARGIN_DB,
   } = {}) {
     this.sampleRate = sampleRate;
     this.downsampleFactor = downsampleFactor;
@@ -211,11 +221,19 @@ class AcousticEchoFilter {
     this.localShareThreshold = localShareThreshold;
     this.silenceFloorRms = silenceFloorRms;
     this.doubleTalkCorrelationThreshold = doubleTalkCorrelationThreshold;
+    this.doubleTalkMode = doubleTalkMode === 'envelope' ? 'envelope' : 'residual';
+    this.envelope = createEnvelopeDoubleTalkDetector({
+      frameSamples: this.frameSamples,
+      floorRms: silenceFloorRms,
+      learnCorrelation: correlationThreshold,
+      marginDb: envelopeMarginDb,
+    });
     this.reference = new Float32Array(0);
   }
 
   reset() {
     this.reference = new Float32Array(0);
+    this.envelope.reset();
   }
 
   observeSystem(pcm) {
@@ -238,7 +256,7 @@ class AcousticEchoFilter {
       && match.referenceRms >= this.minRms
       && match.offset >= 0;
     const gain = active ? fitEchoGain(this.reference, candidate, match.offset) : 0;
-    const { localShare, localFrames, frameCount } = measureLocalShare(
+    const residual = measureLocalShare(
       this.reference,
       candidate,
       match.offset,
@@ -250,6 +268,11 @@ class AcousticEchoFilter {
         silenceFloorRms: this.silenceFloorRms,
       },
     );
+    const envelope = active && this.doubleTalkMode === 'envelope'
+      ? this.envelope.inspect(this.reference, candidate, match.offset, correlation)
+      : null;
+    const detector = envelope && envelope.learned ? 'envelope' : 'residual';
+    const { localShare, localFrames, frameCount } = detector === 'envelope' ? envelope : residual;
 
     let label = 'local';
     if (active && correlation >= this.doubleTalkCorrelationThreshold
@@ -273,6 +296,8 @@ class AcousticEchoFilter {
       localFrames,
       frameCount,
       gain,
+      detector,
+      echoPathGain: envelope ? envelope.pathGain : null,
     };
   }
 }
@@ -293,6 +318,7 @@ module.exports = {
   DEFAULT_LOCAL_RESIDUAL_SHARE,
   DEFAULT_LOCAL_SHARE_THRESHOLD,
   DEFAULT_DOUBLE_TALK_CORRELATION_THRESHOLD,
+  DEFAULT_DOUBLE_TALK_MODE,
   pcm16ToDownsampled,
   bestNormalizedCorrelation,
   fitEchoGain,

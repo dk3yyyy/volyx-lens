@@ -56,6 +56,7 @@ function createFlushHarness(overrides = {}) {
     drainingRealtimeManagers: new Set(),
     micEchoCoordinator: { clear() {} },
     acousticEchoFilter: { reset() {} },
+    resetEchoState: () => {},
     store: { getSettings: () => ({}) },
     personalContextStore: { getEnabledDocuments: () => [] },
     buildSttVocab: () => '',

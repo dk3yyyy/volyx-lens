@@ -56,6 +56,11 @@ jobs:
       - name: Generate coverage report
         if: matrix.node == 22
         run: npm run coverage:report
+      # Synthetic only: it guards against a detector change that starts dropping
+      # speech as loud as the echo. It is not a tuning gate.
+      - name: Synthetic echo evaluation
+        if: matrix.node == 22
+        run: npm run eval:echo -- --check
       - name: Check coverage thresholds
         if: matrix.node == 22
         run: npx c8 check-coverage --lines=70 --branches=70 --functions=60 --statements=70
