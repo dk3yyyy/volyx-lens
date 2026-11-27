@@ -126,7 +126,7 @@ test('remove and clear delete records', () => {
   store.finalize({ turns: sampleTurns(4), enabled: true });
   // Delete is a move to the undo folder, so the meeting stays restorable.
   assert.deepEqual(store.remove(first.id), { removed: true, trashed: true });
-  assert.deepEqual(store.remove(first.id), { removed: false });
+  assert.deepEqual(store.remove(first.id), { removed: false, reason: 'not_found' });
   assert.equal(store.get(first.id), null);
   assert.equal(store.list().length, 1);
   // Clear all is the permanent path and takes the undo copies with it.

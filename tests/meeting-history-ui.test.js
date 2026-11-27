@@ -62,11 +62,11 @@ test('renderer opens a detail view, exports, deletes, clears, and closes back to
 });
 
 test('renderer confirms every destructive history action before deleting', () => {
-  assert.match(renderer, /if \(!window\.confirm\('Delete this saved meeting\? You can undo this right after\.'\)\) return;/);
-  assert.match(renderer, /if \(!window\.confirm\('Delete ALL saved meetings\? This cannot be undone, and it permanently removes the undo copies of earlier deletes\.'\)\) return;/);
+  assert.match(renderer, /if \(!window\.confirm\('Delete this saved meeting\? Any saved memory linked to it will also be deleted and will not return on Undo\.'\)\) return;/);
+  assert.match(renderer, /if \(!window\.confirm\('Delete ALL saved meetings and their linked memories\? This cannot be undone, and it permanently removes the undo copies of earlier deletes\.'\)\) return;/);
   const rowDelete = renderer.match(/history-entry-delete[\s\S]*?historyDelete\(record\.id\)/);
   assert.ok(rowDelete, 'list-row delete handler exists');
-  assert.match(rowDelete[0], /window\.confirm\('Delete this saved meeting\? You can undo this right after\.'\)/);
+  assert.match(rowDelete[0], /window\.confirm\('Delete this saved meeting\? Any saved memory linked to it will also be deleted and will not return on Undo\.'\)/);
 });
 
 test('notes generation confirms long recaps and streams recap tokens into the panel', () => {
@@ -94,4 +94,37 @@ test('history panel loads on boot so the dock badge is accurate', () => {
   assert.match(renderer, /loadMeetingHistory\(\{ quiet: true \}\)/);
   assert.match(renderer, /meeting-history-action-count'\)\.classList\.toggle\('hidden', meetingHistoryRecords\.length === 0\)/);
   assert.match(icons, /history: '<path d="M3 12a9 9 0 1 0 9-9/);
+});
+
+test('meeting memory is explicit, inspectable, and uses the trusted history bridge', () => {
+  for (const id of ['meeting-memory-save', 'meeting-memory-list', 'meeting-memory-status']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  for (const method of ['List', 'Save', 'Update', 'SetEnabled', 'Remove']) {
+    assert.match(preload, new RegExp(`meetingMemory${method}:`));
+  }
+  for (const channel of ['memory-list', 'memory-save', 'memory-update', 'memory-set-enabled', 'memory-remove']) {
+    assert.match(main, new RegExp(`handleTrusted\\('history:${channel}'`));
+  }
+  assert.match(renderer, /volyxLens\.meetingMemorySave\(meetingDetail\.id\)/);
+  assert.match(renderer, /volyxLens\.meetingMemoryUpdate\(entry\.id, draft\)/);
+  assert.match(renderer, /const meetingMemoryDrafts = new Map\(\)/);
+  assert.match(renderer, /content\.addEventListener\('input', \(\) => \{\s*meetingMemoryDrafts\.set\(entry\.id, \{ text: content\.value, base: entry\.memory\.content \}\);/);
+  assert.match(renderer, /content\.value = draft \? draft\.text : entry\.memory\.content/);
+  assert.match(renderer, /if \(meetingMemoryDrafts\.get\(entry\.id\)\?\.text === draft\) \{/);
+  assert.match(renderer, /meetingMemoryDrafts\.get\(entry\.id\)\.base = result\.memory\.content;/);
+  assert.match(renderer, /const listedById = new Map\(listed\.map\(\(item\) => \[item\.id, item\]\)\);/);
+  assert.match(renderer, /if \(!live \|\| live\.memory\.content !== draft\.base\) meetingMemoryDrafts\.delete\(id\);/);
+  assert.match(renderer, /volyxLens\.meetingMemorySetEnabled\(entry\.id, enabled\.checked\)/);
+  assert.match(renderer, /volyxLens\.meetingMemoryRemove\(entry\.id\)/);
+  assert.match(renderer, /memoryButton\.disabled = !hasMeetingNotes\(meetingDetail && meetingDetail\.notes\);/);
+  assert.match(renderer, /Delete the saved memory from \$\{sourceDate\}/);
+  assert.match(renderer, /title\.textContent = `Meeting notes/);
+  assert.match(main, /meetingStore\.saveMemoryFromNotes/);
+  assert.match(main, /readOptionalContext\('saved meeting memory', \(\) => meetingStore\.searchMemories\(query\)/);
+  assert.match(main, /meetingMemoryCounts/);
+  assert.match(renderer, /history:changed[\s\S]*loadMeetingMemoryEntries\(\)/);
+  assert.match(renderer, /unknown provenance/);
+  assert.match(store, /record\.memory = null/);
+  assert.match(html, /not encrypted by Volyx Lens/);
 });
