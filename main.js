@@ -1022,6 +1022,7 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
       if (leakedSegment.channel === 'you') {
         rememberSuppressedYou({ text: leakedSegment.text, ts: leakedSegment.ts, duplicateOf: null, match: duplicate.match, reason: 'cross_talk_late' });
+        send('transcript:suppressed', { channel: 'you', duplicateOf: duplicate.turn.turnId, reason: 'cross_talk_late', text: leakedSegment.text, ts: leakedSegment.ts });
       }
       removeRecentTranscriptSegment(leakedSegment.id);
       const survivingTs = removeTranscriptSegment(leakedSegment);
@@ -2397,6 +2398,7 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
       speechFinalizing = false;
     }
   }
+  acousticCoupling.reset();
   buffers.you = []; buffers.them = [];
   retryQueues.you = []; retryQueues.them = [];
   transcriptionMode = 'idle';
@@ -2968,7 +2970,11 @@ async function applyCaptureState(active) {
   await linuxMonitorCapture.stop({ immediate: pendingStopImmediate });
   if (pendingStopImmediate) micEchoCoordinator.clear();
   else micEchoCoordinator.drain();
-  resetEchoState();
+  // Final stream and batch turns arrive after this point. Keep the coupling
+  // evidence until stopTranscriptionPipeline has drained them, or their echo
+  // escapes the dedupe.
+  acousticEchoFilter.reset();
+  echoGapFill.reset();
   state.capturing = false;
   captureGeneration += 1;
   themSilenceWatchdog.disarm();

@@ -72,12 +72,11 @@ function tone(samples, amplitude) {
 
 test('gap fill replaces echo inside speech with silence and drops it elsewhere', () => {
   let now = 0;
-  const fill = createEchoGapFill({ now: () => now, hangoverMs: 300, holdMs: 1200 });
   const chunk = tone(2048, 8000);
   assert.ok(pcmRms(chunk) > 1000);
+  const fill = createEchoGapFill({ now: () => now, hangoverMs: 300, holdMs: 1200 });
 
-  // Before any speech, suppressed echo is dropped.
-  assert.equal(fill.suppressed(chunk), null);
+  assert.equal(fill.suppressed(chunk), null, 'echo before any speech is dropped');
 
   fill.routed(chunk);
   now += 85;
@@ -86,12 +85,28 @@ test('gap fill replaces echo inside speech with silence and drops it elsewhere',
   assert.equal(silence.length, chunk.length);
   assert.equal(pcmRms(silence), 0);
 
-  // A fill run that started inside the hangover continues up to holdMs...
-  now += 900;
+  // The run can continue inside hangover, but only up to its byte budget.
+  now += 85;
   assert.ok(fill.suppressed(chunk));
-  // ...and then stops.
+  fill.routed(chunk); // new routed audio starts a new budget
+  now += 85;
+  assert.ok(fill.suppressed(chunk));
+
   now += 400;
-  assert.equal(fill.suppressed(chunk), null);
+  assert.ok(fill.suppressed(chunk), 'an active run continues past hangover until its byte budget');
+});
+
+test('gap fill counts PCM duration, not wall-clock ticks', () => {
+  let now = 0;
+  // 100 ms cap at 1 kHz mono PCM16 = 200 bytes. All calls share one timestamp,
+  // as queued drain chunks do.
+  const fill = createEchoGapFill({ now: () => now, sampleRate: 1000, holdMs: 100 });
+  const chunk = Buffer.alloc(100);
+  fill.routed(tone(100, 8000));
+  assert.equal(fill.suppressed(chunk).length, 100);
+  now += 500; // past hangover, but this run is already active
+  assert.equal(fill.suppressed(chunk).length, 100, 'an active run continues within its byte budget');
+  assert.equal(fill.suppressed(chunk), null, 'the cap is measured in sent audio');
 });
 
 test('quiet routed audio does not open the hangover', () => {
