@@ -63,6 +63,9 @@ test('partial nested settings patches preserve omitted preferences', () => {
 
   assert.equal(store.setSettings({ audio: { echoDelayMs: 99999 } }).audio.echoDelayMs, 2000);
   assert.equal(store.setSettings({ audio: { echoDelayMs: -40 } }).audio.echoDelayMs, 0);
+  assert.equal(store.setSettings({ audio: { speakerMode: 'speakers' } }).audio.speakerMode, 'speakers');
+  assert.equal(store.setSettings({ audio: { speakerMode: 'headphones' } }).audio.speakerMode, 'headphones');
+  assert.equal(store.setSettings({ audio: { speakerMode: 'nonsense' } }).audio.speakerMode, 'headphones', 'invalid values are dropped, not stored');
 });
 
 test('local GGUF selection defaults to legacy Whisper and survives an atomic settings reload', () => {

@@ -3819,6 +3819,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || '';
     $('#stt-speech-backend').value = transcription.speechBackend || 'auto';
     $('#stt-faster-live').checked = transcription.streamPreset === 'fast';
+    $('#stt-speaker-mode').value = (settings.audio || {}).speakerMode || 'auto';
     const offlineWhisper = settings.offlineWhisper || { available: true };
     const localSpeech = settings.localSpeech || { available: offlineWhisper.available !== false };
     const offlineToggle = $('#stt-offline-enabled');
@@ -4124,6 +4125,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       preRollMs: 250,
       costWarningMinutes: Math.max(5, Math.min(240, Number($('#audio-cost-warning').value) || 30)),
       maxSessionMinutes: Math.max(10, Math.min(480, Number($('#audio-session-limit').value) || 60)),
+      speakerMode: $('#stt-speaker-mode').value,
     };
     stashCurrentModels();
     stashCurrentEndpoints();
