@@ -106,6 +106,10 @@ function createSpeechWorker({
   let sequence = 0;
   let expectedExit = false;
   let workerGeneration = 0;
+  // Process starts bump workerGeneration; real stops bump stopEpoch. A load must
+  // only be cancelled by a stop, not by another channel's cold start.
+  let stopEpoch = 0;
+  let pendingLoad = null;
   let stopPromise = null;
   let loadedModelId = '';
   let warmedModelId = '';
@@ -271,15 +275,30 @@ function createSpeechWorker({
     });
   }
 
-  async function loadModel(modelId, { backend = 'auto' } = {}) {
+  function loadModel(modelId, { backend = 'auto' } = {}) {
     const model = getModel(modelId);
     if (!model || model.runtime !== 'transcribe-cpp') {
-      throw workerError('speech_model_unsupported', `Unsupported local GGUF model: ${String(modelId || '')}`);
+      return Promise.reject(workerError('speech_model_unsupported', `Unsupported local GGUF model: ${String(modelId || '')}`));
     }
     if (!isInstalled(model.id)) {
-      throw workerError('speech_model_not_installed', `Download ${model.name} before using it offline.`);
+      return Promise.reject(workerError('speech_model_not_installed', `Download ${model.name} before using it offline.`));
     }
     const preferredBackend = normalizeBackend(backend);
+    const key = `${model.id}|${preferredBackend}`;
+    // You and Them flush together on a cold start. Both callers share one load
+    // instead of racing to start the worker and cancelling each other.
+    if (pendingLoad && pendingLoad.key === key) return pendingLoad.promise;
+    if (pendingLoad && pendingLoad.key !== key) {
+      return pendingLoad.promise.then(() => loadModel(modelId, { backend }));
+    }
+    const promise = performLoad(model, preferredBackend);
+    pendingLoad = { key, promise };
+    return promise.finally(() => {
+      if (pendingLoad && pendingLoad.promise === promise) pendingLoad = null;
+    });
+  }
+
+  async function performLoad(model, preferredBackend) {
     const backendSatisfied = backendPreferenceSatisfied(preferredBackend);
     if (loadedModelId === model.id && backendSatisfied) {
       if (preferredBackend === 'cpu') {
@@ -288,11 +307,11 @@ function createSpeechWorker({
       }
       return { modelId: model.id, loaded: true, backend: activeBackend, backendFallback: activeBackendFallback };
     }
-    const generation = workerGeneration;
+    const epochAtStart = stopEpoch;
     if (!await verifyModel(model.id)) {
       throw workerError('speech_model_integrity_mismatch', `The downloaded ${model.name} failed its SHA-256 integrity check. Download it again before use.`);
     }
-    if (generation !== workerGeneration) {
+    if (epochAtStart !== stopEpoch) {
       throw workerError('speech_worker_stopped', 'Speech worker was stopped before the model could load.');
     }
     if (loadedModelId) await unloadModel();
@@ -381,7 +400,9 @@ function createSpeechWorker({
     if (stopPromise) return stopPromise;
     // Invalidate in-flight work even when no child exists yet: a load can be
     // awaiting artifact verification and would otherwise spawn a worker after
-    // the user already stopped.
+    // the user already stopped. Only a stop bumps stopEpoch; starting a worker
+    // must not cancel a sibling channel's load.
+    stopEpoch += 1;
     const generation = ++workerGeneration;
     if (!child) return;
     expectedExit = true;

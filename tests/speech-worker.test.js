@@ -383,3 +383,26 @@ test('an immediate stop during artifact verification prevents a late spawn', asy
     modelVerification = previous;
   }
 });
+
+test('concurrent cold loads share one worker start', async () => {
+  const previous = modelVerification;
+  let verifyCalls = 0;
+  modelVerification = async () => {
+    verifyCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return true;
+  };
+  const { worker, children } = fixture();
+  try {
+    const [first, second] = await Promise.all([
+      worker.loadModel('fake-gguf'),
+      worker.loadModel('fake-gguf'),
+    ]);
+    assert.equal(first.modelId, 'fake-gguf');
+    assert.equal(second.modelId, 'fake-gguf');
+    assert.equal(children.length, 1, 'one channel start serves both flushes');
+    assert.equal(verifyCalls, 1, 'the artifact is verified once per cold load');
+  } finally {
+    modelVerification = previous;
+  }
+});
