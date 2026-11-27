@@ -37,6 +37,7 @@
   // ---- state -------------------------------------------------------------
   let settings = null;
   let personalContext = null;
+  let workspaceIndexState = [];
   let taskContext = { count: 0, maxCaptures: null, maxTotalBytes: 96 * 1024 * 1024, totalBytes: 0, pinnedCount: 0, lastCapturedAt: null, revision: 0, lastEviction: null, nearDuplicatesRejected: 0, fingerprintFailures: 0, ocrBytes: 0, ocrReadyCount: 0, ocrPendingCount: 0, ocrUnavailableCount: 0, ocrFailedCount: 0, ocrEvictedCount: 0, overlapLinkedCount: 0 };
   const taskContextPage = { offset: 0, limit: 50, total: 0, captures: [], revision: -1 };
   let taskContextListRequest = 0;
@@ -1301,17 +1302,19 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   function contextUsagePrefix(badge) {
     const labels = [];
     if (badge.dataset.contextSources) labels.push(`Personal context selected: ${badge.dataset.contextSources}`);
+    if (badge.dataset.workspaceContextSources) labels.push(`Workspace files: ${badge.dataset.workspaceContextSources}`);
     const taskCount = Math.max(0, Number(badge.dataset.taskContextCount) || 0);
     const taskTotal = Math.max(taskCount, Number(badge.dataset.taskContextTotalCount) || 0);
     if (taskCount) labels.push(taskTotal > taskCount ? `Task context: ${taskCount} of ${taskTotal} saved screens attached` : `Task context: ${taskCount} saved ${taskCount === 1 ? 'screen' : 'screens'} attached`);
     return labels.length ? `${labels.join(' · ')} · ` : '';
   }
 
-  function addContextUsage(sources, taskContextCount, taskContextTotalCount, responseProvider) {
+  function addContextUsage(sources, workspaceSources, taskContextCount, taskContextTotalCount, responseProvider) {
     const badge = document.createElement('div');
     badge.className = 'context-usage';
     badge.id = 'response-provider-usage';
     badge.dataset.contextSources = Array.isArray(sources) ? sources.join(' + ') : '';
+    badge.dataset.workspaceContextSources = Array.isArray(workspaceSources) ? workspaceSources.join(' + ') : '';
     badge.dataset.taskContextCount = String(Math.max(0, Number(taskContextCount) || 0));
     badge.dataset.taskContextTotalCount = String(Math.max(0, Number(taskContextTotalCount) || 0));
     badge.textContent = `${contextUsagePrefix(badge)}Response provider: ${responseProvider || settings.provider}`;
@@ -2131,10 +2134,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       $('#transcript-latency').textContent = 'Latency —';
     }
   });
-  volyxLens.on('llm:start', ({ userBubble, small, contextSources, taskContextCount, taskContextTotalCount, responseProvider }) => {
+  volyxLens.on('llm:start', ({ userBubble, small, contextSources, workspaceContextSources, taskContextCount, taskContextTotalCount, responseProvider }) => {
     clearMessages();
     if (userBubble) addUserBubble(userBubble);
-    addContextUsage(contextSources, taskContextCount, taskContextTotalCount, responseProvider);
+    addContextUsage(contextSources, workspaceContextSources, taskContextCount, taskContextTotalCount, responseProvider);
     startAi(!!small);
     const inferredMode = String(userBubble || '').startsWith('Assist') ? 'assist' : activeRequestMode;
     setBusy(true, inferredMode);
@@ -2380,6 +2383,127 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       : (state.secure ? 'Extracted text is encrypted with safeStorage / macOS Keychain.' : 'Warning: safeStorage is unavailable; extracted text uses a local 0600 plaintext fallback.');
     const warning = state.warning ? ` ${state.warning}` : '';
     $('#context-storage-status').textContent = `PDF, DOCX, TXT, or Markdown · 5 MB maximum. ${storage}${warning} Relevant excerpts are sent only when you request an answer.`;
+  }
+
+  function renderWorkspaceIndex() {
+    const list = $('#workspace-index-list');
+    list.replaceChildren();
+    if (!workspaceIndexState.length) {
+      const empty = document.createElement('div');
+      empty.className = 'context-meta';
+      empty.textContent = 'No project folders indexed.';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const workspace of workspaceIndexState) {
+      const card = document.createElement('div');
+      card.className = 'context-document';
+      const head = document.createElement('div');
+      head.className = 'context-document-head';
+      const title = document.createElement('strong');
+      title.textContent = workspace.name;
+      const useLabel = document.createElement('label');
+      useLabel.className = 'context-enable';
+      const enabled = document.createElement('input');
+      enabled.type = 'checkbox';
+      enabled.checked = workspace.enabled;
+      enabled.setAttribute('aria-label', `Use ${workspace.name} in answers`);
+      useLabel.append(enabled, document.createTextNode(' Use in answers'));
+      head.append(title, useLabel);
+
+      const meta = document.createElement('div');
+      meta.className = 'context-meta';
+      const indexedAt = Number.isFinite(workspace.indexedAt) ? new Date(workspace.indexedAt).toLocaleString() : 'Not indexed';
+      const indexStatus = workspace.indexComplete ? 'ready' : 'incomplete or not indexed; unavailable to answers';
+      meta.textContent = `${workspace.rootPath} · ${workspace.fileCount} files · ${indexStatus} · ${indexedAt}`;
+
+      const actions = document.createElement('div');
+      actions.className = 'context-actions';
+      const refresh = document.createElement('button');
+      refresh.type = 'button';
+      refresh.textContent = 'Refresh index';
+      refresh.setAttribute('aria-label', `Refresh ${workspace.name} index`);
+      const rebuild = document.createElement('button');
+      rebuild.type = 'button';
+      rebuild.textContent = 'Rebuild';
+      rebuild.setAttribute('aria-label', `Rebuild ${workspace.name} index`);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove ${workspace.name} index`);
+      actions.append(refresh, rebuild, remove);
+      card.append(head, meta, actions);
+      list.appendChild(card);
+
+      enabled.addEventListener('change', async () => {
+        enabled.disabled = true;
+        try {
+          const updated = await volyxLens.workspaceIndexSetEnabled(workspace.id, enabled.checked);
+          workspaceIndexState = workspaceIndexState.map((item) => item.id === updated.id ? updated : item);
+          $('#workspace-index-status').textContent = updated.enabled
+            ? `${updated.name} is enabled. Matching local snippets may be sent to your configured provider when you explicitly request an answer.`
+            : `${updated.name} is disabled and will not be included in answers.`;
+        } catch (error) {
+          enabled.checked = workspace.enabled;
+          showStatus(error && error.message ? error.message : 'Workspace settings could not be updated.');
+        } finally {
+          renderWorkspaceIndex();
+        }
+      });
+
+      const updateIndex = async (rebuildAll) => {
+        if (rebuildAll && !window.confirm(`Rebuild the local index for ${workspace.name}? This will not change source files.`)) return;
+        refresh.disabled = true;
+        rebuild.disabled = true;
+        remove.disabled = true;
+        $('#workspace-index-status').textContent = `${rebuildAll ? 'Rebuilding' : 'Refreshing'} ${workspace.name}…`;
+        try {
+          const result = rebuildAll
+            ? await volyxLens.workspaceIndexRebuild(workspace.id)
+            : await volyxLens.workspaceIndexRefresh(workspace.id);
+          workspaceIndexState = workspaceIndexState.map((item) => item.id === workspace.id ? result.workspace : item);
+          const detail = `${result.indexed} added, ${result.updated} updated, ${result.removed} removed, ${result.unchanged} unchanged, ${result.skipped} skipped, ${result.unreadableFiles} unreadable files, ${result.unreadableDirectories} unreadable folders`;
+          $('#workspace-index-status').textContent = result.incomplete
+            ? `Index ${rebuildAll ? 'rebuild' : 'refresh'} incomplete (${detail}). Some files could not be indexed or limits were reached.`
+            : `Index ${rebuildAll ? 'rebuilt' : 'refreshed'} (${detail}).`;
+          renderWorkspaceIndex();
+        } catch (error) {
+          await showWorkspaceIndexError(error);
+        } finally {
+          refresh.disabled = false;
+          rebuild.disabled = false;
+          remove.disabled = false;
+        }
+      };
+      refresh.addEventListener('click', () => updateIndex(false));
+      rebuild.addEventListener('click', () => updateIndex(true));
+
+      remove.addEventListener('click', async () => {
+        if (!window.confirm(`Remove the local index for ${workspace.name}? This will not change source files.`)) return;
+        remove.disabled = true;
+        try {
+          const result = await volyxLens.workspaceIndexRemove(workspace.id);
+          workspaceIndexState = result.workspaces;
+          $('#workspace-index-status').textContent = `${workspace.name} and its local index were removed.`;
+          renderWorkspaceIndex();
+        } catch (error) {
+          showStatus(error && error.message ? error.message : 'Workspace index could not be removed.');
+          remove.disabled = false;
+        }
+      });
+    }
+  }
+
+  async function showWorkspaceIndexError(error) {
+    let message = error && error.message ? error.message : 'Workspace index operation failed.';
+    try {
+      workspaceIndexState = await volyxLens.workspaceIndexGet();
+      renderWorkspaceIndex();
+    } catch (stateError) {
+      message += ` Workspace list could not be refreshed: ${stateError && stateError.message ? stateError.message : 'unknown error'}`;
+    }
+    $('#workspace-index-status').textContent = message;
   }
 
   // Glyph shortcuts that render differently on Windows. main.js registers the
@@ -2655,6 +2779,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if (!personalContext) {
       try { personalContext = await volyxLens.personalContextGet(); }
       catch (error) { showStatus(error && error.message ? error.message : 'Personal context could not be loaded.'); }
+    }
+    try {
+      workspaceIndexState = await volyxLens.workspaceIndexGet();
+      renderWorkspaceIndex();
+    } catch (error) {
+      $('#workspace-index-status').textContent = error && error.message ? error.message : 'Workspace index is unavailable.';
     }
     providerView = settings.provider || 'openai';
     fillSettings();
@@ -3105,6 +3235,32 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       if (!(personalContext && personalContext.locked)) button.disabled = false;
     }
   }));
+  $('#workspace-index-add').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = 'Choosing folder…';
+    $('#workspace-index-status').textContent = 'Choose a folder to index its supported text files locally.';
+    try {
+      const result = await volyxLens.workspaceIndexAdd();
+      if (result.canceled) {
+        $('#workspace-index-status').textContent = 'No folder selected.';
+        return;
+      }
+      workspaceIndexState = result.workspaces;
+      renderWorkspaceIndex();
+      const refresh = result.refresh;
+      const detail = `${refresh.indexed} added, ${refresh.updated} updated, ${refresh.removed} removed, ${refresh.unchanged} unchanged, ${refresh.skipped} skipped, ${refresh.unreadableFiles} unreadable files, ${refresh.unreadableDirectories} unreadable folders`;
+      $('#workspace-index-status').textContent = refresh.incomplete
+        ? `Indexing incomplete (${detail}). Some files could not be indexed or limits were reached.`
+        : `Folder indexed (${detail}). Enable “Use in answers” to attach matching snippets to explicit requests.`;
+    } catch (error) {
+      await showWorkspaceIndexError(error);
+    } finally {
+      button.textContent = original;
+      button.disabled = false;
+    }
+  });
   document.querySelectorAll('.context-remove').forEach((button) => button.addEventListener('click', async () => {
     const kind = button.dataset.kind;
     const label = kind === 'resume' ? 'resume/CV' : 'job description';

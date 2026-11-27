@@ -43,6 +43,7 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Settings | `settingsGet`, `settingsSet` |
 | Credentials | `clearCredential` |
 | Personal context | `personalContextGet`, `personalContextImport`, `personalContextRemove`, `personalContextSetEnabled` |
+| Workspace index | `workspaceIndexGet`, `workspaceIndexAdd`, `workspaceIndexRefresh`, `workspaceIndexRebuild`, `workspaceIndexSetEnabled`, `workspaceIndexRemove` |
 | Conversation | `ask`, `cancelResponse` |
 | Capture | `captureToggle`, `captureStop`, `captureState`, `setDisplayCaptureIntent` |
 | Session | `newSession` |
@@ -63,7 +64,7 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Lifecycle | `rendererReady`, `quit`, `relaunch`, `log` |
 | Events | `on(channel, cb)`, a filtered allowlist of 32 IPC channels, including `update:open` and `deeplink:open` |
 
-The bridge exposes 85 members in total: 82 methods plus the `platform`, `audioConfig`, and `initialAccentTheme` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
+The bridge exposes 91 members in total: 88 methods plus the `platform`, `audioConfig`, and `initialAccentTheme` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
 
 The `on()` listener uses a strict allowlist of event channels. Any channel not in the allowlist is silently ignored, preventing the renderer from subscribing to unintended IPC traffic.
 
@@ -171,7 +172,7 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 ## Request lifecycle
 
 1. User triggers an action (shortcut, button, or `/command`).
-2. Renderer sends an `ask` IPC message with mode, text, and confirmation flags. The main process captures the screen, selects transcript turns and personal-context excerpts, and applies the budgets.
+2. Renderer sends an `ask` IPC message with mode, text, and confirmation flags. The main process captures the screen, selects transcript turns, personal-context excerpts, and bounded workspace matches, then applies the budgets.
 3. Main process runs local controls: permission checks, memory budgets, deduplication, image cap, confirmation for expensive requests.
 4. `createResponseRoute` builds primary + fallback LLM instances.
 5. `chooseInitialProvider` selects the best compatible provider.
@@ -185,6 +186,7 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 - `src/meeting-recovery.js` writes a 0600 checkpoint of an in-progress transcript and offers restore or discard after an unexpected exit.
 - `src/meeting-backup.js` exports one file per record plus an index; import validates each record and never overwrites an existing id.
 - `src/meeting-notes.js` and `src/transcript-cleanup.js` run one model job at a time over saved meetings, require confirmation for multi-request work, and store the source hash with generated notes.
+- `src/workspace-index.js` stores an FTS5 index of explicitly selected text/source files in the app's local user-data folder. Folder selection and index removal are main-process IPC operations; workspace search is disabled until the user enables that folder. The index is not encrypted by Volyx Lens, refresh is user-triggered, and incomplete indexes are excluded from answer context.
 - `src/slide-tracking.js` samples the screen while listening and keeps at most 20 previews (8 MB) in memory; it never calls a provider.
 
 ## Update path
