@@ -164,6 +164,7 @@ ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => listedRecords());
 ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: deletedRecords.length }));
+ipcMain.handle('workspace-index:get', () => []);
 ipcMain.handle('history:memory-list', () => {
   calls.memoryList += 1;
   return JSON.parse(JSON.stringify(memories));

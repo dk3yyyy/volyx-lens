@@ -10,6 +10,7 @@ const { createCredentialVault } = require('./credential-vault');
 const { sanitizeShortcutsPatch } = require('./shortcut-validator');
 const { DEFAULT_SHORTCUT_DEFS } = require('./shortcut-defaults');
 const { sanitizeNotifiedUpdateKeys, appendNotifiedUpdateKey } = require('./update-notifications');
+const { getModel: getSpeechModel } = require('./speech-model-registry');
 
 const FILE = path.join(app.getPath('userData'), 'volyx-lens-data.json');
 const DEFAULTS = getDefaultSettings();
@@ -103,6 +104,14 @@ function load() {
   if (!data.transcription || typeof data.transcription !== 'object' || Array.isArray(data.transcription)) {
     data.transcription = { ...DEFAULTS.transcription };
   }
+  data.transcription.speechBackend = ['auto', 'cpu', 'gpu'].includes(data.transcription.speechBackend)
+    ? data.transcription.speechBackend
+    : DEFAULTS.transcription.speechBackend;
+  const storedLocalModelId = String(data.transcription.localModelId || '').trim().toLowerCase().slice(0, 100);
+  const storedLocalModel = getSpeechModel(storedLocalModelId);
+  data.transcription.localModelId = storedLocalModel && storedLocalModel.runtime === 'transcribe-cpp'
+    ? storedLocalModel.id
+    : '';
   data.transcription.customVocabulary = String(data.transcription.customVocabulary || '').slice(0, 4000);
   data.transcription.transcriptRules = String(data.transcription.transcriptRules || '').slice(0, 4000);
   data.transcription.postProcessTranscript = typeof data.transcription.postProcessTranscript === 'boolean'
@@ -334,6 +343,7 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'geminiFallbackModel')) transcription.geminiFallbackModel = String(value.geminiFallbackModel || DEFAULTS.transcription.geminiFallbackModel).slice(0, 200);
     if (Object.hasOwn(value, 'offlineEnabled') && typeof value.offlineEnabled === 'boolean') transcription.offlineEnabled = value.offlineEnabled;
     if (Object.hasOwn(value, 'offlineCloudFallback') && typeof value.offlineCloudFallback === 'boolean') transcription.offlineCloudFallback = value.offlineCloudFallback;
+    if (Object.hasOwn(value, 'speechBackend') && ['auto', 'cpu', 'gpu'].includes(value.speechBackend)) transcription.speechBackend = value.speechBackend;
     if (Object.hasOwn(value, 'language')) transcription.language = String(value.language || '').slice(0, 20);
     if (Object.hasOwn(value, 'customVocabulary')) transcription.customVocabulary = String(value.customVocabulary || '').slice(0, 4000);
     if (Object.hasOwn(value, 'transcriptRules')) transcription.transcriptRules = String(value.transcriptRules || '').slice(0, 4000);
@@ -351,6 +361,12 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'slideTracking') && typeof value.slideTracking === 'boolean') transcription.slideTracking = value.slideTracking;
     if (Object.hasOwn(value, 'delay') && ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(value.delay)) transcription.delay = value.delay;
     if (Object.hasOwn(value, 'whisperModel')) transcription.whisperModel = String(value.whisperModel || DEFAULTS.transcription.whisperModel).slice(0, 50);
+    if (Object.hasOwn(value, 'localModelId')) {
+      const localModelId = String(value.localModelId || '').trim().toLowerCase().slice(0, 100);
+      const localModel = getSpeechModel(localModelId);
+      if (!localModelId) transcription.localModelId = '';
+      else if (localModel && localModel.runtime === 'transcribe-cpp') transcription.localModelId = localModel.id;
+    }
     if (Object.keys(transcription).length) safe.transcription = transcription;
   }
   if (patch.audio && typeof patch.audio === 'object') {

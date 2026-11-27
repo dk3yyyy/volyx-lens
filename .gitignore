@@ -5,6 +5,7 @@ coverage/
 native/systemaudio
 native/tests/.build/
 native-bin/
+native/speech-worker/target/
 native/tests/.build/
 *.log
 .DS_Store

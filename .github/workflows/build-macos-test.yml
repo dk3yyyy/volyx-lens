@@ -43,6 +43,9 @@ jobs:
           --config.mac.notarize=false
           --config.mac.identity=null
 
+      - name: Verify the bundled speech worker
+        run: npm run verify:speech-package
+
       - name: Ad-hoc sign, package, and verify application
         shell: bash
         run: |

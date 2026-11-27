@@ -43,6 +43,20 @@ test('the Intel build runs on an Intel runner instead of relying on a cross-comp
   assert.equal(byArch.x64, 'macos-15-intel', 'the x64 DMG is built on an Intel runner');
 });
 
+test('macOS CI tests and packages natively on both supported architectures', () => {
+  const workflow = yaml.load(fs.readFileSync(path.join(root, '.github', 'workflows', 'ci.yml'), 'utf8'));
+  const job = workflow.jobs['macos-package'];
+  assert.equal(job['runs-on'], '${{ matrix.runner }}');
+  const byArch = Object.fromEntries(job.strategy.matrix.include.map((entry) => [entry.arch, entry.runner]));
+  assert.equal(byArch.x64, 'macos-15-intel');
+  assert.equal(byArch.arm64, 'macos-15');
+  const commands = job.steps.map((step) => step.run || '').join('\n');
+  assert.match(commands, /npm test/);
+  assert.match(commands, /npm run test:speech-native/);
+  assert.match(commands, /npm run verify:vision-ocr-package/);
+  assert.match(commands, /npm run verify:speech-package/);
+});
+
 test('a packaged helper for the wrong architecture is rejected', () => {
   const wrong = () => { assertHelperArch({ helper: 'volyx-lens-vision-ocr', expectedArch: 'x86_64', runLipo: () => 'arm64' }); };
   assert.throws(wrong, /arm64/);
@@ -50,6 +64,13 @@ test('a packaged helper for the wrong architecture is rejected', () => {
   assert.doesNotThrow(universal);
   const matching = () => { assertHelperArch({ helper: 'volyx-lens-vision-ocr', expectedArch: 'arm64', runLipo: () => 'arm64' }); };
   assert.doesNotThrow(matching);
+});
+
+test('macOS package verification is scoped to the requested architecture directory', () => {
+  const verifier = fs.readFileSync(path.join(root, 'scripts', 'verify-vision-ocr-package.js'), 'utf8');
+  assert.match(verifier, /expectedArch === 'arm64' \? 'mac-arm64' : 'mac'/);
+  assert.match(verifier, /findHelper\(packageDirectory, check\.name\)/);
+  assert.doesNotMatch(verifier, /findHelper\(path\.join\(root, 'dist'\), check\.name\)/);
 });
 
 test('an unknown build architecture fails loudly instead of falling back to the host', () => {

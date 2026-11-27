@@ -12,7 +12,10 @@ jobs:
   verify:
     name: Verify (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The packaged leg now runs two cold native builds (transcribe.cpp release
+    # inside pack, then the speech worker's cargo test), plus coverage and four
+    # Electron harnesses. 15 minutes was the pre-native budget.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +97,11 @@ jobs:
         # other matrix entry verifies a directory that was never built.
         if: matrix.node == 22
         run: npm run verify:whisper-runtime
+      - name: Test and verify the bundled speech worker
+        if: matrix.node == 22
+        run: |
+          npm run test:speech-native
+          npm run verify:speech-package
       - name: Smoke launch packaged application
         if: matrix.node == 22
         run: |
@@ -144,10 +152,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify the bundled whisper.cpp runtime
         run: npm run verify:whisper-runtime
+      - name: Test and verify the bundled speech worker
+        run: |
+          npm run test:speech-native
+          npm run verify:speech-package
 
   macos-package:
-    runs-on: macos-15
-    timeout-minutes: 20
+    name: Package macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
     steps:
       - uses: actions/checkout@v5
         with:
@@ -172,6 +193,7 @@ jobs:
             electron-${{ runner.os }}-${{ runner.arch }}-
       - run: bash scripts/ci-install.sh
       - run: npm test
+      - run: npm run test:speech-native
       - run: npm run pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -179,6 +201,7 @@ jobs:
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run verify:vision-ocr-package
+      - run: npm run verify:speech-package
 
   swift-test:
     name: Swift native tests

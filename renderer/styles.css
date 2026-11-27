@@ -793,6 +793,11 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .s-field input.s-switch:checked { border-color: var(--accent); background: var(--accent); }
 .s-field input.s-switch:checked::after { transform: translateX(16px); background: #0d1710; }
 .s-field input.s-switch:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+.speech-model-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px 160px; }
+.speech-model-actions button { border: 1px solid var(--bd-hair); background: rgba(255,255,255,0.04); color: var(--tx-2); border-radius: 9px; padding: 6px 9px; font: 550 11px var(--font); cursor: pointer; }
+.speech-model-actions button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--tx-1); }
+.speech-model-actions button:disabled { opacity: 0.4; cursor: default; }
+.speech-model-actions button:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
 .key-field .key-clear { width: auto; flex: 0 0 auto; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--tx-mut); border-radius: 10px; padding: 7px 8px; font-size: 10px; cursor: pointer; }
 .key-field .key-clear:hover:not(:disabled) { color: #ffb5b5; border-color: rgba(255,102,120,0.28); }
 .key-field .key-clear:disabled { opacity: 0.35; cursor: default; }

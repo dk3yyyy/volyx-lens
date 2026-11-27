@@ -31,10 +31,19 @@ test('main-process reset invalidates old async work and clears all conversation 
 test('hard session boundaries await speech teardown and clear retry audio before restart', () => {
   const stopStart = main.indexOf('async function stopTranscriptionPipeline(');
   const stopBlock = main.slice(stopStart, main.indexOf('function routePcm', stopStart));
-  assert.match(stopBlock, /if \(manager\) await Promise\.allSettled\(\[manager\.stop\(\)\]\);/);
-  assert.match(stopBlock, /await Promise\.allSettled\(\[\.\.\.drainingRealtimeManagers\]/);
-  assert.match(stopBlock, /retryQueues\.you = \[\]; retryQueues\.them = \[\]/);
-  assert.match(stopBlock, /flushPromises\.you = null; flushPromises\.them = null;/);
+  const immediateStart = stopBlock.indexOf('if (immediate) {');
+  const immediateBlock = stopBlock.slice(immediateStart, stopBlock.indexOf('\n  if (manager) {', immediateStart));
+  assert.match(immediateBlock, /if \(manager\) await Promise\.allSettled\(\[manager\.stop\(\)\]\)/);
+  assert.match(immediateBlock, /await defaultSpeechWorker\.stop\(\)/);
+  assert.match(immediateBlock, /await Promise\.allSettled\(\[\.\.\.drainingRealtimeManagers\]/);
+  assert.match(immediateBlock, /transcriptEpoch \+= 1/);
+  assert.doesNotMatch(immediateBlock, /transcript\.length = 0/, 'immediate teardown invalidates work without clearing visible transcript');
+  assert.match(immediateBlock, /retryQueues\.you = \[\]; retryQueues\.them = \[\]/);
+  assert.match(immediateBlock, /flushPromises\.you = null; flushPromises\.them = null/);
+  assert.match(immediateBlock, /state\.transcribing\.you = false;\s*state\.transcribing\.them = false/);
+
+  const normalBlock = stopBlock.slice(stopBlock.indexOf('\n  if (manager) {', immediateStart));
+  assert.match(normalBlock, /buffers\.you = \[\]; buffers\.them = \[\];\s*retryQueues\.you = \[\]; retryQueues\.them = \[\]/);
 
   const resetStart = main.indexOf('function startNewSession()');
   const resetBlock = main.slice(resetStart, main.indexOf('async function importPersonalContextDocument', resetStart));

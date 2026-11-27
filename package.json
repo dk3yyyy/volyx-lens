@@ -27,7 +27,9 @@
     "pack": "electron-builder --dir --config.mac.notarize=false",
     "release:check": "node scripts/sync-version.js --check && node scripts/check-macos-release.js",
     "verify:vision-ocr-package": "node scripts/verify-vision-ocr-package.js",
+    "verify:speech-package": "node scripts/verify-speech-worker-package.js",
     "test:native": "bash scripts/test-native-swift.sh",
+    "test:speech-native": "cargo test --manifest-path native/speech-worker/Cargo.toml --locked",
     "test:native:verbose": "bash scripts/test-native-swift.sh --verbose",
     "test:native:coverage": "bash scripts/test-native-swift.sh --coverage",
     "release:mac": "node scripts/check-macos-release.js --require-credentials && electron-builder --mac dmg zip --publish never && node scripts/verify-vision-ocr-package.js",
@@ -73,6 +75,8 @@
         "filter": [
           "volyx-lens-vision-ocr",
           "volyx-lens-system-audio",
+          "volyx-speech-worker",
+          "volyx-speech-worker.exe",
           "whisper-server",
           "whisper-server.exe",
           "whisper.dll",
@@ -92,7 +96,8 @@
       "hardenedRuntime": true,
       "binaries": [
         "Contents/Resources/native/volyx-lens-vision-ocr",
-        "Contents/Resources/native/volyx-lens-system-audio"
+        "Contents/Resources/native/volyx-lens-system-audio",
+        "Contents/Resources/native/volyx-speech-worker"
       ],
       "notarize": true,
       "gatekeeperAssess": false,

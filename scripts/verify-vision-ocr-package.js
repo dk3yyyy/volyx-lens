@@ -47,12 +47,14 @@ function main() {
 
   const root = path.resolve(__dirname, '..');
   const expectedArch = expectedArchFor();
+  const packageDirectory = path.join(root, 'dist', expectedArch === 'arm64' ? 'mac-arm64' : 'mac');
   const checks = [
     { name: 'volyx-lens-vision-ocr', validate: (p) => p.ok === true && p.engine === 'macos-vision' && p.version === 1 },
     { name: 'volyx-lens-system-audio', validate: (p) => p.ok === true && p.engine === 'ScreenCaptureKit' && p.protocol === 1 && p.sampleRate === 24000 && p.channels === 1 && p.frameSamples === 480 },
+    { name: 'volyx-speech-worker', validate: (p) => p.ok === true && p.engine === 'transcribe-cpp' && p.protocol === 1 && p.streaming === false && p.diarization === false },
   ];
   for (const check of checks) {
-    const helper = findHelper(path.join(root, 'dist'), check.name);
+    const helper = findHelper(packageDirectory, check.name);
     if (!helper) throw new Error(`Packaged macOS helper was not found: ${check.name}.`);
     fs.accessSync(helper, fs.constants.X_OK);
     const stat = fs.statSync(helper);

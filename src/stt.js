@@ -7,6 +7,9 @@ const { STT_MODELS } = require('./provider-config');
 const { validateOfflineConfig, transcribeOffline } = require('./offline-stt');
 const { WhisperSidecar } = require('./whisper-sidecar');
 const { looksLikeHallucination } = require('./transcript-hygiene');
+const { createSpeechService } = require('./speech-service');
+const { getModel } = require('./speech-model-registry');
+const { defaultSpeechWorker } = require('./speech-worker');
 
 let sidecar = null; // lazily initialized, fully-started WhisperSidecar instance
 let starting = null; // in-flight startup promise shared by concurrent requests
@@ -24,8 +27,24 @@ function shouldUseLocalWhisper(transcription, env) {
   return !!(
     transcription.offlineEnabled &&
     !env.VOLYX_LENS_WHISPER_SIDECAR &&
-    !!transcription.whisperModel
+    !!(transcription.localModelId || transcription.whisperModel)
   );
+}
+
+// Offline-first is a routing contract: enabled offline transcription uses the
+// bounded batch pipeline before any cloud realtime manager can start.
+function resolveTranscriptionMode(settings) {
+  const transcription = settings && settings.transcription || {};
+  if (transcription.offlineEnabled !== true) return 'realtime';
+  // Offline-first only owns the pipeline when it can actually transcribe.
+  // Enabling it without a verified GGUF model (or the legacy whisper.cpp model)
+  // used to disable a working realtime provider and fail every flush instead.
+  const models = settings && Array.isArray(settings.speechModels) ? settings.speechModels : [];
+  const selected = models.find((model) => model.id === transcription.localModelId);
+  // A selected GGUF model decides on its own: if it is missing, realtime keeps
+  // working instead of silently substituting the legacy default Whisper name.
+  if (selected) return selected.installed === true ? 'batch' : 'realtime';
+  return transcription.whisperModel ? 'batch' : 'realtime';
 }
 
 // Start (or reuse) the sidecar singleton. The instance is only published to the
@@ -126,7 +145,15 @@ async function transcribeGemini(apiKey, wav, model) {
 // Speech-to-text factory. Decoupled from the LLM provider because Anthropic has
 // no audio API — we transcribe with whatever audio-capable key is available, and
 // fall back across providers. Returns { text, provider } or { text:'', error }.
-function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe = transcribeOffline, openAITranscribe = transcribeOpenAI, geminiTranscribe = transcribeGemini, sidecarFactory = (modelId, language) => new WhisperSidecar({ modelId, language }) } = {}) {
+function createSTT(settings, {
+  env = process.env,
+  vocab = '',
+  offlineTranscribe = transcribeOffline,
+  openAITranscribe = transcribeOpenAI,
+  geminiTranscribe = transcribeGemini,
+  sidecarFactory = (modelId, language) => new WhisperSidecar({ modelId, language }),
+  speechWorker = defaultSpeechWorker,
+} = {}) {
   const keys = settings.apiKeys || {};
   const chain = [];
   const transcription = settings.transcription || {};
@@ -135,6 +162,17 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   // Initial-prompt seed: explicit vocab wins, otherwise an optional setting.
   const prompt = vocab || transcription.vocabPrompt || '';
   const offline = validateOfflineConfig(env);
+  const localModelId = transcription.localModelId || transcription.whisperModel || 'base.en';
+  // Keep local model execution behind one replaceable service boundary.
+  const localSpeech = createSpeechService({
+    transcribe: ({ wav, modelId, language }) => {
+      const model = getModel(modelId);
+      if (model && model.runtime === 'transcribe-cpp') return speechWorker.transcribe({ wav, modelId, language, backend: transcription.speechBackend || 'auto' });
+      return transcribeViaLocalWhisper(wav, env, language, modelId, sidecarFactory);
+    },
+    warm: (modelId) => speechWorker.warmModel(modelId),
+    unload: (modelId) => speechWorker.unloadModel(modelId),
+  });
   // Sidecar mode: strictly opt-in via VOLYX_LENS_WHISPER_SIDECAR env var
   const useSidecar = shouldUseSidecar(env);
   if (useSidecar) {
@@ -146,7 +184,9 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   // quantized variants, etc.) and downloaded in-app if not already cached.
   const useLocalWhisper = shouldUseLocalWhisper(transcription, env);
   if (useLocalWhisper) {
-    chain.push({ p: 'local-whisper', fn: (wav) => transcribeViaLocalWhisper(wav, env, transcription.language || '', transcription.whisperModel, sidecarFactory) });
+    const model = getModel(localModelId);
+    const provider = model && model.runtime === 'transcribe-cpp' ? 'local-gguf' : 'local-whisper';
+    chain.push({ p: provider, fn: (wav) => localSpeech.transcribe({ wav, modelId: localModelId, language: transcription.language || '' }) });
   }
   if (transcription.offlineEnabled && offline.ready) {
     chain.push({ p: 'offline', fn: (wav) => offlineTranscribe(wav, { env, language: transcription.language || '', prompt }) });
@@ -167,17 +207,24 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
     available: chain.length > 0,
     providers: chain.map((c) => c.p),
     offlineError,
+    localModels: localSpeech.listModels(),
+    localModelStatus(modelId) { return localSpeech.getModelStatus(modelId); },
+    prepareLocalModel(modelId, onProgress, options) { return localSpeech.prepareModel(modelId, onProgress, options); },
+    removeLocalModel(modelId) { return localSpeech.removeModel(modelId); },
+    warmLocalModel(modelId) { return localSpeech.warmModel(modelId); },
+    unloadLocalModel(modelId) { return localSpeech.unloadModel(modelId); },
     async transcribe(pcm) {
       if (!chain.length || !pcm || pcm.length < 3200) return { text: '' };
       const wav = pcmToWav(pcm, AUDIO_SAMPLE_RATE, 1);
       let lastErr = null;
       for (const c of chain) {
         try {
-          const text = await c.fn(wav);
+          const result = await c.fn(wav);
+          const text = result && typeof result === 'object' ? result.text : result;
           // Drop whisper silence artifacts before they reach the transcript;
           // a phantom "Thank you for watching." row is worse than no row.
           if (looksLikeHallucination(text)) return { text: '', provider: c.p };
-          return { text, provider: c.p };
+          return { text, provider: c.p, ...(result && result.modelId ? { modelId: result.modelId } : {}) };
         } catch (e) {
           lastErr = { status: e && e.status, code: e && e.code, message: (e && e.message) || String(e), provider: c.p };
           if (e && e.code === 'offline_cancelled') return { text: '', error: lastErr };
@@ -188,4 +235,4 @@ function createSTT(settings, { env = process.env, vocab = '', offlineTranscribe 
   };
 }
 
-module.exports = { createSTT, resetSidecar };
+module.exports = { createSTT, resetSidecar, resolveTranscriptionMode };

@@ -101,6 +101,7 @@ jobs:
           npm pkg set "build.extraMetadata.volyxReleaseBuild=true" --json
           npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
       - run: npm run verify:vision-ocr-package
+      - run: npm run verify:speech-package
       - name: Verify signature, notarization, and architecture
         run: |
           ZIP_PATH="$(find dist -maxdepth 1 -type f -name "*-${{ matrix.arch }}.zip" -print -quit)"

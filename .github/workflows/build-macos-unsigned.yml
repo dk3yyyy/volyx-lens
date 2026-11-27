@@ -72,6 +72,9 @@ jobs:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
 
+      - name: Verify the bundled speech worker
+        run: npm run verify:speech-package
+
       - name: Ad-hoc sign, package, and verify the artifacts
         shell: bash
         run: |

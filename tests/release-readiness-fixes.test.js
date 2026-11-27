@@ -42,7 +42,7 @@ test('all primary Settings fields have explicit programmatic labels', () => {
     'stt-realtime-provider', 'key-azureRealtime', 'endpoint-azure-realtime', 'stt-azure-deployment',
     'key-deepgram', 'stt-deepgram-model',
     'stt-language', 'stt-custom-vocabulary', 'stt-transcript-rules', 'stt-postprocess-enabled', 'stt-normalize-spoken-digits', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model',
-    'stt-offline-enabled', 'stt-offline-cloud-fallback', 'audio-input-device', 'audio-mic-enabled',
+    'stt-offline-enabled', 'stt-offline-cloud-fallback', 'stt-local-model', 'stt-speech-backend', 'audio-input-device', 'audio-mic-enabled',
     'audio-system-enabled', 'audio-browser-processing', 'audio-sensitivity', 'audio-silence', 'audio-cost-warning',
     'audio-session-limit', 'question-detection-enabled'
   ];
@@ -109,7 +109,13 @@ test('main-process shortcuts honor modal state while emergency quit remains avai
 test('transcript clear invalidates old async results and restarts active transcription', () => {
   assert.match(main, /let transcriptEpoch = 0/);
   assert.match(main, /epoch !== transcriptEpoch/);
-  assert.match(main, /handleTrusted\('transcript:clear', async \(\)[\s\S]*transcriptEpoch \+= 1[\s\S]*await stopTranscriptionPipeline\(\{ immediate: true \}\)[\s\S]*await startTranscriptionPipeline\(\)/);
+  const start = main.indexOf("handleTrusted('transcript:clear'");
+  const block = main.slice(start, main.indexOf("handleTrusted('transcript:export'", start));
+  assert.match(block, /handleTrusted\('transcript:clear', async \(\)/);
+  assert.match(block, /transcriptEpoch \+= 1/);
+  assert.match(block, /retryQueues\.you = \[\]; retryQueues\.them = \[\]/);
+  assert.match(block, /captureTransition = captureTransition\.then\(operation, operation\)/);
+  assert.ok(block.indexOf('await stopTranscriptionPipeline') < block.indexOf('await startTranscriptionPipeline'), 'clear must finish teardown before restarting');
 });
 
 test('capture selection, disconnect cleanup, and settings durability are explicit', () => {
@@ -153,6 +159,7 @@ test('source startup builds required native helpers before launching Electron', 
   assert.equal(pkg.scripts.prestart, 'node scripts/build-native.js');
   const buildNative = fs.readFileSync(path.join(root, 'scripts', 'build-native.js'), 'utf8');
   assert.match(buildNative, /buildVisionOcr/);
+  assert.match(buildNative, /buildSpeechWorker/);
   assert.match(buildNative, /catch\(.*process\.exitCode = 1/s);
 });
 

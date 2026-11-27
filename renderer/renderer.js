@@ -3270,6 +3270,69 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     });
   }
 
+  let activeSpeechModelDownload = '';
+  function selectedSpeechModel() {
+    const id = $('#stt-local-model').value;
+    return (settings.speechModels || []).find((model) => model.id === id) || null;
+  }
+
+  function renderSpeechModelControls(models = settings.speechModels || [], selectedId) {
+    const select = $('#stt-local-model');
+    // Read the live selection before rebuilding: replaceChildren clears it, and
+    // defaulting to '' here made the control snap back after every choice.
+    const desiredId = selectedId !== undefined
+      ? selectedId
+      : (select.value || (settings.transcription && settings.transcription.localModelId) || '');
+    const entries = Array.isArray(models) ? models.filter((model) => model.runtime === 'transcribe-cpp') : [];
+    const fallback = document.createElement('option');
+    fallback.value = '';
+    fallback.textContent = 'Use Whisper model above';
+    const options = [fallback];
+    for (const model of entries) {
+      const option = document.createElement('option');
+      option.value = model.id;
+      const sizeMb = model.artifact && model.artifact.estimatedSizeMb;
+      option.textContent = `${model.name}${sizeMb ? ` · ${sizeMb} MB` : ''}`;
+      option.disabled = model.runtimeAvailable !== true;
+      options.push(option);
+    }
+    select.replaceChildren(...options);
+    select.value = entries.some((model) => model.id === desiredId) ? desiredId : '';
+
+    const model = selectedSpeechModel();
+    const status = $('#speech-model-status');
+    const downloadButton = $('#speech-model-download');
+    const cancelButton = $('#speech-model-cancel');
+    const warmButton = $('#speech-model-warm');
+    const unloadButton = $('#speech-model-unload');
+    const removeButton = $('#speech-model-remove');
+    const downloading = Boolean(model && activeSpeechModelDownload === model.id);
+    const anyDownloadActive = Boolean(activeSpeechModelDownload);
+    downloadButton.disabled = !model || model.runtimeAvailable !== true || downloading;
+    downloadButton.textContent = model && model.installed ? 'Verify model download' : 'Download model';
+    // A download keeps running while another model is selected, so Cancel must
+    // stay reachable for the model that is actually downloading.
+    cancelButton.disabled = !anyDownloadActive;
+    warmButton.disabled = !model || model.runtimeAvailable !== true || model.installed !== true || downloading;
+    unloadButton.disabled = !model || model.loaded !== true;
+    removeButton.disabled = !model || model.installed !== true || downloading;
+
+    if (!model) {
+      status.textContent = 'Choose a local model to view its download, license, and readiness status.';
+      return;
+    }
+    const details = [
+      model.installed ? 'Downloaded; integrity is checked before load' : 'Not downloaded',
+      model.license && model.license.name ? `License: ${model.license.name}` : '',
+      model.loaded ? (model.warmed ? 'Loaded and warmed' : 'Loaded') : '',
+      model.loaded && model.backend ? `Backend: ${model.backend}` : '',
+      model.loaded && model.backendFallback ? 'CPU fallback active' : '',
+      'Utterance batch transcription',
+    ].filter(Boolean);
+    if (model.runtimeAvailable !== true) details.push('Runtime unavailable on this build');
+    status.textContent = `${details.join(' · ')}.${model.runtimeAvailable !== true ? ' The local GGUF worker is unavailable in this build.' : ''}`;
+  }
+
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
     const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', nvidia: 'nvapi-...', opencodeGo: 'oc_sk_...', deepgram: 'Deepgram API key', azureRealtime: 'Optional Realtime key', azureSpeech: 'Azure AI Speech resource key' };
@@ -3300,20 +3363,23 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-delay').value = transcription.delay || 'low';
     $('#stt-fallback-model').value = transcription.fallbackModel || '';
     $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || '';
+    $('#stt-speech-backend').value = transcription.speechBackend || 'auto';
     const offlineWhisper = settings.offlineWhisper || { available: true };
+    const localSpeech = settings.localSpeech || { available: offlineWhisper.available !== false };
     const offlineToggle = $('#stt-offline-enabled');
-    const offlineUnavailable = offlineWhisper.available === false;
+    const offlineUnavailable = localSpeech.available === false;
     offlineToggle.checked = transcription.offlineEnabled === true && !offlineUnavailable;
     offlineToggle.disabled = offlineUnavailable;
     const offlineNote = $('#stt-offline-note');
     if (offlineNote) {
       offlineNote.textContent = offlineUnavailable
-        ? 'Local Whisper needs a whisper-server binary, which this build does not include. Use a cloud transcription provider, or point VOLYX_LENS_WHISPER_SIDECAR_BIN at a whisper.cpp server.'
+        ? (localSpeech.gguf && localSpeech.gguf.reason) || 'No local speech runtime is available in this build. Use a cloud transcription provider or install a supported local runtime.'
         : '';
       offlineNote.classList.toggle('hidden', !offlineUnavailable);
     }
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
+    renderSpeechModelControls(settings.speechModels || [], transcription.localModelId || '');
     $('#stt-history-enabled').checked = transcription.historyEnabled === true;
     $('#stt-meeting-memory').checked = transcription.meetingMemory === true;
     if ($('#stt-retention-days')) $('#stt-retention-days').value = String(transcription.historyRetentionDays || 0);
@@ -3551,7 +3617,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       geminiFallbackModel: $('#stt-gemini-fallback-model').value.trim() || (settings.transcription || {}).geminiFallbackModel || '',
       offlineEnabled: $('#stt-offline-enabled').checked,
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
+      speechBackend: $('#stt-speech-backend').value,
       whisperModel: $('#stt-whisper-model').value,
+      localModelId: $('#stt-local-model').value,
       language: languageSetting,
       customVocabulary: $('#stt-custom-vocabulary').value.trim(),
       transcriptRules: $('#stt-transcript-rules').value.trim(),
@@ -3585,6 +3653,95 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     fillSettings();
     updateSmartToggleModelIds();
   }
+
+  $('#stt-local-model').addEventListener('change', () => {
+    settings.transcription.localModelId = $('#stt-local-model').value;
+    renderSpeechModelControls(settings.speechModels || [], settings.transcription.localModelId);
+  });
+  volyxLens.on('speech:model-progress', (event) => {
+    if (!event || event.id !== activeSpeechModelDownload) return;
+    const model = selectedSpeechModel();
+    const progress = Math.max(0, Math.min(1, Number(event.progress) || 0));
+    // Progress arrives per network chunk; rebuilding the option list here cost a
+    // full DOM rebuild tens of thousands of times for a multi-GB model.
+    $('#speech-model-status').textContent = `Downloading ${model ? model.name : 'local model'} · ${Math.round(progress * 100)}%.`;
+  });
+  $('#speech-model-download').addEventListener('click', async () => {
+    const model = selectedSpeechModel();
+    if (!model || activeSpeechModelDownload) return;
+    settings.transcription.localModelId = model.id;
+    activeSpeechModelDownload = model.id;
+    renderSpeechModelControls(settings.speechModels || [], model.id);
+    $('#speech-model-status').textContent = `Preparing download for ${model.name}…`;
+    let outcomeMessage = '';
+    try {
+      await saveSettings();
+      const result = await volyxLens.speechModelDownload(model.id);
+      if (Array.isArray(result.models)) settings.speechModels = result.models;
+      outcomeMessage = `${model.name} downloaded and SHA-256 verified.`;
+    } catch (error) {
+      outcomeMessage = error && error.message ? error.message : 'The model download failed.';
+    } finally {
+      activeSpeechModelDownload = '';
+      renderSpeechModelControls();
+      if (outcomeMessage) $('#speech-model-status').textContent = outcomeMessage;
+    }
+  });
+  $('#speech-model-cancel').addEventListener('click', async () => {
+    if (!activeSpeechModelDownload) return;
+    try {
+      await volyxLens.speechModelCancelDownload(activeSpeechModelDownload);
+      $('#speech-model-status').textContent = 'Cancelling model download…';
+    } catch (error) {
+      $('#speech-model-status').textContent = error && error.message ? error.message : 'The model download could not be cancelled.';
+    }
+  });
+  $('#speech-model-warm').addEventListener('click', async () => {
+    const model = selectedSpeechModel();
+    if (!model) return;
+    const button = $('#speech-model-warm');
+    button.disabled = true;
+    try {
+      // The backend dropdown is read from the store by the main process, so the
+      // choice has to be persisted before warming, not after.
+      await saveSettings();
+      $('#speech-model-status').textContent = `Loading and warming ${model.name}…`;
+      const result = await volyxLens.speechModelWarm(model.id);
+      if (Array.isArray(result.models)) settings.speechModels = result.models;
+      renderSpeechModelControls(settings.speechModels, model.id);
+      $('#speech-model-status').textContent = `${model.name} is loaded and warmed for local inference.`;
+    } catch (error) {
+      // Refresh first: rendering model details here used to overwrite the error.
+      renderSpeechModelControls(settings.speechModels, model.id);
+      $('#speech-model-status').textContent = error && error.message ? error.message : 'The model could not be warmed up.';
+    }
+  });
+  $('#speech-model-unload').addEventListener('click', async () => {
+    const model = selectedSpeechModel();
+    if (!model) return;
+    try {
+      const result = await volyxLens.speechModelUnload(model.id);
+      if (Array.isArray(result.models)) settings.speechModels = result.models;
+      renderSpeechModelControls();
+      $('#speech-model-status').textContent = result.loaded === false
+        ? 'No model is currently loaded.'
+        : `${model.name} unloaded from memory.`;
+    } catch (error) {
+      $('#speech-model-status').textContent = error && error.message ? error.message : 'The model could not be unloaded.';
+    }
+  });
+  $('#speech-model-remove').addEventListener('click', async () => {
+    const model = selectedSpeechModel();
+    if (!model) return;
+    try {
+      const result = await volyxLens.speechModelRemove(model.id);
+      if (Array.isArray(result.models)) settings.speechModels = result.models;
+      renderSpeechModelControls();
+      $('#speech-model-status').textContent = result.removed ? `${model.name} removed from this device.` : 'The model was not removed.';
+    } catch (error) {
+      $('#speech-model-status').textContent = error && error.message ? error.message : 'The model could not be removed.';
+    }
+  });
 
   $('#provider-test-btn').addEventListener('click', async () => {
     const button = $('#provider-test-btn');

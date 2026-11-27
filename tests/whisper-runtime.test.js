@@ -365,7 +365,12 @@ test('beforePack chains the Vision helper build and the whisper runtime provisio
   try {
     // electronPlatformName is linux so the macOS-only Swift build returns early
     // on every host; the skip env keeps this test off the network.
-    const result = await beforePack({ electronPlatformName: 'linux', arch: 1, appDir: projectDir });
+    const result = await beforePack({ electronPlatformName: 'linux', arch: 1, appDir: projectDir }, {
+      buildSpeechWorker: async () => {
+        await fs.promises.mkdir(path.join(projectDir, 'native-bin'), { recursive: true });
+        return { available: false };
+      },
+    });
     assert.equal(result.status, 'skipped');
     assert.ok(fs.existsSync(path.join(projectDir, 'native-bin')), 'the Vision build step still created native-bin');
   } finally {

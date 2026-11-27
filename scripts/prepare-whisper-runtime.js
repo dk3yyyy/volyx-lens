@@ -308,7 +308,7 @@ async function prepareWhisperRuntime({
     const key = platformKey({ platform, arch }) || `${platform}-${arch}`;
     const removed = removeStaleRuntimeFiles(path.join(projectDir, 'native-bin'));
     const stale = removed.length ? ` Removed ${removed.length} whisper runtime file(s) staged by a previous pack.` : '';
-    log(`whisper-server: no prebuilt whisper.cpp server is published for ${key}; offline transcription stays unavailable for this target.${stale}`);
+    log(`whisper-server: no prebuilt whisper.cpp server is published for ${key}; the legacy Whisper server stays unavailable for this target.${stale}`);
     return { status: 'unsupported', target: key, binary: null, removed };
   }
   if (!SUPPORTED_ARCHIVES.has(target.archive)) {

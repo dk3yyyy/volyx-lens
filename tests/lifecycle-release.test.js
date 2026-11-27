@@ -34,6 +34,11 @@ test('capture transitions and active New Session replacement share one serialize
   assert.match(main, /if \(restartTranscription && state\.capturing && desiredCapturing\) await startTranscriptionPipeline\(\)/);
 });
 
+test('capture, retry, New Session, and transcript clear all await pipeline startup', () => {
+  assert.equal((main.match(/await startTranscriptionPipeline\(\);/g) || []).length, 4);
+  assert.doesNotMatch(main, /^\s+startTranscriptionPipeline\(\);/m, 'no lifecycle boundary may fire-and-forget pipeline startup');
+});
+
 test('permission recovery exposes an explicit user-triggered relaunch action', () => {
   assert.match(preload, /relaunch: \(\) => ipcRenderer\.send\('app:relaunch'\)/);
   assert.match(renderer, /Restart Volyx Lens/);

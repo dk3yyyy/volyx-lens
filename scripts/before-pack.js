@@ -9,11 +9,15 @@
 // the Swift build scripts call it directly.
 
 const { buildVisionOcr } = require('./build-vision-ocr');
+const { buildSpeechWorker } = require('./build-speech-worker');
 const { prepareWhisperRuntime } = require('./prepare-whisper-runtime');
 
-async function beforePack(context = {}) {
-  await buildVisionOcr(context);
-  return prepareWhisperRuntime({
+async function beforePack(context = {}, dependencies = {}) {
+  const buildVision = dependencies.buildVisionOcr || buildVisionOcr;
+  const buildSpeech = dependencies.buildSpeechWorker || buildSpeechWorker;
+  const prepareWhisper = dependencies.prepareWhisperRuntime || prepareWhisperRuntime;
+  await Promise.all([buildVision(context), buildSpeech(context)]);
+  return prepareWhisper({
     platform: context.electronPlatformName || process.platform,
     // electron-builder reports the Arch enum (1 = x64, 3 = arm64); the manifest
     // normalizes that spelling.

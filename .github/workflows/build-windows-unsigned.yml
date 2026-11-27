@@ -69,6 +69,9 @@ jobs:
       - name: Verify the bundled whisper.cpp runtime
         shell: bash
         run: node scripts/verify-whisper-runtime.js
+      - name: Verify the bundled speech worker
+        shell: bash
+        run: npm run verify:speech-package
 
       - name: Verify the installer and write its checksum
         shell: bash

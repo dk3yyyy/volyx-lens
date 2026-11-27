@@ -29,11 +29,20 @@ test('the AppImage is smoke launched, hashed, attested and shipped with an SBOM'
   assert.match(workflow, /attestations: write/);
 });
 
-test('the launch check only runs an AppImage on a matching runner', () => {
-  // The hosted x64 runner cannot execute an arm64 AppImage, so the build must not
-  // be failed by an Exec format error after packaging succeeded.
-  assert.match(workflow, /RUNNER_ARCH="\$\(uname -m\)"/);
-  assert.match(workflow, /Skipping launch check/);
+test('each AppImage is built and smoke launched on a matching native runner', () => {
+  assert.match(workflow, /runner: ubuntu-24\.04-arm/);
+  assert.match(workflow, /runs-on: \$\{\{ matrix\.runner \}\}/);
+  assert.doesNotMatch(workflow, /Skipping launch check/);
+  assert.match(workflow, /grep -q 'VOLYX_LENS_RENDERER_READY'/);
+});
+
+test('the Linux release uses native runners and fails unless the renderer becomes ready', () => {
+  const release = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-linux.yml'), 'utf8');
+  assert.match(release, /runner: ubuntu-22\.04-arm/);
+  assert.match(release, /runs-on: \$\{\{ matrix\.runner \}\}/);
+  assert.match(release, /timeout 120 xvfb-run -a/);
+  assert.match(release, /grep -q 'VOLYX_LENS_RENDERER_READY'/);
+  assert.match(release, /npm run verify:speech-package/);
 });
 
 test('the workflow never reads a secret in an if expression', () => {

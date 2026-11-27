@@ -12,9 +12,10 @@ Thanks for wanting to contribute. Volyx Lens is a privacy-first cross-platform c
 
 Native build tools are required for some platform-specific features:
 
-- **macOS:** Xcode Command Line Tools (`xcode-select --install`) — required for the native OCR helper (`volyx-lens-vision-ocr`) and the system-audio helper (`volyx-lens-system-audio`).
-- **Windows:** [Windows Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ build tools workload) or a full Visual Studio installation — required for native module compilation if you rebuild native dependencies. The packaged whisper.cpp server also needs the Microsoft Visual C++ 2015-2022 Redistributable at runtime.
-- **Linux:** `build-essential`, `libsecret-1-dev`, `libnotify-dev`, and `libgtk-3-dev` (Debian/Ubuntu equivalents) — required for keyring and notification support. The Them channel additionally needs `pulseaudio-utils` (or PipeWire's PulseAudio compatibility) at runtime.
+- **All desktop platforms:** Rust stable and CMake 3.20+ for the local GGUF speech worker. `npm start` and packaging build it from the pinned `transcribe.cpp` revision.
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`) — required for the native OCR helper (`volyx-lens-vision-ocr`), the system-audio helper (`volyx-lens-system-audio`), and the speech worker.
+- **Windows:** [Windows Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ build tools workload) or a full Visual Studio installation — required for the speech worker and native module compilation. The packaged whisper.cpp server also needs the Microsoft Visual C++ 2015-2022 Redistributable at runtime.
+- **Linux:** `build-essential`, `libsecret-1-dev`, `libnotify-dev`, and `libgtk-3-dev` (Debian/Ubuntu equivalents) — required for the speech worker, keyring, and notification support. The Them channel additionally needs `pulseaudio-utils` (or PipeWire's PulseAudio compatibility) at runtime.
 
 ## Testing
 
@@ -36,6 +37,8 @@ Other verification checks:
 
 ```bash
 npm run check:syntax      # Syntax check all shipped JS files
+npm run test:speech-native # Run the local GGUF worker's Rust tests
+npm run verify:speech-package # Verify a packaged worker when dist/ exists
 npm run security:secrets  # Scan for accidentally committed secrets
 npm audit --audit-level=low
 npm run release:check     # Release-readiness checks
@@ -47,6 +50,8 @@ npm run release:check     # Release-readiness checks
 |---|---|
 | `VOLYX_LENS_NO_PROTECT` | Disables `setContentProtection(true)` on the overlay window (useful for screen-recording the app itself). |
 | `VOLYX_LENS_WHISPER_SIDECAR_BIN` | Absolute path to a pre-built `whisper-server` binary, bypassing the bundled download. |
+| `VOLYX_LENS_SPEECH_WORKER_BIN` | Absolute path to an operator-provided local GGUF worker. Relative and world-writable POSIX paths are rejected. |
+| `VOLYX_LENS_SPEECH_VULKAN` | Set to `1` on Windows/Linux source builds to compile the opt-in Vulkan backend. The runtime still needs a Vulkan loader and driver; CPU remains the fallback. |
 | `VOLYX_LENS_SKIP_WHISPER_RUNTIME` | Set to `1` to skip provisioning the pinned whisper.cpp server (Windows x64 and Linux x64/arm64) during `electron-builder` packaging; the package then ships no local Whisper engine. |
 | `VOLYX_LENS_WHISPER_SIDECAR` | Set to `1` to opt into whisper sidecar mode for offline transcription. |
 | `VOLYX_LENS_WHISPER_CLI` | Path to a local whisper CLI executable (legacy offline path). |

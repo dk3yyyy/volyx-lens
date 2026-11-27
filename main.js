@@ -11,7 +11,16 @@ if (identityMigration.migrated.length) console.log(`[identity] migrated ${identi
 const store = require('./src/store');
 const { normalizeAccentTheme } = require('./src/appearance-themes');
 const { captureScreenshot, MAX_LONG_EDGE_PX, REQUEST_JPEG_QUALITY } = require('./src/screen');
-const { createSTT, resetSidecar } = require('./src/stt');
+const { createSTT, resetSidecar, resolveTranscriptionMode } = require('./src/stt');
+const {
+  getModel: getSpeechModel,
+  listModels: listSpeechModelDefinitions,
+  isInstalled: isSpeechModelInstalled,
+  prepareModel: prepareSpeechModel,
+  removeModel: removeSpeechModel,
+} = require('./src/speech-model-registry');
+const { resolveSpeechWorkerBinary, defaultSpeechWorker } = require('./src/speech-worker');
+const { createSpeechOperationGate } = require('./src/speech-operation-gate');
 const { cancelOfflineTranscriptions } = require('./src/offline-stt');
 const { MODES, formatTranscript: formatPromptTranscript } = require('./src/prompts');
 const { createResponseRoute, chooseInitialProvider, streamWithFallback, classifyProviderError } = require('./src/response-router');
@@ -88,6 +97,8 @@ const {
 const { buildRulesBlock } = require('./src/ai-rules');
 
 const chatHistory = createChatHistory();
+const speechModelDownloads = new Map();
+const speechOperationGate = createSpeechOperationGate();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
 // The overlay has one fixed expanded size. There is no resize affordance and no
 // remembered size: docking owns the window geometry.
@@ -273,6 +284,8 @@ let slideOcrJobSequence = 0;
 const slideOcrJobs = new Map();
 let pendingSlideReview = null;
 let desiredCapturing = false;
+// True while Stop is flushing the last batches; model actions must wait it out.
+let speechFinalizing = false;
 // True only while the app's own getDisplayMedia flow is in flight or just about to
 // start. The renderer may ask for it, but only during a capture start it did not
 // control (VR-26).
@@ -329,6 +342,11 @@ const transcriptionDiagnostics = {
 function send(channel, data) {
   if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) win.webContents.send(channel, data);
 }
+
+defaultSpeechWorker.events.on('runtime-error', (error) => {
+  console.error('[speech-worker] runtime maintenance failed', String(error && error.message || 'unknown').slice(0, 240));
+  send('status', { message: 'A local speech model could not be unloaded after inactivity. Use Unload in Listening settings to release it.' });
+});
 
 let previousUpdateState = null;
 // The Set is the fast path for this launch; the settings store is the durable
@@ -1660,6 +1678,22 @@ async function startTranscriptionPipeline() {
   const generation = sessionGeneration;
   const epoch = transcriptEpoch;
 
+  const localModelId = transcription.localModelId || transcription.whisperModel || '';
+  const localModel = getSpeechModel(localModelId);
+  const transcriptionRoute = resolveTranscriptionMode(settings, {});
+  if (transcriptionRoute === 'batch') {
+    transcriptionMode = 'batch';
+    startFlushLoop();
+    updateTranscriptionDiagnostics({ status: 'active' });
+    send('transcription:state', {
+      mode: 'batch',
+      status: 'active',
+      provider: localModel && localModel.runtime === 'transcribe-cpp' ? 'local-gguf' : 'local-whisper',
+      ...(localModel ? { modelId: localModel.id } : {}),
+    });
+    return;
+  }
+
   if (transcription.mode === 'realtime' && realtime.ready) {
     const processingOptions = transcriptProcessingOptions;
     transcriptionMode = 'realtime';
@@ -1749,6 +1783,11 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     micEchoCoordinator.clear();
     acousticEchoFilter.reset();
     if (manager) await Promise.allSettled([manager.stop()]);
+    // The local speech worker is provider-independent, so it stops before the
+    // staleness check can return early.
+    try { await defaultSpeechWorker.stop(); } catch (error) {
+      console.warn('[speech-worker] immediate stop failed', String(error && error.code || 'unknown').slice(0, 80));
+    }
     // The provider close can take a while. If another clear or a New Session
     // invalidated this run meanwhile, the buffers and state below belong to that
     // newer pipeline; wiping them here would drop its audio and report it idle.
@@ -1773,7 +1812,12 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     drainingRealtimeManagers.delete(manager);
   }
   if (previousMode === 'batch' || flushPromises.you || flushPromises.them || buffers.you.length || buffers.them.length || retryQueues.you.length || retryQueues.them.length) {
-    await drainBatchBuffers();
+    speechFinalizing = true;
+    try {
+      await drainBatchBuffers();
+    } finally {
+      speechFinalizing = false;
+    }
   }
   buffers.you = []; buffers.them = [];
   retryQueues.you = []; retryQueues.them = [];
@@ -1997,6 +2041,8 @@ function restoreMeetingRecovery() {
 async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
   if (active) {
+    await speechOperationGate.whenIdle();
+    if (!desiredCapturing) return false;
     const audio = store.getSettings().audio || {};
     micEchoCoordinator.clear();
     acousticEchoFilter.reset();
@@ -2143,6 +2189,11 @@ async function shutdownAll() {
     clearTaskContext();
     resetTranscriptData();
     resetSidecar();
+    try {
+      await defaultSpeechWorker.stop();
+    } catch (error) {
+      console.error('[speech-worker] shutdown failed', String(error && error.message || 'unknown').slice(0, 240));
+    }
     if (workspaceIndex) {
       await workspaceIndex.close();
       workspaceIndex = null;
@@ -3012,6 +3063,43 @@ function offlineWhisperStatus() {
   }
 }
 
+function localSpeechRuntimeStatus() {
+  const whisper = offlineWhisperStatus();
+  const gguf = resolveSpeechWorkerBinary();
+  return {
+    available: whisper.available === true || gguf.available === true,
+    whisper,
+    gguf,
+  };
+}
+
+function speechModelsWithStatus() {
+  const runtime = localSpeechRuntimeStatus();
+  return listSpeechModelDefinitions().map((model) => {
+    const runtimeAvailable = model.runtime === 'transcribe-cpp'
+      ? runtime.gguf.available
+      : runtime.whisper.available;
+    return {
+      ...model,
+      runtimeAvailable,
+      installed: isSpeechModelInstalled(model.id),
+      loaded: defaultSpeechWorker.loadedModelId === model.id,
+      warmed: defaultSpeechWorker.warmedModelId === model.id,
+      backend: defaultSpeechWorker.loadedModelId === model.id ? defaultSpeechWorker.activeBackend : '',
+      backendFallback: defaultSpeechWorker.loadedModelId === model.id ? defaultSpeechWorker.activeBackendFallback : false,
+    };
+  });
+}
+
+function isLocalSpeechInferenceActive() {
+  return state.capturing
+    || desiredCapturing
+    || speechFinalizing
+    || flushPromises.you !== null
+    || flushPromises.them !== null
+    || speechOperationGate.isBusy();
+}
+
 // -------- IPC --------
 function assertTrustedIpc(event) {
   if (!event) throw new Error('Untrusted IPC sender.');
@@ -3043,10 +3131,16 @@ function onTrusted(channel, handler) {
   });
 }
 
-handleTrusted('settings:get', () => ({ ...store.getPublicSettings(), offlineWhisper: offlineWhisperStatus() }));
+handleTrusted('settings:get', () => ({
+  ...store.getPublicSettings(),
+  offlineWhisper: offlineWhisperStatus(),
+  localSpeech: localSpeechRuntimeStatus(),
+  speechModels: speechModelsWithStatus(),
+}));
 handleTrusted('settings:set', (_e, patch = {}) => {
   const offlineWhisper = offlineWhisperStatus();
-  if (offlineWhisper.available !== true && patch && patch.transcription && patch.transcription.offlineEnabled === true) {
+  const localSpeech = localSpeechRuntimeStatus();
+  if (localSpeech.available !== true && patch && patch.transcription && patch.transcription.offlineEnabled === true) {
     patch = { ...patch, transcription: { ...patch.transcription, offlineEnabled: false } };
   }
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
@@ -3111,7 +3205,73 @@ handleTrusted('settings:set', (_e, patch = {}) => {
   }
   // The notification toggle is also the switch that arms background checking.
   updateScheduler.sync();
-  return { ...store.getPublicSettings(), offlineWhisper };
+  return { ...store.getPublicSettings(), offlineWhisper, localSpeech, speechModels: speechModelsWithStatus() };
+});
+handleTrusted('speech-models:get', () => speechModelsWithStatus());
+handleTrusted('speech-model:download', async (event, id) => {
+  const model = getSpeechModel(id);
+  if (!model || model.runtime !== 'transcribe-cpp') throw new Error('That local model is not in the supported download catalog.');
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing local speech models.');
+  const runtime = localSpeechRuntimeStatus();
+  if (!runtime.gguf.available) throw new Error(runtime.gguf.reason);
+  return speechOperationGate.run('download', async () => {
+    if (speechModelDownloads.has(model.id)) {
+      const error = new Error(`${model.name} is already downloading.`);
+      error.code = 'speech_model_download_in_progress';
+      throw error;
+    }
+    const controller = new AbortController();
+    speechModelDownloads.set(model.id, controller);
+    try {
+      const result = await prepareSpeechModel(model.id, (progress) => {
+        if (event.sender.isDestroyed()) return;
+        try {
+          event.sender.send('speech:model-progress', { id: model.id, progress });
+        } catch (error) {
+          console.warn('[speech-model] progress notification failed', String(error && error.message || 'unknown').slice(0, 160));
+        }
+      }, { signal: controller.signal });
+      return { ...result, models: speechModelsWithStatus() };
+    } finally {
+      if (speechModelDownloads.get(model.id) === controller) speechModelDownloads.delete(model.id);
+    }
+  });
+});
+handleTrusted('speech-model:cancel-download', (_event, id) => {
+  const modelId = String(id || '');
+  const controller = speechModelDownloads.get(modelId);
+  if (!controller) return { canceled: false };
+  controller.abort();
+  return { canceled: true };
+});
+handleTrusted('speech-model:remove', async (_event, id) => {
+  const model = getSpeechModel(id);
+  if (!model || model.runtime !== 'transcribe-cpp') throw new Error('That local model is not in the supported download catalog.');
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing local speech models.');
+  return speechOperationGate.run('remove', async () => {
+    if (speechModelDownloads.has(model.id)) throw new Error('Cancel the active model download before removing it.');
+    if (defaultSpeechWorker.loadedModelId === model.id) await defaultSpeechWorker.unloadModel(model.id);
+    const removed = await removeSpeechModel(model.id);
+    return { removed, models: speechModelsWithStatus() };
+  });
+});
+handleTrusted('speech-model:warm', async (_event, id) => {
+  const model = getSpeechModel(id);
+  if (!model || model.runtime !== 'transcribe-cpp') throw new Error('That local model cannot be warmed up.');
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing local speech models.');
+  return speechOperationGate.run('warm', async () => {
+    const result = await defaultSpeechWorker.warmModel(model.id, { backend: (store.getSettings().transcription || {}).speechBackend || 'auto' });
+    return { ...result, models: speechModelsWithStatus() };
+  });
+});
+handleTrusted('speech-model:unload', async (_event, id) => {
+  const model = getSpeechModel(id);
+  if (!model || model.runtime !== 'transcribe-cpp') throw new Error('That local model cannot be unloaded.');
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing local speech models.');
+  return speechOperationGate.run('unload', async () => {
+    const result = await defaultSpeechWorker.unloadModel(model.id);
+    return { ...result, models: speechModelsWithStatus() };
+  });
 });
 handleTrusted('credentials:clear', (_e, provider) => {
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
