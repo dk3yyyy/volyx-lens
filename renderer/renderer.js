@@ -1021,7 +1021,7 @@
       case 'diarizer_not_installed':
       case 'speech_diarizer_not_installed':
       case 'speech_model_not_installed':
-        return 'The speaker model is not downloaded. Open Settings → Listening → Speaker activity to download it, then analyze the meeting again.';
+        return 'The speaker model is not downloaded, so this meeting was saved without speaker activity. Open Settings → Listening → Speaker activity to download it before your next meeting.';
       case 'duration_limit_exceeded':
         return 'This meeting ran longer than the speaker-analysis limit, so no part of it was analyzed. Raise the limit in Settings → Listening → Speaker activity before the next meeting.';
       case 'insufficient_system_audio':
@@ -2447,6 +2447,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   volyxLens.on('history:changed', (event = {}) => {
     if (event.deleted && meetingDetail && event.id === meetingDetail.id) closeMeetingDetail();
     else if (event.cleared) closeMeetingDetail();
+    else if (event.id && meetingDetail && event.id === meetingDetail.id) openMeetingDetail(event.id);
     if (event.pruned > 0) showHistoryPruneNotice(event.pruned);
     loadMeetingHistory({ quiet: true });
     loadMeetingMemoryEntries();

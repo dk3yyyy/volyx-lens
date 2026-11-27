@@ -79,18 +79,18 @@ Measured 2026-11-26 on the local M2 Pro using upstream `samples/sortformer-2spk-
 
 Auto selected Metal. After warm-up Metal was faster and used roughly half the worker RSS of CPU on this fixture. The low-latency preset was substantially slower and is not recommended for post-session analysis.
 
-Reproduce with the pinned local model installed:
+### What has been verified here
 
-```bash
-npm run eval:diarization -- \
-  --audio=/path/to/sortformer-2spk-mix.wav \
-  --backend=auto \
-  --repeat=3 \
-  --check \
-  --json=node_modules/.cache/diarization/apple-silicon-auto.json
-```
+The pinned artifact was downloaded and its SHA-256 matched the registry exactly
+(`a5dacdc6...`). The packaged worker loaded it with the CPU backend, ran four
+seconds of 16 kHz PCM, reported `audioMs 4000`, returned no segments for
+non-speech input, unloaded cleanly, and rejected `sampleRate: 1` with
+`invalid_audio`.
 
-`--check` accepts only the pinned golden audio and very-high-latency preset, then compares all five speaker segments exactly.
+The accuracy and latency figures above come from the original Apple Silicon
+work on this feature and are kept for context. They are not reproduced by a
+script in this repository: there is no `eval:diarization` command, so do not
+treat them as a current benchmark. A golden-audio harness is a follow-up.
 
 ## Next steps
 

@@ -1814,6 +1814,21 @@ function activateBatchTranscription(reason) {
   if (reason) send('status', { message: `Realtime transcription unavailable (${reason}). Using batch transcription for this listening session.` });
 }
 
+// Append buffered audio while respecting the manager's in-flight cap. A tight
+// loop trips backpressure after four chunks and switches healthy streaming to
+// batch mode, so waits are bounded and the caller keeps whatever is left.
+async function appendUntilAccepted(manager, channel, chunks, isCurrent, deadlineMs = 5000) {
+  const startedAt = Date.now();
+  let index = 0;
+  while (index < chunks.length) {
+    if (!isCurrent()) break;
+    if (manager.append(channel, chunks[index])) { index += 1; continue; }
+    if (Date.now() - startedAt > deadlineMs) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return chunks.slice(index);
+}
+
 // The manager hands back every chunk it accepted before a stream failure. Keep
 // them in the retry queue rather than the live buffer (which is deliberately
 // capped), so flushChannel can transcribe the whole clip in bounded batches.
@@ -1998,6 +2013,10 @@ async function startTranscriptionPipeline() {
       for (const channel of enabledChannels) replayingChannels.add(channel);
       try {
         for (const channel of enabledChannels) {
+          // A New Session or Clear Transcript may have replaced these buffers
+          // while the previous pass awaited. Never take what this run no longer
+          // owns, and never clear it either.
+          if (!stillCurrent()) break;
           const buffered = buffers[channel];
           buffers[channel] = [];
           const remaining = await replayBufferedStartupAudio(manager, channel, buffered, stillCurrent);
@@ -2039,14 +2058,13 @@ async function startTranscriptionPipeline() {
         // and release the guard in one synchronous step, so no live chunk can
         // slip between the last buffered chunk and the manager.
         for (const channel of enabledChannels) {
-          const residual = buffers[channel];
-          buffers[channel] = [];
+          const owns = stillCurrent();
+          const residual = owns ? buffers[channel] : [];
+          if (owns) buffers[channel] = [];
           const sameRun = generation === sessionGeneration && epoch === transcriptEpoch;
-          let appended = 0;
-          if (residual.length && sameRun && stillCurrent()) {
-            while (appended < residual.length && manager.append(channel, residual[appended])) appended += 1;
-          }
-          const refused = residual.slice(appended);
+          const refused = residual.length && sameRun && owns
+            ? await appendUntilAccepted(manager, channel, residual, stillCurrent)
+            : residual;
           if (refused.length && sameRun) {
             retryQueues[channel] = [...refused, ...(retryQueues[channel] || [])];
             boundRetryQueue(channel);
@@ -2643,6 +2661,11 @@ async function analyzeDiarization(recordId, detached = null) {
     return null;
   }
   const updated = meetingStore.updateDiarization(recordId, run);
+  if (updated.updated) {
+    // The saved meeting is open in the renderer; without this the timeline
+    // stays hidden until the user navigates away and back.
+    send('history:changed', { id: recordId, reason: 'diarization' });
+  }
   if (updated.updated && run.status === 'ready') {
     send('status', { message: `Speaker activity analyzed locally: ${run.segments.length} system-audio segments.` });
   } else if (updated.updated) {
