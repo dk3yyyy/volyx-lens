@@ -121,6 +121,7 @@ ipcMain.handle('speech-model:cancel-download', () => {
 ipcMain.handle('personal-context:get', () => ({ documents: {}, secure: true, locked: false }));
 ipcMain.handle('workspace-index:get', () => []);
 ipcMain.handle('transcript:get', () => []);
+    ipcMain.handle('transcript:suppressed-list', () => []);
 ipcMain.handle('task-context:get', () => emptyContext);
 // The renderer fetches history and its limits on boot. Stub them so the run has
 // no "No handler registered" noise masking a real error.

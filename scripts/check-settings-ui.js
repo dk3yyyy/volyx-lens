@@ -50,6 +50,7 @@ ipcMain.handle('workspace-index:rebuild', () => ({ workspaces: [], incomplete: f
 ipcMain.handle('workspace-index:set-enabled', (_event, payload) => ({ id: payload.id, enabled: payload.enabled }));
 ipcMain.handle('workspace-index:remove', () => ({ removed: true, workspaces: [] }));
 ipcMain.handle('transcript:get', () => []);
+    ipcMain.handle('transcript:suppressed-list', () => []);
 ipcMain.handle('task-context:get', () => emptyTaskContext);
 // The renderer fetches history on boot; a stub keeps the run free of
 // "No handler registered" noise that can mask a real error.

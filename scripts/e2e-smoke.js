@@ -86,6 +86,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
 ipcMain.handle('personal-context:get', () => ({ documents: {}, secure: true, locked: false }));
 ipcMain.handle('transcript:get', () => []);
+    ipcMain.handle('transcript:suppressed-list', () => []);
 ipcMain.handle('task-context:get', () => emptyContext);
 ipcMain.handle('recovery:get', () => null);
 ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offset: 0, limit: 50, total: 0 }));

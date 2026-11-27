@@ -195,6 +195,7 @@ ipcMain.handle('speech-diarizer:get', () => ({
 ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
 ipcMain.handle('personal-context:get', () => ({ documents: { resume: { present: false, enabled: false }, jobDescription: { present: false, enabled: false } }, secure: true, locked: false }));
 ipcMain.handle('transcript:get', () => []);
+    ipcMain.handle('transcript:suppressed-list', () => []);
 ipcMain.handle('transcript:restore-suppressed', (_event, id) => {
   calls.restoreSuppressed.push(id);
   if (id !== 'suppressed-ui') return { restored: false, reason: 'not_found' };

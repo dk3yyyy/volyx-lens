@@ -421,6 +421,7 @@ const flushPromises = { you: null, them: null };
 const transcript = []; // grouped turns: { id, channel, text, rawText?, ts, segments }
 const recentTranscriptSegments = []; // bounded processed finals used only for cross-talk detection
 const transcriptSegmentArrivalTimes = new Map();
+const refreshedMeetingTurnIds = new Set();
 const detectedQuestionsByTurn = new Map();
 let transcriptSegmentSequence = 0;
 let captureWarningTimer = null;
@@ -994,6 +995,7 @@ function resetTranscriptData() {
   transcriptionDiagnostics.crossTalkSuppressed = 0;
   suppressedYouSegments.length = 0;
   suppressedYouSequence = 0;
+  refreshedMeetingTurnIds.clear();
 }
 
 function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch, processingOptions = transcriptProcessingOptions) {
@@ -1110,12 +1112,17 @@ function restoreSuppressedYou(idOrIndex) {
   // A split changes the turn id of later segments. Keep the dedupe index in
   // sync, but never add the explicitly restored line itself: a later matching
   // Them final must not delete the user's explicit restore a second time.
+  if (updated) refreshedMeetingTurnIds.add(turn.id);
   for (const mapping of remapped) {
+    refreshedMeetingTurnIds.add(mapping.oldTurnId);
     const movedIds = new Set(mapping.segments.map((segment) => segment.id));
     for (const recent of recentTranscriptSegments) {
       if (movedIds.has(recent.id)) recent.turnId = mapping.newTurnId;
     }
   }
+  // The surrounding turns changed text or grouping, so the next history write
+  // must refresh them instead of appending only the new line.
+  finalizedSegmentWatermark = 0;
   if (transcript.length > MAX_TRANSCRIPT_TURNS) {
     const removed = [];
     while (transcript.length > MAX_TRANSCRIPT_TURNS) {
@@ -1134,6 +1141,10 @@ function restoreSuppressedYou(idOrIndex) {
     }
   }
   persistMeetingRecovery({ immediate: true });
+  for (const mapping of remapped) {
+    send('transcript:update', publicTranscriptTurn(mapping.prefix));
+    send('transcript', publicTranscriptTurn(mapping.suffix));
+  }
   send(updated ? 'transcript:update' : 'transcript', publicTranscriptTurn(turn));
   send('question:clear', { reason: 'user_replied' });
   return { restored: true, turn: publicTranscriptTurn(turn), suppressedCount: suppressedYouSegments.length };
@@ -2604,6 +2615,7 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   const pendingTurns = pendingFinalizeTurns();
   const result = meetingStore.finalize({
     turns: pendingTurns,
+    refreshedTurnIds: [...refreshedMeetingTurnIds],
     suppressedYouSegments,
     enabled: true,
     reason,
@@ -4439,6 +4451,7 @@ handleTrusted('slide-tracking:review', (_event, payload = {}) => {
   return prepareSlideReview();
 });
 handleTrusted('transcript:get', () => transcript.map(publicTranscriptTurn));
+handleTrusted('transcript:suppressed-list', () => suppressedYouSegments.map((entry) => ({ ...entry })));
 handleTrusted('transcript:restore-suppressed', (_event, id) => restoreSuppressedYou(id));
 handleTrusted('recap:plan', () => {
   const plan = planMeetingRecap(transcript);

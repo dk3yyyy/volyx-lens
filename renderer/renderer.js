@@ -5479,13 +5479,16 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   (async function boot() {
     let existingTranscript;
     let recovery;
-    [settings, personalContext, existingTranscript, taskContext, recovery] = await Promise.all([
+    let existingSuppressed;
+    [settings, personalContext, existingTranscript, taskContext, recovery, existingSuppressed] = await Promise.all([
       volyxLens.settingsGet(),
       volyxLens.personalContextGet(),
       volyxLens.transcriptGet(),
       volyxLens.taskContextGet(),
       getRecoverySummary(),
+      volyxLens.transcriptSuppressedList(),
     ]);
+    suppressedTranscript = normalizeSuppressedTranscriptEntries(existingSuppressed);
     transcriptTurns = (Array.isArray(existingTranscript) ? existingTranscript : []).map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
     renderTaskContext(taskContext);
     loadMeetingHistory({ quiet: true });

@@ -107,6 +107,9 @@ test('main and preload expose validated suppressed restore and checkpoint the ch
   const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
   assert.match(main, /handleTrusted\('transcript:restore-suppressed'/);
+  assert.match(main, /handleTrusted\('transcript:suppressed-list'/);
+  assert.match(main, /send\('transcript:update', publicTranscriptTurn\(mapping\.prefix\)\)/);
+  assert.match(main, /send\('transcript', publicTranscriptTurn\(mapping\.suffix\)\)/);
   assert.match(main, /function restoreSuppressedYou\([\s\S]*?findSuppressedYouIndex[\s\S]*?suppressedYouSegments\.splice/);
   assert.match(main, /restoreSuppressedYouSegment\(transcript, entry[\s\S]*?persistMeetingRecovery\(\{ immediate: true \}\)/);
   const restore = main.slice(main.indexOf('function restoreSuppressedYou('), main.indexOf('// Opt-in automatic assistance'));
@@ -114,6 +117,9 @@ test('main and preload expose validated suppressed restore and checkpoint the ch
   assert.match(restore, /remapped = \[\]/, 'a split turn keeps the dedupe index aligned');
   assert.match(main, /const lateSuppressed = \[\];[\s\S]{0,800}if \(duplicate\)/, 'accepted finals do not throw when there is no duplicate');
   assert.match(preload, /transcriptRestoreSuppressed: \(id\) => ipcRenderer\.invoke\('transcript:restore-suppressed', id\)/);
+  assert.match(preload, /transcriptSuppressedList: \(\) => ipcRenderer\.invoke\('transcript:suppressed-list'\)/);
+  const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
+  assert.match(renderer, /volyxLens\.transcriptSuppressedList\(\)/);
 });
 
 test('restoring before a different-speaker turn does not join a later You turn', () => {

@@ -49,7 +49,7 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Capture | `captureToggle`, `captureStop`, `captureState`, `setDisplayCaptureIntent` |
 | Session | `newSession` |
 | Task context | `taskContextGet`, `taskContextList`, `taskContextCapture`, `taskContextUndo`, `taskContextRemove`, `taskContextPin`, `taskContextClear` |
-| Transcript | `transcriptGet`, `transcriptRestoreSuppressed`, `recapPlan`, `transcriptCopy`, `transcriptCopyTurn`, `transcriptClear`, `transcriptExport` |
+| Transcript | `transcriptGet`, `transcriptSuppressedList`, `transcriptRestoreSuppressed`, `recapPlan`, `transcriptCopy`, `transcriptCopyTurn`, `transcriptClear`, `transcriptExport` |
 | History | `historyList`, `historyLimits`, `historyGet`, `historyDelete`, `historyDeleteMany`, `historyUndoDelete`, `historyRestoreTrash`, `historyClear`, `historyExport`, `historyBackupAll`, `historyRestoreAll`, `historyRecap`, `historyClean`, `historyParticipant`, `historyDiscardCleaned`, `meetingMemoryList`, `meetingMemorySave`, `meetingMemoryUpdate`, `meetingMemorySetEnabled`, `meetingMemoryRemove` |
 | Recovery | `recoveryGet`, `recoveryRestore`, `recoveryDiscard` |
 | Diagnostics | `diagnosticsGet`, `diagnosticsCopy` |
@@ -65,7 +65,7 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Lifecycle | `rendererReady`, `quit`, `relaunch`, `log` |
 | Events | `on(channel, cb)`, a filtered allowlist of 34 IPC channels, including `update:open` and `deeplink:open` |
 
-The bridge exposes 111 members in total: 108 methods plus the `platform`, `audioConfig`, and `initialAccentTheme` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
+The bridge exposes 112 members in total: 109 methods plus the `platform`, `audioConfig`, and `initialAccentTheme` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
 
 The `on()` listener uses a strict allowlist of event channels. Any channel not in the allowlist is silently ignored, preventing the renderer from subscribing to unintended IPC traffic.
 

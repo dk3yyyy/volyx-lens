@@ -895,3 +895,33 @@ test('legacy native speaker slots are renumbered to arrival order on read', () =
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('refreshing a split turn replaces saved surrounding speech instead of duplicating it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({
+      turns: [{ id: 1, channel: 'them', text: 'Before the answer. After the answer.', ts: 10 }],
+      enabled: true,
+    });
+    store.finalize({
+      recordId: saved.id,
+      refreshedTurnIds: [1],
+      turns: [
+        { id: 1, channel: 'them', text: 'Before the answer.', ts: 10 },
+        { id: 2, channel: 'you', text: 'My answer.', ts: 20 },
+        { id: 3, channel: 'them', text: 'After the answer.', ts: 30 },
+      ],
+      enabled: true,
+    });
+
+    const record = store.get(saved.id);
+    assert.deepEqual(record.turns.map((turn) => [turn.ts, turn.channel, turn.text]), [
+      [10, 'them', 'Before the answer.'],
+      [20, 'you', 'My answer.'],
+      [30, 'them', 'After the answer.'],
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

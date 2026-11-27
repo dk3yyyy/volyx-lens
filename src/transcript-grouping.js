@@ -115,7 +115,7 @@ function insertConversationSegment(turns, segment, createTurnId) {
     refreshConversationTurn(surrounding);
     for (const entry of suffix) entry.turnId = suffixTurn.id;
     refreshConversationTurn(suffixTurn);
-    remapped.push({ oldTurnId: surrounding.id, newTurnId: suffixTurn.id, segments: suffix });
+    remapped.push({ oldTurnId: surrounding.id, newTurnId: suffixTurn.id, segments: suffix, prefix: surrounding, suffix: suffixTurn });
 
     const restored = makeTurn();
     segment.turnId = restored.id;
