@@ -296,7 +296,7 @@ test('finalize captures only turns new since the last finalize (independent meet
   assert.match(main, /segment\.id > finalizedSegmentWatermark/);
   assert.match(main, /function advanceFinalizeWatermark\(\)/);
   assert.match(main, /finalizedSegmentWatermark = 0;/);
-  assert.match(main, /turns: pendingFinalizeTurns\(\)/);
+  assert.match(main, /turns: historyRewriteRequired \? fullTranscriptTurns\(\) : pendingFinalizeTurns\(\)/);
   const watermarkOrder = main.indexOf('finalizedSegmentWatermark = 0;');
   const advanceDef = main.indexOf('function advanceFinalizeWatermark()');
   const resetDef = main.indexOf('function resetTranscriptData()');

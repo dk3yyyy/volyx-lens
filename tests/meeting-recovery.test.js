@@ -30,6 +30,7 @@ test('meeting recovery stores a bounded transcript atomically and loads it', () 
     truncated: 0,
     clippedTurns: 0,
     turns: [{ id: 1, channel: 'you', text: 'Keep this text', ts: 600 }],
+    suppressedYouSegments: [],
   });
   recovery.clear();
   assert.equal(recovery.load({ enabled: true }), null);
@@ -70,12 +71,75 @@ test('a fresh recovery store can load the saved draft after a process restart', 
   assert.equal(draft.updatedAt, 1000);
 });
 
+test('meeting recovery round-trips bounded suppressed You lines', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
+  const file = path.join(dir, 'recovery.json');
+  try {
+    const recovery = createMeetingRecovery({ file, now: () => 1000 });
+    const suppressedYouSegments = Array.from({ length: 205 }, (_, index) => ({
+      id: `suppressed-${index + 1}`,
+      text: `Hidden answer ${index + 1}`,
+      ts: 600 + index,
+      duplicateOf: 7,
+      match: 'similarity',
+      reason: 'cross_talk',
+    }));
+    recovery.save({
+      enabled: true,
+      turns: [{ id: 7, channel: 'them', text: 'Visible question', ts: 500 }],
+      suppressedYouSegments,
+    });
+
+    const draft = recovery.load({ enabled: true });
+    assert.equal(draft.suppressedYouSegments.length, 200);
+    assert.equal(draft.suppressedYouSegments[0].id, 'suppressed-6');
+    assert.equal(draft.suppressedYouSegments.at(-1).text, 'Hidden answer 205');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a recovery draft containing only suppressed lines is still recoverable', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
+  const file = path.join(dir, 'recovery.json');
+  try {
+    const recovery = createMeetingRecovery({ file, now: () => 1000 });
+    const saved = recovery.save({
+      enabled: true,
+      turns: [],
+      suppressedYouSegments: [{ id: 'suppressed-1', text: 'Hidden answer', ts: 600, duplicateOf: null, match: 'phrase_overlap', reason: 'cross_talk_late' }],
+    });
+    assert.equal(saved.saved, true);
+    assert.equal(recovery.load({ enabled: true }).suppressedYouSegments[0].text, 'Hidden answer');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('older recovery records without suppressed lines still load', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
+  const file = path.join(dir, 'recovery.json');
+  try {
+    fs.writeFileSync(file, JSON.stringify({
+      version: 1,
+      startedAt: 500,
+      updatedAt: 1000,
+      turns: [{ id: 1, channel: 'them', text: 'Legacy visible turn', ts: 600 }],
+    }));
+    const draft = createMeetingRecovery({ file }).load({ enabled: true });
+    assert.equal(draft.turns[0].text, 'Legacy visible turn');
+    assert.deepEqual(draft.suppressedYouSegments, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('meeting recovery does not retain data while disabled and removes corrupt drafts', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
   const file = path.join(dir, 'recovery.json');
   const recovery = createMeetingRecovery({ file });
 
-  assert.deepEqual(recovery.save({ enabled: false, turns: [{ text: 'private' }] }), { saved: false, reason: 'disabled' });
+  assert.deepEqual(recovery.save({ enabled: false, turns: [{ text: 'private' }], suppressedYouSegments: [{ text: 'private hidden answer', ts: 600 }] }), { saved: false, reason: 'disabled' });
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(file, '{invalid');
   assert.equal(recovery.load({ enabled: true }), null);
@@ -198,7 +262,10 @@ test('main process checkpoints only opted-in transcripts and exposes restore or 
   assert.match(main, /function restoreMeetingRecovery\(\)[\s\S]*if \(state\.capturing \|\| transcript\.length\)/);
   assert.match(main, /turnId: id[\s\S]*segments: \[segment\]/);
   const restore = main.match(/function restoreMeetingRecovery\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const write = main.match(/function writeMeetingRecovery\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(restore, /return \{ restored: true, turns: transcript\.map\(publicTranscriptTurn\)/);
+  assert.match(restore, /suppressedYouSegments: suppressedYouSegments\.map\(\(entry\) => \(\{ \.\.\.entry \}\)\)/);
+  assert.match(write, /suppressedYouSegments,/);
   assert.doesNotMatch(restore, /meetingRecovery\.clear\(\)/);
   assert.match(preload, /recoveryGet: \(\) => ipcRenderer\.invoke\('recovery:get'\)/);
   assert.match(preload, /recoveryRestore: \(\) => ipcRenderer\.invoke\('recovery:restore'\)/);
@@ -344,7 +411,7 @@ test('an unanswered recovery draft survives quitting and starting a session', ()
   const main = read('main.js');
   const finalize = main.match(/function finalizeMeeting\(reason = 'capture-stop'[\s\S]*?\n\}\n/)?.[0] || '';
 
-  assert.match(finalize, /const pendingTurns = pendingFinalizeTurns\(\);/);
+  assert.match(finalize, /const pendingTurns = historyRewriteRequired \? fullTranscriptTurns\(\) : pendingFinalizeTurns\(\);/);
   assert.match(finalize, /if \(result\.saved \|\| pendingTurns\.length\) \{/);
   assert.match(finalize, /cancelMeetingRecoverySave\(\);\s*meetingRecovery\.clearBestEffort\(\);/);
 });
@@ -354,7 +421,7 @@ test('checkpoints exclude turns that are already saved to history', () => {
   const write = main.match(/function writeMeetingRecovery\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   const record = main.match(/^function recordTranscript[\s\S]*?\n\}/m)?.[0] || '';
 
-  assert.match(write, /turns: pendingFinalizeTurns\(\)/);
+  assert.match(write, /turns: historyRewriteRequired \? fullTranscriptTurns\(\) : pendingFinalizeTurns\(\)/);
   assert.match(write, /droppedTurns: transcriptDroppedTurns/);
   assert.doesNotMatch(write, /turns: transcript\.map\(publicTranscriptTurn\)/);
   assert.match(record, /transcriptDroppedTurns \+= countUnsavedTurns\(removed, finalizedSegmentWatermark\);/);

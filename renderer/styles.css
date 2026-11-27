@@ -428,6 +428,15 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .transcript-turn.has-partial { border-left-style: dashed; }
 .transcript-gap { display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: 7px; border: 1px dashed rgba(255,255,255,0.18); color: var(--tx-mut); font-size: 10.5px; }
 .transcript-gap::before { content: '…'; color: var(--cyan); }
+.transcript-suppressed { margin-left: 50px; padding: 5px 8px; border: 1px dashed color-mix(in srgb, var(--warning) 38%, transparent); border-radius: 7px; background: color-mix(in srgb, var(--warning) 5%, transparent); color: var(--tx-mut); font-size: 10.5px; }
+.transcript-suppressed summary { width: fit-content; cursor: pointer; color: var(--warning); font-weight: 650; }
+.transcript-suppressed summary:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; border-radius: 3px; }
+.transcript-suppressed-content { display: flex; align-items: flex-start; gap: 10px; padding-top: 6px; }
+.transcript-suppressed-text { flex: 1; min-width: 0; margin: 0; color: var(--tx-2); line-height: 1.35; overflow-wrap: anywhere; white-space: pre-wrap; }
+.transcript-suppressed-restore { flex: none; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-soft); padding: 2px 7px; font: 650 10.5px var(--font); cursor: pointer; }
+.transcript-suppressed-restore:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.transcript-suppressed-restore:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
+.transcript-suppressed-restore:disabled { opacity: 0.55; cursor: wait; }
 .transcript-pending { color: var(--tx-mut); font-style: italic; }
 .transcript-speaker { font-size: 10px; font-weight: 750; }
 .transcript-turn.you .transcript-speaker { color: var(--accent-soft); }

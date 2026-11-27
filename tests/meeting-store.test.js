@@ -183,6 +183,103 @@ test('meeting history preserves original recognizer wording when processing chan
   }
 });
 
+test('saved meetings retain bounded suppressed lines while exports omit them', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const suppressedYouSegments = Array.from({ length: 205 }, (_, index) => ({
+      id: `suppressed-${index + 1}`,
+      text: `HIDDEN-ECHO-${index + 1}`,
+      ts: 500 + index,
+      duplicateOf: 1,
+      match: 'similarity',
+      reason: 'cross_talk',
+    }));
+    const saved = store.finalize({
+      turns: [{ id: 1, channel: 'them', text: 'Visible meeting turn', ts: 100 }],
+      suppressedYouSegments,
+      enabled: true,
+    });
+    const record = store.get(saved.id);
+    assert.equal(record.suppressedYouSegments.length, 200);
+    assert.equal(record.suppressedYouSegments[0].text, 'HIDDEN-ECHO-6');
+    const onDisk = JSON.parse(fs.readFileSync(path.join(dir, `${saved.id}.json`), 'utf8'));
+    assert.equal(onDisk.suppressedYouSegments.length, 200);
+
+    const { formatMeetingRecord } = require('../src/meeting-notes');
+    for (const format of ['txt', 'md', 'json', 'srt', 'vtt']) {
+      assert.doesNotMatch(formatMeetingRecord(record, format), /HIDDEN-ECHO-/, `${format} export excludes hidden lines`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('older saved meeting records without suppressed lines still load', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const id = crypto.randomUUID();
+    fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({
+      id,
+      version: 1,
+      turns: [{ id: 1, channel: 'them', text: 'Legacy meeting', ts: 100 }],
+    }));
+    const record = store.get(id);
+    assert.equal(record.turns[0].text, 'Legacy meeting');
+    assert.deepEqual(record.suppressedYouSegments, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('appending a restored turn updates saved order and removes its suppressed copy', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const hidden = { id: 'suppressed-1', text: 'My real answer', ts: 150, duplicateOf: 1, match: 'similarity', reason: 'cross_talk' };
+    const first = store.finalize({
+      turns: [{ id: 1, channel: 'them', text: 'Question', ts: 100 }, { id: 2, channel: 'them', text: 'Follow-up', ts: 300 }],
+      suppressedYouSegments: [hidden],
+      enabled: true,
+    });
+    const second = store.finalize({
+      turns: [{ id: 3, channel: 'you', text: 'My real answer', ts: 150 }],
+      suppressedYouSegments: [],
+      recordId: first.id,
+      enabled: true,
+    });
+    assert.equal(second.saved, true);
+    const record = store.get(first.id);
+    assert.deepEqual(record.turns.map((turn) => turn.text), ['Question', 'My real answer', 'Follow-up']);
+    assert.deepEqual(record.suppressedYouSegments, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('suppressed-only changes update an existing saved meeting', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const first = store.finalize({
+      turns: [{ id: 1, channel: 'them', text: 'Visible turn', ts: 100 }],
+      suppressedYouSegments: [{ id: 'suppressed-1', text: 'Old hidden line', ts: 150, duplicateOf: 1, match: 'similarity', reason: 'cross_talk' }],
+      enabled: true,
+    });
+    const second = store.finalize({
+      turns: [],
+      suppressedYouSegments: [{ id: 'suppressed-2', text: 'New hidden line', ts: 200, duplicateOf: 1, match: 'similarity', reason: 'cross_talk' }],
+      recordId: first.id,
+      enabled: true,
+    });
+    assert.equal(second.saved, true);
+    assert.deepEqual(store.get(first.id).suppressedYouSegments.map((entry) => entry.text), ['New hidden line']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('createMeetingStore finalizes and retrieves a meeting record', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
   const store = createMeetingStore({ dir });
@@ -794,6 +891,78 @@ test('legacy native speaker slots are renumbered to arrival order on read', () =
     const segments = store.get(saved.id).diarizationRuns[0].segments;
     assert.deepEqual(segments.map((segment) => segment.speakerId), [1, 2, 3, 1],
       'first distinct voice becomes 1, the next new one 2');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('refreshing a split turn replaces saved surrounding speech instead of duplicating it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({
+      turns: [{ id: 1, channel: 'them', text: 'Before the answer. After the answer.', ts: 10 }],
+      enabled: true,
+    });
+    store.finalize({
+      recordId: saved.id,
+      replaceAllTurns: true,
+      turns: [
+        { id: 1, channel: 'them', text: 'Before the answer.', ts: 10 },
+        { id: 2, channel: 'you', text: 'My answer.', ts: 20 },
+        { id: 3, channel: 'them', text: 'After the answer.', ts: 30 },
+      ],
+      enabled: true,
+    });
+
+    const record = store.get(saved.id);
+    assert.deepEqual(record.turns.map((turn) => [turn.ts, turn.channel, turn.text]), [
+      [10, 'them', 'Before the answer.'],
+      [20, 'you', 'My answer.'],
+      [30, 'them', 'After the answer.'],
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a full history rewrite keeps new-session turns even when ids repeat', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({ turns: [{ id: 1, channel: 'them', text: 'Earlier session', ts: 1000 }], enabled: true });
+    store.finalize({
+      recordId: saved.id,
+      replaceAllTurns: true,
+      turns: [
+        { id: 1, channel: 'them', text: 'Earlier session', ts: 1000 },
+        { id: 1, channel: 'you', text: 'Unsaved restored answer', ts: 2000 },
+      ],
+      enabled: true,
+    });
+    assert.deepEqual(store.get(saved.id).turns.map((entry) => entry.text), ['Earlier session', 'Unsaved restored answer']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a restore after resuming rewrites extended speech without repeating its saved prefix', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({
+      turns: [{ id: 1, channel: 'you', text: 'First answer.', ts: 20 }],
+      enabled: true,
+    });
+    store.finalize({
+      recordId: saved.id,
+      replaceAllTurns: true,
+      turns: [{ id: 1, channel: 'you', text: 'First answer. New words. Restored line.', ts: 20 }],
+      enabled: true,
+    });
+    const record = store.get(saved.id);
+    assert.equal(record.turns.length, 1);
+    assert.equal(record.turns[0].text, 'First answer. New words. Restored line.');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
