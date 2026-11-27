@@ -20,6 +20,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.arch }} AppImage
+    environment: linux-release
     timeout-minutes: 30
     strategy:
       fail-fast: false
