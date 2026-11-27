@@ -1,0 +1,436 @@
+'use strict';
+
+const { spawn } = require('node:child_process');
+const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const readline = require('node:readline');
+const { getModel, isInstalled, modelPaths, verifyModel } = require('./speech-model-registry');
+
+const WORKER_NAME = 'volyx-speech-worker';
+const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+
+function speechWorkerCandidates({
+  env = process.env,
+  platform = process.platform,
+  arch = process.arch,
+  resourcesPath = typeof process.resourcesPath === 'string' ? process.resourcesPath : '',
+  projectDir = path.resolve(__dirname, '..'),
+} = {}) {
+  const candidates = [];
+  if (!['darwin', 'win32', 'linux'].includes(platform)) return candidates;
+  const binaryName = platform === 'win32' ? `${WORKER_NAME}.exe` : WORKER_NAME;
+  const fromEnv = String(env.VOLYX_LENS_SPEECH_WORKER_BIN || '').trim();
+  if (fromEnv && path.isAbsolute(fromEnv)) candidates.push(fromEnv);
+  if (resourcesPath) candidates.push(path.join(resourcesPath, 'native', binaryName));
+  candidates.push(path.join(projectDir, 'native-bin', binaryName));
+  return candidates;
+}
+
+function resolveSpeechWorkerBinary(options = {}) {
+  const fsImpl = options.fsImpl || fs;
+  const platform = options.platform || process.platform;
+  const candidates = speechWorkerCandidates(options);
+  const found = candidates.find((candidate) => {
+    try {
+      const stat = fsImpl.statSync(candidate);
+      if (!stat.isFile()) return false;
+      if (platform !== 'win32') {
+        if ((stat.mode & 0o002) !== 0) return false;
+        // Accept the running user's binary or a root-owned install (pkg/MDM
+        // installs land under /Applications owned by root); anything else is
+        // refused. World-writable is still rejected above.
+        if (typeof process.getuid === 'function' && stat.uid !== 0 && stat.uid !== process.getuid()) return false;
+      }
+      fsImpl.accessSync(candidate, platform === 'win32' ? fs.constants.R_OK : fs.constants.X_OK);
+      fsImpl.realpathSync(candidate);
+      return true;
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return false;
+      if (error && error.code === 'EACCES') return false;
+      throw error;
+    }
+  });
+  if (found) return { available: true, path: found, reason: '' };
+  const arch = options.arch || process.arch;
+  const reason = !['darwin', 'win32', 'linux'].includes(platform)
+    ? 'Local GGUF inference is not supported on this platform.'
+    : `The local speech worker is not installed for ${platform}/${arch}. Rebuild the native helper or install a supported package.`;
+  return { available: false, path: '', reason };
+}
+
+function workerError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function normalizeBackend(value) {
+  return ['auto', 'cpu', 'gpu'].includes(value) ? value : 'auto';
+}
+
+function speechWorkerEnvironment(env = process.env) {
+  const allowed = [
+    'PATH', 'HOME', 'USERPROFILE', 'TMPDIR', 'TMP', 'TEMP', 'LANG',
+    'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'PROCESSOR_ARCHITECTURE',
+    'NUMBER_OF_PROCESSORS', 'APPDATA', 'LOCALAPPDATA',
+    'VK_ICD_FILENAMES', 'VK_LAYER_PATH', 'GGML_VULKAN_DEVICE',
+  ];
+  const values = new Map(Object.entries(env).map(([key, value]) => [key.toLowerCase(), String(value)]));
+  const result = {};
+  for (const key of allowed) {
+    const value = values.get(key.toLowerCase());
+    if (value) result[key] = value;
+  }
+  if (!result.PATH) result.PATH = '/usr/bin:/bin';
+  if (!result.HOME) result.HOME = os.homedir();
+  if (!result.TMPDIR) result.TMPDIR = os.tmpdir();
+  if (!result.LANG) result.LANG = 'en_US.UTF-8';
+  return result;
+}
+
+function createSpeechWorker({
+  binaryPath = '',
+  binaryResolver = resolveSpeechWorkerBinary,
+  spawnImpl = spawn,
+  env = process.env,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  modelOperationTimeoutMs = 120_000,
+  idleUnloadMs = 5 * 60 * 1000,
+  stopTimeoutMs = 3000,
+  cwd = os.tmpdir(),
+} = {}) {
+  let child = null;
+  let lineReader = null;
+  let sequence = 0;
+  let expectedExit = false;
+  let workerGeneration = 0;
+  let stopPromise = null;
+  let loadedModelId = '';
+  let warmedModelId = '';
+  let loadedBackendPreference = '';
+  let activeBackend = '';
+  let activeBackendFallback = false;
+  let idleTimer = null;
+  let stderrTail = '';
+  const pending = new Map();
+  const events = new EventEmitter();
+
+  function rejectPending(error) {
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(error);
+    }
+    pending.clear();
+  }
+
+  function failWorker(error, generation = workerGeneration) {
+    if (generation !== workerGeneration) return;
+    loadedModelId = '';
+    warmedModelId = '';
+    clearActiveBackend();
+    rejectPending(error);
+  }
+
+  function clearIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+
+  function backendPreferenceSatisfied(preference) {
+    if (preference === 'cpu') return activeBackend === 'cpu';
+    if (preference === 'auto') {
+      return loadedBackendPreference === 'auto' || Boolean((activeBackend && activeBackend !== 'cpu') || activeBackendFallback);
+    }
+    return Boolean((activeBackend && activeBackend !== 'cpu') || activeBackendFallback);
+  }
+
+  function clearActiveBackend() {
+    loadedBackendPreference = '';
+    activeBackend = '';
+    activeBackendFallback = false;
+  }
+
+  function recordBackendResult(result) {
+    if (result && result.backend) activeBackend = String(result.backend).toLowerCase();
+    if (result && result.backendFallback === true) activeBackendFallback = true;
+  }
+
+  async function clearModelAfterFailure() {
+    try {
+      if (child && loadedModelId) await request('unload', {}, 10_000);
+    } catch {}
+    loadedModelId = '';
+    warmedModelId = '';
+    clearActiveBackend();
+  }
+
+  function scheduleIdleUnload() {
+    clearIdleTimer();
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      unloadModel().catch((error) => events.emit('runtime-error', error));
+    }, idleUnloadMs);
+    if (typeof idleTimer.unref === 'function') idleTimer.unref();
+  }
+
+  function ensureStarted() {
+    if (stopPromise) throw workerError('speech_worker_stopping', 'The local speech worker is still stopping.');
+    if (child && child.exitCode === null && child.signalCode === null) return child;
+    const resolved = binaryPath ? { available: true, path: binaryPath } : binaryResolver();
+    if (!resolved.available) throw workerError('speech_runtime_unavailable', resolved.reason);
+
+    const generation = ++workerGeneration;
+    expectedExit = false;
+    stderrTail = '';
+    const workerEnv = speechWorkerEnvironment(env);
+    const activeChild = spawnImpl(resolved.path, [], {
+      cwd,
+      env: workerEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    child = activeChild;
+    lineReader = readline.createInterface({ input: activeChild.stdout });
+    lineReader.on('line', (line) => {
+      if (generation !== workerGeneration || child !== activeChild) return;
+      let message;
+      try { message = JSON.parse(line); } catch (error) {
+        failWorker(workerError('speech_worker_protocol_error', `Speech worker returned invalid JSON: ${error.message}`), generation);
+        if (!activeChild.killed) activeChild.kill();
+        return;
+      }
+      const entry = message && pending.get(message.id);
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      pending.delete(message.id);
+      if (message.ok === true) entry.resolve(message.result);
+      else entry.reject(workerError(
+        message.error && message.error.code || 'speech_worker_error',
+        message.error && message.error.message || 'Speech worker request failed.',
+      ));
+    });
+    activeChild.stderr.on('data', (chunk) => {
+      if (generation !== workerGeneration || child !== activeChild) return;
+      stderrTail = `${stderrTail}${chunk.toString('utf8')}`.slice(-4000);
+    });
+    activeChild.stdin.on('error', (error) => {
+      if (generation !== workerGeneration || child !== activeChild) return;
+      failWorker(workerError('speech_worker_write_failed', error.message), generation);
+      if (!activeChild.killed) activeChild.kill();
+    });
+    activeChild.on('error', (error) => {
+      if (generation !== workerGeneration || child !== activeChild) return;
+      // A spawn failure emits no 'exit'; leaving the dead child in place made
+      // every later request reuse it until someone called stop().
+      if (lineReader) { lineReader.close(); lineReader = null; }
+      child = null;
+      failWorker(workerError('speech_worker_spawn_failed', error.message), generation);
+    });
+    activeChild.on('exit', (code, signal) => {
+      if (generation !== workerGeneration || child !== activeChild) return;
+      if (lineReader) lineReader.close();
+      child = null;
+      lineReader = null;
+      loadedModelId = '';
+      warmedModelId = '';
+      clearActiveBackend();
+      if (!expectedExit) {
+        const detail = stderrTail.trim();
+        failWorker(workerError(
+          'speech_worker_exited',
+          `Speech worker exited${code === null ? ` with signal ${signal || 'unknown'}` : ` with code ${code}`}.${detail ? ` ${detail}` : ''}`,
+        ), generation);
+      }
+    });
+    return activeChild;
+  }
+
+  function request(command, values = {}, timeoutMs = requestTimeoutMs) {
+    let activeChild;
+    try { activeChild = ensureStarted(); } catch (error) { return Promise.reject(error); }
+    const id = ++sequence;
+    const generation = workerGeneration;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(workerError('speech_worker_timeout', `Speech worker command timed out: ${command}`));
+        if (generation === workerGeneration && child === activeChild) {
+          if (!activeChild.killed) activeChild.kill('SIGKILL');
+          stop().catch(() => {});
+        }
+      }, timeoutMs);
+      pending.set(id, { resolve, reject, timer });
+      activeChild.stdin.write(`${JSON.stringify({ id, command, ...values })}\n`, (error) => {
+        if (!error) return;
+        clearTimeout(timer);
+        pending.delete(id);
+        reject(workerError('speech_worker_write_failed', error.message));
+      });
+    });
+  }
+
+  async function loadModel(modelId, { backend = 'auto' } = {}) {
+    const model = getModel(modelId);
+    if (!model || model.runtime !== 'transcribe-cpp') {
+      throw workerError('speech_model_unsupported', `Unsupported local GGUF model: ${String(modelId || '')}`);
+    }
+    if (!isInstalled(model.id)) {
+      throw workerError('speech_model_not_installed', `Download ${model.name} before using it offline.`);
+    }
+    const preferredBackend = normalizeBackend(backend);
+    const backendSatisfied = backendPreferenceSatisfied(preferredBackend);
+    if (loadedModelId === model.id && backendSatisfied) {
+      if (preferredBackend === 'cpu') {
+        loadedBackendPreference = 'cpu';
+        activeBackendFallback = false;
+      }
+      return { modelId: model.id, loaded: true, backend: activeBackend, backendFallback: activeBackendFallback };
+    }
+    if (!await verifyModel(model.id)) {
+      throw workerError('speech_model_integrity_mismatch', `The downloaded ${model.name} failed its SHA-256 integrity check. Download it again before use.`);
+    }
+    if (loadedModelId) await unloadModel();
+    clearIdleTimer();
+    const result = await request('load', { modelId: model.id, path: modelPaths(model.id).model, backend: preferredBackend }, modelOperationTimeoutMs);
+    if (result.modelId !== model.id || !result.capabilities) {
+      throw workerError('speech_worker_protocol_error', 'Speech worker loaded a different model or omitted capabilities.');
+    }
+    loadedModelId = model.id;
+    loadedBackendPreference = preferredBackend;
+    activeBackend = String(result.backend || '').toLowerCase();
+    activeBackendFallback = result.backendFallback === true;
+    warmedModelId = '';
+    return result;
+  }
+
+  async function warmModel(modelId, options = {}) {
+    await loadModel(modelId, options);
+    if (warmedModelId === modelId) {
+      scheduleIdleUnload();
+      return { warmed: true, cached: true };
+    }
+    let result;
+    try {
+      result = await request('warm', {}, modelOperationTimeoutMs);
+    } catch (error) {
+      await clearModelAfterFailure();
+      throw error;
+    }
+    if (result.warmed !== true) {
+      await clearModelAfterFailure();
+      throw workerError('speech_model_warmup_failed', 'Speech model warm-up did not complete.');
+    }
+    recordBackendResult(result);
+    warmedModelId = modelId;
+    scheduleIdleUnload();
+    return result;
+  }
+
+  async function hardwareInfo() {
+    return request('hardware-info', {}, 10_000);
+  }
+
+  async function transcribe({ wav, modelId, language = '', backend = 'auto' } = {}) {
+    if (!Buffer.isBuffer(wav)) throw new TypeError('Local speech transcription requires a WAV Buffer.');
+    const model = getModel(modelId);
+    if (!model || model.runtime !== 'transcribe-cpp') {
+      throw workerError('speech_model_unsupported', `Unsupported local GGUF model: ${String(modelId || '')}`);
+    }
+    try {
+      await warmModel(model.id, { backend });
+      const result = await request('transcribe', {
+        wavBase64: wav.toString('base64'),
+        language: String(language || ''),
+      });
+      recordBackendResult(result);
+      return { ...result, modelId: model.id, provider: 'local-gguf' };
+    } catch (error) {
+      if (loadedModelId) await clearModelAfterFailure();
+      throw error;
+    } finally {
+      scheduleIdleUnload();
+    }
+  }
+
+  async function unloadModel(modelId = '') {
+    clearIdleTimer();
+    if (modelId && loadedModelId && modelId !== loadedModelId) {
+      throw workerError('speech_model_not_loaded', `Cannot unload ${modelId}; ${loadedModelId} is currently loaded.`);
+    }
+    if (!child || !loadedModelId) {
+      loadedModelId = '';
+      warmedModelId = '';
+      clearActiveBackend();
+      return { unloaded: true, loaded: false };
+    }
+    const result = await request('unload');
+    loadedModelId = '';
+    warmedModelId = '';
+    clearActiveBackend();
+    return result;
+  }
+
+  async function stop() {
+    clearIdleTimer();
+    if (stopPromise) return stopPromise;
+    if (!child) return;
+    expectedExit = true;
+    const activeChild = child;
+    const generation = ++workerGeneration;
+    if (lineReader) lineReader.close();
+    child = null;
+    lineReader = null;
+    loadedModelId = '';
+    warmedModelId = '';
+    clearActiveBackend();
+    rejectPending(workerError('speech_worker_stopped', 'Speech worker was stopped.'));
+    stopPromise = (async () => {
+      try {
+        await new Promise((resolve) => {
+          const timeout = Number.isFinite(stopTimeoutMs) && stopTimeoutMs > 0 ? stopTimeoutMs : 3000;
+          const timer = setTimeout(() => {
+            if (!activeChild.killed) activeChild.kill('SIGKILL');
+            resolve();
+          }, timeout);
+          activeChild.once('exit', () => {
+            clearTimeout(timer);
+            resolve();
+          });
+          try { activeChild.stdin.end(); } catch {}
+        });
+      } finally {
+        if (generation === workerGeneration) expectedExit = false;
+        stopPromise = null;
+      }
+    })();
+    return stopPromise;
+  }
+
+  return {
+    events,
+    loadModel,
+    warmModel,
+    transcribe,
+    unloadModel,
+    hardwareInfo,
+    stop,
+    get loadedModelId() { return loadedModelId; },
+    get warmedModelId() { return warmedModelId; },
+    get pid() { return child && Number.isInteger(child.pid) ? child.pid : null; },
+    get activeBackend() { return activeBackend; },
+    get activeBackendFallback() { return activeBackendFallback; },
+  };
+}
+
+const defaultSpeechWorker = createSpeechWorker();
+
+module.exports = {
+  WORKER_NAME,
+  speechWorkerCandidates,
+  resolveSpeechWorkerBinary,
+  createSpeechWorker,
+  speechWorkerEnvironment,
+  defaultSpeechWorker,
+};

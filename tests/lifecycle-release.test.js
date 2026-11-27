@@ -30,8 +30,13 @@ test('sleep, lock, shutdown, and quit stop capture without silently restarting o
 test('capture transitions and active New Session replacement share one serialized queue', () => {
   assert.match(main, /captureTransition = captureTransition\.then\(reconcileCaptureState/);
   assert.match(main, /function startNewSession[\s\S]*captureTransition = captureTransition\.then\(operation, operation\)/);
-  assert.match(main, /if \(state\.capturing\) await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
-  assert.match(main, /if \(restartTranscription && state\.capturing && desiredCapturing\) startTranscriptionPipeline\(\)/);
+  assert.match(main, /if \(state\.capturing\) \{\s*await stopTranscriptionPipeline\(\{ immediate: true \}\);\s*\}/);
+  assert.match(main, /if \(restartTranscription && state\.capturing && desiredCapturing\) \{\s*await startTranscriptionPipeline\(\);\s*\}/);
+});
+
+test('capture, retry, New Session, and transcript clear all await pipeline startup', () => {
+  assert.equal((main.match(/await startTranscriptionPipeline\(\);/g) || []).length, 4);
+  assert.doesNotMatch(main, /^\s+startTranscriptionPipeline\(\);/m, 'no lifecycle boundary may fire-and-forget pipeline startup');
 });
 
 test('permission recovery exposes an explicit user-triggered relaunch action', () => {

@@ -83,6 +83,15 @@ test('the drain gap helper sanitises channels, counts, timestamps, and duration'
   assert.equal(clamped.durationMs, 10 * 60 * 1000, 'duration stays bounded');
 });
 
+test('batch flush owns detached audio and ignores stale session completions', () => {
+  const start = main.indexOf('async function flushChannel(');
+  const block = main.slice(start, main.indexOf('async function drainBatchBuffers()', start));
+  assert.match(block, /const chunks = buffers\[channel\];\s*buffers\[channel\] = \[\];/);
+  assert.match(block, /const pendingRetry = retryQueues\[channel\];\s*retryQueues\[channel\] = \[\];/);
+  assert.match(block, /if \(generation !== sessionGeneration \|\| epoch !== transcriptEpoch\) return;/);
+  assert.match(block, /if \(flushPromises\[channel\] === entry\) flushPromises\[channel\] = null;/);
+});
+
 test('the audio chunk duration matches the capture worklet', () => {
   const match = /this\.chunkSize = (\d+);/.exec(audioWorklet);
   assert.ok(match, 'the worklet declares its frame size');
@@ -98,8 +107,8 @@ test('the drain emits the gap next to the existing status line', () => {
   assert.match(block, /buildDrainGap\(\{ abandoned: outcome\.abandoned, droppedChunks \}\)/);
   assert.match(block, /send\('transcript:gap', gap\)/);
   assert.match(block, /Some speech captured just before the stop could not be transcribed/);
-  // buffers and retryQueues can hold the same chunks after a failed flush, so the
-  // duration estimate must not count that audio twice.
+  // A failed flush leaves its detached attempt in retryQueues; count the
+  // larger queue so abandoned audio is not counted twice.
   assert.match(block, /Math\.max\(buffers\[channel\]\.length, retryQueues\[channel\]\.length\)/);
 });
 

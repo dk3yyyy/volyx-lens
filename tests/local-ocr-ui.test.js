@@ -18,9 +18,10 @@ const ci = fs.readFileSync(path.join(root, '.github', 'workflows', 'ci.yml'), 'u
 
 test('macOS Vision helper is compiled, packaged, signed as a nested binary, and self-tested in CI', () => {
   assert.equal(packageJson.build.beforePack, 'scripts/before-pack.js');
-  assert.deepEqual(packageJson.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr', 'volyx-lens-system-audio', 'whisper-server', 'whisper-server.exe', 'whisper.dll', 'ggml*.dll', 'libwhisper.so*', 'libggml*.so*'] }]);
+  assert.deepEqual(packageJson.build.extraResources, [{ from: 'native-bin', to: 'native', filter: ['volyx-lens-vision-ocr', 'volyx-lens-system-audio', 'volyx-speech-worker', 'volyx-speech-worker.exe', 'whisper-server', 'whisper-server.exe', 'whisper.dll', 'ggml*.dll', 'libwhisper.so*', 'libggml*.so*'] }]);
   assert.ok(packageJson.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-vision-ocr'));
   assert.ok(packageJson.build.mac.binaries.includes('Contents/Resources/native/volyx-lens-system-audio'));
+  assert.ok(packageJson.build.mac.binaries.includes('Contents/Resources/native/volyx-speech-worker'));
   assert.match(packageJson.scripts['verify:vision-ocr-package'], /verify-vision-ocr-package/);
   assert.match(packageJson.scripts['release:mac'], /verify-vision-ocr-package/);
   assert.match(build, /xcrun/);

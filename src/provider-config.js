@@ -194,9 +194,11 @@ function getDefaultSettings() {
       geminiFallbackModel: STT_MODELS.geminiFallback,
       offlineEnabled: false,
       offlineCloudFallback: false,
+      speechBackend: 'auto',
       language: '',
       delay: 'low',
       whisperModel: 'base.en',
+      localModelId: '',
       historyEnabled: true,
       // Days to keep saved meetings. 0 keeps everything up to the store cap.
       historyRetentionDays: 0,

@@ -61,6 +61,53 @@ test('partial nested settings patches preserve omitted preferences', () => {
   assert.equal(updated.audio.maxSessionMinutes, 90);
 });
 
+test('local GGUF selection defaults to legacy Whisper and survives an atomic settings reload', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  assert.equal(store.getSettings().transcription.localModelId, '');
+
+  const updated = store.setSettings({ transcription: { localModelId: 'qwen3-asr-0.6b' } });
+  assert.equal(updated.transcription.localModelId, 'qwen3-asr-0.6b');
+
+  const reloaded = loadStore(userData).getSettings();
+  assert.equal(reloaded.transcription.localModelId, 'qwen3-asr-0.6b');
+});
+
+test('local GGUF selection rejects unknown and legacy-runtime ids without overwriting a valid choice', () => {
+  const store = loadStore(temporaryUserData());
+  store.setSettings({ transcription: { localModelId: 'parakeet-unified-en' } });
+
+  store.setSettings({ transcription: { localModelId: 'not-a-real-model' } });
+  assert.equal(store.getSettings().transcription.localModelId, 'parakeet-unified-en');
+
+  store.setSettings({ transcription: { localModelId: 'base.en' } });
+  assert.equal(store.getSettings().transcription.localModelId, 'parakeet-unified-en');
+
+  store.setSettings({ transcription: { localModelId: '' } });
+  assert.equal(store.getSettings().transcription.localModelId, '');
+});
+
+test('local speech backend preference persists and rejects unknown values', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  assert.equal(store.getSettings().transcription.speechBackend, 'auto');
+  assert.equal(store.setSettings({ transcription: { speechBackend: 'cpu' } }).transcription.speechBackend, 'cpu');
+  assert.equal(loadStore(userData).getSettings().transcription.speechBackend, 'cpu');
+  store.setSettings({ transcription: { speechBackend: 'quantum' } });
+  assert.equal(store.getSettings().transcription.speechBackend, 'cpu');
+  assert.equal(store.setSettings({ transcription: { speechBackend: 'gpu' } }).transcription.speechBackend, 'gpu');
+});
+
+test('hand-edited local model and backend values are normalized on load', () => {
+  const userData = temporaryUserData();
+  fs.writeFileSync(path.join(userData, 'volyx-lens-data.json'), JSON.stringify({
+    transcription: { localModelId: 'not-a-real-model', speechBackend: 'quantum' },
+  }));
+  const transcription = loadStore(userData).getSettings().transcription;
+  assert.equal(transcription.localModelId, '');
+  assert.equal(transcription.speechBackend, 'auto');
+});
+
 test('Deepgram realtime provider, model, and credential survive the atomic Settings save', () => {
   const userData = temporaryUserData();
   // Keys only persist when secure storage works; without it they are session-only

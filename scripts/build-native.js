@@ -1,10 +1,13 @@
 const { buildVisionOcr } = require('./build-vision-ocr');
+const { buildSpeechWorker } = require('./build-speech-worker');
 
-buildVisionOcr({
+const context = {
   appDir: require('node:path').resolve(__dirname, '..'),
   electronPlatformName: process.platform,
   arch: process.arch,
-}).catch((error) => {
+};
+
+Promise.all([buildVisionOcr(context), buildSpeechWorker(context)]).catch((error) => {
   console.error(error && error.message ? error.message : 'Could not build native helpers.');
   process.exitCode = 1;
 });

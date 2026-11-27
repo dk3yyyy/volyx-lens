@@ -1,0 +1,19 @@
+[package]
+name = "volyx-speech-worker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+base64 = "0.22"
+hound = "3.5.1"
+serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+transcribe-cpp = { git = "https://github.com/anomalyco/transcribe.cpp", rev = "60bed89dab84f7c1fddc3a17ad7fa8a27ddfba19", default-features = false, features = ["metal"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+transcribe-cpp = { git = "https://github.com/anomalyco/transcribe.cpp", rev = "60bed89dab84f7c1fddc3a17ad7fa8a27ddfba19", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+transcribe-cpp = { git = "https://github.com/anomalyco/transcribe.cpp", rev = "60bed89dab84f7c1fddc3a17ad7fa8a27ddfba19", default-features = false }

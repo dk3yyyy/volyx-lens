@@ -11,7 +11,16 @@ if (identityMigration.migrated.length) console.log(`[identity] migrated ${identi
 const store = require('./src/store');
 const { normalizeAccentTheme } = require('./src/appearance-themes');
 const { captureScreenshot, MAX_LONG_EDGE_PX, REQUEST_JPEG_QUALITY } = require('./src/screen');
-const { createSTT, resetSidecar } = require('./src/stt');
+const { createSTT, resetSidecar, resolveTranscriptionMode } = require('./src/stt');
+const {
+  getModel: getSpeechModel,
+  listModels: listSpeechModelDefinitions,
+  isInstalled: isSpeechModelInstalled,
+  prepareModel: prepareSpeechModel,
+  removeModel: removeSpeechModel,
+} = require('./src/speech-model-registry');
+const { resolveSpeechWorkerBinary, defaultSpeechWorker } = require('./src/speech-worker');
+const { createSpeechOperationGate } = require('./src/speech-operation-gate');
 const { cancelOfflineTranscriptions } = require('./src/offline-stt');
 const { MODES, formatTranscript: formatPromptTranscript } = require('./src/prompts');
 const { createResponseRoute, chooseInitialProvider, streamWithFallback, classifyProviderError } = require('./src/response-router');
@@ -80,6 +89,8 @@ const {
 const { buildRulesBlock } = require('./src/ai-rules');
 
 const chatHistory = createChatHistory();
+const speechModelDownloads = new Map();
+const speechOperationGate = createSpeechOperationGate();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
 // The overlay has one fixed expanded size. There is no resize affordance and no
 // remembered size: docking owns the window geometry.
@@ -270,6 +281,11 @@ const transcriptionDiagnostics = {
 function send(channel, data) {
   if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) win.webContents.send(channel, data);
 }
+
+defaultSpeechWorker.events.on('runtime-error', (error) => {
+  console.error('[speech-worker] runtime maintenance failed', String(error && error.message || 'unknown').slice(0, 240));
+  send('status', { message: 'A local speech model could not be unloaded after inactivity. Use Unload in Listening settings to release it.' });
+});
 
 let previousUpdateState = null;
 // The Set is the fast path for this launch; the settings store is the durable
@@ -1402,28 +1418,32 @@ const retryQueues = { you: [], them: [] };
 const MAX_RETRY_CHUNKS = MAX_BATCH_CHUNKS;
 
 async function flushChannel(channel, { drain = false } = {}) {
-  if (flushPromises[channel]) return flushPromises[channel];
+  const generation = sessionGeneration;
+  const epoch = transcriptEpoch;
+  const active = flushPromises[channel];
+  if (active && active.generation === generation && active.epoch === epoch) return active.task;
   const task = (async () => {
-    const generation = sessionGeneration;
-    const epoch = transcriptEpoch;
     if (sttDisabled) { buffers[channel] = []; retryQueues[channel] = []; return; }
     // Transient backoff: postpone transcription and keep the buffered speech instead
     // of discarding it. A final drain on stop still flushes best-effort so nothing
     // captured up to that point is lost. Buffering stays bounded by MAX_BATCH_CHUNKS.
     if (!drain && sttBackoffUntil && Date.now() < sttBackoffUntil) return;
+    // Detach the audio this attempt owns. New PCM can arrive while the provider is
+    // running without being erased when this older attempt succeeds.
     const chunks = buffers[channel];
-    if (!chunks.length && !retryQueues[channel].length) return;
-    // Prepend any preserved retry chunks so older audio is not lost on error.
+    buffers[channel] = [];
     const pendingRetry = retryQueues[channel];
+    retryQueues[channel] = [];
+    if (!chunks.length && !pendingRetry.length) return;
+    // Prepend any preserved retry chunks so older audio is not lost on error.
     let allChunks = pendingRetry.length ? [...pendingRetry, ...chunks] : chunks;
     // Trim allChunks itself to stay bounded BEFORE using it for both retryQueues and Buffer.concat.
     if (allChunks.length > MAX_RETRY_CHUNKS) allChunks = allChunks.slice(-MAX_RETRY_CHUNKS);
-    // Do NOT clear buffers[channel] yet — only clear after successful transcription.
-    // retryQueues holds preserved audio if the current attempt fails.
+    // retryQueues holds this attempt's audio if it fails; it never owns newer PCM.
     retryQueues[channel] = allChunks;
     const pcm = Buffer.concat(allChunks);
     if (pcm.length < MIN_BYTES) { retryQueues[channel] = allChunks; return; }
-    if (rms16(pcm) < RMS_GATE) { retryQueues[channel] = allChunks; return; } // silence gate
+    if (rms16(pcm) < RMS_GATE) { retryQueues[channel] = []; return; } // silence gate
 
     state.transcribing[channel] = true;
     try {
@@ -1444,27 +1464,30 @@ async function flushChannel(channel, { drain = false } = {}) {
         return;
       }
       const res = await stt.transcribe(pcm);
+      if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
       if (res.error) {
         if (res.error.code === 'offline_cancelled') return;
         handleSttError(res.error);
         // Keep retryQueues populated — chunks are preserved for the next flush.
         return;
       }
-      // Success: now it is safe to clear the buffer and retry queue.
-      buffers[channel] = [];
-      retryQueues[channel] = [];
+      // Success: clear only the retry audio this attempt owned. New PCM remains in
+      // the detached buffers array and survives for the next flush.
+      if (retryQueues[channel] === allChunks) retryQueues[channel] = [];
       if (sttFailures || sttBackoffUntil) { sttFailures = 0; sttBackoffUntil = 0; } // recovered
       if (res.text && res.text.trim()) recordTranscript({ channel, text: res.text }, generation, epoch);
     } catch (e) {
+      if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
       console.log('[stt] unexpected error', String(e && e.code || 'unknown').slice(0, 80));
       // Keep retryQueues populated for retry.
     } finally {
-      state.transcribing[channel] = false;
+      if (generation === sessionGeneration && epoch === transcriptEpoch) state.transcribing[channel] = false;
     }
   })();
-  flushPromises[channel] = task;
+  const entry = { task, generation, epoch };
+  flushPromises[channel] = entry;
   try { return await task; }
-  finally { if (flushPromises[channel] === task) flushPromises[channel] = null; }
+  finally { if (flushPromises[channel] === entry) flushPromises[channel] = null; }
 }
 
 async function drainBatchBuffers() {
@@ -1480,8 +1503,8 @@ async function drainBatchBuffers() {
   let dropped = 0;
   const droppedChunks = {};
   for (const channel of outcome.abandoned) {
-    // A failed flush leaves retryQueues holding the same chunks that are still in
-    // buffers, so count the larger of the two instead of counting that audio twice.
+    // A failed flush leaves its detached attempt in retryQueues; count the
+    // larger queue so abandoned audio is not counted twice.
     const chunks = Math.max(buffers[channel].length, retryQueues[channel].length);
     droppedChunks[channel] = chunks;
     dropped += chunks;
@@ -1552,12 +1575,13 @@ function activateBatchTranscription(reason) {
   if (reason) send('status', { message: `Realtime transcription unavailable (${reason}). Using batch transcription for this listening session.` });
 }
 
-function startTranscriptionPipeline() {
+async function startTranscriptionPipeline() {
   stopFlushLoop();
   const previous = realtimeManager;
   realtimeManager = null;
   if (previous) previous.stop();
   buffers.you = []; buffers.them = [];
+  retryQueues.you = []; retryQueues.them = [];
   const settings = store.getSettings();
   const transcription = settings.transcription || {};
   const audio = settings.audio || {};
@@ -1565,6 +1589,22 @@ function startTranscriptionPipeline() {
   const enabledChannels = [audio.micEnabled !== false ? 'you' : null, audio.systemEnabled !== false ? 'them' : null].filter(Boolean);
   const generation = sessionGeneration;
   const epoch = transcriptEpoch;
+
+  const localModelId = transcription.localModelId || transcription.whisperModel || '';
+  const localModel = getSpeechModel(localModelId);
+  const transcriptionRoute = resolveTranscriptionMode(settings, {});
+  if (transcriptionRoute === 'batch') {
+    transcriptionMode = 'batch';
+    startFlushLoop();
+    updateTranscriptionDiagnostics({ status: 'active' });
+    send('transcription:state', {
+      mode: 'batch',
+      status: 'active',
+      provider: localModel && localModel.runtime === 'transcribe-cpp' ? 'local-gguf' : 'local-whisper',
+      ...(localModel ? { modelId: localModel.id } : {}),
+    });
+    return;
+  }
 
   if (transcription.mode === 'realtime' && realtime.ready) {
     transcriptionMode = 'realtime';
@@ -1645,12 +1685,22 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   realtimeManager = null;
 
   if (immediate) {
+    // Invalidate deferred batch work before awaiting native teardown. The visible
+    // transcript stays intact; only results from the stopped epoch are rejected.
+    transcriptEpoch += 1;
     micEchoCoordinator.clear();
     acousticEchoFilter.reset();
-    if (manager) manager.stop();
-    for (const draining of drainingRealtimeManagers) draining.stop();
+    if (manager) await Promise.allSettled([manager.stop()]);
+    try { await defaultSpeechWorker.stop(); } catch (error) {
+      console.warn('[speech-worker] immediate stop failed', String(error && error.code || 'unknown').slice(0, 80));
+    }
+    await Promise.allSettled([...drainingRealtimeManagers].map((draining) => draining.stop()));
     drainingRealtimeManagers.clear();
     buffers.you = []; buffers.them = [];
+    retryQueues.you = []; retryQueues.them = [];
+    flushPromises.you = null; flushPromises.them = null;
+    state.transcribing.you = false;
+    state.transcribing.them = false;
     transcriptionMode = 'idle';
     updateTranscriptionDiagnostics({ status: 'stopped' });
     send('transcription:state', { mode: 'idle', status: 'stopped' });
@@ -1666,6 +1716,7 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     await drainBatchBuffers();
   }
   buffers.you = []; buffers.them = [];
+  retryQueues.you = []; retryQueues.them = [];
   transcriptionMode = 'idle';
   updateTranscriptionDiagnostics({ status: 'stopped' });
   send('transcription:state', { mode: 'idle', status: 'stopped' });
@@ -1882,6 +1933,8 @@ function restoreMeetingRecovery() {
 async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
   if (active) {
+    await speechOperationGate.whenIdle();
+    if (!desiredCapturing) return false;
     const audio = store.getSettings().audio || {};
     micEchoCoordinator.clear();
     acousticEchoFilter.reset();
@@ -1917,7 +1970,7 @@ async function applyCaptureState(active) {
     transcriptionDiagnostics.lastStatusAt = Date.now();
     transcriptionDiagnostics.crossTalkSuppressed = 0;
     scheduleCaptureTimers();
-    startTranscriptionPipeline();
+    await startTranscriptionPipeline();
     send('capture:state', { active: true });
     return true;
   }
@@ -2028,6 +2081,11 @@ async function shutdownAll() {
     clearTaskContext();
     resetTranscriptData();
     resetSidecar();
+    try {
+      await defaultSpeechWorker.stop();
+    } catch (error) {
+      console.error('[speech-worker] shutdown failed', String(error && error.message || 'unknown').slice(0, 240));
+    }
     globalShortcut.unregisterAll();
     send('capture:state', { active: false });
   })();
@@ -2057,7 +2115,9 @@ function startNewSession() {
     resetSttErrorState();
     resetSidecar();
     const restartTranscription = state.capturing && desiredCapturing;
-    if (state.capturing) await stopTranscriptionPipeline({ immediate: true });
+    if (state.capturing) {
+      await stopTranscriptionPipeline({ immediate: true });
+    }
     finalizeMeeting('new-session');
     meetingRecovery.resume();
     pendingRestoredStartedAt = null;
@@ -2066,9 +2126,12 @@ function startNewSession() {
     chatHistory.clear();
     clearTaskContext();
     buffers.you = []; buffers.them = [];
+    retryQueues.you = []; retryQueues.them = [];
     state.transcribing.you = false;
     state.transcribing.them = false;
-    if (restartTranscription && state.capturing && desiredCapturing) startTranscriptionPipeline();
+    if (restartTranscription && state.capturing && desiredCapturing) {
+      await startTranscriptionPipeline();
+    }
     send('session:cleared', { capturing: state.capturing, generation: sessionGeneration });
     send('status', { message: state.capturing ? 'New session started. Listening continues with fresh context.' : 'New session started. Previous conversation context was cleared.' });
     return { capturing: state.capturing, generation: sessionGeneration };
@@ -2780,7 +2843,7 @@ async function retryTranscription() {
   resetSttErrorState();
   await stopTranscriptionPipeline({ immediate: true });
   if (!state.capturing) return { ok: false, message: 'Listening stopped before Realtime could restart.' };
-  startTranscriptionPipeline();
+  await startTranscriptionPipeline();
   send('status', { message: 'Realtime transcription connection restarted.' });
   return { ok: true };
 }
@@ -2822,6 +2885,40 @@ function offlineWhisperStatus() {
   }
 }
 
+function localSpeechRuntimeStatus() {
+  const whisper = offlineWhisperStatus();
+  const gguf = resolveSpeechWorkerBinary();
+  return {
+    available: whisper.available === true || gguf.available === true,
+    whisper,
+    gguf,
+  };
+}
+
+function speechModelsWithStatus() {
+  const runtime = localSpeechRuntimeStatus();
+  return listSpeechModelDefinitions().map((model) => {
+    const runtimeAvailable = model.runtime === 'transcribe-cpp'
+      ? runtime.gguf.available
+      : runtime.whisper.available;
+    return {
+      ...model,
+      runtimeAvailable,
+      installed: isSpeechModelInstalled(model.id),
+      loaded: defaultSpeechWorker.loadedModelId === model.id,
+      warmed: defaultSpeechWorker.warmedModelId === model.id,
+      backend: defaultSpeechWorker.loadedModelId === model.id ? defaultSpeechWorker.activeBackend : '',
+      backendFallback: defaultSpeechWorker.loadedModelId === model.id ? defaultSpeechWorker.activeBackendFallback : false,
+    };
+  });
+}
+
+function isLocalSpeechInferenceActive() {
+  return state.capturing
+    || desiredCapturing
+    || speechOperationGate.isBusy();
+}
+
 // -------- IPC --------
 function assertTrustedIpc(event) {
   if (!event) throw new Error('Untrusted IPC sender.');
@@ -2853,10 +2950,16 @@ function onTrusted(channel, handler) {
   });
 }
 
-handleTrusted('settings:get', () => ({ ...store.getPublicSettings(), offlineWhisper: offlineWhisperStatus() }));
+handleTrusted('settings:get', () => ({
+  ...store.getPublicSettings(),
+  offlineWhisper: offlineWhisperStatus(),
+  localSpeech: localSpeechRuntimeStatus(),
+  speechModels: speechModelsWithStatus(),
+}));
 handleTrusted('settings:set', (_e, patch = {}) => {
   const offlineWhisper = offlineWhisperStatus();
-  if (offlineWhisper.available !== true && patch && patch.transcription && patch.transcription.offlineEnabled === true) {
+  const localSpeech = localSpeechRuntimeStatus();
+  if (localSpeech.available !== true && patch && patch.transcription && patch.transcription.offlineEnabled === true) {
     patch = { ...patch, transcription: { ...patch.transcription, offlineEnabled: false } };
   }
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
@@ -2901,7 +3004,73 @@ handleTrusted('settings:set', (_e, patch = {}) => {
   }
   // The notification toggle is also the switch that arms background checking.
   updateScheduler.sync();
-  return { ...store.getPublicSettings(), offlineWhisper };
+  return { ...store.getPublicSettings(), offlineWhisper, localSpeech, speechModels: speechModelsWithStatus() };
+});
+handleTrusted('speech-models:get', () => speechModelsWithStatus());
+handleTrusted('speech-model:download', async (event, id) => {
+  const model = getSpeechModel(id);
+  if (!model || model.runtime !== 'transcribe-cpp') throw new Error('That local model is not in the supported download catalog.');
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing local speech models.');
+  const runtime = localSpeechRuntimeStatus();
+  if (!runtime.gguf.available) throw new Error(runtime.gguf.reason);
+  return speechOperationGate.run('download', async () => {
+    if (speechModelDownloads.has(model.id)) {
+      const error = new Error(`${model.name} is already downloading.`);
+      error.code = 'speech_model_download_in_progress';
+      throw error;
+    }
+    const controller = new AbortController();
+    speechModelDownloads.set(model.id, controller);
+    try {
+      const result = await prepareSpeechModel(model.id, (progress) => {
+        if (event.sender.isDestroyed()) return;
+        try {
+          event.sender.send('speech:model-progress', { id: model.id, progress });
+        } catch (error) {
+          console.warn('[speech-model] progress notification failed', String(error && error.message || 'unknown').slice(0, 160));
+        }
+      }, { signal: controller.signal });
+      return { ...result, models: speechModelsWithStatus() };
+    } finally {
+      if (speechModelDownloads.get(model.id) === controller) speechModelDownloads.delete(model.id);
+    }
+  });
+});
+handleTrusted('speech-model:cancel-download', (_event, id) => {
+  const modelId = String(id || '');
+  const controller = speechModelDownloads.get(modelId);
+  if (!controller) return { canceled: false };
+  controller.abort();
+  return { canceled: true };
+});
+handleTrusted('speech-model:remove', async (_event, id) => {
+  const model = getSpeechModel(id);
+  if (!model || model.runtime !== 'transcribe-cpp') throw new Error('That local model is not in the supported download catalog.');
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing local speech models.');
+  return speechOperationGate.run('remove', async () => {
+    if (speechModelDownloads.has(model.id)) throw new Error('Cancel the active model download before removing it.');
+    if (defaultSpeechWorker.loadedModelId === model.id) await defaultSpeechWorker.unloadModel(model.id);
+    const removed = await removeSpeechModel(model.id);
+    return { removed, models: speechModelsWithStatus() };
+  });
+});
+handleTrusted('speech-model:warm', async (_event, id) => {
+  const model = getSpeechModel(id);
+  if (!model || model.runtime !== 'transcribe-cpp') throw new Error('That local model cannot be warmed up.');
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing local speech models.');
+  return speechOperationGate.run('warm', async () => {
+    const result = await defaultSpeechWorker.warmModel(model.id, { backend: (store.getSettings().transcription || {}).speechBackend || 'auto' });
+    return { ...result, models: speechModelsWithStatus() };
+  });
+});
+handleTrusted('speech-model:unload', async (_event, id) => {
+  const model = getSpeechModel(id);
+  if (!model || model.runtime !== 'transcribe-cpp') throw new Error('That local model cannot be unloaded.');
+  if (isLocalSpeechInferenceActive()) throw new Error('Stop Listening before managing local speech models.');
+  return speechOperationGate.run('unload', async () => {
+    const result = await defaultSpeechWorker.unloadModel(model.id);
+    return { ...result, models: speechModelsWithStatus() };
+  });
 });
 handleTrusted('credentials:clear', (_e, provider) => {
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
@@ -2989,7 +3158,7 @@ handleTrusted('transcript:copy-turn', (_event, id) => {
   clipboard.writeText(text);
   return { copied: true, id: turn.id, characters: text.length };
 });
-handleTrusted('transcript:clear', () => {
+handleTrusted('transcript:clear', async () => {
   // The renderer owns the busy state, so it must hear that the run ended. A
   // silent invalidation left the composer disabled with an orphaned answer.
   cancelActiveFeature('transcript-clear', { notify: true, invalidate: true });
@@ -3005,7 +3174,11 @@ handleTrusted('transcript:clear', () => {
   meetingRecovery.clearBestEffort();
   pendingRestoredStartedAt = null;
   buffers.you = []; buffers.them = [];
-  if (state.capturing) startTranscriptionPipeline();
+  retryQueues.you = []; retryQueues.them = [];
+  if (state.capturing) {
+    await stopTranscriptionPipeline({ immediate: true });
+    await startTranscriptionPipeline();
+  }
   send('transcript:cleared', {});
   return { cleared };
 });

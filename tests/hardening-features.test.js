@@ -33,7 +33,7 @@ test('UI exposes per-channel audio health, meters, latency, duration, retry, and
   assert.match(renderer, /enumerateDevices\(\)/);
   assert.match(renderer, /volyxLens\.retryRealtime\(\)/);
   assert.match(main, /handleTrusted\('transcription:retry'/);
-  assert.match(main, /async function retryTranscription\(\)[\s\S]*await stopTranscriptionPipeline\(\{ immediate: true \}\)[\s\S]*startTranscriptionPipeline\(\)/);
+  assert.match(main, /async function retryTranscription\(\)[\s\S]*await stopTranscriptionPipeline\(\{ immediate: true \}\)[\s\S]*await startTranscriptionPipeline\(\)/);
   assert.match(main, /powerMonitor\.on\('suspend'/);
 });
 
