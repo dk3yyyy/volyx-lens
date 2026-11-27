@@ -23,6 +23,9 @@
   // a working loopback would carry as speech.
   const DEFAULT_SOUND_FLOOR = 16;
   const DEFAULT_SILENCE_MS = 15000;
+  // A muted or idle call can look exactly like a dead source, so silence only
+  // triggers notice; the source is restarted only if it never comes back.
+  const DEFAULT_RESTART_AFTER_MS = 60000;
   const DEFAULT_RETRY_COOLDOWN_MS = 30000;
 
   function positiveNumber(value, fallback) {
@@ -32,6 +35,7 @@
 
   function createThemSilenceWatchdog({
     silenceMs = DEFAULT_SILENCE_MS,
+    restartAfterMs = DEFAULT_RESTART_AFTER_MS,
     retryCooldownMs = DEFAULT_RETRY_COOLDOWN_MS,
     soundFloor = DEFAULT_SOUND_FLOOR,
     now = () => Date.now(),
@@ -39,6 +43,7 @@
     restart = null,
   } = {}) {
     const silenceThreshold = positiveNumber(silenceMs, DEFAULT_SILENCE_MS);
+    const restartThreshold = positiveNumber(restartAfterMs, DEFAULT_RESTART_AFTER_MS);
     const cooldown = positiveNumber(retryCooldownMs, DEFAULT_RETRY_COOLDOWN_MS);
     const floor = positiveNumber(soundFloor, DEFAULT_SOUND_FLOOR);
 
@@ -101,7 +106,7 @@
           // A listener that throws must not break the PCM path.
         }
       }
-      attemptRestart(at);
+      if (restartThreshold > 0 && at - silentSince >= restartThreshold) attemptRestart(at);
     }
 
     // feed(rms) is called once per Them PCM buffer with its RMS in Int16-ish
@@ -153,5 +158,5 @@
     return { arm, disarm, reset, feed, tick, status };
   }
 
-  return { createThemSilenceWatchdog, DEFAULT_SOUND_FLOOR, DEFAULT_SILENCE_MS, DEFAULT_RETRY_COOLDOWN_MS };
+  return { createThemSilenceWatchdog, DEFAULT_SOUND_FLOOR, DEFAULT_SILENCE_MS, DEFAULT_RESTART_AFTER_MS, DEFAULT_RETRY_COOLDOWN_MS };
 });

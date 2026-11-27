@@ -57,6 +57,7 @@ function createLinuxMonitorCapture({
   let startPromise = null;
   let intentionalStop = false;
   let ready = false;
+  let killTimer = null;
 
   function availability() {
     if (platform !== 'linux') return { available: false, reason: 'unsupported_platform' };
@@ -102,6 +103,9 @@ function createLinuxMonitorCapture({
 
   async function start() {
     if (ready && child) return { ok: true };
+    // A child from a stop that has not exited yet still owns the device;
+    // spawning another would give two parec processes and one silent channel.
+    if (child) return { ok: false, reason: 'stopping' };
     if (startPromise) return startPromise;
     if (platform !== 'linux') return { ok: false, reason: 'unsupported_platform' };
     const myGeneration = ++generation;
@@ -161,6 +165,7 @@ function createLinuxMonitorCapture({
         terminalReported = true;
         ready = false;
         if (child === processHandle) child = null;
+        if (killTimer) { clearTimeout(killTimer); killTimer = null; }
         onState({ state, reason });
         onUnexpectedExit({ code });
       };
@@ -193,6 +198,7 @@ function createLinuxMonitorCapture({
           if (terminalReported) return;
           terminalReported = true;
           ready = false;
+          if (killTimer) { clearTimeout(killTimer); killTimer = null; }
           if (child === processHandle) child = null;
           onState({ state: 'stopped' });
           return;
@@ -212,7 +218,16 @@ function createLinuxMonitorCapture({
     generation += 1;
     intentionalStop = true;
     if (child) {
+      // Everything downstream keys on `ready`; flipping it here stops the
+      // stale child from being treated as a healthy source during shutdown.
+      ready = false;
       try { child.kill('SIGTERM'); } catch {}
+      if (killTimer) clearTimeout(killTimer);
+      killTimer = setTimeout(() => {
+        killTimer = null;
+        try { child.kill('SIGKILL'); } catch {}
+      }, 2000);
+      if (killTimer.unref) killTimer.unref();
     } else if (immediate) {
       ready = false;
       onState({ state: 'stopped' });

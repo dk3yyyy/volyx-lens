@@ -55,6 +55,11 @@ test('a zero-buffer episode after real audio sends one notice and one bounded re
   harness.advance(200);
   harness.watchdog.feed(0);
   assert.equal(harness.notices.length, 1, 'exactly one notice per episode');
+  assert.equal(harness.restarts.length, 0, 'a mute is not restarted on the notice alone');
+
+  // Only a source that never comes back is restarted, once.
+  harness.advance(45000);
+  harness.watchdog.feed(0);
   assert.equal(harness.restarts.length, 1, 'exactly one restart attempt per episode');
 
   // A source that keeps delivering zeros must not loop the notice or retry.
@@ -113,7 +118,7 @@ test('stop clears the episode, and the next session must carry sound again', () 
   const harness = createHarness();
   harness.watchdog.arm(true);
   harness.watchdog.feed(900);
-  feedSilence(harness, 15100);
+  feedSilence(harness, 60200);
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.restarts.length, 1);
 
@@ -129,6 +134,7 @@ test('stop clears the episode, and the next session must carry sound again', () 
   feedSilence(harness, 60000);
   assert.equal(harness.notices.length, 1, 'a fresh session starts without carried sound');
   harness.watchdog.feed(900);
+  harness.advance(100);
   feedSilence(harness, 15100);
   assert.equal(harness.notices.length, 2);
 });
@@ -137,7 +143,7 @@ test('session change and source restart reset the episode without resetting the 
   const harness = createHarness();
   harness.watchdog.arm(true);
   harness.watchdog.feed(900);
-  feedSilence(harness, 15100);
+  feedSilence(harness, 60200);
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.restarts.length, 1);
 
@@ -147,32 +153,22 @@ test('session change and source restart reset the episode without resetting the 
   assert.equal(harness.notices.length, 1, 'reset forgets the carried sound from the old episode');
 
   harness.watchdog.feed(900);
-  feedSilence(harness, 15100);
+  feedSilence(harness, 60200);
   assert.equal(harness.notices.length, 2);
-  assert.equal(harness.restarts.length, 2, 'the new episode may retry once the 30 s cooldown has passed');
+  assert.equal(harness.restarts.length, 2, 'a later episode may retry');
 });
 
-test('a second silent episode inside 30 s notifies but does not retry', () => {
+test('a mute that recovers is never restarted', () => {
   const harness = createHarness();
   harness.watchdog.arm(true);
   harness.watchdog.feed(900);
-  feedSilence(harness, 15100); // first restart at t=15100
+  feedSilence(harness, 30000); // a muted call: notice, but no reconnect yet
   assert.equal(harness.notices.length, 1);
-  assert.equal(harness.restarts.length, 1);
+  assert.equal(harness.restarts.length, 0, 'a 30 s mute is ordinary call behaviour');
 
-  harness.advance(100);
-  harness.watchdog.feed(900); // sound returns: new episode
-  harness.watchdog.feed(0);
-  feedSilence(harness, 15100); // second notice at ~t=30400, 15.3 s after the restart
-  assert.equal(harness.notices.length, 2);
-  assert.equal(harness.restarts.length, 1, 'the 30 s cooldown bounds retries');
-
-  harness.advance(100);
-  harness.watchdog.feed(900);
-  harness.watchdog.feed(0);
-  feedSilence(harness, 15100); // third notice past the cooldown
-  assert.equal(harness.notices.length, 3);
-  assert.equal(harness.restarts.length, 2);
+  harness.watchdog.feed(900); // the remote speaks again
+  feedSilence(harness, 60000);
+  assert.equal(harness.restarts.length, 0, 'a healthy source that recovered is left alone');
 });
 
 test('main feeds and resets the watchdog around the capture lifecycle', () => {
@@ -183,7 +179,9 @@ test('main feeds and resets the watchdog around the capture lifecycle', () => {
   assert.match(main, /async function restartThemAudioSource\(\)[\s\S]*?themSilenceWatchdog\.reset\(\)[\s\S]*?systemAudioCapture\.stop\(\{ immediate: true \}\)[\s\S]*?systemAudioCapture\.start\(\)/);
   // Linux stop() resolves before the child exits; the restart must wait for the
   // stopped state instead of racing start() against a held child.
-  assert.match(main, /linuxMonitorCapture\.stop\(\{ immediate: true \}\);\s*\n\s*await stopped;\s*\n\s*result = await linuxMonitorCapture\.start\(\)/);
+  assert.ok(main.includes('if (!(await stopped))'), 'a stop timeout is not treated as a clean stop');
+  assert.ok(main.includes('stillWanted()'), 'a restart re-checks capture state after awaiting');
+  assert.ok(main.includes('result = await linuxMonitorCapture.start()'));
   assert.match(main, /sourceState === 'stopped' \|\| sourceState === 'failed'\) resolveLinuxSourceStopWaiters\(\)/);
   assert.match(main, /audio\.systemEnabled === false\) return null/);
   assert.match(main, /System audio stopped; reconnecting/);

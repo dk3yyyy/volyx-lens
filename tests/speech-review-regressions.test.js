@@ -253,7 +253,12 @@ globalThis.stopRefresh = stopLocalSpeechLeaseRefresh;`, context);
   };
   context.localSpeechStreamManager = manager;
   context.startRefresh(manager, 10);
-  await new Promise((resolve) => setTimeout(resolve, 45));
+  // A loaded CI runner can miss a fixed sleep, so wait for the condition
+  // instead of assuming two 10 ms ticks fit inside 45 ms.
+  const deadline = Date.now() + 1000;
+  while ((beats.you < 2 || beats.them < 2) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   assert.ok(beats.you >= 2, 'the microphone lease is refreshed without new PCM');
   assert.ok(beats.them >= 2, 'the system channel is refreshed too');
 

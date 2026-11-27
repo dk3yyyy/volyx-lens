@@ -283,20 +283,20 @@ const linuxMonitorCapture = createLinuxMonitorCapture({
 // state rather than racing it.
 const linuxSourceStopWaiters = new Set();
 function resolveLinuxSourceStopWaiters() {
-  for (const resolve of [...linuxSourceStopWaiters]) resolve();
+  for (const resolve of [...linuxSourceStopWaiters]) resolve(true);
   linuxSourceStopWaiters.clear();
 }
 function whenLinuxSourceStopped(timeoutMs = 3000) {
   return new Promise((resolve) => {
     let settled = false;
-    const done = () => {
+    const done = (stopped) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       linuxSourceStopWaiters.delete(done);
-      resolve();
+      resolve(stopped === true);
     };
-    const timer = setTimeout(done, timeoutMs);
+    const timer = setTimeout(() => done(false), timeoutMs);
     if (timer.unref) timer.unref();
     linuxSourceStopWaiters.add(done);
   });
@@ -312,13 +312,25 @@ async function restartThemAudioSource() {
   themSilenceWatchdog.reset();
   try {
     let result = null;
+    const restartEpoch = transcriptEpoch;
+    const stillWanted = () => state.capturing && desiredCapturing && transcriptEpoch === restartEpoch
+      && (store.getSettings().audio || {}).systemEnabled !== false;
     if (process.platform === 'darwin') {
       await systemAudioCapture.stop({ immediate: true });
+      // Stop can land while the helper is closing; a restart must not outlive it.
+      if (!stillWanted()) return null;
       result = await systemAudioCapture.start();
     } else if (process.platform === 'linux') {
       const stopped = whenLinuxSourceStopped();
       await linuxMonitorCapture.stop({ immediate: true });
-      await stopped;
+      // stop() only asks parec to exit. If it has not by the deadline, start()
+      // would return ok while the old child still owns the device, so report
+      // the failure instead of pretending audio came back.
+      if (!(await stopped)) {
+        send('status', { message: 'System audio is still shutting down. Stop and start Listening to reconnect.' });
+        return { ok: false, reason: 'source_stop_timeout' };
+      }
+      if (!stillWanted()) return null;
       result = await linuxMonitorCapture.start();
     } else {
       // Windows loopback audio is renderer-owned: getDisplayMedia is gated on
