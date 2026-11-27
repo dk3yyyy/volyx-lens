@@ -34,6 +34,13 @@ const PRIVATE_DIRECTORIES = new Set([
   '.password-store', '.volyx-lens', 'library', 'application support', 'appdata',
 ]);
 
+// Ancestor matching is narrower than the direct-name check: macOS projects can
+// legitimately live under ~/Library/Mobile Documents, but a dot-private folder
+// or an OS app-data folder anywhere above the root is still off limits.
+const PRIVATE_ANCESTOR_NAMES = new Set(
+  [...PRIVATE_DIRECTORIES].filter((name) => name.startsWith('.') || name === 'appdata' || name === 'application support'),
+);
+
 const EXCLUDED_DIRECTORIES = new Set([
   '.git', '.hg', '.svn', '.next', '.nuxt', '.cache', '.idea', '.terraform',
   '.venv', '.build', 'build', 'coverage', 'dist', 'node_modules', 'out', 'pods',
@@ -158,8 +165,24 @@ async function readBoundedFile(fileHandle, maxBytes) {
 }
 
 function isWithinRoot(root, candidate) {
-  const relative = path.relative(root, candidate);
+  const relative = path.relative(normalizePathForCompare(root), normalizePathForCompare(candidate));
   return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+// Windows temp and profile paths can come back as 8.3 short names from one call
+// and long names from another, and drive letters differ in case. Compare the
+// canonical native form, case-folded, so a walk never rejects its own root.
+function normalizePathForCompare(value) {
+  const resolved = path.resolve(value);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function canonicalPath(value) {
+  try {
+    return fs.realpathSync.native(value);
+  } catch {
+    return fs.realpathSync(value);
+  }
 }
 
 function createWorkspaceIndex({
@@ -177,7 +200,7 @@ function createWorkspaceIndex({
   const resolvedDatabasePath = path.resolve(databasePath);
 
   fs.mkdirSync(path.dirname(resolvedDatabasePath), { recursive: true, mode: 0o700 });
-  const protectedRoots = [fs.realpathSync(path.dirname(resolvedDatabasePath))];
+  const protectedRoots = [canonicalPath(path.dirname(resolvedDatabasePath))];
   const database = new DatabaseSync(resolvedDatabasePath);
   database.exec(`
     PRAGMA journal_mode = DELETE;
@@ -265,9 +288,40 @@ function createWorkspaceIndex({
     }));
   }
 
+  function hasPrivateAncestor(root) {
+    let current = path.resolve(root);
+    while (true) {
+      const parent = path.dirname(current);
+      if (parent === current) return false;
+      if (PRIVATE_ANCESTOR_NAMES.has(path.basename(parent).toLowerCase())) return true;
+      current = parent;
+    }
+  }
+
+  async function reconcileMissingRows(workspaceId, root) {
+    const rows = database.prepare('SELECT id, relative_path, size FROM workspace_files WHERE workspace_id = ?').all(workspaceId);
+    let freed = 0;
+    let removed = 0;
+    for (const row of rows) {
+      let exists = false;
+      try {
+        const stat = await fs.promises.lstat(path.join(root, row.relative_path));
+        exists = stat.isFile();
+      } catch (error) {
+        // Only a confirmed absence reclaims a row; an unreadable file stays.
+        exists = !(error && (error.code === 'ENOENT' || error.code === 'ENOTDIR'));
+      }
+      if (exists) continue;
+      deleteFile(workspaceId, row.id);
+      freed += Number(row.size) || 0;
+      removed += 1;
+    }
+    return { freed, removed };
+  }
+
   function add(rootPath) {
     if (typeof rootPath !== 'string' || !rootPath.trim()) throw new Error('Select a workspace folder first.');
-    const root = fs.realpathSync(rootPath);
+    const root = canonicalPath(rootPath);
     if (!fs.statSync(root).isDirectory()) throw new Error('The selected workspace is not a folder.');
     const rootName = path.basename(root).toLowerCase();
     const homeDirectory = path.resolve(os.homedir());
@@ -275,6 +329,7 @@ function createWorkspaceIndex({
       throw new Error('Choose a specific project folder, not your home folder or filesystem root.');
     }
     if (PRIVATE_DIRECTORIES.has(rootName)
+        || hasPrivateAncestor(root)
         || protectedRoots.some((protectedRoot) => isWithinRoot(protectedRoot, root))) {
       throw new Error('This folder contains private application or credential data and cannot be indexed.');
     }
@@ -338,8 +393,16 @@ function createWorkspaceIndex({
   async function refreshWorkspace(id) {
     const workspace = getWorkspace(id);
     database.prepare('UPDATE workspaces SET index_complete = 0 WHERE id = ?').run(workspace.id);
-    const root = fs.realpathSync(workspace.root_path);
-    if (root !== workspace.root_path || !fs.statSync(root).isDirectory()) throw new Error('The selected workspace folder is no longer available.');
+    const root = canonicalPath(workspace.root_path);
+    if (!fs.statSync(root).isDirectory()) throw new Error('The selected workspace folder is no longer available.');
+    if (root !== workspace.root_path) {
+      // A different path is a retarget, not a spelling fix: refuse it so refresh
+      // can never follow a renamed folder into somewhere add() would reject.
+      if (normalizePathForCompare(root) !== normalizePathForCompare(workspace.root_path)) {
+        throw new Error('The selected workspace folder is no longer available.');
+      }
+      database.prepare('UPDATE workspaces SET root_path = ? WHERE id = ?').run(root, workspace.id);
+    }
 
     const seen = new Set();
     const pending = [{ directory: root, depth: 0 }];
@@ -358,6 +421,16 @@ function createWorkspaceIndex({
     let totalBytes = Number(storedBytes.total) || 0;
     let consideredFiles = 0;
     let visitedDirectories = 0;
+    let reconcileResult = null;
+    const reconcileOnce = async () => {
+      if (!reconcileResult) {
+        reconcileResult = await reconcileMissingRows(workspace.id, root);
+        totalBytes -= reconcileResult.freed;
+        result.removed += reconcileResult.removed;
+      }
+      return reconcileResult;
+    };
+    const retainedRows = () => Number(database.prepare('SELECT COUNT(*) AS n FROM workspace_files WHERE workspace_id = ?').get(workspace.id).n) || 0;
 
     while (pending.length) {
       const current = pending.pop();
@@ -430,6 +503,19 @@ function createWorkspaceIndex({
           continue;
         }
         const previousSize = previous ? previous.size : 0;
+        if (!previous && retainedRows() >= fileLimit) {
+          await reconcileOnce();
+          if (retainedRows() >= fileLimit) {
+            result.skipped += 1;
+            result.incomplete = true;
+            continue;
+          }
+        }
+        if (totalBytes - previousSize + stat.size > totalByteLimit) {
+          // Rows for files deleted since the last scan still count against the
+          // cap, so reconcile them before refusing the replacement.
+          await reconcileOnce();
+        }
         if (totalBytes - previousSize + stat.size > totalByteLimit) {
           result.skipped += 1;
           result.incomplete = true;

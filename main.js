@@ -2265,10 +2265,15 @@ async function runFeature(mode, userText, {
       if (isCurrent()) send('llm:error', { message: llm.configurationError || ('Configure ' + settings.provider + ' in Settings to start.') });
       return;
     }
-    const relevanceQuery = [
-      String(userText || ''),
-      orderedTranscript.slice(-24).map((turn) => String(turn.text || '')).join('\n'),
-    ].join('\n').slice(-8000);
+    // The typed question must survive the budget: a long transcript tail used to
+    // displace it entirely, so search ran on stale conversation only.
+    const relevanceQuestion = String(userText || '').trim();
+    const relevanceTranscript = orderedTranscript.slice(-24).map((turn) => String(turn.text || '')).join('\n');
+    const relevanceBudget = 8000;
+    const relevanceCharsLeft = relevanceBudget - relevanceQuestion.length - 1;
+    const relevanceQuery = relevanceCharsLeft > 0
+      ? [relevanceQuestion.slice(0, relevanceBudget), relevanceTranscript.slice(-relevanceCharsLeft)].join('\n')
+      : relevanceQuestion.slice(0, relevanceBudget);
     const workspaceMatches = def.usesWorkspaceContext === true
       ? readOptionalContext('workspace', () => getWorkspaceIndex().search(relevanceQuery), {
         onError: (label, error) => {

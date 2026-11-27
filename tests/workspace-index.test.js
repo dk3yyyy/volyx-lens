@@ -265,7 +265,7 @@ test('workspace byte budget applies across all selected folders', async () => {
   }
 });
 
-test('incomplete refresh counts retained rows and defers stale-row deletion until a complete scan', async () => {
+test('incomplete refresh counts retained rows and reclaims only rows whose files are confirmed missing', async () => {
   const directory = temporaryDirectory();
   const root = path.join(directory, 'project');
   fs.mkdirSync(root);
@@ -305,11 +305,11 @@ test('incomplete refresh counts retained rows and defers stale-row deletion unti
     const incomplete = await index.refresh(workspace.id);
     assert.equal(incomplete.incomplete, true);
     assert.equal(incomplete.skipped, 1);
-    assert.equal(incomplete.removed, 0, 'an incomplete scan must not delete unseen stale rows');
+    assert.equal(incomplete.removed, 1, 'a row whose file is confirmed missing is reclaimed; merely unvisited rows are not');
     assert.equal(incomplete.workspace.fileCount, 2);
     assert.deepEqual(storedFiles(), [
+      { relative_path: 'a.md', size: 8, has_content: 1 },
       { relative_path: 'b.md', size: 8, has_content: 1 },
-      { relative_path: 'd.md', size: 8, has_content: 1 },
     ]);
     assert.ok(storedFiles().reduce((total, file) => total + file.size, 0) <= 16);
 
@@ -761,4 +761,102 @@ test('file rules include useful text formats and reject common secret paths', ()
   const fakeApiToken = ['sk', '-', 'a'.repeat(28)].join('');
   assert.equal(containsLikelySecret(`const API_KEY = "${fakeApiToken}";`), true);
   assert.equal(containsLikelySecret('const apiKey = process.env.API_KEY;'), false);
+});
+
+test('workspace indexing refuses folders nested under a private directory', () => {
+  const directory = temporaryDirectory();
+  const root = path.join(directory, '.config', 'containers');
+  fs.mkdirSync(root, { recursive: true });
+  const index = createIndex(directory);
+  try {
+    assert.throws(() => index.add(root), /private application or credential data/);
+  } finally {
+    index.close();
+  }
+});
+
+test('refresh reclaims deleted rows before refusing a same-size replacement', async () => {
+  const directory = temporaryDirectory();
+  const root = path.join(directory, 'project');
+  fs.mkdirSync(root, { recursive: true });
+  const first = write(root, 'a.md', 'alphamarker content\n');
+  const index = createIndex(directory, { maxTotalBytes: 24 });
+  try {
+    const workspace = index.add(root);
+    await index.refresh(workspace.id);
+    index.setEnabled(workspace.id, true);
+    assert.equal(index.search('alphamarker').length, 1);
+
+    fs.rmSync(first);
+    write(root, 'b.md', 'betamarker content\n');
+    const result = await index.refresh(workspace.id);
+    assert.equal(result.incomplete, false);
+    assert.equal(index.search('betamarker').length, 1);
+    assert.equal(index.search('alphamarker').length, 0);
+  } finally {
+    index.close();
+  }
+});
+
+test('retained rows cannot exceed the file limit after replacements', async () => {
+  const directory = temporaryDirectory();
+  const root = path.join(directory, 'project');
+  fs.mkdirSync(root, { recursive: true });
+  const first = write(root, 'a.md', 'firstmarker\n');
+  const second = write(root, 'b.md', 'secondmarker\n');
+  const index = createIndex(directory, { maxFiles: 2 });
+  try {
+    const workspace = index.add(root);
+    await index.refresh(workspace.id);
+    index.setEnabled(workspace.id, true);
+    assert.equal(index.list()[0].fileCount, 2);
+
+    fs.rmSync(first);
+    fs.rmSync(second);
+    write(root, 'c.md', 'thirdmarker\n');
+    write(root, 'd.md', 'fourthmarker\n');
+    await index.refresh(workspace.id);
+    assert.equal(index.list()[0].fileCount, 2);
+    assert.equal(index.search('thirdmarker').length, 1);
+    assert.equal(index.search('fourthmarker').length, 1);
+    assert.equal(index.search('firstmarker').length, 0);
+  } finally {
+    index.close();
+  }
+});
+
+test('a generic folder named library is not a private ancestor', () => {
+  const directory = temporaryDirectory();
+  const root = path.join(directory, 'code', 'library', 'project');
+  fs.mkdirSync(root, { recursive: true });
+  write(root, 'README.md', 'librarymarker\n');
+  const index = createIndex(directory);
+  try {
+    const workspace = index.add(root);
+    assert.ok(workspace && workspace.id);
+  } finally {
+    index.close();
+  }
+});
+
+test('refresh refuses a workspace root retargeted to a different folder', async () => {
+  const directory = temporaryDirectory();
+  const root = path.join(directory, 'project');
+  const privateDirectory = path.join(directory, '.ssh');
+  fs.mkdirSync(root);
+  fs.mkdirSync(privateDirectory);
+  write(root, 'README.md', 'publicmarker\n');
+  write(privateDirectory, 'config', 'sshnotemarker\n');
+  const index = createIndex(directory);
+  try {
+    const workspace = index.add(root);
+    await index.refresh(workspace.id);
+
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.symlinkSync(privateDirectory, root, 'dir');
+    await assert.rejects(() => index.refresh(workspace.id), /no longer available/);
+    assert.equal(index.search('sshnotemarker').length, 0);
+  } finally {
+    index.close();
+  }
 });
