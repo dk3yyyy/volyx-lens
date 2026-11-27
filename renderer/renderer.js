@@ -1228,6 +1228,17 @@
     } catch {}
   }
 
+  // New turns for the open meeting: update the transcript in place so the
+  // user keeps Raw/Cleaned and focus stays where it was.
+  async function refreshMeetingTurns(id) {
+    try {
+      const record = await volyxLens.historyGet(id);
+      if (!record || !meetingDetail || meetingDetail.id !== id) return;
+      meetingDetail = record;
+      renderMeetingTurns();
+    } catch {}
+  }
+
   async function openMeetingDetail(id) {
     try {
       const record = await volyxLens.historyGet(id);
@@ -2469,6 +2480,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       // name being typed. Anything else (new turns appended to a resumed
       // meeting) has to re-render the pane or it stays stale.
       if (event.reason === 'diarization') refreshMeetingDiarization(event.id);
+      else if (event.participant) {
+        // The participant handler owns this update; re-opening the pane here
+        // would reset the view while the name is being saved.
+      } else if (event.saved) refreshMeetingTurns(event.id);
       else openMeetingDetail(event.id);
     }
     if (event.pruned > 0) showHistoryPruneNotice(event.pruned);
