@@ -10,6 +10,10 @@ const BYTES_PER_SECOND = 24_000 * 2;
 const DEFAULT_LEASE_MS = 10_000;
 const DEFAULT_MAX_BACKLOG_SECONDS = 120;
 const DEFAULT_FINISH_DEADLINE_MS = 3_000;
+// The worker keeps one growing window until a boundary arrives. Continuous
+// speech (no VAD stop) would therefore never finalize, so the manager cuts a
+// window at this length even while the speaker keeps talking.
+const DEFAULT_MAX_WINDOW_MS = 25_000;
 
 function createLocalSpeechStreamManager({
   worker,
@@ -20,6 +24,7 @@ function createLocalSpeechStreamManager({
   backend = 'auto',
   maxInFlight = 4,
   vad = {},
+  maxWindowMs = DEFAULT_MAX_WINDOW_MS,
   leaseMs = DEFAULT_LEASE_MS,
   maxBacklogSeconds = DEFAULT_MAX_BACKLOG_SECONDS,
   finishDeadlineMs = DEFAULT_FINISH_DEADLINE_MS,
@@ -59,8 +64,19 @@ function createLocalSpeechStreamManager({
   let stopPromise = null;
   const leaseTimers = new Map(activeChannels.map((channel) => [channel, null]));
   const backlogBytes = new Map(activeChannels.map((channel) => [channel, 0]));
+  // Audio accepted since the last boundary (or stream start), in bytes. Only
+  // audio the worker accepted is counted, so a refused append cannot advance
+  // the window past audio the worker never received.
+  const windowBytes = new Map(activeChannels.map((channel) => [channel, 0]));
+  // The boundary call that has not settled yet, if any. A forced cut must not
+  // pile a second boundary behind an unresolved one: the worker would emit
+  // two finals for the same audio.
+  const pendingBoundaries = new Map(activeChannels.map((channel) => [channel, null]));
   const startedChannels = new Set();
   const maxBacklogBytes = Math.max(1, Math.floor((Number(maxBacklogSeconds) || DEFAULT_MAX_BACKLOG_SECONDS) * BYTES_PER_SECOND));
+  const maxWindowBytes = Number.isFinite(Number(maxWindowMs)) && Number(maxWindowMs) > 0
+    ? Math.max(1, Math.floor((Number(maxWindowMs) / 1000) * BYTES_PER_SECOND))
+    : 0;
 
   function clearLease(channel) {
     const timer = leaseTimers.get(channel);
@@ -83,6 +99,7 @@ function createLocalSpeechStreamManager({
     startedChannels.delete(channel);
     backlogBytes.set(channel, 0);
     clearRecovery(channel);
+    clearWindow(channel);
     const error = new Error(`No audio or heartbeat from ${channel} for ${leaseMs} ms; cancelling its local stream.`);
     error.code = 'speech_stream_lease_expired';
     Promise.resolve(worker.streamCancel(channel)).catch(() => {});
@@ -130,6 +147,27 @@ function createLocalSpeechStreamManager({
   function clearRecovery(channel) {
     const state = recovery.get(channel);
     if (state) { state.chunks = []; state.bytes = 0; state.offset = 0; state.boundaries = []; }
+  }
+
+  function clearWindow(channel) {
+    windowBytes.set(channel, 0);
+    pendingBoundaries.set(channel, null);
+  }
+
+  function requestBoundary(channel) {
+    const state = recovery.get(channel);
+    // Absolute position of this boundary in the retained chunk stream. The
+    // final that matches it will arrive asynchronously; a second boundary
+    // must queue behind it rather than overwrite it.
+    if (state) state.boundaries.push(state.offset + state.chunks.length);
+    // The call itself is issued synchronously so a forward cut lands after the
+    // feeds already handed to the worker; only its settlement is tracked.
+    const pending = Promise.resolve(worker.streamBoundary(channel))
+      .catch(reportFailure)
+      .finally(() => {
+        if (pendingBoundaries.get(channel) === pending) pendingBoundaries.set(channel, null);
+      });
+    pendingBoundaries.set(channel, pending);
   }
 
   function rememberRecovery(channel, pcm) {
@@ -249,14 +287,21 @@ function createLocalSpeechStreamManager({
     worker.streamFeed(channel, pcm).catch(reportFailure).finally(() => {
       inFlight.set(channel, Math.max(0, inFlight.get(channel) - 1));
     });
+    // Count only audio the worker accepted. This chunk belongs to the window
+    // that is about to end when it crosses the limit.
+    const windowed = (windowBytes.get(channel) || 0) + pcm.length;
+    windowBytes.set(channel, windowed);
     if (activity.speechStopped) {
       vads.get(channel).reset();
-      const state = recovery.get(channel);
-      // Absolute position of this boundary in the retained chunk stream. The
-      // final that matches it will arrive asynchronously; a second boundary
-      // must queue behind it rather than overwrite it.
-      if (state) state.boundaries.push(state.offset + state.chunks.length);
-      worker.streamBoundary(channel).catch(reportFailure);
+      // A VAD stop already ends the worker window, so it resets the forced
+      // window too; the next window starts with the next accepted sample.
+      clearWindow(channel);
+      requestBoundary(channel);
+    } else if (maxWindowBytes > 0 && windowed >= maxWindowBytes && !pendingBoundaries.get(channel)) {
+      // Continuous speech never reports a stop. Cut it at the bound instead of
+      // letting the worker accumulate one unbounded window until Stop.
+      clearWindow(channel);
+      requestBoundary(channel);
     }
     return true;
   }
@@ -269,6 +314,7 @@ function createLocalSpeechStreamManager({
     for (const channel of activeChannels) {
       clearRecovery(channel);
       clearLease(channel);
+      clearWindow(channel);
       backlogBytes.set(channel, 0);
     }
     startedChannels.clear();
@@ -347,6 +393,14 @@ function createLocalSpeechStreamManager({
     get ready() { return ready && !stopped; },
     get channels() { return [...activeChannels]; },
     get backlogBytes() { return Object.fromEntries(activeChannels.map((channel) => [channel, backlogBytes.get(channel) || 0])); },
+    // Accepted audio in the current window, in milliseconds. Diagnostics only;
+    // the boundary itself is driven by the byte counter above.
+    get windowMs() {
+      return Object.fromEntries(activeChannels.map((channel) => [
+        channel,
+        Math.round(((windowBytes.get(channel) || 0) / BYTES_PER_SECOND) * 1000),
+      ]));
+    },
   };
 }
 
