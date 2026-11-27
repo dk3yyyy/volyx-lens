@@ -35,7 +35,7 @@ function createLocalSpeechStreamManager({
   if (!activeChannels.length) throw new TypeError('At least one valid speech channel is required.');
 
   const inFlight = new Map(activeChannels.map((channel) => [channel, 0]));
-  const recovery = new Map(activeChannels.map((channel) => [channel, { chunks: [], bytes: 0 }]));
+  const recovery = new Map(activeChannels.map((channel) => [channel, { chunks: [], bytes: 0, boundaryChunks: 0 }]));
   const vads = new Map(activeChannels.map((channel) => [
     channel,
     new VoiceActivityDetector({ sampleRate: 24_000, ...vad }),
@@ -128,6 +128,7 @@ function createLocalSpeechStreamManager({
     while (state.chunks.length > MAX_RECOVERY_CHUNKS || state.bytes > MAX_RECOVERY_BYTES) {
       const dropped = state.chunks.shift();
       state.bytes -= dropped ? dropped.length : 0;
+      if (state.boundaryChunks > 0) state.boundaryChunks -= 1;
     }
   }
 
@@ -148,7 +149,17 @@ function createLocalSpeechStreamManager({
     else if (event.type === 'speech.final') {
       backlogBytes.set(event.channel, 0);
       touchLease(event.channel);
-      clearRecovery(event.channel);
+      // A final covers only the audio up to the boundary it finalizes. Audio
+      // appended after that boundary belongs to the next utterance, so keep
+      // it for fallback instead of wiping the whole buffer.
+      const state = recovery.get(event.channel);
+      if (state && state.boundaryChunks > 0) {
+        const consumed = state.chunks.splice(0, state.boundaryChunks);
+        for (const chunk of consumed) state.bytes -= chunk.length;
+        state.boundaryChunks = 0;
+      } else {
+        clearRecovery(event.channel);
+      }
       onFinal({ channel: event.channel, ...data });
     }
     else if (event.type === 'speech.error') {
@@ -222,6 +233,8 @@ function createLocalSpeechStreamManager({
     });
     if (activity.speechStopped) {
       vads.get(channel).reset();
+      const state = recovery.get(channel);
+      if (state) state.boundaryChunks = state.chunks.length;
       worker.streamBoundary(channel).catch(reportFailure);
     }
     return true;
@@ -251,7 +264,16 @@ function createLocalSpeechStreamManager({
       const results = await Promise.allSettled(activeChannels.map(async (channel) => {
         if (typeof worker[stopMethod] !== 'function') return undefined;
         const pending = Promise.resolve(worker[stopMethod](channel));
-        if (stopMethod !== 'streamFinish') return pending;
+        if (stopMethod !== 'streamFinish') {
+          // Cancel is the last line of defence for Stop. A worker that never
+          // answers it must not keep the user waiting either.
+          return settleWithin(
+            pending,
+            Math.min(deadline, 1000),
+            'speech_stream_cancel_timeout',
+            `Local ${channel} stream did not cancel within ${Math.min(deadline, 1000)} ms.`,
+          );
+        }
         try {
           // Stop must settle: a worker that never acknowledges stream-finish is
           // cancelled at the deadline instead of holding the user's Stop.
@@ -264,7 +286,14 @@ function createLocalSpeechStreamManager({
         } catch (error) {
           if (error && error.code === 'speech_stream_finish_timeout') {
             if (typeof worker.streamCancel === 'function') {
-              try { await Promise.resolve(worker.streamCancel(channel)); } catch {}
+              try {
+                await settleWithin(
+                  Promise.resolve(worker.streamCancel(channel)),
+                  Math.min(deadline, 1000),
+                  'speech_stream_cancel_timeout',
+                  `Local ${channel} stream did not cancel within ${Math.min(deadline, 1000)} ms.`,
+                );
+              } catch {}
             }
           }
           throw error;

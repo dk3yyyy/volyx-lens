@@ -331,3 +331,57 @@ test('finals-only when the worker cannot stream partials', async () => {
   assert.deepEqual(finals, [{ channel: 'you', text: 'you only final' }]);
   await manager.stop();
 });
+
+test('a final keeps audio captured after its boundary', async () => {
+  const worker = fakeWorker();
+  const events = worker.events;
+  // Emit the final one tick after the boundary so audio appended in between
+  // belongs to the next utterance.
+  worker.streamBoundary = async (channel) => {
+    worker.calls.push(['boundary', channel]);
+    setTimeout(() => events.emit('event', { type: 'speech.final', channel, data: { text: 'first' } }), 0);
+    return { queued: true };
+  };
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    vad: { sampleRate: 24000, threshold: 100, silenceMs: 100, minSpeechMs: 20 },
+  });
+  await manager.start();
+
+  const loud = Buffer.alloc(4800 * 2);
+  for (let i = 0; i < 4800; i += 1) loud.writeInt16LE(6000, i * 2);
+  const quiet = Buffer.alloc(4800 * 2);
+  const next = Buffer.alloc(2400 * 2);
+  for (let i = 0; i < 2400; i += 1) next.writeInt16LE(7000, i * 2);
+
+  assert.equal(manager.append('you', loud), true);
+  assert.equal(manager.append('you', quiet), true);
+  assert.equal(manager.append('you', next), true, 'audio after the boundary is accepted');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const recovered = manager.takeRecoveryAudio();
+  assert.equal(recovered.you.length, 1, 'only the post-boundary chunk remains for fallback');
+  assert.deepEqual(recovered.you[0], next);
+  await manager.stop();
+});
+
+test('stop settles when the worker never answers cancel', async () => {
+  const worker = fakeWorker();
+  worker.streamCancel = () => new Promise(() => {});
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    finishDeadlineMs: 25,
+  });
+  await manager.start();
+  const startedAt = Date.now();
+  await assert.rejects(manager.stop(), (error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.equal(error.errors[0].code, 'speech_stream_cancel_timeout');
+    return true;
+  });
+  assert.ok(Date.now() - startedAt < 1000, 'stop settles instead of waiting on cancel');
+});
