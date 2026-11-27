@@ -16,6 +16,7 @@ function createLocalSpeechStreamManager({
   modelId,
   channels = ['you', 'them'],
   language = '',
+  vocabulary = [],
   backend = 'auto',
   maxInFlight = 4,
   vad = {},
@@ -179,7 +180,7 @@ function createLocalSpeechStreamManager({
       try {
         for (const channel of activeChannels) {
           if (stopped) throw startupCancelledError();
-          await worker.streamStart({ modelId, channel, language, backend });
+          await worker.streamStart({ modelId, channel, language, backend, vocabulary });
           started.push(channel);
           startedChannels.add(channel);
           armLease(channel);

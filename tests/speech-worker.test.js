@@ -344,6 +344,53 @@ test('speech worker rejects invalid batch inputs and unsupported models', async 
   await worker.stop();
 });
 
+test('speech worker sanitises vocabulary before sending it to the native worker', async () => {
+  const { worker, children } = fixture();
+  const vocabulary = ['  Volyx  ', 'volyx', '', '   ', 'Parakeet', 'x'.repeat(41), 7];
+  for (let index = 0; index < 50; index += 1) vocabulary.push(`term-${index}`);
+  await worker.transcribe({ wav: Buffer.from('RIFF-test'), modelId: 'fake-gguf', backend: 'cpu', vocabulary });
+  const request = children[0].requests.find((entry) => entry.command === 'transcribe');
+  assert.deepEqual(request.vocabulary.slice(0, 2), ['Volyx', 'Parakeet']);
+  assert.equal(request.vocabulary.length, 40);
+  assert.equal(request.vocabulary.some((term) => term === 'volyx' || term === '' || term.length > 40), false);
+  await worker.stop();
+});
+
+test('speech worker omits an empty vocabulary instead of sending an empty array', async () => {
+  const { worker, children } = fixture();
+  await worker.transcribe({ wav: Buffer.from('RIFF-test'), modelId: 'fake-gguf', vocabulary: ['   ', 7] });
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you', vocabulary: [] });
+  const transcribe = children[0].requests.find((entry) => entry.command === 'transcribe');
+  const start = children[0].requests.find((entry) => entry.command === 'stream-start');
+  assert.equal(Object.hasOwn(transcribe, 'vocabulary'), false);
+  assert.equal(Object.hasOwn(start, 'vocabulary'), false);
+  await worker.streamCancel('you');
+  await worker.stop();
+});
+
+test('speech worker forwards vocabulary when starting a stream', async () => {
+  const { worker, children } = fixture();
+  await worker.streamStart({
+    modelId: 'fake-stream',
+    channel: 'you',
+    language: 'en',
+    vocabulary: ['Volyx', 'Kubernetes', 'volyx'],
+  });
+  const start = children[0].requests.find((entry) => entry.command === 'stream-start');
+  assert.deepEqual(start.vocabulary, ['Volyx', 'Kubernetes']);
+  await worker.streamCancel('you');
+  await worker.stop();
+});
+
+test('sanitizeVocabulary accepts only strings and never widens the provider caps', () => {
+  const { sanitizeVocabulary } = loadSpeechWorkerModule();
+  assert.deepEqual(sanitizeVocabulary(null), []);
+  assert.deepEqual(sanitizeVocabulary('Volyx'), []);
+  assert.deepEqual(sanitizeVocabulary([' a ', 'A', 'b']), ['a', 'b']);
+  assert.deepEqual(sanitizeVocabulary(['x'.repeat(40)]), ['x'.repeat(40)]);
+  assert.deepEqual(sanitizeVocabulary(['x'.repeat(41)]), []);
+});
+
 test('speech worker environment preserves Windows runtime variables without forwarding secrets', () => {
   const { speechWorkerEnvironment } = loadSpeechWorkerModule();
   const env = speechWorkerEnvironment({

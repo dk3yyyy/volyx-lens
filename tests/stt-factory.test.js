@@ -181,3 +181,90 @@ test('STT factory returns empty chain when no keys present', () => {
   assert.ok(!stt.available);
   assert.equal(stt.providers.length, 0);
 });
+
+test('STT factory forwards vocabulary terms to a local GGUF model', async () => {
+  const calls = [];
+  const stt = createSTT({
+    apiKeys: {},
+    transcription: {
+      offlineEnabled: true,
+      offlineCloudFallback: false,
+      localModelId: 'parakeet-unified-en',
+      language: 'en',
+    },
+  }, {
+    env: {},
+    terms: ['Volyx', 'Kubernetes'],
+    speechWorker: {
+      transcribe: async (request) => {
+        calls.push(request);
+        return { text: 'ok' };
+      },
+    },
+  });
+  assert.deepEqual(stt.providers, ['local-gguf']);
+  await stt.transcribe(Buffer.alloc(4000, 1));
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].vocabulary, ['Volyx', 'Kubernetes']);
+});
+
+test('STT factory clamps an unsupported language for an English-only local model', async () => {
+  const calls = [];
+  const stt = createSTT({
+    apiKeys: {},
+    transcription: {
+      offlineEnabled: true,
+      offlineCloudFallback: false,
+      localModelId: 'parakeet-unified-en',
+      language: 'es',
+    },
+  }, {
+    env: {},
+    speechWorker: {
+      transcribe: async (request) => {
+        calls.push(request);
+        return { text: 'ok' };
+      },
+    },
+  });
+  await stt.transcribe(Buffer.alloc(4000, 1));
+  assert.equal(calls[0].language, 'en');
+});
+
+test('STT factory keeps a supported language on a multilingual local model', async () => {
+  const calls = [];
+  const stt = createSTT({
+    apiKeys: {},
+    transcription: {
+      offlineEnabled: true,
+      offlineCloudFallback: false,
+      localModelId: 'qwen3-asr-0.6b',
+      language: 'es',
+    },
+  }, {
+    env: {},
+    speechWorker: {
+      transcribe: async (request) => {
+        calls.push(request);
+        return { text: 'ok' };
+      },
+    },
+  });
+  await stt.transcribe(Buffer.alloc(4000, 1));
+  assert.equal(calls[0].language, 'es');
+});
+
+test('clampLocalLanguage leaves auto-detect and undeclared language lists alone', () => {
+  const { clampLocalLanguage } = require('../src/stt');
+  const englishOnly = { languages: ['en'] };
+  const undeclared = { languages: [] };
+  assert.equal(clampLocalLanguage('', englishOnly), '');
+  assert.equal(clampLocalLanguage('auto', englishOnly), 'auto');
+  assert.equal(clampLocalLanguage('es', englishOnly), 'en');
+  assert.equal(clampLocalLanguage('EN', englishOnly), 'EN');
+  assert.equal(clampLocalLanguage('fr', undeclared), 'fr');
+  assert.equal(clampLocalLanguage('fr', { languages: ['de', 'fr'] }), 'fr');
+  assert.equal(clampLocalLanguage('ja', { languages: ['de', 'fr'] }), 'de');
+  assert.equal(clampLocalLanguage('ja', { languages: ['de', 'en', 'fr'] }), 'en');
+});
+

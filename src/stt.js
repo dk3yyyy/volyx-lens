@@ -11,6 +11,21 @@ const { createSpeechService } = require('./speech-service');
 const { getModel } = require('./speech-model-registry');
 const { defaultSpeechWorker } = require('./speech-worker');
 
+// Clamp an explicit language hint to what the local model declares. English-only
+// Parakeet used to receive whatever the user configured (e.g. "es") and fail or
+// decode wrongly. An empty hint (Auto-detect) is passed through untouched: it is
+// not an unsupported code, and the multilingual models rely on it.
+function clampLocalLanguage(requested, model) {
+  const code = String(requested || '').trim();
+  if (!code || code.toLowerCase() === 'auto') return code;
+  const languages = Array.isArray(model && model.languages)
+    ? model.languages.filter((language) => typeof language === 'string' && language)
+    : [];
+  if (!languages.length) return code;
+  if (languages.some((language) => language.toLowerCase() === code.toLowerCase())) return code;
+  return languages.find((language) => language.toLowerCase() === 'en') || languages[0];
+}
+
 let sidecar = null; // lazily initialized, fully-started WhisperSidecar instance
 let starting = null; // in-flight startup promise shared by concurrent requests
 let generation = 0; // bumped on reset to invalidate in-flight startups
@@ -166,6 +181,7 @@ async function transcribeGemini(apiKey, wav, model) {
 function createSTT(settings, {
   env = process.env,
   vocab = '',
+  terms = [],
   offlineTranscribe = transcribeOffline,
   openAITranscribe = transcribeOpenAI,
   geminiTranscribe = transcribeGemini,
@@ -185,7 +201,17 @@ function createSTT(settings, {
   const localSpeech = createSpeechService({
     transcribe: ({ wav, modelId, language }) => {
       const model = getModel(modelId);
-      if (model && model.runtime === 'transcribe-cpp') return speechWorker.transcribe({ wav, modelId, language, backend: transcription.speechBackend || 'auto' });
+      if (model && model.runtime === 'transcribe-cpp') {
+        // The GGUF runtime applies Parakeet vocabulary rescoring; whisper.cpp
+        // and the cloud providers keep their own prompt-based seeding.
+        return speechWorker.transcribe({
+          wav,
+          modelId,
+          language: clampLocalLanguage(language, model),
+          backend: transcription.speechBackend || 'auto',
+          vocabulary: terms,
+        });
+      }
       return transcribeViaLocalWhisper(wav, env, language, modelId, sidecarFactory);
     },
     warm: (modelId) => speechWorker.warmModel(modelId),
@@ -253,4 +279,4 @@ function createSTT(settings, {
   };
 }
 
-module.exports = { createSTT, resetSidecar, resolveTranscriptionMode };
+module.exports = { createSTT, resetSidecar, resolveTranscriptionMode, clampLocalLanguage };

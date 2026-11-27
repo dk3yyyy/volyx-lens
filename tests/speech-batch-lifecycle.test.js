@@ -53,6 +53,7 @@ function createFlushHarness({ vad = null, detectSpeech = null } = {}) {
     store: { getSettings: () => ({ transcription: vad ? { offlineEnabled: true, localModelId: 'local-stream-model' } : {}, audio: {} }) },
     personalContextStore: { getEnabledDocuments: () => [] },
     buildSttVocab: () => '',
+    buildSttTermList: () => [],
     createSTT: () => ({
       available: true,
       transcribe: (pcm) => {
