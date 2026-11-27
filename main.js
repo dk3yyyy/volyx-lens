@@ -284,6 +284,8 @@ let slideOcrJobSequence = 0;
 const slideOcrJobs = new Map();
 let pendingSlideReview = null;
 let desiredCapturing = false;
+// True while Stop is flushing the last batches; model actions must wait it out.
+let speechFinalizing = false;
 // True only while the app's own getDisplayMedia flow is in flight or just about to
 // start. The renderer may ask for it, but only during a capture start it did not
 // control (VR-26).
@@ -1810,7 +1812,12 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     drainingRealtimeManagers.delete(manager);
   }
   if (previousMode === 'batch' || flushPromises.you || flushPromises.them || buffers.you.length || buffers.them.length || retryQueues.you.length || retryQueues.them.length) {
-    await drainBatchBuffers();
+    speechFinalizing = true;
+    try {
+      await drainBatchBuffers();
+    } finally {
+      speechFinalizing = false;
+    }
   }
   buffers.you = []; buffers.them = [];
   retryQueues.you = []; retryQueues.them = [];
@@ -3087,6 +3094,9 @@ function speechModelsWithStatus() {
 function isLocalSpeechInferenceActive() {
   return state.capturing
     || desiredCapturing
+    || speechFinalizing
+    || flushPromises.you !== null
+    || flushPromises.them !== null
     || speechOperationGate.isBusy();
 }
 
