@@ -17,6 +17,9 @@ const MAX_RECORD_TURNS = 5000;
 const MAX_DIARIZATION_RUNS = 20;
 const MAX_DIARIZATION_SEGMENTS = 5000;
 const MAX_DIARIZATION_DURATION_MS = 10 * 60 * 1000;
+// A run can start after its meeting began (recorder restarted mid-meeting), but
+// the offset plus the audio itself must still fit inside one plausible meeting.
+const MAX_DIARIZATION_MEETING_SPAN_MS = 24 * 60 * 60 * 1000;
 // Deleting a saved meeting leaves a sanitized undo copy here, so a mistake costs
 // nothing for a month. Linked memory is removed from that copy before the live
 // record is deleted and is intentionally not restored by Undo. Clear all also
@@ -64,6 +67,12 @@ function normalizeDiarizationRun(run) {
   if (run.modelId !== 'diar-sortformer-4spk' || !/^[a-f0-9]{64}$/i.test(String(run.artifactSha256 || ''))) return null;
   if (!['low_latency', 'high_latency', 'very_high_latency'].includes(run.preset)) return null;
   if (run.sampleRate !== 16000 || !Number.isSafeInteger(run.durationMs) || run.durationMs < 0 || run.durationMs > MAX_DIARIZATION_DURATION_MS) return null;
+  // Absent means a run written before the field existed: it starts with the
+  // meeting. A present value must be an exact non-negative integer. Segments
+  // stay relative to the recording and are never shifted by this offset.
+  const audioStartOffsetMs = run.audioStartOffsetMs === undefined ? 0 : run.audioStartOffsetMs;
+  if (!Number.isSafeInteger(audioStartOffsetMs) || audioStartOffsetMs < 0) return null;
+  if (audioStartOffsetMs + run.durationMs > MAX_DIARIZATION_MEETING_SPAN_MS) return null;
   const segments = [];
   const source = Array.isArray(run.segments) ? run.segments : [];
   if (source.length > MAX_DIARIZATION_SEGMENTS) return null;
@@ -87,6 +96,7 @@ function normalizeDiarizationRun(run) {
     preset: run.preset,
     sampleRate: 16000,
     durationMs: run.durationMs,
+    audioStartOffsetMs,
     segments,
   };
   if (run.status !== 'ready') normalized.reason = String(run.reason || 'diarization_unavailable').replace(/[\r\n]+/g, ' ').trim().slice(0, 200) || 'diarization_unavailable';

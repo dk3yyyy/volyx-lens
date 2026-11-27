@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const test = require('node:test');
 const assert = require('node:assert');
 const { createMeetingStore, fingerprint } = require('../src/meeting-store');
@@ -90,6 +91,77 @@ test('diarization sidecars reject audio, out-of-range slots, and duplicate recor
     const runs = store.get(saved.id).diarizationRuns;
     assert.equal(runs.length, 1);
     assert.equal(runs[0].segments[0].speakerId, 3);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('diarization runs validate a recording start offset and keep legacy sidecars at zero', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({ turns: [{ channel: 'them', text: 'Hello', ts: 1 }], enabled: true });
+    const base = {
+      version: 1,
+      recordingId: 'diar-offset-1',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'high_latency',
+      sampleRate: 16000,
+      durationMs: 5000,
+      segments: [{ speakerId: 1, t0Ms: 100, t1Ms: 2000 }],
+    };
+
+    // An explicit zero is valid and means the run began with the meeting.
+    assert.equal(store.updateDiarization(saved.id, { ...base, audioStartOffsetMs: 0 }).updated, true);
+    assert.equal(store.get(saved.id).diarizationRuns[0].audioStartOffsetMs, 0);
+
+    // A later recorder keeps its offset while its segments stay recording-relative.
+    assert.equal(store.updateDiarization(saved.id, { ...base, recordingId: 'diar-offset-2', audioStartOffsetMs: 240000 }).updated, true);
+    const offsetRun = store.get(saved.id).diarizationRuns.find((run) => run.recordingId === 'diar-offset-2');
+    assert.equal(offsetRun.audioStartOffsetMs, 240000);
+    assert.deepEqual(offsetRun.segments, [{ speakerId: 1, t0Ms: 100, t1Ms: 2000 }], 'the offset never rewrites segment times');
+
+    // Negative, fractional, non-numeric, and out-of-span offsets are rejected.
+    for (const [label, audioStartOffsetMs] of [
+      ['negative', -1],
+      ['fractional', 1.5],
+      ['string', '1000'],
+      ['null', null],
+      ['beyond safe integer', Number.MAX_SAFE_INTEGER + 1],
+      ['offset plus audio beyond 24 h', 24 * 60 * 60 * 1000 - 5000 + 1],
+    ]) {
+      assert.equal(
+        store.updateDiarization(saved.id, { ...base, recordingId: `diar-bad-${label}`, audioStartOffsetMs }).updated,
+        false,
+        label,
+      );
+    }
+    // The inclusive bound is still a sane meeting.
+    assert.equal(
+      store.updateDiarization(saved.id, { ...base, recordingId: 'diar-bound', audioStartOffsetMs: 24 * 60 * 60 * 1000 - 5000 }).updated,
+      true,
+    );
+
+    // A sidecar written before this field existed loads as offset zero.
+    const legacyId = crypto.randomUUID();
+    const legacyRecord = {
+      id: legacyId,
+      version: 1,
+      reason: 'capture-stop',
+      meeting: false,
+      startedAt: 1000,
+      endedAt: 2000,
+      turnCount: 1,
+      turns: [{ channel: 'them', text: 'Hello', ts: 1000 }],
+      diarizationRuns: [{ ...base, recordingId: 'diar-legacy' }],
+    };
+    fs.writeFileSync(path.join(dir, `${legacyId}.json`), JSON.stringify(legacyRecord));
+    const legacy = store.get(legacyId).diarizationRuns[0];
+    assert.equal(legacy.audioStartOffsetMs, 0, 'existing sidecars default to zero instead of being dropped');
+    assert.deepEqual(legacy.segments, [{ speakerId: 1, t0Ms: 100, t1Ms: 2000 }]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

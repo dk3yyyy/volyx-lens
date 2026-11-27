@@ -87,7 +87,7 @@ test('json export carries diarization sidecars without adding audio', () => {
   const parsed = JSON.parse(formatMeetingRecord(record, 'json', 2));
   assert.equal(parsed.diarizationRuns.length, 1);
   assert.equal(parsed.diarizationRuns[0].segments[0].speakerId, 1);
-  assert.equal(JSON.stringify(parsed).includes('audio'), false);
+  assert.equal('audio' in parsed.diarizationRuns[0], false, 'the sidecar carries timestamps only, never an audio payload');
 });
 
 test('non-json exports stay transcript-only and omit the diarization sidecar', () => {

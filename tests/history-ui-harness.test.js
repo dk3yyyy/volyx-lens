@@ -32,6 +32,7 @@ test('the history harness covers the behaviours the pane promises', () => {
     'meeting-history-delete-selected',
     'meeting-diarization',
     'diarizationRuns',
+    'audioStartOffsetMs',
     'System Speaker 1',
     'diarizationTitle',
     'speaker-slot-1',

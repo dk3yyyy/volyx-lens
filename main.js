@@ -2538,6 +2538,11 @@ function startDiarizationRecorder(audio) {
   const transcription = store.getSettings().transcription || {};
   const diarization = transcription.diarization || {};
   if (diarization.enabled !== true || transcription.historyEnabled !== true || audio.systemEnabled === false) return;
+  // The recorder can be re-armed mid-meeting (a settings change, or a stop /
+  // start that appends to the same record), so its own wall-clock start travels
+  // with the recording. The meeting may have begun earlier; analysis turns the
+  // difference into audioStartOffsetMs instead of anchoring audio at the meeting.
+  const startedAt = Date.now();
   diarizationRecorder = createDiarizationRecorder({
     recordingId: `diar-${Date.now().toString(36)}-${++diarizationSequence}`,
     sampleRate: AUDIO_SAMPLE_RATE,
@@ -2546,6 +2551,7 @@ function startDiarizationRecorder(audio) {
   diarizationRunConfig = {
     preset: diarization.preset || 'very_high_latency',
     backend: transcription.speechBackend || 'auto',
+    startedAt,
   };
 }
 
@@ -2601,6 +2607,24 @@ async function analyzeDiarization(recordId, detached = null) {
   const backend = config && ['auto', 'cpu', 'gpu'].includes(config.backend)
     ? config.backend
     : 'auto';
+  // The run only covers audio from the moment this recorder was armed. Anchor
+  // it to the saved meeting so a recorder re-armed later in the same meeting
+  // cannot report times before it existed. Missing timestamps stay at 0, which
+  // is how records written before this field behaved.
+  const recorderStartedAt = Number(config && config.startedAt);
+  let meetingStartedAt = 0;
+  try {
+    const meetingRecord = recordId && typeof meetingStore.get === 'function' ? meetingStore.get(recordId) : null;
+    meetingStartedAt = Number(meetingRecord && meetingRecord.startedAt);
+  } catch {
+    meetingStartedAt = 0;
+  }
+  const audioStartOffsetMs = Number.isSafeInteger(recorderStartedAt)
+    && Number.isSafeInteger(meetingStartedAt)
+    && meetingStartedAt > 0
+    && recorderStartedAt > meetingStartedAt
+    ? recorderStartedAt - meetingStartedAt
+    : 0;
   const analysisGeneration = ++diarizationAnalysisGeneration;
   diarizationAnalysisActive = true;
   activeDiarizationSnapshot = snapshot;
@@ -2619,6 +2643,7 @@ async function analyzeDiarization(recordId, detached = null) {
       preset,
       sampleRate: info.sampleRate,
       durationMs: snapshot.durationMs,
+      audioStartOffsetMs,
       segments: [],
     };
     run = base;

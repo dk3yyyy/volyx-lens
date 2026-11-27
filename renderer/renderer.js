@@ -993,21 +993,24 @@
   }
 
   // Speaker activity used to print elapsed mm:ss, which could not be matched to
-  // the transcript's wall-clock rows. Runs carry a duration but no start stamp,
-  // so the honest anchor available in the renderer is the meeting start: the
-  // system recorder begins with the capture, and the timeline says so.
-  function diarizationAnchor() {
+  // the transcript's wall-clock rows. A run starts when its recorder was armed,
+  // which can be after the meeting began (a settings change or a stop/start that
+  // appends to the same record), so the anchor is the meeting start plus that
+  // run's own offset. Missing offsets mean the run began with the meeting.
+  function diarizationAnchor(offsetMs = 0) {
     const startedAt = Number(meetingDetail && meetingDetail.startedAt);
-    return Number.isFinite(startedAt) && startedAt > 0 ? startedAt : 0;
+    if (!Number.isFinite(startedAt) || startedAt <= 0) return 0;
+    const offset = Number(offsetMs);
+    return startedAt + (Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0);
   }
 
   function diarizationClock(ts) {
     return transcriptTime(ts);
   }
 
-  function diarizationRange(startMs, endMs, anchored) {
+  function diarizationRange(startMs, endMs, anchored, offsetMs = 0) {
     if (!anchored) return `${diarizationTime(startMs)}–${diarizationTime(endMs)}`;
-    const base = diarizationAnchor();
+    const base = diarizationAnchor(offsetMs);
     return `${diarizationClock(base + startMs)}–${diarizationClock(base + endMs)}`;
   }
 
@@ -1088,14 +1091,17 @@
       section.className = 'history-diarization-run';
       const title = document.createElement('h3');
       const start = Number(run.durationMs) || 0;
-      const anchored = diarizationAnchor() > 0;
+      // Each run carries its own recording start. A record from before this
+      // field exists has no offset and still renders against the meeting start.
+      const runOffset = Number(run.audioStartOffsetMs) || 0;
+      const anchored = diarizationAnchor(runOffset) > 0;
       if (run.reason === 'duration_limit_exceeded') {
         // durationMs here is the truncated buffer length, not coverage. Never
         // print it as if the meeting had been analyzed up to that point.
         title.textContent = 'System audio · not analyzed (time limit)';
       } else if (run.status === 'ready') {
         const prefix = runs.length > 1 ? `Recording ${runIndex + 1} · ` : '';
-        title.textContent = `${prefix}System audio · ${diarizationRange(0, start, anchored)}`;
+        title.textContent = `${prefix}System audio · ${diarizationRange(0, start, anchored, runOffset)}`;
       } else {
         title.textContent = 'System audio · not analyzed';
       }
@@ -1120,7 +1126,7 @@
           const item = document.createElement('li');
           const slot = Math.max(1, Math.min(4, Number(segment.speakerId) || 1));
           item.className = `history-diarization-segment speaker-slot-${slot}`;
-          item.textContent = `System Speaker ${segment.speakerId} · ${diarizationRange(segment.t0Ms, segment.t1Ms, anchored)}`;
+          item.textContent = `System Speaker ${segment.speakerId} · ${diarizationRange(segment.t0Ms, segment.t1Ms, anchored, runOffset)}`;
           list.appendChild(item);
         }
         section.appendChild(list);

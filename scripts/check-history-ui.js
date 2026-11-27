@@ -111,10 +111,25 @@ function recordB() {
       preset: 'very_high_latency',
       sampleRate: 16000,
       durationMs: 5000,
+      // This recorder was re-armed a minute into the meeting, so its times must
+      // start a minute after the meeting clock, not at the meeting start.
+      audioStartOffsetMs: 60000,
       segments: [
         { speakerId: 2, t0Ms: 2500, t1Ms: 4000 },
         { speakerId: 1, t0Ms: 100, t1Ms: 2000 },
       ],
+    }, {
+      // A legacy sidecar has no offset and must still render from the meeting start.
+      version: 1,
+      recordingId: 'diar-run-b-legacy',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'very_high_latency',
+      sampleRate: 16000,
+      durationMs: 0,
+      segments: [],
     }],
   };
 }
@@ -657,6 +672,7 @@ app.whenReady().then(async () => {
     diarizationHidden: document.querySelector('#meeting-diarization').classList.contains('hidden'),
     diarizationText: document.querySelector('#meeting-diarization').textContent,
     diarizationTitle: document.querySelector('#meeting-diarization .history-diarization-run h3')?.textContent || '',
+    diarizationTitles: [...document.querySelectorAll('#meeting-diarization .history-diarization-run h3')].map((node) => node.textContent),
     diarizationItems: [...document.querySelectorAll('#meeting-diarization .history-diarization-list li')].map((item) => item.textContent),
     diarizationSlots: [...document.querySelectorAll('#meeting-diarization .history-diarization-list li')].map((item) => item.className),
     diarizationList: (() => {
@@ -673,13 +689,21 @@ app.whenReady().then(async () => {
   assert.equal(processedOnly.diarizationHidden, false);
   assert.match(processedOnly.diarizationText, /not names, and not arrival order/);
   assert.match(processedOnly.diarizationText, /label all system audio as “Ada Lovelace”/);
-  const expectedStart = new Date(1700005000000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const expectedEnd = new Date(1700005005000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const expectedStart = new Date(1700005060000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const expectedEnd = new Date(1700005065000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   assert.ok(
-    processedOnly.diarizationTitle.startsWith('System audio · ')
+    processedOnly.diarizationTitle.startsWith('Recording 1 · System audio · ')
       && processedOnly.diarizationTitle.includes(expectedStart)
       && processedOnly.diarizationTitle.includes(expectedEnd),
-    'the run header is anchored to the meeting clock',
+    'the run header is anchored to the meeting clock plus the recording offset',
+  );
+  // A run without an offset stays anchored to the meeting start, as before.
+  const meetingStart = new Date(1700005000000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  assert.ok(
+    processedOnly.diarizationTitles.length === 2
+      && processedOnly.diarizationTitles[1].startsWith('Recording 2 · System audio · ')
+      && processedOnly.diarizationTitles[1].includes(meetingStart),
+    'a legacy run without an offset still starts at the meeting start',
   );
   assert.deepEqual(processedOnly.diarizationItems.map((item) => item.replace(/ · .*$/, '')), [
     'System Speaker 1',

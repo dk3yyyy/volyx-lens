@@ -61,6 +61,14 @@ function createPipelineHarness(overrides = {}) {
     },
     send: (channel, payload) => events.push({ channel, payload }),
     meetingStore: {
+      get: (recordId) => {
+        if (overrides.meetingRecord !== undefined) {
+          return typeof overrides.meetingRecord === 'function'
+            ? overrides.meetingRecord(recordId)
+            : overrides.meetingRecord;
+        }
+        return null;
+      },
       updateDiarization: (recordId, run) => {
         saved.push({ recordId, run });
         if (overrides.updateDiarization) return overrides.updateDiarization(recordId, run);
@@ -90,6 +98,7 @@ function createPipelineHarness(overrides = {}) {
       detachDiarizationRecording,
       arm(recorder, config) { diarizationRecorder = recorder; diarizationRunConfig = config; },
       get recorder() { return diarizationRecorder; },
+      get config() { return diarizationRunConfig; },
       get generation() { return diarizationAnalysisGeneration; },
       get active() { return diarizationAnalysisActive; },
       get snapshot() { return activeDiarizationSnapshot; },
@@ -115,6 +124,7 @@ test('normal stop analyzes the Them recording and stores a ready run', async () 
   assert.equal(run.preset, 'high_latency');
   assert.equal(run.sampleRate, 16000);
   assert.equal(run.durationMs, 1000);
+  assert.equal(run.audioStartOffsetMs, 0, 'a run with no known meeting start stays anchored at zero offset');
   assert.deepEqual(run.segments, [{ speakerId: 0, t0Ms: 0, t1Ms: 500 }]);
   assert.equal(harness.saved.length, 1);
   assert.equal(harness.saved[0].recordId, 'meeting-1');
@@ -124,6 +134,32 @@ test('normal stop analyzes the Them recording and stores a ready run', async () 
   // The WAV handed to the worker is zeroed once analysis finishes.
   assert.ok(harness.wavs.every((wav) => wav.every((byte) => byte === 0)));
   assert.match(harness.events.at(-1).payload.message, /Speaker activity analyzed locally: 1/);
+});
+
+test('a recorder re-armed mid-meeting carries its own start offset into the run', async () => {
+  const meetingStartedAt = 1_700_000_000_000;
+  const harness = createPipelineHarness({ meetingRecord: { id: 'meeting-offset', startedAt: meetingStartedAt } });
+  harness.api.startDiarizationRecorder({ systemEnabled: true });
+  const recorder = harness.api.recorder;
+  assert.ok(Number.isSafeInteger(harness.api.config.startedAt), 'arming records the wall-clock instant');
+  // A settings change or a stop/start that appends to the same meeting replaces
+  // the config; the replacement must not inherit the original start instant.
+  harness.api.arm(recorder, { ...harness.api.config, startedAt: meetingStartedAt + 240000 });
+  recorder.append(Buffer.alloc(48000));
+  const run = await harness.api.analyzeDiarization('meeting-offset');
+  assert.equal(run.audioStartOffsetMs, 240000, 'the run is offset from the meeting by its own arming time');
+  assert.deepEqual(run.segments, [{ speakerId: 0, t0Ms: 0, t1Ms: 500 }], 'segment times stay relative to the recording');
+  assert.equal(harness.saved[0].run.audioStartOffsetMs, 240000);
+});
+
+test('a recorder armed before the meeting start clamps its offset to zero', async () => {
+  const meetingStartedAt = 1_700_000_000_000;
+  const harness = createPipelineHarness({ meetingRecord: { id: 'meeting-early', startedAt: meetingStartedAt } });
+  harness.api.startDiarizationRecorder({ systemEnabled: true });
+  harness.api.arm(harness.api.recorder, { ...harness.api.config, startedAt: meetingStartedAt - 25 });
+  harness.api.recorder.append(Buffer.alloc(48000));
+  const run = await harness.api.analyzeDiarization('meeting-early');
+  assert.equal(run.audioStartOffsetMs, 0);
 });
 
 test('the recorder never arms without opt-in, history, or system audio', () => {

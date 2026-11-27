@@ -103,14 +103,18 @@ test('history shows a diarization timeline that never implies a persistent ident
   assert.match(store, /function normalizeDiarizationRun\(run\)/);
   assert.match(store, /function updateDiarization\(id, run\)/);
   assert.match(store, /diarizationRuns: normalizeDiarizationRuns\(record\.diarizationRuns\)/);
+  assert.match(store, /audioStartOffsetMs/);
   assert.match(renderer, /function renderMeetingDiarization\(\)/);
   assert.match(renderer, /System Speaker \$\{segment\.speakerId\}/);
   assert.match(renderer, /not names, and not arrival order/);
   assert.match(renderer, /renderMeetingDiarization\(\);/);
-  // Slots are anchored to the meeting clock, not elapsed recording time that
-  // cannot be matched to a transcript row.
-  assert.match(renderer, /function diarizationAnchor\(\)/);
-  assert.match(renderer, /function diarizationRange\(startMs, endMs, anchored\)/);
+  // Slots are anchored to the meeting clock, shifted by each run's own
+  // recording start, not elapsed time that cannot be matched to a transcript row.
+  assert.match(renderer, /function diarizationAnchor\(offsetMs = 0\)/);
+  assert.match(renderer, /function diarizationRange\(startMs, endMs, anchored, offsetMs = 0\)/);
+  assert.match(renderer, /const base = diarizationAnchor\(offsetMs\)/);
+  assert.match(renderer, /const runOffset = Number\(run\.audioStartOffsetMs\) \|\| 0/);
+  assert.match(renderer, /diarizationRange\(segment\.t0Ms, segment\.t1Ms, anchored, runOffset\)/);
   assert.match(renderer, /diarizationClock\(base \+ startMs\)/);
   // A named participant is merged into every system turn; the note must say so
   // instead of claiming turns remain You/Them.
