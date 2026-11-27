@@ -2551,7 +2551,15 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
 
   async function loadMeetingMemoryEntries() {
     try {
-      meetingMemoryEntries = await volyxLens.meetingMemoryList();
+      const listed = await volyxLens.meetingMemoryList();
+      // A draft belongs to one entry id. If that entry is gone (source deleted,
+      // then undone into a re-created memory), the stale draft must not mask the
+      // newly saved text when the editor reopens.
+      const liveIds = new Set(listed.map((item) => item.id));
+      for (const id of meetingMemoryDrafts.keys()) {
+        if (!liveIds.has(id)) meetingMemoryDrafts.delete(id);
+      }
+      meetingMemoryEntries = listed;
       renderMeetingMemoryEntries();
     } catch (error) {
       $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Saved meeting memory could not be loaded.';
