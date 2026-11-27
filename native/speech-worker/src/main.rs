@@ -745,7 +745,10 @@ fn handle_request(
                     "backendFallback": loaded.backend_fallback,
                     "sampleRate": loaded.info.sample_rate,
                     "maxSpeakers": loaded.info.max_speakers,
-                    "durationMs": started.elapsed().as_millis(),
+                    // Audio time, not inference time: callers label timelines
+                    // with this and a fast run must not look like 0.5 s of audio.
+                    "audioMs": (samples.len() as u64) * 1000 / loaded.info.sample_rate.max(1) as u64,
+                    "elapsedMs": started.elapsed().as_millis(),
                     "segments": speaker_segments_json(&segments)
                 })),
                 Err(error) => Err(("diarize_failed".to_string(), error.to_string())),
