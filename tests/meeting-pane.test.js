@@ -69,9 +69,11 @@ test('history can be kept tidy without opening dialogs one by one', () => {
 
   const start = renderer.indexOf("$('#meeting-history-delete-selected').addEventListener('click'");
   assert.ok(start > 0, 'the bulk delete button is wired');
-  const body = renderer.slice(start, start + 700);
+  const body = renderer.slice(start, start + 1400);
   assert.match(body, /historyDeleteMany/);
-  assert.match(body, /You can undo this right after/);
+  assert.match(body, /Any linked memories will also be deleted and will not return on Undo/);
+  assert.match(body, /memoriesRemoved/);
+  assert.match(body, /memoryFailures/);
 });
 
 test('the retention window is a setting, applied at startup and on change', () => {

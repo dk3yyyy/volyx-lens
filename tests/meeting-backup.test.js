@@ -10,9 +10,11 @@ const {
   readBackupFolder,
   INDEX_NAME,
   MAX_BACKUP_FILES,
+  MAX_BACKUP_FILE_BYTES,
   fileStamp,
 } = require('../src/meeting-backup');
 const { createMeetingStore } = require('../src/meeting-store');
+const { createMeetingMemory } = require('../src/inspectable-memory');
 
 const root = path.join(__dirname, '..');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
@@ -95,6 +97,31 @@ test('a plan read back through readBackupFolder returns the same records', () =>
   assert.equal(result.records.length, 2);
   assert.deepEqual(result.records.map((record) => record.id).sort(), records.map((record) => record.id).sort());
   assert.deepEqual(result.skipped, [], 'the index and unrelated files are ignored, not reported as damage');
+});
+
+test('a legal large meeting survives the backup and restore size checks', () => {
+  const record = sampleRecord({
+    turns: Array.from({ length: 5000 }, (_, index) => ({
+      id: index + 1,
+      channel: index % 2 ? 'you' : 'them',
+      text: 'x'.repeat(2000),
+      ts: 1_700_000_000_000 + index,
+    })),
+  });
+  const plan = buildBackupPlan([record]);
+  const file = plan.files[0];
+  assert.ok(Buffer.byteLength(file.content) > 8 * 1024 * 1024);
+  assert.ok(Buffer.byteLength(file.content) <= MAX_BACKUP_FILE_BYTES);
+
+  const restored = readBackupFolder([{ name: file.name, text: file.content }]);
+  assert.equal(restored.records.length, 1);
+  assert.equal(restored.records[0].turns.length, 5000);
+  assert.deepEqual(restored.skipped, []);
+});
+
+test('backup planning refuses a record that restore would reject', () => {
+  const record = sampleRecord({ id: 'x'.repeat(MAX_BACKUP_FILE_BYTES + 1) });
+  assert.throws(() => buildBackupPlan([record]), /too large|backup limit/i);
 });
 
 test('readBackupFolder names every file it refuses instead of importing it', () => {
@@ -180,6 +207,95 @@ test('importRecords restores turns, speaker, notes and the cleaned copy', () => 
   assert.match(restored.notes.summary, /Ship the roadmap/);
   assert.deepEqual(restored.cleaned.texts, source.cleaned.texts);
   assert.equal(restored.endedAt, source.endedAt, 'the meeting keeps its own end time');
+});
+
+test('importRecords reports a notes write failure and does not attach memory without persisted notes', () => {
+  const directory = temporaryDirectory();
+  let renames = 0;
+  const fsImpl = {
+    ...fs,
+    renameSync: (from, to) => {
+      renames += 1;
+      // The first rename creates the transcript record; the second persists notes.
+      if (renames === 2) throw new Error('disk full');
+      return fs.renameSync(from, to);
+    },
+  };
+  const store = createMeetingStore({ dir: directory, fsImpl });
+  const notes = { summary: 'Ship the roadmap', keyPoints: [], decisions: [], actionItems: [], followUp: [] };
+  const source = sampleRecord({
+    participant: null,
+    notes,
+    memory: createMeetingMemory({ meetingId: sampleRecord().id, endedAt: 1_700_000_000_000, notes, now: 1_700_000_000_100 }),
+  });
+
+  const result = store.importRecords([source]);
+
+  assert.equal(result.imported, 1, 'the transcript is still a usable partial restore');
+  assert.deepEqual(result.skipped, [{ id: source.id, reason: 'notes_write_failed' }]);
+  const restored = store.get(result.ids[0]);
+  assert.equal(restored.notes, null, 'the failed notes write is not reported as persisted');
+  assert.equal(restored.memory, null, 'memory cannot attach without its persisted notes source');
+  assert.deepEqual(store.listMemories(), []);
+});
+
+test('importRecords does not attach memory when persisted notes have no memory content', () => {
+  const directory = temporaryDirectory();
+  const store = createMeetingStore({ dir: directory });
+  const notes = { summary: '', keyPoints: [], decisions: [], actionItems: [], followUp: [] };
+  const source = sampleRecord({
+    notes,
+    memory: createMeetingMemory({ meetingId: sampleRecord().id, endedAt: 1_700_000_000_000, notes: { summary: 'Saved memory source' }, now: 1_700_000_000_100 }),
+  });
+
+  const result = store.importRecords([source]);
+
+  assert.equal(result.imported, 1);
+  assert.deepEqual(result.skipped, [{ id: source.id, reason: 'memory_source_missing' }]);
+  const restored = store.get(result.ids[0]);
+  assert.deepEqual(restored.notes, notes);
+  assert.equal(restored.memory, null);
+  assert.deepEqual(store.listMemories(), []);
+});
+
+test('backup restore preserves saved memory after source notes grow beyond the memory limit', (t) => {
+  const directory = temporaryDirectory();
+  const restoredDirectory = `${directory}-restored`;
+  t.after(() => {
+    fs.rmSync(directory, { recursive: true, force: true });
+    fs.rmSync(restoredDirectory, { recursive: true, force: true });
+  });
+  const sourceStore = createMeetingStore({ dir: directory });
+  const saved = sourceStore.finalize({
+    turns: [{ id: 1, channel: 'you', text: 'Orichalcum launch planning', ts: 1_700_000_000_000 }],
+    enabled: true,
+    endedAt: 1_700_000_000_000,
+  });
+  assert.equal(sourceStore.updateNotes(saved.id, { summary: 'Short launch note.' }).updated, true);
+  assert.equal(sourceStore.saveMemoryFromNotes(saved.id).saved, true);
+  const savedMemory = sourceStore.get(saved.id).memory;
+  const expandedNotes = {
+    summary: 'Expanded launch note. '.repeat(300),
+    keyPoints: [],
+    decisions: [],
+    actionItems: [],
+    followUp: [],
+  };
+  assert.ok(expandedNotes.summary.length > 4000);
+  assert.equal(sourceStore.updateNotes(saved.id, expandedNotes).updated, true);
+
+  const plan = buildBackupPlan(sourceStore.readAll().records);
+  const backup = readBackupFolder(plan.files.map((file) => ({ name: file.name, text: file.content }))).records;
+  assert.ok(backup[0].notes.summary.length > 4000, 'the backup contains the regenerated oversized notes');
+  const restoredStore = createMeetingStore({ dir: restoredDirectory });
+  const result = restoredStore.importRecords(backup);
+
+  assert.equal(result.imported, 1);
+  assert.deepEqual(result.skipped, [], 'oversized regenerated notes do not invalidate the saved memory source');
+  const restored = restoredStore.get(result.ids[0]);
+  assert.equal(restored.notes.summary, expandedNotes.summary, 'the expanded notes are restored intact');
+  assert.deepEqual(restored.memory, savedMemory, 'the previously validated memory is restored unchanged');
+  assert.equal(restoredStore.listMemories()[0].memory.content, savedMemory.content);
 });
 
 test('importRecords skips an empty transcript and never overwrites a newer meeting', () => {

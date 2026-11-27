@@ -75,6 +75,219 @@ test('updateNotes persists structured notes to a meeting record', () => {
   store.clear();
 });
 
+test('meeting memory is editable, source-grounded, searchable, and cascades with source deletion', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  const store = createMeetingStore({ dir, now: () => 1_800_000_000_000 });
+  const saved = store.finalize({
+    turns: [{ channel: 'you', text: 'Keep the rollout opt-in.', ts: 1000 }],
+    enabled: true,
+    endedAt: 1_799_000_000_000,
+  });
+  store.updateNotes(saved.id, {
+    summary: 'Keep the rollout opt-in.',
+    decisions: ['Ship only after review.'],
+    source: 'cleaned',
+    sourceHash: 'a'.repeat(64),
+  });
+
+  const memory = store.saveMemoryFromNotes(saved.id);
+  assert.equal(memory.saved, true);
+  assert.equal(memory.memory.source.meetingId, saved.id);
+  assert.equal(memory.memory.source.transcriptHash, 'a'.repeat(64));
+  assert.equal(store.listMemories().length, 1);
+  assert.equal(store.searchMemories('rollout opt-in')[0].meetingId, saved.id);
+  assert.equal(store.updateMemory(saved.id, 'Corrected: release only after approval.').updated, true);
+  assert.equal(store.searchMemories('approval')[0].memory.content, 'Corrected: release only after approval.');
+  assert.equal(store.setMemoryEnabled(saved.id, false).updated, true);
+  assert.deepEqual(store.searchMemories('approval'), []);
+
+  const removed = store.remove(saved.id);
+  assert.equal(removed.removed, true);
+  assert.equal(removed.memoryRemoved, true);
+  assert.equal(store.listMemories().length, 0);
+  const trashPath = path.join(`${dir}-trash`, fs.readdirSync(`${dir}-trash`)[0]);
+  assert.equal(JSON.parse(fs.readFileSync(trashPath, 'utf8')).memory, null);
+});
+
+test('deleting one memory leaves its saved transcript and generated notes intact', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  const store = createMeetingStore({ dir });
+  const saved = store.finalize({
+    turns: [{ channel: 'you', text: 'Keep the current plan.', ts: 1000 }],
+    enabled: true,
+  });
+  const notes = { summary: 'Keep the current plan.', decisions: ['Review next week.'] };
+  store.updateNotes(saved.id, notes);
+  store.saveMemoryFromNotes(saved.id);
+
+  assert.equal(store.removeMemory(saved.id).removed, true);
+  const after = store.get(saved.id);
+  assert.equal(after.memory, null);
+  assert.equal(after.turns[0].text, 'Keep the current plan.');
+  assert.deepEqual(after.notes, notes);
+});
+
+test('source deletion fails closed when the meeting record cannot be read', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  let failRead = false;
+  let target;
+  const fsImpl = {
+    ...fs,
+    readFileSync: (file, ...args) => {
+      if (failRead && file === target) {
+        const error = new Error('permission denied');
+        error.code = 'EACCES';
+        throw error;
+      }
+      return fs.readFileSync(file, ...args);
+    },
+  };
+  const store = createMeetingStore({ dir, fsImpl });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'Private meeting', ts: 1 }], enabled: true });
+  store.updateNotes(saved.id, { summary: 'Private memory' });
+  store.saveMemoryFromNotes(saved.id);
+  target = path.join(dir, `${saved.id}.json`);
+
+  failRead = true;
+  const result = store.remove(saved.id);
+  assert.equal(result.removed, false);
+  assert.equal(result.reason, 'read_failed');
+  assert.equal(fs.existsSync(target), true);
+  assert.deepEqual(fs.existsSync(`${dir}-trash`) ? fs.readdirSync(`${dir}-trash`) : [], []);
+});
+
+test('failed source deletion keeps the live memory and removes the sanitized trash copy', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  let failUnlink = false;
+  let target;
+  const fsImpl = {
+    ...fs,
+    unlinkSync: (file) => {
+      if (failUnlink && file === target) {
+        failUnlink = false;
+        throw new Error('delete failed');
+      }
+      return fs.unlinkSync(file);
+    },
+  };
+  const store = createMeetingStore({ dir, fsImpl });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'Private meeting', ts: 1 }], enabled: true });
+  store.updateNotes(saved.id, { summary: 'Private memory' });
+  store.saveMemoryFromNotes(saved.id);
+  target = path.join(dir, `${saved.id}.json`);
+
+  failUnlink = true;
+  const result = store.remove(saved.id);
+  assert.equal(result.removed, false);
+  assert.ok(store.get(saved.id).memory, 'the live memory is still present');
+  assert.deepEqual(fs.readdirSync(`${dir}-trash`), [], 'no stale sanitized copy is left behind');
+});
+
+test('memory deletion and retention remove stale temp copies of the source record', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  const now = 1_800_000_000_000;
+  const store = createMeetingStore({ dir, now: () => now });
+  const saved = store.finalize({
+    turns: [{ channel: 'you', text: 'Private meeting', ts: 1 }],
+    enabled: true,
+    endedAt: now - 20 * 24 * 60 * 60 * 1000,
+  });
+  store.updateNotes(saved.id, { summary: 'Private memory' });
+  store.saveMemoryFromNotes(saved.id);
+  const stale = path.join(dir, `${saved.id}.json.crashed.tmp`);
+  const old = (now - 10 * 60 * 1000) / 1000;
+  fs.writeFileSync(stale, '{"memory":"PRIVATE STALE MEMORY"}');
+  fs.utimesSync(stale, old, old);
+
+  assert.equal(store.removeMemory(saved.id).removed, true);
+  assert.equal(fs.existsSync(stale), false);
+
+  store.saveMemoryFromNotes(saved.id);
+  fs.writeFileSync(stale, '{"memory":"PRIVATE STALE MEMORY"}');
+  fs.utimesSync(stale, old, old);
+  assert.equal(store.pruneOlderThan(7, { now }).removed, 1);
+  assert.equal(fs.existsSync(stale), false);
+});
+
+test('stopword-only memory queries do not read meeting files', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  let reads = 0;
+  const fsImpl = {
+    ...fs,
+    readFileSync: (file, ...args) => {
+      if (String(file).endsWith('.json')) reads += 1;
+      return fs.readFileSync(file, ...args);
+    },
+  };
+  const store = createMeetingStore({ dir, fsImpl });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'Meeting', ts: 1 }], enabled: true });
+  store.updateNotes(saved.id, { summary: 'Meeting' });
+  store.saveMemoryFromNotes(saved.id);
+  reads = 0;
+  assert.deepEqual(store.searchMemories('the and is'), []);
+  assert.equal(reads, 0);
+});
+
+test('memory listing reuses parsed entries until a source meeting changes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  let reads = 0;
+  const fsImpl = {
+    ...fs,
+    readFileSync: (file, ...args) => {
+      if (String(file).endsWith('.json')) reads += 1;
+      return fs.readFileSync(file, ...args);
+    },
+  };
+  const store = createMeetingStore({ dir, fsImpl });
+  const saved = store.finalize({ turns: [{ channel: 'you', text: 'Cached memory', ts: 1 }], enabled: true });
+  store.updateNotes(saved.id, { summary: 'Cached memory' });
+  store.saveMemoryFromNotes(saved.id);
+  reads = 0;
+
+  assert.equal(store.listMemories().length, 1);
+  const firstReads = reads;
+  assert.equal(store.listMemories().length, 1);
+  assert.equal(reads, firstReads);
+
+  store.updateMemory(saved.id, 'Changed memory');
+  assert.equal(store.listMemories()[0].memory.content, 'Changed memory');
+  assert.ok(reads > firstReads);
+});
+
+test('opening a meeting store sweeps stale temp copies left by a crashed writer', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  createMeetingStore({ dir });
+  const stale = path.join(dir, 'crashed.json.tmp');
+  fs.writeFileSync(stale, '{"memory":"PRIVATE STALE MEMORY"}');
+  const old = (Date.now() - 10 * 60 * 1000) / 1000;
+  fs.utimesSync(stale, old, old);
+
+  createMeetingStore({ dir });
+  assert.equal(fs.existsSync(stale), false);
+});
+
+test('meeting memory follows meeting retention and survives a backup restore', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-memory-'));
+  let now = 1_800_000_000_000;
+  const store = createMeetingStore({ dir, now: () => now });
+  const saved = store.finalize({
+    turns: [{ channel: 'you', text: 'Keep the rollout opt-in.', ts: 1000 }],
+    enabled: true,
+    endedAt: now - 20 * 24 * 60 * 60 * 1000,
+  });
+  store.updateNotes(saved.id, { summary: 'Keep the rollout opt-in.', source: 'raw' });
+  store.saveMemoryFromNotes(saved.id);
+  const backupRecord = store.get(saved.id);
+  const restore = store.importRecords([backupRecord]);
+  assert.equal(restore.imported, 1);
+  assert.equal(store.listMemories().length, 2);
+
+  now += 1;
+  const pruned = store.pruneOlderThan(7, { now });
+  assert.equal(pruned.removed, 2);
+  assert.equal(store.listMemories().length, 0);
+});
+
 test('list() correctly reports hasNotes=false when no notes exist', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
   const store = createMeetingStore({ dir });
