@@ -36,7 +36,18 @@ function createLocalSpeechStreamManager({
   if (!activeChannels.length) throw new TypeError('At least one valid speech channel is required.');
 
   const inFlight = new Map(activeChannels.map((channel) => [channel, 0]));
-  const recovery = new Map(activeChannels.map((channel) => [channel, { chunks: [], bytes: 0, boundaryChunks: 0 }]));
+  // `boundaries` is a FIFO of absolute chunk positions, one per VAD stop.
+  // `offset` counts chunks discarded from the front (by trimming or by an
+  // earlier final) so a queued boundary written before that discard still
+  // resolves to the right chunk. A scalar was not enough: a second boundary
+  // before the first final overwrote it and the fallback splice dropped the
+  // next utterance.
+  const recovery = new Map(activeChannels.map((channel) => [channel, {
+    chunks: [],
+    bytes: 0,
+    offset: 0,
+    boundaries: [],
+  }]));
   const vads = new Map(activeChannels.map((channel) => [
     channel,
     new VoiceActivityDetector({ sampleRate: 24_000, ...vad }),
@@ -118,7 +129,7 @@ function createLocalSpeechStreamManager({
 
   function clearRecovery(channel) {
     const state = recovery.get(channel);
-    if (state) { state.chunks = []; state.bytes = 0; }
+    if (state) { state.chunks = []; state.bytes = 0; state.offset = 0; state.boundaries = []; }
   }
 
   function rememberRecovery(channel, pcm) {
@@ -128,8 +139,9 @@ function createLocalSpeechStreamManager({
     state.bytes += pcm.length;
     while (state.chunks.length > MAX_RECOVERY_CHUNKS || state.bytes > MAX_RECOVERY_BYTES) {
       const dropped = state.chunks.shift();
-      state.bytes -= dropped ? dropped.length : 0;
-      if (state.boundaryChunks > 0) state.boundaryChunks -= 1;
+      if (!dropped) break;
+      state.bytes -= dropped.length;
+      state.offset += 1;
     }
   }
 
@@ -152,12 +164,17 @@ function createLocalSpeechStreamManager({
       touchLease(event.channel);
       // A final covers only the audio up to the boundary it finalizes. Audio
       // appended after that boundary belongs to the next utterance, so keep
-      // it for fallback instead of wiping the whole buffer.
+      // it for fallback instead of wiping the whole buffer. Consume exactly
+      // one queued boundary per final, in the order the worker emits finals.
       const state = recovery.get(event.channel);
-      if (state && state.boundaryChunks > 0) {
-        const consumed = state.chunks.splice(0, state.boundaryChunks);
-        for (const chunk of consumed) state.bytes -= chunk.length;
-        state.boundaryChunks = 0;
+      const boundary = state && state.boundaries.length ? state.boundaries.shift() : null;
+      if (state && boundary !== null) {
+        const consume = Math.max(0, boundary - state.offset);
+        if (consume > 0) {
+          const consumed = state.chunks.splice(0, consume);
+          for (const chunk of consumed) state.bytes -= chunk.length;
+          state.offset += consumed.length;
+        }
       } else {
         clearRecovery(event.channel);
       }
@@ -235,7 +252,10 @@ function createLocalSpeechStreamManager({
     if (activity.speechStopped) {
       vads.get(channel).reset();
       const state = recovery.get(channel);
-      if (state) state.boundaryChunks = state.chunks.length;
+      // Absolute position of this boundary in the retained chunk stream. The
+      // final that matches it will arrive asynchronously; a second boundary
+      // must queue behind it rather than overwrite it.
+      if (state) state.boundaries.push(state.offset + state.chunks.length);
       worker.streamBoundary(channel).catch(reportFailure);
     }
     return true;

@@ -37,7 +37,8 @@ test('capture transitions and active New Session replacement share one serialize
 test('sleep, lock, and immediate stops drop the unanswered diarization recording', () => {
   assert.match(main, /powerMonitor\.on\('suspend'[\s\S]*?stopCaptureForSystem\('suspend'\)/);
   assert.match(main, /powerMonitor\.on\('lock-screen'[\s\S]*?stopCaptureForSystem\('lock'\)/);
-  assert.match(main, /if \(immediate \|\| reason === 'suspend' \|\| reason === 'lock'\) clearDiarizationRecorder\(\)/);
+  assert.match(main, /const droppedStop = immediate \|\| reason === 'suspend' \|\| reason === 'lock';/);
+  assert.match(main, /if \(droppedStop\) clearDiarizationRecorder\(\)/);
   assert.match(main, /if \(reason !== 'suspend' && reason !== 'lock'\) \{[\s\S]*?finalizeMeeting/);
 });
 

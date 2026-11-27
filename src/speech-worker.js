@@ -20,6 +20,54 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_VOCABULARY_TERMS = 40;
 const MAX_VOCABULARY_TERM_CHARACTERS = 40;
 
+// The recorder retains at most 10 minutes of 24 kHz mono 16-bit PCM
+// (src/diarization-session.js) and the native worker enforces the same bound.
+const DIARIZATION_SAMPLE_RATE = 24_000;
+const MAX_DIARIZATION_AUDIO_MS = 10 * 60 * 1000;
+const MAX_DIARIZATION_PCM_BYTES = Math.floor((MAX_DIARIZATION_AUDIO_MS / 1000) * DIARIZATION_SAMPLE_RATE * 2);
+const MAX_DIARIZATION_WAV_BYTES = MAX_DIARIZATION_PCM_BYTES + 44;
+// One conversational chunk, not a whole meeting: VAD detection and stream
+// feeds are called with 80 ms frames. A megabyte is already far beyond that
+// and keeps the base64 request small.
+const MAX_AUDIO_CHUNK_BYTES = 1024 * 1024;
+
+// Diarization is an inference over the whole recording, not a model load.
+// Budget four times the audio duration plus 30 s of slack, never less than the
+// model-load budget and never more than 15 minutes, so the watchdog scales with
+// the accepted input instead of killing a legitimate multi-minute analysis.
+const DIARIZATION_TIMEOUT_MULTIPLIER = 4;
+const DIARIZATION_TIMEOUT_SLACK_MS = 30_000;
+const MAX_DIARIZATION_TIMEOUT_MS = 15 * 60 * 1000;
+
+function wavAudioMs(wav) {
+  if (Buffer.isBuffer(wav) && wav.length >= 44
+      && wav.toString('ascii', 0, 4) === 'RIFF' && wav.toString('ascii', 8, 12) === 'WAVE') {
+    const sampleRate = wav.readUInt32LE(24);
+    const channels = wav.readUInt16LE(22) || 1;
+    const declared = wav.readUInt32LE(40);
+    const dataBytes = Math.min(declared > 0 ? declared : wav.length - 44, wav.length - 44);
+    if (sampleRate > 0 && dataBytes > 0) {
+      return Math.round((dataBytes / 2 / channels / sampleRate) * 1000);
+    }
+  }
+  // Raw PCM fallback: the caller's WAV builder uses the recorder's 24 kHz.
+  return Math.round((Math.max(0, wav.length - 44) / 2 / DIARIZATION_SAMPLE_RATE) * 1000);
+}
+
+function diarizationTimeoutMs(wav, floorMs, slackMs = DIARIZATION_TIMEOUT_SLACK_MS) {
+  const scaled = (wavAudioMs(wav) * DIARIZATION_TIMEOUT_MULTIPLIER) + slackMs;
+  return Math.min(MAX_DIARIZATION_TIMEOUT_MS, Math.max(floorMs, scaled));
+}
+
+function assertAudioPayloadSize(bytes, maximum, label) {
+  if (!Number.isFinite(bytes) || bytes > maximum) {
+    throw workerError(
+      'speech_audio_payload_too_large',
+      `${label} payload exceeds the maximum accepted size of ${maximum} bytes.`,
+    );
+  }
+}
+
 function speechWorkerCandidates({
   env = process.env,
   platform = process.platform,
@@ -148,6 +196,7 @@ function createSpeechWorker({
   env = process.env,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   modelOperationTimeoutMs = 120_000,
+  diarizationTimeoutSlackMs = DIARIZATION_TIMEOUT_SLACK_MS,
   idleUnloadMs = 5 * 60 * 1000,
   stopTimeoutMs = 3000,
   cwd = os.tmpdir(),
@@ -332,7 +381,10 @@ function createSpeechWorker({
     return activeChild;
   }
 
-  function request(command, values = {}, timeoutMs = requestTimeoutMs) {
+  function request(command, values = {}, timeoutMs = requestTimeoutMs, {
+    timeoutCode = 'speech_worker_timeout',
+    killOnTimeout = true,
+  } = {}) {
     let activeChild;
     try { activeChild = ensureStarted(); } catch (error) { return Promise.reject(error); }
     const id = ++sequence;
@@ -340,9 +392,18 @@ function createSpeechWorker({
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(workerError('speech_worker_timeout', `Speech worker command timed out: ${command}`));
-        if (generation === workerGeneration && child === activeChild) {
-          if (!activeChild.killed) activeChild.kill('SIGKILL');
+        const processDied = activeChild.exitCode !== null || activeChild.signalCode !== null;
+        // A wall-clock timeout is a crash only when the process actually died.
+        // Otherwise report a command-specific timeout and reclaim the worker
+        // without surfacing a bogus "worker exited" or a crash record.
+        reject(workerError(
+          processDied ? 'speech_worker_exited' : timeoutCode,
+          processDied
+            ? `Speech worker exited before completing: ${command}`
+            : `Speech worker command timed out: ${command}`,
+        ));
+        if (generation === workerGeneration && child === activeChild && !processDied) {
+          if (killOnTimeout && !activeChild.killed) activeChild.kill('SIGKILL');
           stop().catch(() => {});
         }
       }, timeoutMs);
@@ -451,6 +512,7 @@ function createSpeechWorker({
     if (!Buffer.isBuffer(pcm) || pcm.length === 0 || pcm.length % 2 !== 0) {
       throw new TypeError('Neural VAD requires non-empty 16-bit PCM audio.');
     }
+    assertAudioPayloadSize(pcm.length, MAX_AUDIO_CHUNK_BYTES, 'Neural VAD');
     return request('vad-detect', {
       pcm16Base64: pcm.toString('base64'),
       threshold: Math.max(0.01, Math.min(0.99, Number(threshold) || 0.4)),
@@ -519,6 +581,9 @@ function createSpeechWorker({
     if (!['low_latency', 'high_latency', 'very_high_latency'].includes(preset)) {
       throw new TypeError('Unsupported diarization preset.');
     }
+    // Refuse an absurd recording before base64-encoding it: the encoder would
+    // allocate ~1.34x the buffer as an immutable string.
+    assertAudioPayloadSize(wav.length, MAX_DIARIZATION_WAV_BYTES, 'Speaker diarization');
     throwIfDiarizationCancelled(isCancelled);
     // Native progress events arrive on the shared worker event stream. Scope the
     // listener to this run so a renderer/status callback cannot leak into the
@@ -533,10 +598,15 @@ function createSpeechWorker({
     try {
       await loadDiarizer({ backend, isCancelled });
       throwIfDiarizationCancelled(isCancelled);
+      // The 120 s model-load budget is not an inference budget: a 10-minute
+      // recording can legitimately take minutes. Scale the watchdog to the
+      // audio and keep killing only as a last resort for an unresponsive
+      // process (a timeout alone is not a worker crash).
+      const timeoutMs = diarizationTimeoutMs(wav, modelOperationTimeoutMs, diarizationTimeoutSlackMs);
       const result = await request('diarize-run', {
         wavBase64: wav.toString('base64'),
         preset,
-      }, modelOperationTimeoutMs);
+      }, timeoutMs, { timeoutCode: 'speech_diarizer_timeout', killOnTimeout: false });
       if (!Array.isArray(result.segments)) {
         throw workerError('speech_worker_protocol_error', 'Speech worker omitted diarization segments.');
       }
@@ -639,6 +709,7 @@ function createSpeechWorker({
     if (!Buffer.isBuffer(pcm) || pcm.length === 0 || pcm.length % 2 !== 0) {
       throw new TypeError('Local speech streaming requires non-empty 16-bit PCM audio.');
     }
+    assertAudioPayloadSize(pcm.length, MAX_AUDIO_CHUNK_BYTES, 'Local speech streaming');
     return request('stream-feed', { channel, pcm16Base64: pcm.toString('base64') }, 30_000);
   }
 
@@ -774,5 +845,7 @@ module.exports = {
   createSpeechWorker,
   speechWorkerEnvironment,
   sanitizeVocabulary,
+  wavAudioMs,
+  diarizationTimeoutMs,
   defaultSpeechWorker,
 };

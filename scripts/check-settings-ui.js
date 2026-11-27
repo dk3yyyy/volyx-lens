@@ -32,6 +32,16 @@ const emptyTaskContext = { count: 0, totalBytes: 0, pinnedCount: 0, revision: 0 
 
 ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
+ipcMain.handle('speech-diarizer:get', () => ({
+  id: 'diar-sortformer-4spk',
+  name: 'Sortformer 4-speaker diarizer',
+  runtimeAvailable: true,
+  installed: false,
+  loaded: false,
+  artifact: { bytes: 139310336 },
+  license: { name: 'NVIDIA Open Model License' },
+  presets: ['low_latency', 'high_latency', 'very_high_latency'],
+}));
 ipcMain.handle('personal-context:get', () => personalContext);
 ipcMain.handle('workspace-index:get', () => workspaces);
 ipcMain.handle('workspace-index:add', () => ({ canceled: true, workspaces }));
@@ -224,6 +234,36 @@ app.whenReady().then(async () => {
   assert.equal(slideSwitch.height, '20px', 'the slide switch uses the compact switch height');
   assert.equal(slideSwitch.labelled, true, 'the slide switch is associated with its visible label');
   assert.equal(slideSwitch.checked, false, 'slide tracking remains off by default in settings');
+  const speakerActivity = await win.webContents.executeJavaScript(`(() => {
+    const toggle = document.querySelector('#stt-diarization-enabled');
+    const status = document.querySelector('#speech-diarizer-status');
+    const download = document.querySelector('#speech-diarizer-download');
+    const remove = document.querySelector('#speech-diarizer-remove');
+    const progress = document.querySelector('#speech-diarizer-progress');
+    return {
+      checked: toggle.checked,
+      disabled: toggle.disabled,
+      status: status.textContent,
+      preset: document.querySelector('#stt-diarization-preset').value,
+      maxMinutes: document.querySelector('#stt-diarization-max-minutes').value,
+      downloadLabel: download.textContent,
+      downloadDisabled: download.disabled,
+      removeDisabled: remove.disabled,
+      progressRole: progress.getAttribute('role'),
+      progressNow: progress.getAttribute('aria-valuenow'),
+    };
+  })()`);
+  assert.equal(speakerActivity.checked, false, 'speaker activity is off by default');
+  assert.equal(speakerActivity.disabled, true, 'the switch is held off until the model is downloaded');
+  assert.match(speakerActivity.status, /Not downloaded/);
+  assert.match(speakerActivity.status, /required before speaker activity can run/);
+  assert.equal(speakerActivity.preset, 'very_high_latency', 'the default preset is exposed');
+  assert.equal(speakerActivity.maxMinutes, '5', 'the default 5-minute bound is exposed');
+  assert.equal(speakerActivity.downloadLabel, 'Download model');
+  assert.equal(speakerActivity.downloadDisabled, false, 'the model can be downloaded from Settings');
+  assert.equal(speakerActivity.removeDisabled, true, 'an absent model cannot be removed');
+  assert.equal(speakerActivity.progressRole, 'progressbar');
+  assert.equal(speakerActivity.progressNow, '0');
   const permissionDiagnostic = await win.webContents.executeJavaScript(`({
     text: document.querySelector('#realtime-test-result').textContent,
     startAttempted: document.querySelector('#test-live-transcription-btn').textContent !== 'Test Live Mic'

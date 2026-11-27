@@ -105,9 +105,30 @@ test('history shows a diarization timeline that never implies a persistent ident
   assert.match(store, /diarizationRuns: normalizeDiarizationRuns\(record\.diarizationRuns\)/);
   assert.match(renderer, /function renderMeetingDiarization\(\)/);
   assert.match(renderer, /System Speaker \$\{segment\.speakerId\}/);
-  assert.match(renderer, /Arrival-order labels are local to each recording/);
+  assert.match(renderer, /not names, and not arrival order/);
   assert.match(renderer, /renderMeetingDiarization\(\);/);
-  // A diarization label must not be reachable through the transcript speaker
+  // Slots are anchored to the meeting clock, not elapsed recording time that
+  // cannot be matched to a transcript row.
+  assert.match(renderer, /function diarizationAnchor\(\)/);
+  assert.match(renderer, /function diarizationRange\(startMs, endMs, anchored\)/);
+  assert.match(renderer, /diarizationClock\(base \+ startMs\)/);
+  // A named participant is merged into every system turn; the note must say so
+  // instead of claiming turns remain You/Them.
+  assert.match(renderer, /label all system audio as/);
+  assert.match(html, /Other speaker \/ system audio/);
+  assert.match(html, /Applies to all system audio, which may include more than one person/);
+  // Bounded, scrollable, visually distinguishable slots.
+  assert.match(css, /\.history-diarization-list \{[^}]*max-height:[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.history-diarization-list \{[^}]*list-style:\s*none/);
+  assert.match(css, /\.history-diarization-segment\.speaker-slot-1/);
+  assert.match(css, /\.history-diarization-segment\.speaker-slot-4/);
+  assert.match(renderer, /MAX_RENDERED_DIARIZATION_SEGMENTS/);
+  assert.match(renderer, /mergeDiarizationSegments/);
+  // A run that crossed the bound was not analyzed at all; never print the
+  // truncated buffer as coverage.
+  assert.match(renderer, /not analyzed \(time limit\)/);
+  assert.match(renderer, /duration_limit_exceeded/);
+  // A speaker label must not be reachable through the transcript speaker
   // label helper, so the two surfaces cannot be conflated.
   const speakerLabel = renderer.match(/function speakerLabelFor\(channel\) \{[\s\S]*?\n  \}/);
   assert.ok(speakerLabel, 'transcript speaker labels are defined separately');

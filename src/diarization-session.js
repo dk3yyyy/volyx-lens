@@ -25,6 +25,9 @@ function createDiarizationRecorder({
   let truncated = false;
 
   function append(pcm) {
+    // A malformed chunk is refused without touching `truncated` or the byte
+    // count: it is a caller bug, not retention pressure. Only real 16-bit PCM
+    // can cross the recording bound and trigger the limit message.
     if (!Buffer.isBuffer(pcm) || pcm.length === 0 || pcm.length % 2 !== 0) return false;
     // Once the bound is crossed the whole recording is unusable: analyzing a
     // prefix would attribute a partial conversation, so refuse every later

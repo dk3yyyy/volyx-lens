@@ -75,10 +75,16 @@ test('diarization recording is Them-only, opt-in, and bounded in memory', () => 
 });
 
 test('every session boundary cancels, clears, or restarts the diarization recorder', () => {
-  // Normal stop: save the transcript first, then analyze. Immediate stop never
-  // analyzes the audio it just dropped.
-  assert.match(main, /const finalized = finalizeMeeting\([\s\S]*?if \(!immediate\) await speechOperationGate\.run\('diarization', \(\) => analyzeDiarization\(finalized\.id \|\| activeMeetingRecordId\)\)/);
-  assert.match(main, /if \(immediate \|\| reason === 'suspend' \|\| reason === 'lock'\) clearDiarizationRecorder\(\)/);
+  // Normal stop: save the transcript first, then detach the recording and hand
+  // it to the gate without awaiting the analysis inside the transition.
+  assert.match(main, /const finalized = finalizeMeeting\([\s\S]*?dispatchDiarizationAnalysis\(finalized\.id \|\| activeMeetingRecordId, finishedDiarization\)/);
+  assert.match(main, /const finishedDiarization = droppedStop \? null : detachDiarizationRecording\(\)/);
+  assert.doesNotMatch(
+    main.slice(main.indexOf('async function applyCaptureState('), main.indexOf('async function reconcileCaptureState()')),
+    /await speechOperationGate\.run\('diarization'/,
+    'Stop never waits for the analysis',
+  );
+  assert.match(main, /if \(droppedStop\) clearDiarizationRecorder\(\)/);
 
   // Immediate quit invalidates the generation before zeroing the recording.
   const shutdownStart = main.indexOf('async function shutdownAll()');
@@ -90,7 +96,8 @@ test('every session boundary cancels, clears, or restarts the diarization record
   assert.match(main, /function startNewSession[\s\S]*?clearDiarizationRecorder\(\);[\s\S]*?restartDiarizationRecorderForContinuedCapture\(\)/);
   assert.match(main, /handleTrusted\('transcript:clear'[\s\S]*?clearDiarizationRecorder\(\);[\s\S]*?await startTranscriptionPipeline\(\)/);
   assert.match(main, /async function startTranscriptionPipeline\(\) \{[\s\S]*?if \(state\.capturing && !diarizationRecorder\) startDiarizationRecorder\(store\.getSettings\(\)\.audio \|\| \{\}\)/);
-  assert.match(main, /function cancelDiarizationForHistoryChange\(\)[\s\S]*?diarizationAnalysisGeneration \+= 1;[\s\S]*?clearDiarizationRecorder\(\)/);
+  assert.match(main, /function cancelDiarizationForHistoryChange\(\)[^}]*cancelDiarizationAnalysis\(\)/);
+  assert.match(main, /function cancelDiarizationAnalysis\(\)[\s\S]*?diarizationAnalysisGeneration \+= 1;[\s\S]*?clearDiarizationRecorder\(\)/);
   assert.match(main, /if \(wasHistoryEnabled && !isHistoryEnabled\) \{[\s\S]*?cancelDiarizationForHistoryChange\(\)/);
 });
 

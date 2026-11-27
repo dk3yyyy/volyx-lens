@@ -79,6 +79,7 @@ function createFlushHarness(overrides = {}) {
     updateTranscriptionDiagnostics() {},
     stopFlushLoop() {},
     cancelOfflineTranscriptions() {},
+    stopLocalSpeechLeaseRefresh() {},
     ...overrides,
   };
   vm.runInNewContext(

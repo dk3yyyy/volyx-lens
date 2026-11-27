@@ -56,6 +56,13 @@
               <button id="diagnostics-toggle" type="button" aria-expanded="false">Diagnostics</button>
             </div>
           </div>
+          <div id="speech-failure-banner" class="speech-failure hidden" role="alert">
+            <div class="speech-failure-copy"><strong id="speech-failure-title"></strong><span id="speech-failure-message"></span></div>
+            <div class="speech-failure-actions">
+              <button id="speech-failure-settings" type="button">Open Listening settings</button>
+              <button id="speech-failure-dismiss" type="button">Dismiss</button>
+            </div>
+          </div>
           <div id="transcript-list" role="log" aria-live="polite"></div>
           <div id="slide-tracking-panel" class="hidden" aria-label="Tracked slides">
             <div class="slide-tracking-head"><div><strong>Tracked slides</strong><span id="slide-tracking-count">0 slides</span></div><button id="slide-tracking-clear" type="button" disabled>Clear</button></div>
@@ -142,10 +149,11 @@
               </div>
             </div>
             <div class="history-detail-who">
-              <label for="meeting-participant">Other speaker</label>
-              <input id="meeting-participant" type="text" maxlength="80" placeholder="Them" autocomplete="off" />
+              <label for="meeting-participant">Other speaker / system audio</label>
+              <input id="meeting-participant" type="text" maxlength="80" placeholder="Them" autocomplete="off" aria-describedby="meeting-participant-hint" />
               <button id="meeting-discard-cleaned" type="button" class="hidden" title="Keep the wording that was heard and remove the cleaned copy">Discard cleaned</button>
             </div>
+            <p id="meeting-participant-hint" class="history-who-hint">Applies to all system audio, which may include more than one person. Speaker activity below uses separate model slots, not this name.</p>
             <div id="meeting-history-turns" class="history-turns"></div>
             <div id="meeting-diarization" class="history-diarization hidden" aria-live="polite"></div>
             <div id="meeting-notes-output" class="history-notes hidden"></div>
@@ -474,6 +482,25 @@
         </div>
         <div id="speech-model-status" class="s-note" role="status" aria-live="polite"></div>
         <details class="s-note-details"><summary>On-device model privacy and licenses</summary><div class="s-note">Model files are downloaded only when you choose Download model. Volyx Lens pins a model revision and verifies its size and SHA-256 before use. After download, inference runs locally without an internet connection; captured audio is not uploaded by the local engine. Models are not bundled with the app and remain on this device until removed. Each model retains its upstream license; check the selected model's license before use.</div></details>
+        <div id="stt-speech-issue" class="s-note s-issue hidden" role="status"></div>
+        <div id="stt-speech-detector-note" class="s-note">Offline transcription also uses a small Silero speech detector that downloads automatically after an on-device model is installed. This build does not expose a separate detector status or retry control; if the detector is missing, speech still transcribes with simpler silence detection. A detector failure reported by the runtime will appear above with its own message.</div>
+        <h3 class="s-subhead">Speaker activity <span class="s-hint">experimental · system audio only</span></h3>
+        <div class="s-field"><label for="stt-diarization-enabled">Analyze system speaker activity</label><input id="stt-diarization-enabled" type="checkbox" class="s-switch" role="switch" aria-describedby="stt-diarization-dependency" /></div>
+        <div id="stt-diarization-dependency" class="s-note">Off by default. This needs the Sortformer 4-speaker model downloaded on this device, and it only analyzes the System channel — never your microphone. Audio is held in memory, analyzed locally after you stop Listening, and never written to disk. A meeting longer than the bound below is not analyzed at all.</div>
+        <div class="s-field"><label for="stt-diarization-preset">Accuracy preset</label><select id="stt-diarization-preset">
+          <option value="very_high_latency">Highest accuracy · slower</option>
+          <option value="high_latency">Balanced</option>
+          <option value="low_latency">Fastest · lower accuracy</option>
+        </select></div>
+        <div class="s-field"><label for="stt-diarization-max-minutes">Hold system audio (1–10 min)</label><input id="stt-diarization-max-minutes" type="number" min="1" max="10" step="1" value="5" inputmode="numeric" /></div>
+        <div class="speech-model-actions" role="group" aria-label="Speaker activity model actions">
+          <button id="speech-diarizer-download" type="button">Download model</button>
+          <button id="speech-diarizer-cancel" type="button" disabled>Cancel download</button>
+          <button id="speech-diarizer-remove" type="button" disabled>Remove download</button>
+        </div>
+        <div id="speech-diarizer-progress" class="s-progress hidden" role="progressbar" aria-label="Speaker activity model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-live="off"><span id="speech-diarizer-progress-fill" class="s-progress-fill"></span></div>
+        <div id="speech-diarizer-status" class="s-note" role="status" aria-live="polite"></div>
+        <details class="s-note-details"><summary>How speaker activity is labeled</summary><div class="s-note">Speaker slots are the model's numbering for one recording. They are local to that recording: not identities, not names, and not arrival order. Transcript rows are not split by speaker; every system-audio turn keeps the single label described above. The diarizer runs only on this device after the meeting ends. Its audio stays in memory and is discarded after analysis; only speaker-slot timings are saved with the meeting.</div></details>
         <div class="s-field"><label for="stt-history-enabled">Save meeting history</label><input id="stt-history-enabled" type="checkbox" /><select id="stt-retention-days" aria-label="Keep meeting history for"><option value="0">Keep all</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></div>
         <div class="s-field"><label for="stt-meeting-memory">Use saved meeting context</label><input id="stt-meeting-memory" type="checkbox" class="s-switch" role="switch" aria-label="Include previous meeting summaries and saved memories in live requests" /></div>
         <details class="s-note-details"><summary>What saved meeting context sends</summary><div class="s-note">Off by default. When enabled, summaries from up to three recent saved meetings and matching memories that you explicitly save are included in Assist, Say, Auto-assist, and Ask requests. Retrieved memories keep separate meeting-date sources; conflicting entries are not merged. This text is sent to your selected response provider only as part of a live request. Turn this off to keep meeting context on this device and out of live requests.</div></details>

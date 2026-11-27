@@ -117,6 +117,9 @@ let diarizationRunConfig = null;
 let diarizationSequence = 0;
 let diarizationAnalysisGeneration = 0;
 let diarizationAnalysisActive = false;
+// Detached PCM for the run in flight. The settings switch is a privacy control:
+// turning it off must zero this copy immediately, not when Sortformer returns.
+let activeDiarizationSnapshot = null;
 const speechOperationGate = createSpeechOperationGate();
 const meetingStore = createMeetingStore({ dir: path.join(currentUserDataPath, 'meetings') });
 // The overlay has one fixed expanded size. There is no resize affordance and no
@@ -322,6 +325,11 @@ const MAX_TRANSCRIPT_TURNS = 500;
 let flushTimer = null;
 let realtimeManager = null;
 let localSpeechStreamManager = null;
+// A healthy stream can go a while without routed PCM (echo suppression on the
+// microphone is the common case), so the lease is refreshed on a timer instead
+// of relying on append() alone.
+const LOCAL_SPEECH_LEASE_REFRESH_MS = 3000;
+let localSpeechLeaseTimer = null;
 let transcriptProcessingOptions = { enabled: true, normalizeDigits: true, rules: [] };
 let activeCustomVocabulary = '';
 const drainingRealtimeManagers = new Set();
@@ -1846,6 +1854,7 @@ async function startTranscriptionPipeline() {
   const previousLocal = localSpeechStreamManager;
   localSpeechStreamManager = null;
   if (previousLocal) {
+    stopLocalSpeechLeaseRefresh();
     try { await previousLocal.stop(); } catch (error) {
       console.warn('[stt:local-stream] previous stream did not stop cleanly', String(error && error.code || 'unknown').slice(0, 80));
     }
@@ -1889,6 +1898,28 @@ async function startTranscriptionPipeline() {
     });
     return;
   }
+  if (transcriptionRoute === 'offline-unavailable') {
+    // Offline-first is on and the selected model has not been downloaded. The
+    // privacy contract says no cloud socket may be opened without an explicit
+    // fallback opt-in, so capture starts without a transcription route and the
+    // user is told exactly what to fix. Audio is not buffered for upload.
+    transcriptionMode = 'offline-unavailable';
+    stopFlushLoop();
+    updateTranscriptionDiagnostics({ status: 'idle' });
+    const modelName = localModel
+      ? (localModel.name || localModel.id)
+      : (localModelId || 'the selected local model');
+    send('status', {
+      message: `Offline first is on, but ${modelName} is not downloaded. Download it in Listening settings, or enable Cloud fallback to allow cloud transcription. No audio was uploaded.`,
+    });
+    send('transcription:state', {
+      mode: 'offline-unavailable',
+      status: 'unavailable',
+      provider: 'local-gguf',
+      ...(localModelId ? { modelId: localModelId } : {}),
+    });
+    return;
+  }
   if (transcriptionRoute === 'local-stream') {
     const processingOptions = transcriptProcessingOptions;
     // One term list for the whole session: both channels stream through the
@@ -1925,6 +1956,7 @@ async function startTranscriptionPipeline() {
       onError: (error) => {
         if (localFallbackStarted || localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch || !state.capturing) return;
         localFallbackStarted = true;
+        stopLocalSpeechLeaseRefresh();
         const recoveredAudio = manager.takeRecoveryAudio();
         console.warn('[stt:local-stream] falling back to batch transcription', String(error && error.code || 'unknown').slice(0, 80));
         transcriptionMode = 'local-stream-fallback';
@@ -1948,6 +1980,7 @@ async function startTranscriptionPipeline() {
       },
     });
     localSpeechStreamManager = manager;
+    startLocalSpeechLeaseRefresh(manager);
     transcriptionMode = 'local-stream-starting';
     manager.start().then(async () => {
       if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) {
@@ -1958,47 +1991,67 @@ async function startTranscriptionPipeline() {
         && generation === sessionGeneration
         && epoch === transcriptEpoch
         && transcriptionMode === 'local-stream';
-      for (const channel of enabledChannels) {
-        const buffered = buffers[channel];
-        buffers[channel] = [];
-        replayingChannels.add(channel);
-        let remaining = buffered;
-        try {
-          remaining = await replayBufferedStartupAudio(manager, channel, buffered, stillCurrent);
-        } finally {
+      // Hold every enabled channel for the whole replay, including the second
+      // pass that covers audio captured while the first pass ran. Releasing a
+      // channel early lets live audio overtake older buffered audio in the
+      // worker, which reorders partials and finals.
+      for (const channel of enabledChannels) replayingChannels.add(channel);
+      try {
+        for (const channel of enabledChannels) {
+          const buffered = buffers[channel];
+          buffers[channel] = [];
+          const remaining = await replayBufferedStartupAudio(manager, channel, buffered, stillCurrent);
+          // Streaming can fail mid-replay and hand the session to batch mode.
+          // Chunks that were never appended exist nowhere else, so they go to
+          // the front of the retry queue, which flushChannel drains before
+          // buffers. If the session itself changed, the audio belongs to a
+          // cleared run and must be dropped rather than resurrected.
+          if (!stillCurrent()) {
+            const sameRun = generation === sessionGeneration && epoch === transcriptEpoch;
+            if (sameRun && remaining.length) {
+              retryQueues[channel] = [...remaining, ...(retryQueues[channel] || [])];
+              boundRetryQueue(channel);
+            }
+            break;
+          }
+          // Anything captured during the first pass was queued in buffers.
+          // Feed it after the older audio, never ahead of it.
+          const late = buffers[channel];
+          buffers[channel] = [];
+          const unreplayed = await replayBufferedStartupAudio(
+            manager,
+            channel,
+            [...remaining, ...late],
+            stillCurrent,
+          );
+          if (unreplayed.length) {
+            const sameRun = generation === sessionGeneration && epoch === transcriptEpoch;
+            if (sameRun && transcriptionMode === 'batch') {
+              retryQueues[channel] = [...unreplayed, ...(retryQueues[channel] || [])];
+              boundRetryQueue(channel);
+            } else if (sameRun) {
+              buffers[channel] = [...unreplayed, ...buffers[channel]];
+            }
+          }
+        }
+      } finally {
+        // Chunks captured during the last pass were never read by it. Feed them
+        // and release the guard in one synchronous step, so no live chunk can
+        // slip between the last buffered chunk and the manager.
+        for (const channel of enabledChannels) {
+          const residual = buffers[channel];
+          buffers[channel] = [];
+          const sameRun = generation === sessionGeneration && epoch === transcriptEpoch;
+          let appended = 0;
+          if (residual.length && sameRun && stillCurrent()) {
+            while (appended < residual.length && manager.append(channel, residual[appended])) appended += 1;
+          }
+          const refused = residual.slice(appended);
+          if (refused.length && sameRun) {
+            retryQueues[channel] = [...refused, ...(retryQueues[channel] || [])];
+            boundRetryQueue(channel);
+          }
           replayingChannels.delete(channel);
-        }
-        // Streaming can fail mid-replay and hand the session to batch mode.
-        // Chunks that were never appended exist nowhere else, so they go to the
-        // front of the retry queue, which flushChannel drains before buffers.
-        // If the session itself changed, the audio belongs to a cleared run and
-        // must be dropped rather than resurrected into the next one.
-        if (!stillCurrent()) {
-          const sameRun = generation === sessionGeneration && epoch === transcriptEpoch;
-          if (sameRun && remaining.length) {
-            retryQueues[channel] = [...remaining, ...(retryQueues[channel] || [])];
-            boundRetryQueue(channel);
-          }
-          break;
-        }
-        // Anything captured during the replay was queued in buffers. Feed it
-        // after the older audio, never ahead of it.
-        const late = buffers[channel];
-        buffers[channel] = [];
-        const unreplayed = await replayBufferedStartupAudio(
-          manager,
-          channel,
-          [...remaining, ...late],
-          stillCurrent,
-        );
-        if (unreplayed.length) {
-          const sameRun = generation === sessionGeneration && epoch === transcriptEpoch;
-          if (sameRun && transcriptionMode === 'batch') {
-            retryQueues[channel] = [...unreplayed, ...(retryQueues[channel] || [])];
-            boundRetryQueue(channel);
-          } else if (sameRun) {
-            buffers[channel] = [...unreplayed, ...buffers[channel]];
-          }
         }
       }
       if (localSpeechStreamManager !== manager
@@ -2010,6 +2063,7 @@ async function startTranscriptionPipeline() {
     }).catch(async (error) => {
       if (localSpeechStreamManager !== manager || generation !== sessionGeneration || epoch !== transcriptEpoch) return;
       localFallbackStarted = true;
+      stopLocalSpeechLeaseRefresh();
       console.warn('[stt:local-stream] startup failed; using local batch transcription', String(error && error.code || 'unknown').slice(0, 80));
       try { await manager.stop(); } catch (stopError) {
         await stopSpeechWorkerAfterStreamFailure(stopError);
@@ -2098,6 +2152,29 @@ async function startTranscriptionPipeline() {
   send('transcription:state', { mode: 'batch', status: 'active' });
 }
 
+// The channel lease is refreshed by routed PCM, but a channel can legitimately
+// stop producing chunks while the stream is healthy: acoustic echo suppression
+// drops the microphone for as long as the remote side is talking. Refresh both
+// channels while capturing so that silence in routePcm never expires a live
+// stream. The timer is unref'd and tied to one manager instance.
+function stopLocalSpeechLeaseRefresh() {
+  if (localSpeechLeaseTimer) clearInterval(localSpeechLeaseTimer);
+  localSpeechLeaseTimer = null;
+}
+
+function startLocalSpeechLeaseRefresh(manager, intervalMs = LOCAL_SPEECH_LEASE_REFRESH_MS) {
+  stopLocalSpeechLeaseRefresh();
+  if (!manager || typeof manager.heartbeat !== 'function') return;
+  localSpeechLeaseTimer = setInterval(() => {
+    if (localSpeechStreamManager !== manager || !state.capturing) {
+      stopLocalSpeechLeaseRefresh();
+      return;
+    }
+    for (const channel of manager.channels) manager.heartbeat(channel);
+  }, Math.max(1, Number(intervalMs) || LOCAL_SPEECH_LEASE_REFRESH_MS));
+  if (typeof localSpeechLeaseTimer.unref === 'function') localSpeechLeaseTimer.unref();
+}
+
 async function stopTranscriptionPipeline({ immediate = false } = {}) {
   stopFlushLoop();
   if (immediate) cancelOfflineTranscriptions();
@@ -2105,6 +2182,7 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   const manager = realtimeManager;
   realtimeManager = null;
   const localManager = localSpeechStreamManager;
+  stopLocalSpeechLeaseRefresh();
   if (immediate) localSpeechStreamManager = null;
 
   if (immediate) {
@@ -2179,7 +2257,10 @@ function routePcm(channel, pcm) {
   // the speaker model.
   if (channel === 'them' && diarizationRecorder) {
     const wasTruncated = diarizationRecorder.truncated;
-    if (!diarizationRecorder.append(pcm) && !wasTruncated) {
+    // A refused chunk is not necessarily the limit: a non-Buffer/odd chunk is
+    // rejected too. Only a new `truncated` transition means the recording
+    // actually hit its retention bound.
+    if (!diarizationRecorder.append(pcm) && !wasTruncated && diarizationRecorder.truncated) {
       send('status', { message: 'Speaker diarization reached its audio limit. This session will not be partially analyzed.' });
     }
   }
@@ -2189,6 +2270,10 @@ function routePcm(channel, pcm) {
   if (localSpeechStreamManager && !replayingChannels.has(channel)
       && localSpeechStreamManager.append(channel, pcm)) return;
   if (transcriptionMode === 'realtime' && realtimeManager && realtimeManager.append(channel, pcm)) return;
+  // Offline-first with no usable local model: there is no transcription route,
+  // so keep the audio out of the batch buffers instead of accumulating it for
+  // an upload that will never happen.
+  if (transcriptionMode === 'offline-unavailable') return;
   buffers[channel].push(pcm);
   if (buffers[channel].length > MAX_BATCH_CHUNKS) buffers[channel].splice(0, buffers[channel].length - MAX_BATCH_CHUNKS);
 }
@@ -2405,6 +2490,28 @@ function clearDiarizationRecorder() {
   diarizationRecorder = null;
 }
 
+// Remove the finished recording from the live session state without destroying
+// it. Stop calls this synchronously: the capture transition must not hold the
+// recorder while the analysis runs, and the next session must never adopt audio
+// that belongs to the meeting that just ended.
+function detachDiarizationRecording() {
+  const recorder = diarizationRecorder;
+  const config = diarizationRunConfig;
+  diarizationRecorder = null;
+  diarizationRunConfig = null;
+  return recorder ? { recorder, config } : null;
+}
+
+// A run in flight holds a detached copy of the PCM. The privacy switch must be
+// able to zero that copy immediately instead of waiting for Sortformer to
+// return, so analyzeDiarization publishes it here.
+function zeroActiveDiarizationSnapshot() {
+  if (!activeDiarizationSnapshot) return;
+  const snapshot = activeDiarizationSnapshot;
+  activeDiarizationSnapshot = null;
+  try { snapshot.pcm.fill(0); } catch {}
+}
+
 // Arming is deliberately narrow: opt-in, meeting history on (there is no record
 // to attach the result to otherwise), and system audio present. Sampling keeps
 // the existing 24 kHz pipeline format; the native worker resamples to 16 kHz.
@@ -2432,24 +2539,32 @@ function restartDiarizationRecorderForContinuedCapture() {
   startDiarizationRecorder(store.getSettings().audio || {});
 }
 
-// Turning meeting history off withdraws consent for storing what was said, so
-// any in-flight analysis is invalidated and its audio is zeroed before the next
-// persistence step can run.
-function cancelDiarizationForHistoryChange() {
+// Invalidate any analysis that is running or queued. The generation is bumped
+// first so a late native result can never be persisted, then the detached PCM
+// is zeroed. Stopping the worker aborts the native run itself; without that,
+// turning the privacy switch off would only prevent the *next* analysis.
+function cancelDiarizationAnalysis() {
   diarizationAnalysisGeneration += 1;
   clearDiarizationRecorder();
+  zeroActiveDiarizationSnapshot();
   if (diarizationAnalysisActive) {
     defaultSpeechWorker.stop().catch((error) => {
-      console.warn('[diarization] worker cancellation failed', String(error && error.code || 'unknown').slice(0, 80));
+      console.warn('[diarization] analysis cancellation failed', String(error && error.code || 'unknown').slice(0, 80));
     });
   }
 }
 
-async function analyzeDiarization(recordId) {
-  const recorder = diarizationRecorder;
-  const config = diarizationRunConfig;
-  diarizationRecorder = null;
-  diarizationRunConfig = null;
+// Turning meeting history off withdraws consent for storing what was said, so
+// any in-flight analysis is invalidated and its audio is zeroed before the next
+// persistence step can run.
+function cancelDiarizationForHistoryChange() {
+  cancelDiarizationAnalysis();
+}
+
+async function analyzeDiarization(recordId, detached = null) {
+  const recording = detached || detachDiarizationRecording();
+  const recorder = recording && recording.recorder;
+  const config = recording && recording.config;
   if (!recorder) return null;
   const snapshot = recorder.snapshot();
   recorder.clear();
@@ -2468,24 +2583,27 @@ async function analyzeDiarization(recordId) {
   const backend = config && ['auto', 'cpu', 'gpu'].includes(config.backend)
     ? config.backend
     : 'auto';
-  const info = speechDiarizerInfo();
-  const base = {
-    version: 1,
-    recordingId: snapshot.recordingId,
-    sourceChannel: 'them',
-    status: 'unavailable',
-    modelId: info.id,
-    artifactSha256: info.artifact.sha256,
-    preset,
-    sampleRate: info.sampleRate,
-    durationMs: snapshot.durationMs,
-    segments: [],
-  };
-  let run = base;
-  let wav = null;
   const analysisGeneration = ++diarizationAnalysisGeneration;
   diarizationAnalysisActive = true;
+  activeDiarizationSnapshot = snapshot;
+  let wav = null;
+  let base = null;
+  let run = null;
   try {
+    const info = speechDiarizerInfo();
+    base = {
+      version: 1,
+      recordingId: snapshot.recordingId,
+      sourceChannel: 'them',
+      status: 'unavailable',
+      modelId: info.id,
+      artifactSha256: info.artifact.sha256,
+      preset,
+      sampleRate: info.sampleRate,
+      durationMs: snapshot.durationMs,
+      segments: [],
+    };
+    run = base;
     if (snapshot.truncated) {
       // A recording that crossed the retention bound is unusable as a whole;
       // never label a partial conversation with speaker turns.
@@ -2510,8 +2628,9 @@ async function analyzeDiarization(recordId) {
       run = { ...base, status: 'ready', segments: result.segments };
     }
   } catch (error) {
-    run = { ...base, status: 'failed', reason: String(error && error.code || 'diarization_failed').slice(0, 80) };
+    run = { ...(base || {}), status: 'failed', reason: String(error && error.code || 'diarization_failed').slice(0, 80) };
   } finally {
+    if (activeDiarizationSnapshot === snapshot) activeDiarizationSnapshot = null;
     diarizationAnalysisActive = false;
     snapshot.pcm.fill(0);
     if (wav) wav.fill(0);
@@ -2528,14 +2647,47 @@ async function analyzeDiarization(recordId) {
     send('status', { message: `Speaker activity analyzed locally: ${run.segments.length} system-audio segments.` });
   } else if (updated.updated) {
     send('status', { message: 'Speaker activity could not be completed. The transcript was saved without diarization.' });
+  } else {
+    // A rejected run is not a quiet success. Without this branch the transcript
+    // looked saved and speaker-labelled when no timeline had been stored.
+    console.warn('[diarization] run was not stored', String(updated.reason || 'write_failed').slice(0, 80));
+    send('status', { message: 'Speaker activity could not be saved for this meeting. The transcript was saved without a speaker timeline.' });
   }
   return updated.updated ? run : null;
+}
+
+// Hand a finished recording to the speech gate *after* the capture transition
+// has resolved. Stop must never wait for Sortformer, so nothing here is
+// awaited; a busy gate means this analysis is skipped, not that the stop
+// failed. The recording is zeroed on every path that cannot analyze it.
+function dispatchDiarizationAnalysis(recordId, recording) {
+  if (!recording) return;
+  if (!recordId) {
+    try { recording.recorder.clear(); } catch {}
+    return;
+  }
+  if (speechOperationGate.isBusy()) {
+    try { recording.recorder.clear(); } catch {}
+    console.warn('[diarization] analysis skipped: another speech operation is active');
+    send('status', { message: 'Speaker activity was skipped because another local speech model operation was running. The transcript was saved without a speaker timeline.' });
+    return;
+  }
+  void speechOperationGate.run('diarization', () => analyzeDiarization(recordId, recording))
+    .catch((error) => {
+      // A rejection here is an analysis problem, never a capture failure.
+      console.warn('[diarization] analysis rejected', String(error && error.code || 'unknown').slice(0, 80));
+      try { recording.recorder.clear(); } catch {}
+    });
 }
 
 async function applyCaptureState(active) {
   if (active === state.capturing) return state.capturing;
   if (active) {
-    await speechOperationGate.whenIdle();
+    // Wait for model downloads/warm-ups, but not for a post-session
+    // diarization run: that analysis is fire-and-forget and can take minutes,
+    // so waiting would leave Listen disabled exactly like the blocking stop
+    // this transition replaced.
+    if (!diarizationAnalysisActive) await speechOperationGate.whenIdle();
     if (!desiredCapturing) return false;
     const audio = store.getSettings().audio || {};
     micEchoCoordinator.clear();
@@ -2593,17 +2745,34 @@ async function applyCaptureState(active) {
   pendingStopImmediate = false;
   pendingStopReason = null;
   // Immediate stops, sleep, and lock are not a completed meeting: drop the
-  // recording before anything can analyze or persist it.
-  if (immediate || reason === 'suspend' || reason === 'lock') clearDiarizationRecorder();
-  send('capture:state', { active: false, ...(reason ? { reason } : {}) });
-  await stopTranscriptionPipeline({ immediate });
-  if (reason !== 'suspend' && reason !== 'lock') {
-    const finalized = finalizeMeeting(reason || 'capture-stop', { startedAt: captureStartedAtEnd, endedAt: lastCaptureEndedAt });
-    meetingDetector.reset();
-    meetingDetectedNotified = false;
-    // Analyze only after the meeting is saved; a diarization failure must not
-    // undo the transcript that was just persisted.
-    if (!immediate) await speechOperationGate.run('diarization', () => analyzeDiarization(finalized.id || activeMeetingRecordId));
+  // recording before anything can analyze or persist it. A normal stop detaches
+  // it synchronously instead, so the transition owns no recorder and the next
+  // session cannot adopt this audio.
+  const droppedStop = immediate || reason === 'suspend' || reason === 'lock';
+  if (droppedStop) clearDiarizationRecorder();
+  const finishedDiarization = droppedStop ? null : detachDiarizationRecording();
+  let diarizationHandedOff = false;
+  try {
+    send('capture:state', { active: false, ...(reason ? { reason } : {}) });
+    await stopTranscriptionPipeline({ immediate });
+    if (reason !== 'suspend' && reason !== 'lock') {
+      const finalized = finalizeMeeting(reason || 'capture-stop', { startedAt: captureStartedAtEnd, endedAt: lastCaptureEndedAt });
+      meetingDetector.reset();
+      meetingDetectedNotified = false;
+      // Analyze only after the meeting is saved; a diarization failure must not
+      // undo the transcript that was just persisted, and Stop must not wait for
+      // the analysis to finish.
+      if (finishedDiarization) {
+        dispatchDiarizationAnalysis(finalized.id || activeMeetingRecordId, finishedDiarization);
+        diarizationHandedOff = true;
+      }
+    }
+  } finally {
+    // Any path that never reached the analysis (a save failure, a thrown
+    // teardown) must still zero the audio it was holding.
+    if (finishedDiarization && !diarizationHandedOff) {
+      try { finishedDiarization.recorder.clear(); } catch {}
+    }
   }
   return false;
 }
@@ -3703,11 +3872,18 @@ handleTrusted('settings:set', (_e, patch = {}) => {
   }
   // Diarization is a privacy switch as much as a quality one: turning it off or
   // changing its retention bound mid-session must drop the audio already held,
-  // not wait for the next stop. A fresh recorder applies the new settings.
+  // not wait for the next stop. Turning it off while a run is already analyzing
+  // must also abort that run — preventing the next one leaves Sortformer
+  // processing audio the user just withdrew consent for.
   const previousDiarization = JSON.stringify((previous.transcription || {}).diarization || {});
   const updatedDiarization = JSON.stringify((updated.transcription || {}).diarization || {});
-  if (state.capturing && previousDiarization !== updatedDiarization) {
-    restartDiarizationRecorderForContinuedCapture();
+  const diarizationNowEnabled = ((updated.transcription || {}).diarization || {}).enabled === true;
+  if (previousDiarization !== updatedDiarization) {
+    if (!diarizationNowEnabled) {
+      cancelDiarizationAnalysis();
+    } else if (state.capturing) {
+      restartDiarizationRecorderForContinuedCapture();
+    }
   }
   // A malformed hint used to vanish without a trace. Say what was skipped, so a
   // one-character typo is not mistaken for a vocabulary entry the recognizer has.

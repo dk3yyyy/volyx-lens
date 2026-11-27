@@ -51,6 +51,30 @@ struct ActiveStream {
 const MAX_VOCABULARY_TERMS: usize = 40;
 const MAX_VOCABULARY_TERM_CHARACTERS: usize = 40;
 
+// Audio limits mirror the JS recorder: 10 minutes of 24 kHz mono 16-bit PCM
+// plus a 44-byte WAV header. Base64 is checked before decoding so an absurd
+// request cannot force a multi-hundred-megabyte allocation.
+const MAX_AUDIO_SECONDS: u64 = 10 * 60;
+const MAX_AUDIO_PAYLOAD_BYTES: usize = (MAX_AUDIO_SECONDS as usize) * 24_000 * 2 + 44;
+const MAX_AUDIO_BASE64_CHARS: usize = MAX_AUDIO_PAYLOAD_BYTES.div_ceil(3) * 4;
+const MAX_RESAMPLED_SAMPLES: usize = (MAX_AUDIO_SECONDS as usize) * 16_000;
+const MAX_REQUEST_LINE_BYTES: usize = 64 * 1024 * 1024;
+// 24 kHz is the recorder rate; the range still accepts the usual speech rates
+// while rejecting 1 Hz (a 16,000x resample amplification) and absurd values.
+const MIN_AUDIO_SAMPLE_RATE: u32 = 8_000;
+const MAX_AUDIO_SAMPLE_RATE: u32 = 192_000;
+const DEFAULT_AUDIO_SAMPLE_RATE: u32 = 24_000;
+
+fn ensure_base64_audio_size(encoded: &str, label: &str) -> Result<(), String> {
+    if encoded.len() > MAX_AUDIO_BASE64_CHARS {
+        return Err(format!(
+            "{label} payload exceeds the maximum accepted audio size ({} bytes).",
+            MAX_AUDIO_PAYLOAD_BYTES
+        ));
+    }
+    Ok(())
+}
+
 fn request_vocabulary(request: &Value) -> Vec<String> {
     let Some(entries) = request.get("vocabulary").and_then(Value::as_array) else {
         return Vec::new();
@@ -356,10 +380,18 @@ fn resample_to_16khz(samples: &[i16], sample_rate: u32) -> Result<Vec<f32>, Stri
     if samples.is_empty() {
         return Err("Audio contains no samples.".to_string());
     }
-    if sample_rate == 0 {
-        return Err("Audio has an invalid sample rate.".to_string());
+    if !(MIN_AUDIO_SAMPLE_RATE..=MAX_AUDIO_SAMPLE_RATE).contains(&sample_rate) {
+        return Err(format!(
+            "Audio sample rate must be between {MIN_AUDIO_SAMPLE_RATE} and {MAX_AUDIO_SAMPLE_RATE} Hz."
+        ));
     }
     let output_len = (samples.len() as u64 * 16_000 / u64::from(sample_rate)) as usize;
+    if output_len > MAX_RESAMPLED_SAMPLES {
+        return Err(format!(
+            "Audio exceeds the maximum accepted duration of {} seconds.",
+            MAX_AUDIO_SECONDS
+        ));
+    }
     let mut output = Vec::with_capacity(output_len);
     for index in 0..output_len {
         let source_position = index as f64 * f64::from(sample_rate) / 16_000.0;
@@ -374,6 +406,7 @@ fn resample_to_16khz(samples: &[i16], sample_rate: u32) -> Result<Vec<f32>, Stri
 }
 
 fn pcm16_base64_to_16khz(encoded: &str, sample_rate: u32) -> Result<Vec<f32>, String> {
+    ensure_base64_audio_size(encoded, "PCM")?;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_err(|error| format!("Could not decode PCM payload: {error}"))?;
@@ -387,12 +420,27 @@ fn pcm16_base64_to_16khz(encoded: &str, sample_rate: u32) -> Result<Vec<f32>, St
     resample_to_16khz(&samples, sample_rate)
 }
 
-fn request_sample_rate(request: &Value) -> u32 {
-    request
-        .get("sampleRate")
-        .and_then(Value::as_u64)
-        .filter(|rate| *rate > 0 && *rate <= 384_000)
-        .unwrap_or(24_000) as u32
+fn request_sample_rate(request: &Value) -> Result<u32, (String, String)> {
+    let Some(value) = request.get("sampleRate") else {
+        return Ok(DEFAULT_AUDIO_SAMPLE_RATE);
+    };
+    let Some(rate) = value.as_u64() else {
+        return Err((
+            "invalid_audio".to_string(),
+            format!(
+                "sampleRate must be an integer between {MIN_AUDIO_SAMPLE_RATE} and {MAX_AUDIO_SAMPLE_RATE} Hz."
+            ),
+        ));
+    };
+    if rate < u64::from(MIN_AUDIO_SAMPLE_RATE) || rate > u64::from(MAX_AUDIO_SAMPLE_RATE) {
+        return Err((
+            "invalid_audio".to_string(),
+            format!(
+                "sampleRate {rate} is outside the supported range {MIN_AUDIO_SAMPLE_RATE}..{MAX_AUDIO_SAMPLE_RATE} Hz."
+            ),
+        ));
+    }
+    Ok(rate as u32)
 }
 
 fn request_pcm_base64(request: &Value) -> &str {
@@ -696,6 +744,9 @@ fn handle_request(
                 );
             };
             let samples = if let Some(encoded) = request.get("wavBase64").and_then(Value::as_str) {
+                if let Err(message) = ensure_base64_audio_size(encoded, "WAV") {
+                    return (id, Err(("audio_too_large".to_string(), message)));
+                }
                 let wav = match base64::engine::general_purpose::STANDARD.decode(encoded) {
                     Ok(bytes) => bytes,
                     Err(error) => {
@@ -723,7 +774,10 @@ fn handle_request(
                         )),
                     );
                 }
-                match pcm16_base64_to_16khz(encoded, request_sample_rate(request)) {
+                match pcm16_base64_to_16khz(encoded, match request_sample_rate(request) {
+                    Ok(rate) => rate,
+                    Err(error) => return (id, Err(error)),
+                }) {
                     Ok(samples) => samples,
                     Err(message) => return (id, Err(("invalid_audio".to_string(), message))),
                 }
@@ -818,7 +872,10 @@ fn handle_request(
                 }
             }
             let session = vad.as_mut().expect("loaded above");
-            let sample_rate = request_sample_rate(request);
+            let sample_rate = match request_sample_rate(request) {
+                Ok(rate) => rate,
+                Err(error) => return (id, Err(error)),
+            };
             let samples = match pcm16_base64_to_16khz(request_pcm_base64(request), sample_rate) {
                 Ok(samples) => samples,
                 Err(message) => return (id, Err(("invalid_audio".to_string(), message))),
@@ -1091,7 +1148,10 @@ fn handle_request(
                     )),
                 );
             };
-            let sample_rate = request_sample_rate(request);
+            let sample_rate = match request_sample_rate(request) {
+                Ok(rate) => rate,
+                Err(error) => return (id, Err(error)),
+            };
             let samples = match pcm16_base64_to_16khz(request_pcm_base64(request), sample_rate) {
                 Ok(samples) => samples,
                 Err(message) => return (id, Err(("invalid_audio".to_string(), message))),
@@ -1195,6 +1255,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if line.trim().is_empty() {
             continue;
         }
+        if line.len() > MAX_REQUEST_LINE_BYTES {
+            write_event(
+                &stdout,
+                &error_value(
+                    None,
+                    "request_too_large",
+                    format!("Request exceeds the {MAX_REQUEST_LINE_BYTES}-byte protocol limit."),
+                ),
+            )?;
+            continue;
+        }
         let request: Value = match serde_json::from_str(&line) {
             Ok(request) => request,
             Err(error) => {
@@ -1228,9 +1299,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        audio_to_16khz, backend_for_preference, diarize_preset, handle_request, is_cpu_backend,
-        pcm16_base64_to_16khz, request_vocabulary, should_fallback_to_cpu, speaker_segments_json,
-        transcript_segments_json,
+        audio_to_16khz, backend_for_preference, diarize_preset, ensure_base64_audio_size,
+        handle_request, is_cpu_backend, pcm16_base64_to_16khz, request_sample_rate,
+        request_vocabulary, should_fallback_to_cpu, speaker_segments_json, transcript_segments_json,
     };
     use base64::Engine;
     use hound::{SampleFormat, WavSpec, WavWriter};
@@ -1559,5 +1630,37 @@ mod tests {
     fn rejects_odd_length_and_invalid_pcm_payloads() {
         assert!(pcm16_base64_to_16khz("AAAA", 24_000).is_err());
         assert!(pcm16_base64_to_16khz("not base64!", 24_000).is_err());
+    }
+
+    #[test]
+    fn sample_rate_is_validated_instead_of_clamped() {
+        let missing = serde_json::json!({});
+        assert_eq!(request_sample_rate(&missing).unwrap(), 24_000);
+
+        for rate in [8_000_u64, 16_000, 24_000, 44_100, 48_000, 192_000] {
+            let request = serde_json::json!({ "sampleRate": rate });
+            assert_eq!(request_sample_rate(&request).unwrap(), rate as u32);
+        }
+        for rate in [0_u64, 1, 7_999, 192_001, 384_000] {
+            let request = serde_json::json!({ "sampleRate": rate });
+            let (code, message) = request_sample_rate(&request).unwrap_err();
+            assert_eq!(code, "invalid_audio");
+            assert!(message.contains("sampleRate"), "{message}");
+        }
+        // Non-integer values are refused rather than silently defaulted: a
+        // fractional or string rate cannot be resampled predictably.
+        assert!(request_sample_rate(&serde_json::json!({ "sampleRate": 24_000.5 })).is_err());
+        assert!(request_sample_rate(&serde_json::json!({ "sampleRate": "24000" })).is_err());
+        // The 1 Hz amplification primitive is refused by the resampler too.
+        assert!(audio_to_16khz(&wav(&[1], 1, 1)).is_err());
+    }
+
+    #[test]
+    fn absurd_base64_audio_is_rejected_before_decoding() {
+        let oversized = "A".repeat(super::MAX_AUDIO_BASE64_CHARS + 4);
+        let message = ensure_base64_audio_size(&oversized, "PCM").unwrap_err();
+        assert!(message.contains("maximum accepted"), "{message}");
+        assert!(pcm16_base64_to_16khz(&oversized, 24_000).is_err());
+        assert!(ensure_base64_audio_size("AAAA", "PCM").is_ok());
     }
 }

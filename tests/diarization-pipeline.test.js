@@ -63,6 +63,7 @@ function createPipelineHarness(overrides = {}) {
     meetingStore: {
       updateDiarization: (recordId, run) => {
         saved.push({ recordId, run });
+        if (overrides.updateDiarization) return overrides.updateDiarization(recordId, run);
         return { updated: true, run };
       },
     },
@@ -77,17 +78,21 @@ function createPipelineHarness(overrides = {}) {
     let diarizationSequence = 0;
     let diarizationAnalysisGeneration = 0;
     let diarizationAnalysisActive = false;
+    let activeDiarizationSnapshot = null;
     ${diarizationSource}
     globalThis.api = {
       startDiarizationRecorder,
       restartDiarizationRecorderForContinuedCapture,
       cancelDiarizationForHistoryChange,
+      cancelDiarizationAnalysis,
       analyzeDiarization,
       clearDiarizationRecorder,
+      detachDiarizationRecording,
       arm(recorder, config) { diarizationRecorder = recorder; diarizationRunConfig = config; },
       get recorder() { return diarizationRecorder; },
       get generation() { return diarizationAnalysisGeneration; },
       get active() { return diarizationAnalysisActive; },
+      get snapshot() { return activeDiarizationSnapshot; },
       bumpGeneration() { diarizationAnalysisGeneration += 1; },
     };
   `, context);
@@ -233,6 +238,63 @@ test('New Session, Clear Transcript, and quit boundaries clear or re-arm the rec
   harness.state.capturing = false;
   harness.api.restartDiarizationRecorderForContinuedCapture();
   assert.equal(harness.api.recorder, null, 'a stop never re-arms recording');
+});
+
+test('a rejected diarization run is reported instead of being dropped silently', async () => {
+  const harness = createPipelineHarness({
+    updateDiarization: () => ({ updated: false, reason: 'invalid_run' }),
+  });
+  harness.api.startDiarizationRecorder({ systemEnabled: true });
+  harness.api.recorder.append(Buffer.alloc(48000));
+  const run = await harness.api.analyzeDiarization('meeting-9');
+  assert.equal(run, null, 'a run the store refused is not reported as saved');
+  assert.equal(harness.saved.length, 1);
+  const messages = harness.events
+    .filter((event) => event.payload && event.payload.message)
+    .map((event) => event.payload.message);
+  assert.ok(
+    messages.some((message) => /Speaker activity could not be saved/.test(message)),
+    'the user is told the timeline was not stored',
+  );
+});
+
+test('disabling diarization aborts an in-flight analysis and zeroes its audio', async () => {
+  let finishRun;
+  const harness = createPipelineHarness({
+    runDiarizer: () => new Promise((resolve) => { finishRun = resolve; }),
+  });
+  harness.api.startDiarizationRecorder({ systemEnabled: true });
+  harness.api.recorder.append(Buffer.alloc(48000, 7));
+  const pending = harness.api.analyzeDiarization('meeting-10');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(harness.api.active, true, 'the run is in flight');
+  const snapshot = harness.api.snapshot;
+  assert.ok(snapshot && snapshot.pcm.some((byte) => byte !== 0), 'detached audio is still held');
+
+  harness.api.cancelDiarizationAnalysis();
+
+  assert.ok(snapshot.pcm.every((byte) => byte === 0), 'the detached PCM is zeroed immediately');
+  assert.equal(harness.api.snapshot, null);
+  assert.equal(harness.calls.includes('stop'), true, 'the native run is stopped');
+
+  finishRun({ segments: [] });
+  const run = await pending;
+  assert.equal(run, null, 'a cancelled run is never persisted');
+  assert.equal(harness.saved.length, 0);
+});
+
+test('the diarization settings switch cancels a run that already started', () => {
+  const start = main.indexOf("handleTrusted('settings:set'");
+  assert.ok(start >= 0);
+  const block = main.slice(start, main.indexOf("handleTrusted('speech-models:get'", start));
+  assert.match(block, /if \(!diarizationNowEnabled\) \{\s*cancelDiarizationAnalysis\(\);/);
+  assert.match(block, /previousDiarization !== updatedDiarization/);
+  const cancelStart = main.indexOf('function cancelDiarizationAnalysis()');
+  const cancelBlock = main.slice(cancelStart, main.indexOf('function cancelDiarizationForHistoryChange()', cancelStart));
+  assert.match(cancelBlock, /diarizationAnalysisGeneration \+= 1;/);
+  assert.match(cancelBlock, /zeroActiveDiarizationSnapshot\(\)/);
+  assert.match(cancelBlock, /defaultSpeechWorker\.stop\(\)/);
 });
 
 test('preload exposes the diarizer bridge and a single progress allow-list entry', () => {

@@ -22,6 +22,13 @@
   --live: #4FD19B;
   --warning: #F3B84B;
   --danger: #FF7C8C;
+  /* Speaker-slot colours for the history timeline. Slot numbers are model
+     numbering local to one recording; colour makes them distinguishable at a
+     glance without implying a cross-meeting identity. */
+  --slot-1: #7DE4F1;
+  --slot-2: #B3CEB7;
+  --slot-3: #F3B84B;
+  --slot-4: #D6A8FF;
 
   --surface-0: #0B1020;
   --surface-1: #131A2B;
@@ -348,6 +355,15 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 #transcript-workspace { margin-top: 10px; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 12px; background: rgba(19,26,43,0.62); box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 8%, transparent); }
 .transcript-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .transcript-head > div:first-child { display: flex; align-items: baseline; gap: 7px; }
+.speech-failure { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-top: 8px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--danger) 42%, transparent); border-left-width: 3px; border-radius: 9px; background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.speech-failure.hidden { display: none; }
+.speech-failure-copy { display: grid; gap: 2px; min-width: 0; font-size: 11px; line-height: 1.4; }
+.speech-failure-copy strong { color: var(--tx-1); font-size: 11.5px; }
+.speech-failure-copy span { color: var(--tx-2); }
+.speech-failure-actions { display: flex; gap: 5px; flex: 0 0 auto; }
+.speech-failure-actions button { border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); background: rgba(255,255,255,0.05); color: var(--tx-2); border-radius: 8px; padding: 4px 7px; font: 600 11px var(--font); cursor: pointer; }
+.speech-failure-actions button:hover { background: rgba(255,255,255,0.10); color: #fff; }
+.speech-failure-actions button:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
 .transcript-head strong { color: var(--tx-1); font-size: 12px; }
 #transcript-count { color: var(--tx-mut); font-size: 11px; }
 #meeting-indicator {
@@ -532,14 +548,30 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .history-notes { border: 1px solid rgba(66,207,232,0.22); border-radius: 10px; background: rgba(66,207,232,0.05); padding: 7px 9px; color: var(--tx-2); font-size: 10px; line-height: 1.45; white-space: pre-wrap; -webkit-user-select: text; user-select: text; }
 .history-notes.hidden { display: none; }
 /* Speaker activity is a sidecar timeline, deliberately styled apart from the
-   transcript so an arrival-order slot never reads as a participant name. */
+   transcript so a model slot never reads as a participant name. The list is
+   bounded and scrolls: a busy call can produce thousands of segments and must
+   not push the rest of the history pane below the fold. */
 .history-diarization { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--bd-hair); border-radius: 10px; background: rgba(255,255,255,0.03); color: var(--tx-2); font-size: 10px; line-height: 1.45; }
 .history-diarization.hidden { display: none; }
 .history-diarization > strong { color: var(--tx-1); }
 .history-diarization-note { margin: 3px 0 7px; color: var(--tx-mut); }
 .history-diarization-run + .history-diarization-run { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--bd-hair); }
 .history-diarization-run h3 { margin: 0 0 4px; font-size: 10px; color: var(--tx-1); }
-.history-diarization-list { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.history-diarization-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; max-height: 132px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--sb-thumb) transparent; }
+.history-diarization-list::-webkit-scrollbar { width: 8px; }
+.history-diarization-list::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 4px; }
+.history-diarization-segment { position: relative; padding: 2px 4px 2px 13px; border-left: 2px solid transparent; border-radius: 4px; }
+.history-diarization-segment::before { content: ''; position: absolute; left: 4px; top: 6px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.history-diarization-segment.speaker-slot-1 { color: var(--slot-1); border-left-color: var(--slot-1); }
+.history-diarization-segment.speaker-slot-2 { color: var(--slot-2); border-left-color: var(--slot-2); }
+.history-diarization-segment.speaker-slot-3 { color: var(--slot-3); border-left-color: var(--slot-3); }
+.history-diarization-segment.speaker-slot-4 { color: var(--slot-4); border-left-color: var(--slot-4); }
+.history-diarization-more { margin: 4px 0 0; color: var(--tx-mut); }
+.history-who-hint { margin: -2px 2px 7px; color: var(--tx-mut); font-size: 10px; line-height: 1.4; }
+@media (prefers-reduced-motion: no-preference) {
+  .history-diarization-list { scroll-behavior: smooth; }
+}
+
 .user-bubble {
   align-self: flex-end;
   max-width: 75%;
@@ -811,6 +843,12 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .key-field .key-clear:hover:not(:disabled) { color: #ffb5b5; border-color: rgba(255,102,120,0.28); }
 .key-field .key-clear:disabled { opacity: 0.35; cursor: default; }
 .s-note { max-width: 64ch; margin-top: 4px; color: var(--tx-mut); font-size: 12px; line-height: 1.55; }
+.s-issue { padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent); border-left-width: 3px; border-radius: var(--r-8); background: color-mix(in srgb, var(--danger) 7%, transparent); color: var(--tx-2); max-width: none; }
+.s-issue.hidden { display: none; }
+.s-progress { height: 6px; max-width: 420px; margin: 2px 0 8px 160px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.s-progress.hidden { display: none; }
+.s-progress-fill { display: block; height: 100%; width: 0; background: var(--accent); transition: width 160ms linear; }
+@media (prefers-reduced-motion: reduce) { .s-progress-fill { transition: none; } }
 .s-note-details { margin: 2px 0 4px; border: 1px solid var(--bd-hair); border-radius: var(--r-control); background: rgba(255,255,255,.018); }
 .s-note-details > summary { display: flex; align-items: center; gap: 8px; padding: 9px 11px; color: var(--tx-2); font-size: 12px; font-weight: 550; line-height: 1.35; cursor: pointer; list-style: none; }
 .s-note-details > summary::-webkit-details-marker { display: none; }

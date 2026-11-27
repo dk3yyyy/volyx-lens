@@ -992,9 +992,79 @@
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }
 
-  // A compact, read-only timeline. Every label says "System Speaker N" and the
-  // note repeats that slots are local to the recording, so the pane never
-  // suggests a persistent identity or a name for the other participant.
+  // Speaker activity used to print elapsed mm:ss, which could not be matched to
+  // the transcript's wall-clock rows. Runs carry a duration but no start stamp,
+  // so the honest anchor available in the renderer is the meeting start: the
+  // system recorder begins with the capture, and the timeline says so.
+  function diarizationAnchor() {
+    const startedAt = Number(meetingDetail && meetingDetail.startedAt);
+    return Number.isFinite(startedAt) && startedAt > 0 ? startedAt : 0;
+  }
+
+  function diarizationClock(ts) {
+    return transcriptTime(ts);
+  }
+
+  function diarizationRange(startMs, endMs, anchored) {
+    if (!anchored) return `${diarizationTime(startMs)}–${diarizationTime(endMs)}`;
+    const base = diarizationAnchor();
+    return `${diarizationClock(base + startMs)}–${diarizationClock(base + endMs)}`;
+  }
+
+  // Each failure reason maps to the action that can actually change it. An
+  // unknown code stays visible as a fallback instead of being flattened into
+  // "unavailable", which hid whether a download, a shorter meeting, or a retry
+  // was the only possible next step.
+  function diarizationFailureMessage(run) {
+    const reason = String((run && run.reason) || '').slice(0, 80);
+    switch (reason) {
+      case 'diarizer_not_installed':
+      case 'speech_diarizer_not_installed':
+      case 'speech_model_not_installed':
+        return 'The speaker model is not downloaded. Open Settings → Listening → Speaker activity to download it, then analyze the meeting again.';
+      case 'duration_limit_exceeded':
+        return 'This meeting ran longer than the speaker-analysis limit, so no part of it was analyzed. Raise the limit in Settings → Listening → Speaker activity before the next meeting.';
+      case 'insufficient_system_audio':
+        return 'Less than a second of system audio was captured, so there was nothing to analyze.';
+      case 'diarization_cancelled':
+        return 'Speaker analysis was cancelled. Nothing was saved for this run.';
+      case 'speech_diarizer_integrity_mismatch':
+      case 'speech_model_integrity_mismatch':
+        return 'The speaker model failed its SHA-256 integrity check. Remove it in Settings → Listening → Speaker activity and download it again.';
+      case 'speech_worker_exited':
+      case 'speech_worker_spawn_failed':
+      case 'speech_worker_stopped':
+      case 'speech_worker_unavailable':
+        return 'The local speech worker stopped before analysis finished. Stop Listening and restart it; if it stops again, reinstall the on-device speech worker or choose another transcription route.';
+      default:
+        break;
+    }
+    return run && run.status === 'failed'
+      ? `Speaker analysis failed (${reason || 'unknown error'}).`
+      : `Speaker analysis is unavailable${reason ? ` (${reason})` : ''}.`;
+  }
+
+  // Adjacent segments from one slot are one stretch of speech. Merging them
+  // keeps a busy call readable and keeps the rendered log well below the
+  // thousands of segments an over-limit call can otherwise produce.
+  function mergeDiarizationSegments(segments) {
+    const merged = [];
+    for (const segment of segments) {
+      const last = merged[merged.length - 1];
+      if (last && last.speakerId === segment.speakerId && segment.t0Ms - last.t1Ms <= 1000) {
+        last.t1Ms = Math.max(last.t1Ms, segment.t1Ms);
+        continue;
+      }
+      merged.push({ ...segment });
+    }
+    return merged;
+  }
+
+  const MAX_RENDERED_DIARIZATION_SEGMENTS = 400;
+
+  // A read-only sidecar. Every label says "System Speaker N" and the copy
+  // repeats that slots are local to the recording, so the pane never suggests
+  // a persistent identity or a name for the other participant.
   function renderMeetingDiarization() {
     const container = $('#meeting-diarization');
     container.replaceChildren();
@@ -1005,17 +1075,34 @@
     heading.textContent = 'System speaker activity';
     const note = document.createElement('p');
     note.className = 'history-diarization-note';
-    note.textContent = 'Arrival-order labels are local to each recording. Transcript turns remain You/Them.';
+    const participant = meetingDetail && meetingDetail.participant ? String(meetingDetail.participant).trim() : '';
+    // Naming the other speaker relabels every system-audio turn, so the old
+    // "turns remain You/Them" note was false once a name was saved. State the
+    // merge instead of denying it.
+    note.textContent = participant
+      ? `Speaker slots are the model's numbering for this recording: local to it, not names, and not arrival order. Transcript rows above label all system audio as “${participant}”; these slots do not split that name. Times use this device's clock, anchored to the meeting start; they are not word-aligned to transcript rows.`
+      : "Speaker slots are the model's numbering for this recording: local to it, not names, and not arrival order. Transcript rows above still show You/Them because the system channel is not split by speaker. Times use this device's clock, anchored to the meeting start; they are not word-aligned to transcript rows.";
     container.append(heading, note);
-    for (const run of runs) {
+    runs.forEach((run, runIndex) => {
       const section = document.createElement('section');
       section.className = 'history-diarization-run';
       const title = document.createElement('h3');
-      title.textContent = `System audio · ${diarizationTime(run.durationMs)}`;
+      const start = Number(run.durationMs) || 0;
+      const anchored = diarizationAnchor() > 0;
+      if (run.reason === 'duration_limit_exceeded') {
+        // durationMs here is the truncated buffer length, not coverage. Never
+        // print it as if the meeting had been analyzed up to that point.
+        title.textContent = 'System audio · not analyzed (time limit)';
+      } else if (run.status === 'ready') {
+        const prefix = runs.length > 1 ? `Recording ${runIndex + 1} · ` : '';
+        title.textContent = `${prefix}System audio · ${diarizationRange(0, start, anchored)}`;
+      } else {
+        title.textContent = 'System audio · not analyzed';
+      }
       section.appendChild(title);
       if (run.status !== 'ready') {
         const status = document.createElement('p');
-        status.textContent = run.status === 'failed' ? 'Speaker analysis failed.' : 'Speaker analysis unavailable.';
+        status.textContent = diarizationFailureMessage(run);
         section.appendChild(status);
       } else if (!run.segments.length) {
         const empty = document.createElement('p');
@@ -1027,15 +1114,25 @@
         // The store already orders segments, but a record read from an older
         // build may not be; display order is chronological either way.
         const segments = [...run.segments].sort((left, right) => left.t0Ms - right.t0Ms || left.t1Ms - right.t1Ms || left.speakerId - right.speakerId);
-        for (const segment of segments) {
+        const merged = mergeDiarizationSegments(segments);
+        const visible = merged.slice(0, MAX_RENDERED_DIARIZATION_SEGMENTS);
+        for (const segment of visible) {
           const item = document.createElement('li');
-          item.textContent = `System Speaker ${segment.speakerId} · ${diarizationTime(segment.t0Ms)}–${diarizationTime(segment.t1Ms)}`;
+          const slot = Math.max(1, Math.min(4, Number(segment.speakerId) || 1));
+          item.className = `history-diarization-segment speaker-slot-${slot}`;
+          item.textContent = `System Speaker ${segment.speakerId} · ${diarizationRange(segment.t0Ms, segment.t1Ms, anchored)}`;
           list.appendChild(item);
         }
         section.appendChild(list);
+        if (merged.length > visible.length) {
+          const more = document.createElement('p');
+          more.className = 'history-diarization-more';
+          more.textContent = `Showing the first ${visible.length} of ${merged.length} stretches of speech in this recording.`;
+          section.appendChild(more);
+        }
       }
       container.appendChild(section);
-    }
+    });
   }
 
   function renderMeetingTurns() {
@@ -1299,7 +1396,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       }
       meetingDetail.participant = result.participant;
       renderMeetingTurns();
-      showStatus(result.participant ? `Saved. The other speaker is ${result.participant}.` : 'Cleared the speaker name.');
+      renderMeetingDiarization();
+      showStatus(result.participant ? `Saved. All system audio is now labeled ${result.participant}; that channel may include more than one person.` : 'Cleared the speaker name.');
     } catch (error) { showStatus(error && error.message ? error.message : 'The speaker name could not be saved.'); }
   });
 
@@ -2334,7 +2432,15 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     clearTimeout(statusTimer);
     statusTimer = setTimeout(() => el.classList.remove('show'), 11000);
   }
-  volyxLens.on('status', ({ message }) => { volyxLens.log('[status] ' + message); showStatus(message); });
+  volyxLens.on('status', ({ message }) => {
+    volyxLens.log('[status] ' + message);
+    const issue = classifySpeechStatus(message);
+    if (!issue) { showStatus(message); return; }
+    const isNew = !speechIssue || speechIssue.code !== issue.code;
+    setSpeechIssue(issue);
+    // Keep the transient toast short; the persistent banner carries the action.
+    if (isNew) showStatus(`${issue.title}. Open Listening settings for the fix.`);
+  });
 
   volyxLens.on('task-context:state', renderTaskContext);
   volyxLens.on('slide-tracking:state', renderSlideTracking);
@@ -2404,6 +2510,12 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     } catch { showStatus('Open Settings to continue from this link.'); }
   });
   volyxLens.on('transcription:state', (event) => {
+    // A connect/active transition means the worker or provider recovered; a
+    // stale crash banner would otherwise outlive the failure it described.
+    if (speechIssue && ['worker-crash', 'worker-unavailable'].includes(speechIssue.kind)
+      && ['connected', 'active'].includes(event.status)) {
+      clearSpeechIssue();
+    }
     if (event.status === 'source' && event.channel === 'them') {
       const labels = { connecting: 'Connecting', connected: 'Connected', failed: 'Failed', stopped: 'Idle' };
       setAudioHealth('them', labels[event.sourceState] || 'Idle', 0);
@@ -2421,7 +2533,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     }
     if (event.status === 'item_failed') {
       const speaker = event.channel === 'you' ? 'You' : 'Them';
-      $('#transcript-latency').textContent = `No speech from ${speaker}; still listening`;
+      // The provider captured speech and then failed to transcribe it. Calling
+      // that "No speech" told the user nothing was said and hid that the audio
+      // was skipped.
+      const code = String(event.code || '').trim();
+      $('#transcript-latency').textContent = `A phrase from ${speaker} could not be transcribed (provider error${code ? `: ${code}` : ''}); that audio was skipped`;
     }
   });
 
@@ -3065,6 +3181,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     await loadMeetingMemoryEntries();
     providerView = settings.provider || 'openai';
     fillSettings();
+    void refreshDiarizerStatus();
     clearProviderTestResult();
     $('#provider-test-tier').value = settings.smart ? 'smart' : 'fast';
     renderPersonalContext();
@@ -3162,7 +3279,21 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const system = $('#audio-system-enabled').checked;
     const count = Number(mic) + Number(system);
     const sources = [mic ? 'Mic' : null, system ? 'System' : null].filter(Boolean).join(' + ');
-    $('#audio-session-count').textContent = `${count} active Realtime ${count === 1 ? 'session' : 'sessions'} when listening${sources ? ` — ${sources}` : ''}.`;
+    const sourceSuffix = sources ? ` — ${sources}` : '';
+    // The old line counted enabled channels and called them Realtime sessions,
+    // so Batch mode and Offline first both promised two billable sessions they
+    // never open. Report the route that will actually run.
+    const offline = $('#stt-offline-enabled').checked;
+    const batch = $('#stt-mode').value === 'batch';
+    if (offline) {
+      $('#audio-session-count').textContent = `0 active Realtime sessions when listening — on-device speech${sourceSuffix}.`;
+      return;
+    }
+    if (batch) {
+      $('#audio-session-count').textContent = `0 active Realtime sessions when listening — batch transcription${sourceSuffix}.`;
+      return;
+    }
+    $('#audio-session-count').textContent = `${count} active Realtime ${count === 1 ? 'session' : 'sessions'} when listening${sourceSuffix}.`;
   }
   function enforceAudioChannelSelection() {
     if (!$('#audio-mic-enabled').checked && !$('#audio-system-enabled').checked) {
@@ -3173,6 +3304,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   }
   $('#audio-mic-enabled').addEventListener('change', enforceAudioChannelSelection);
   $('#audio-system-enabled').addEventListener('change', enforceAudioChannelSelection);
+  $('#stt-mode').addEventListener('change', updateAudioSessionCount);
+  $('#stt-offline-enabled').addEventListener('change', updateAudioSessionCount);
 
   const PROVIDER_LABELS = Object.freeze({ openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', azure: 'Azure Foundry', deepseek: 'DeepSeek', groq: 'Groq', nvidia: 'NVIDIA', openrouter: 'OpenRouter', ollama: 'Ollama', opencode: 'Opencode', opencodeGo: 'Opencode Go', custom: 'Custom (OpenAI-compatible)' });
   const PROVIDER_IDS = Object.keys(PROVIDER_LABELS);
@@ -3387,6 +3520,189 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     status.textContent = `${details.join(' · ')}.${model.runtimeAvailable !== true ? ' The local GGUF worker is unavailable in this build.' : ''}`;
   }
 
+  let activeDiarizerDownload = false;
+  let diarizerProgressAt = 0;
+  let diarizerProgressValue = -1;
+  let speechIssue = null;
+  let speechIssueDismissedCode = '';
+
+  const DIARIZATION_PRESETS = ['low_latency', 'high_latency', 'very_high_latency'];
+
+  function diarizerModel() {
+    return (settings && settings.speechDiarizer) || {};
+  }
+
+  function diarizerSizeLabel(info = diarizerModel()) {
+    const bytes = Number(info && info.artifact && info.artifact.bytes);
+    return Number.isFinite(bytes) && bytes > 0 ? `${Math.round(bytes / 1048576)} MB` : '';
+  }
+
+  function renderDiarizerControls() {
+    const status = $('#speech-diarizer-status');
+    const download = $('#speech-diarizer-download');
+    const cancel = $('#speech-diarizer-cancel');
+    const remove = $('#speech-diarizer-remove');
+    const toggle = $('#stt-diarization-enabled');
+    const progress = $('#speech-diarizer-progress');
+    if (!status || !download || !cancel || !remove || !toggle) return;
+    const info = diarizerModel();
+    const installed = info.installed === true;
+    const runtimeAvailable = info.runtimeAvailable !== false;
+    const size = diarizerSizeLabel(info);
+    // The switch cannot be turned on before the weights exist: an enabled
+    // feature with an absent model produces a run that can only fail.
+    toggle.disabled = runtimeAvailable === false || (!installed && toggle.checked !== true);
+    download.disabled = activeDiarizerDownload || runtimeAvailable === false || installed;
+    download.textContent = installed ? 'Model installed' : 'Download model';
+    cancel.disabled = !activeDiarizerDownload;
+    remove.disabled = activeDiarizerDownload || !installed;
+    if (progress && !activeDiarizerDownload) progress.classList.add('hidden');
+    const details = [];
+    if (installed) details.push('Downloaded; integrity is checked before analysis');
+    else details.push(`Not downloaded${size ? ` (${size})` : ''} — required before speaker activity can run`);
+    if (info.license && info.license.name) details.push(`License: ${info.license.name}`);
+    if (info.loaded) details.push(`Loaded${info.backend ? ` on ${info.backend}` : ''}${info.backendFallback ? ' (CPU fallback)' : ''}`);
+    if (runtimeAvailable === false) details.push('On-device speech runtime unavailable on this build');
+    status.textContent = `${details.join(' · ')}.`;
+    if (!installed && runtimeAvailable !== false) {
+      status.textContent += ' Choose Download model first; the switch stays off until the model is present.';
+    }
+  }
+
+  async function refreshDiarizerStatus() {
+    if (!volyxLens || typeof volyxLens.speechDiarizerGet !== 'function') return;
+    try {
+      const info = await volyxLens.speechDiarizerGet();
+      if (info && typeof info === 'object') {
+        settings.speechDiarizer = info;
+        renderDiarizerControls();
+        if (speechIssue && speechIssue.kind === 'diarizer-missing' && info.installed === true) clearSpeechIssue();
+      }
+    } catch (error) {
+      // Settings already carries the last known state; a failed refresh must
+      // not replace it with an invented one.
+    }
+  }
+
+  function renderSpeechIssue() {
+    const banner = $('#speech-failure-banner');
+    const title = $('#speech-failure-title');
+    const message = $('#speech-failure-message');
+    const note = $('#stt-speech-issue');
+    const current = Boolean(speechIssue);
+    // Dismiss only silences the transcript banner. The Settings pane keeps
+    // showing the current issue so a user who dismissed the toast can still
+    // find out what is wrong when they open Listening settings.
+    const bannerVisible = current && speechIssue.code !== speechIssueDismissedCode;
+    if (banner && title && message) {
+      banner.classList.toggle('hidden', !bannerVisible);
+      if (bannerVisible) {
+        title.textContent = speechIssue.title;
+        message.textContent = speechIssue.message;
+      }
+    }
+    if (note) {
+      note.classList.toggle('hidden', !current);
+      if (current) note.textContent = `${speechIssue.title}. ${speechIssue.message}`;
+    }
+  }
+
+  function setSpeechIssue(issue) {
+    if (!issue) { clearSpeechIssue(); return; }
+    const previousCode = speechIssue && speechIssue.code;
+    speechIssue = issue;
+    // A new failure code deserves attention even after the prior one was
+    // dismissed; the same code arriving on every retry does not.
+    if (previousCode !== issue.code && speechIssueDismissedCode !== issue.code) speechIssueDismissedCode = '';
+    renderSpeechIssue();
+  }
+
+  function clearSpeechIssue() {
+    speechIssue = null;
+    renderSpeechIssue();
+  }
+
+  // main.js currently sends one status line per retry with the local error code
+  // in parentheses. Branch on the code so a permanent failure is not presented
+  // as a transient network problem. Codes the backend does not yet emit (for
+  // example a missing Silero detector) are handled here when they start to.
+  function classifySpeechStatus(message) {
+    const text = String(message || '');
+    const match = text.match(/\b(speech_[a-z0-9_]+)\b/);
+    if (!match) return null;
+    const code = match[1];
+    const model = settings ? selectedSpeechModel() : null;
+    const modelName = (model && model.name) || 'The selected on-device model';
+    const workerReason = (settings && settings.localSpeech && settings.localSpeech.gguf && settings.localSpeech.gguf.reason) || '';
+    switch (code) {
+      case 'speech_model_not_installed':
+        return {
+          code,
+          kind: 'model-missing',
+          title: 'On-device model is not downloaded',
+          message: `${modelName} is not downloaded, so offline transcription cannot start. Download it in Settings → Listening → On-device model. Retrying cannot succeed until the file is present.`,
+        };
+      case 'speech_model_integrity_mismatch':
+        return {
+          code,
+          kind: 'integrity',
+          title: 'On-device model failed its integrity check',
+          message: `${modelName} does not match its pinned SHA-256. Download it again in Settings → Listening → On-device model; the current file is not usable.`,
+        };
+      case 'speech_worker_exited':
+      case 'speech_worker_spawn_failed':
+      case 'speech_worker_stopped':
+      case 'speech_worker_timeout':
+        return {
+          code,
+          kind: 'worker-crash',
+          title: 'Local speech worker stopped',
+          message: 'The on-device speech worker exited while transcription was running. Stop Listening and start it again; if it stops again, check the local model in Settings → Listening before retrying.',
+        };
+      case 'speech_worker_unavailable':
+        return {
+          code,
+          kind: 'worker-unavailable',
+          title: 'Local speech worker is unavailable',
+          message: `${workerReason || 'This build has no usable on-device speech worker.'} Use a cloud transcription provider, or download a supported local model in Settings → Listening.`,
+        };
+      case 'speech_detector_missing':
+      case 'speech_detector_not_installed':
+      case 'speech_vad_missing':
+      case 'speech_vad_not_installed':
+        return {
+          code,
+          kind: 'detector-missing',
+          title: 'Speech detector is missing',
+          message: 'Silero VAD is not installed, so offline transcription has fallen back to simpler silence detection. Restart the on-device model download in Settings → Listening so the detector can be fetched again.',
+        };
+      case 'speech_vad_integrity_mismatch':
+      case 'speech_detector_integrity_mismatch':
+        return {
+          code,
+          kind: 'detector-integrity',
+          title: 'Speech detector failed its integrity check',
+          message: 'Silero VAD does not match its pinned SHA-256. Offline transcription is using simpler silence detection until the detector is downloaded again in Settings → Listening.',
+        };
+      case 'speech_diarizer_not_installed':
+        return {
+          code,
+          kind: 'diarizer-missing',
+          title: 'Speaker activity model is not downloaded',
+          message: 'Download the Sortformer speaker model in Settings → Listening → Speaker activity before enabling speaker analysis.',
+        };
+      case 'speech_diarizer_integrity_mismatch':
+        return {
+          code,
+          kind: 'diarizer-integrity',
+          title: 'Speaker activity model failed its integrity check',
+          message: 'The Sortformer model does not match its pinned SHA-256. Remove it in Settings → Listening → Speaker activity and download it again.',
+        };
+      default:
+        return null;
+    }
+  }
+
   function fillSettings() {
     const credentialStatus = settings.credentialStatus || { present: {} };
     const keyPlaceholders = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIza...', azure: 'Foundry resource key', deepseek: 'sk-...', groq: 'gsk_...', openrouter: 'sk-or-v1-...', nvidia: 'nvapi-...', opencodeGo: 'oc_sk_...', deepgram: 'Deepgram API key', azureRealtime: 'Optional Realtime key', azureSpeech: 'Azure AI Speech resource key' };
@@ -3434,6 +3750,26 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-offline-cloud-fallback').checked = transcription.offlineCloudFallback === true;
     $('#stt-whisper-model').value = transcription.whisperModel || 'base.en';
     renderSpeechModelControls(settings.speechModels || [], transcription.localModelId || '');
+    const diarization = transcription.diarization || {};
+    const diarizationToggle = $('#stt-diarization-enabled');
+    if (diarizationToggle) {
+      diarizationToggle.checked = diarization.enabled === true;
+      $('#stt-diarization-preset').value = DIARIZATION_PRESETS.includes(diarization.preset) ? diarization.preset : 'very_high_latency';
+      const bound = Math.round(Number(diarization.maxMinutes));
+      $('#stt-diarization-max-minutes').value = String(Number.isFinite(bound) ? Math.max(1, Math.min(10, bound)) : 5);
+      renderDiarizerControls();
+    }
+    // The worker-unavailable state is exposed through localSpeech. Surface it
+    // only when offline routing is actually selected; otherwise the cloud path
+    // is unaffected and the notice would be noise.
+    if (transcription.offlineEnabled === true && offlineUnavailable) {
+      setSpeechIssue({
+        code: 'speech_worker_unavailable',
+        kind: 'worker-unavailable',
+        title: 'Local speech worker is unavailable',
+        message: `${localSpeech.gguf.reason || 'No usable on-device GGUF worker was found.'} Offline first cannot run on this build; choose a cloud provider or a supported local runtime.`,
+      });
+    }
     $('#stt-history-enabled').checked = transcription.historyEnabled === true;
     $('#stt-meeting-memory').checked = transcription.meetingMemory === true;
     if ($('#stt-retention-days')) $('#stt-retention-days').value = String(transcription.historyRetentionDays || 0);
@@ -3680,6 +4016,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       postProcessTranscript: $('#stt-postprocess-enabled').checked,
       normalizeSpokenDigits: $('#stt-normalize-spoken-digits').checked,
       delay: $('#stt-delay').value,
+      diarization: {
+        enabled: $('#stt-diarization-enabled').checked,
+        preset: DIARIZATION_PRESETS.includes($('#stt-diarization-preset').value) ? $('#stt-diarization-preset').value : 'very_high_latency',
+        maxMinutes: Math.max(1, Math.min(10, Math.round(Number($('#stt-diarization-max-minutes').value)) || 5)),
+      },
       historyEnabled: $('#stt-history-enabled').checked,
       meetingMemory: $('#stt-meeting-memory').checked,
       historyRetentionDays: Number($('#stt-retention-days').value) || 0,
@@ -3732,6 +4073,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       await saveSettings();
       const result = await volyxLens.speechModelDownload(model.id);
       if (Array.isArray(result.models)) settings.speechModels = result.models;
+      if (speechIssue && (speechIssue.kind === 'model-missing' || speechIssue.kind === 'integrity')) clearSpeechIssue();
       outcomeMessage = `${model.name} downloaded and SHA-256 verified.`;
     } catch (error) {
       outcomeMessage = error && error.message ? error.message : 'The model download failed.';
@@ -3795,6 +4137,122 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     } catch (error) {
       $('#speech-model-status').textContent = error && error.message ? error.message : 'The model could not be removed.';
     }
+  });
+
+  // ---- speaker activity (experimental) -----------------------------------
+  volyxLens.on('speech:diarizer-progress', (event) => {
+    if (!activeDiarizerDownload) return;
+    const progress = Math.max(0, Math.min(1, Number(event && event.progress) || 0));
+    const percent = Math.round(progress * 100);
+    const now = Date.now();
+    // A several-hundred-MB download emits a notification per chunk. Update the
+    // progressbar often enough to look live, but keep the polite live region
+    // to roughly one announcement per second.
+    if (percent === diarizerProgressValue) return;
+    if (percent < 100 && now - diarizerProgressAt < 1000) return;
+    diarizerProgressValue = percent;
+    diarizerProgressAt = now;
+    const bar = $('#speech-diarizer-progress');
+    const fill = $('#speech-diarizer-progress-fill');
+    if (bar) {
+      bar.classList.remove('hidden');
+      bar.setAttribute('aria-valuenow', String(percent));
+    }
+    if (fill) fill.style.width = `${percent}%`;
+    $('#speech-diarizer-status').textContent = `Downloading ${(diarizerModel().name) || 'speaker model'} · ${percent}%.`;
+  });
+
+  $('#speech-diarizer-download').addEventListener('click', async () => {
+    const info = diarizerModel();
+    if (activeDiarizerDownload || info.installed === true) return;
+    const wasInstalled = info.installed === true;
+    activeDiarizerDownload = true;
+    diarizerProgressValue = -1;
+    diarizerProgressAt = 0;
+    const bar = $('#speech-diarizer-progress');
+    if (bar) {
+      bar.classList.remove('hidden');
+      bar.setAttribute('aria-valuenow', '0');
+    }
+    const fill = $('#speech-diarizer-progress-fill');
+    if (fill) fill.style.width = '0%';
+    renderDiarizerControls();
+    $('#speech-diarizer-status').textContent = 'Starting speaker model download…';
+    let outcomeMessage = '';
+    try {
+      // Persist any enabled/bound edits before the main process starts work.
+      await saveSettings();
+      $('#speech-diarizer-status').textContent = 'Starting speaker model download…';
+      const result = await volyxLens.speechDiarizerDownload();
+      if (result && result.diarizer) settings.speechDiarizer = result.diarizer;
+      const name = diarizerModel().name || 'Speaker model';
+      outcomeMessage = wasInstalled
+        ? `${name} is already installed and passed its SHA-256 check.`
+        : `${name} downloaded and SHA-256 verified. You can enable speaker activity now.`;
+      if (speechIssue && (speechIssue.kind === 'diarizer-missing' || speechIssue.kind === 'diarizer-integrity')) clearSpeechIssue();
+    } catch (error) {
+      outcomeMessage = error && error.message ? error.message : 'The speaker model download failed.';
+    } finally {
+      activeDiarizerDownload = false;
+      if (bar) bar.classList.add('hidden');
+      renderDiarizerControls();
+      if (outcomeMessage) $('#speech-diarizer-status').textContent = outcomeMessage;
+    }
+  });
+
+  $('#speech-diarizer-cancel').addEventListener('click', async () => {
+    if (!activeDiarizerDownload) return;
+    try {
+      await volyxLens.speechDiarizerCancelDownload();
+      $('#speech-diarizer-status').textContent = 'Cancelling speaker model download…';
+    } catch (error) {
+      $('#speech-diarizer-status').textContent = error && error.message ? error.message : 'The speaker model download could not be cancelled.';
+    }
+  });
+
+  $('#speech-diarizer-remove').addEventListener('click', async () => {
+    const info = diarizerModel();
+    if (activeDiarizerDownload || info.installed !== true) return;
+    if (!window.confirm('Remove the Sortformer speaker model from this device? Speaker activity will stay off until you download it again.')) return;
+    try {
+      const result = await volyxLens.speechDiarizerRemove();
+      if (result && result.diarizer) settings.speechDiarizer = result.diarizer;
+      const toggle = $('#stt-diarization-enabled');
+      if (toggle) toggle.checked = false;
+      renderDiarizerControls();
+      $('#speech-diarizer-status').textContent = result && result.removed
+        ? 'Speaker model removed from this device. Speaker activity is now off.'
+        : 'The speaker model was not removed.';
+      // Persist the forced-off switch: leaving it enabled would schedule runs
+      // that can only fail with diarizer_not_installed.
+      await saveSettings();
+      $('#speech-diarizer-status').textContent = result && result.removed
+        ? 'Speaker model removed from this device. Speaker activity is now off.'
+        : 'The speaker model was not removed.';
+    } catch (error) {
+      $('#speech-diarizer-status').textContent = error && error.message ? error.message : 'The speaker model could not be removed.';
+    }
+  });
+
+  $('#stt-diarization-enabled').addEventListener('change', () => {
+    if ($('#stt-diarization-enabled').checked && diarizerModel().installed !== true) {
+      $('#stt-diarization-enabled').checked = false;
+      showStatus('Download the speaker model before turning on speaker activity.');
+      renderDiarizerControls();
+    }
+  });
+
+  $('#speech-failure-settings').addEventListener('click', async () => {
+    try {
+      await openSettings();
+      selectSettingsSection('listening', { focus: true });
+    } catch (error) {
+      showStatus('Open Settings to fix speech input.');
+    }
+  });
+  $('#speech-failure-dismiss').addEventListener('click', () => {
+    if (speechIssue) speechIssueDismissedCode = speechIssue.code;
+    renderSpeechIssue();
   });
 
   $('#provider-test-btn').addEventListener('click', async () => {

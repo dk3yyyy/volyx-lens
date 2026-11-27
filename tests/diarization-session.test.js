@@ -29,6 +29,19 @@ test('diarization recorder rejects malformed chunks and marks duration overflow 
   assert.equal(recorder.snapshot().durationMs, 1000);
 });
 
+test('non-PCM input is rejected without tripping the retention limit', () => {
+  const recorder = createDiarizationRecorder({ recordingId: 'run-invalid', sampleRate: 24000, maxMinutes: 5 });
+  for (const chunk of ['not pcm', new Uint8Array(4), null, undefined, Buffer.from([1, 2, 3]), Buffer.alloc(0)]) {
+    assert.equal(recorder.append(chunk), false);
+    assert.equal(recorder.truncated, false, 'a bad type is not a retention overflow');
+  }
+  assert.equal(recorder.bytes, 0, 'non-PCM bytes are never counted');
+  assert.equal(recorder.durationMs, 0);
+  assert.equal(recorder.append(Buffer.alloc(2400, 7)), true);
+  assert.equal(recorder.bytes, 2400);
+  assert.equal(recorder.truncated, false);
+});
+
 test('diarization recorder copies audio and clears all retained data', () => {
   const recorder = createDiarizationRecorder({ recordingId: 'run-3' });
   const chunk = Buffer.from([1, 0, 2, 0]);

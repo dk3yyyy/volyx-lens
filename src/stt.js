@@ -62,9 +62,13 @@ function resolveTranscriptionMode(settings, {
   const selectedId = transcription.localModelId || '';
   if (selectedId) {
     const selected = models.find((model) => model.id === selectedId);
-    // A selected GGUF model decides on its own: when it is missing, realtime
-    // keeps working instead of entering a batch path that cannot run.
-    if (!selected || selected.installed !== true) return 'realtime';
+    // A selected local model that is not installed cannot transcribe. Offline
+    // first is a privacy contract: without an explicit cloud-fallback opt-in the
+    // only honest answer is a distinct "offline unavailable" route, never a
+    // silent upload through the realtime provider.
+    if (!selected || selected.installed !== true) {
+      return transcription.offlineCloudFallback === true ? 'realtime' : 'offline-unavailable';
+    }
     const estimatedMemoryMb = Number(selected.hardware && selected.hardware.estimatedMemoryMb);
     const withinMemoryBudget = !Number.isFinite(estimatedMemoryMb)
       || estimatedMemoryMb * Math.max(1, channelCount) <= memoryLimitMb;

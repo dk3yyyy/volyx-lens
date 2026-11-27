@@ -92,14 +92,23 @@ test('offline-first falls back to local batch when the native worker is unavaila
   }, { speechWorkerAvailable: false, hasAudioChannels: true }), 'batch');
 });
 
-test('offline-first without an installed model leaves realtime in charge', () => {
+test('offline-first never falls back to cloud realtime for an uninstalled model without opt-in', () => {
   const settings = {
     apiKeys: { openai: 'sk-test' },
     transcription: { mode: 'realtime', offlineEnabled: true, localModelId: 'qwen3-asr-0.6b' },
     speechModels: [{ id: 'qwen3-asr-0.6b', installed: false }],
   };
-  assert.equal(resolveTranscriptionMode(settings, { speechWorkerAvailable: true, hasAudioChannels: true }), 'realtime');
-  assert.equal(resolveTranscriptionMode({ ...settings, speechModels: [] }, {}), 'realtime');
+  // The selected model cannot run and cloud fallback is unchecked: a distinct
+  // route keeps the pipeline from opening a Realtime socket.
+  assert.equal(resolveTranscriptionMode(settings, { speechWorkerAvailable: true, hasAudioChannels: true }), 'offline-unavailable');
+  assert.equal(resolveTranscriptionMode({ ...settings, speechModels: [] }, {}), 'offline-unavailable');
+});
+
+test('offline-first uses cloud realtime for a missing model only with explicit fallback', () => {
+  assert.equal(resolveTranscriptionMode({
+    transcription: { offlineEnabled: true, offlineCloudFallback: true, localModelId: 'qwen3-asr-0.6b' },
+    speechModels: [{ id: 'qwen3-asr-0.6b', installed: false }],
+  }, { speechWorkerAvailable: true, hasAudioChannels: true }), 'realtime');
 });
 
 test('offline-first keeps legacy Whisper on the local batch path', () => {
