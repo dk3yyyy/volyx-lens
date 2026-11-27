@@ -70,6 +70,7 @@ const { fingerprintDataUrl, isNearDuplicateFingerprint } = require('./src/image-
 const { createLocalOcr, ocrReasonLabel } = require('./src/local-ocr');
 const { createSystemAudioCapture } = require('./src/system-audio-capture');
 const { createLinuxMonitorCapture } = require('./src/linux-monitor-capture');
+const { createThemSilenceWatchdog } = require('./renderer/them-silence-watchdog');
 const { createAcousticEchoFilter } = require('./src/acoustic-echo-filter');
 const { createMicEchoCoordinator } = require('./src/mic-echo-coordinator');
 const { detectTextOverlap, scoreTextRelevance } = require('./src/text-index');
@@ -224,8 +225,18 @@ const taskContext = createTaskContext({
 });
 const localOcr = createLocalOcr({ app });
 const acousticEchoFilter = createAcousticEchoFilter({ sampleRate: AUDIO_SAMPLE_RATE });
+// Monitor capture on Linux arrives with more and less predictable latency than
+// the macOS helper, so its inspection window starts wider. Users can override
+// it from audio.echoDelayMs without a rebuild.
+const DEFAULT_ECHO_DELAY_MS = process.platform === 'linux' ? 400 : 250;
+function echoInspectionDelayMs(audio = {}) {
+  const configured = Number(audio.echoDelayMs);
+  if (Number.isFinite(configured) && configured >= 0 && configured <= 2000) return configured;
+  return DEFAULT_ECHO_DELAY_MS;
+}
 const micEchoCoordinator = createMicEchoCoordinator({
   filter: acousticEchoFilter,
+  delayMs: echoInspectionDelayMs(),
   maxBytes: AUDIO_SAMPLE_RATE * 2 * 4,
   onMicrophone: (pcm) => processMicrophonePcm(pcm),
 });
@@ -253,10 +264,80 @@ const linuxMonitorCapture = createLinuxMonitorCapture({
   onState: ({ state: sourceState, reason }) => {
     if (sourceState !== 'ready') send('audio:level', { channel: 'them', level: 0 });
     send('transcription:state', { status: 'source', channel: 'them', sourceState, ...(reason ? { reason } : {}) });
+    if (sourceState === 'stopped' || sourceState === 'failed') resolveLinuxSourceStopWaiters();
   },
   onUnexpectedExit: () => {
     if (state.capturing || desiredCapturing) setCapturing(false, { immediate: true, reason: 'system-audio-disconnected' });
   },
+});
+
+// -------- Them-channel silence watchdog ----------------------------------
+// A helper or loopback source can keep delivering exact-zero frames after the
+// audio path behind it dies (Bluetooth disconnect, default-sink change, a
+// helper whose stream stopped). Capture then looks healthy while the other
+// side disappears from the transcript, so one notice per episode is sent and
+// the main-owned source is restarted when a restart hook exists.
+//
+// Linux stop() returns before the parec child exits and start() refuses to
+// spawn while that child is still held, so a restart waits for the 'stopped'
+// state rather than racing it.
+const linuxSourceStopWaiters = new Set();
+function resolveLinuxSourceStopWaiters() {
+  for (const resolve of [...linuxSourceStopWaiters]) resolve();
+  linuxSourceStopWaiters.clear();
+}
+function whenLinuxSourceStopped(timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      linuxSourceStopWaiters.delete(done);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    if (timer.unref) timer.unref();
+    linuxSourceStopWaiters.add(done);
+  });
+}
+
+async function restartThemAudioSource() {
+  if (!state.capturing || !desiredCapturing) return null;
+  const audio = store.getSettings().audio || {};
+  // Mic-only sessions have no system source to restart.
+  if (audio.systemEnabled === false) return null;
+  // The restart is a new capture episode: forget the zero run before the
+  // source emits its first frames so ongoing silence cannot re-notice.
+  themSilenceWatchdog.reset();
+  try {
+    let result = null;
+    if (process.platform === 'darwin') {
+      await systemAudioCapture.stop({ immediate: true });
+      result = await systemAudioCapture.start();
+    } else if (process.platform === 'linux') {
+      const stopped = whenLinuxSourceStopped();
+      await linuxMonitorCapture.stop({ immediate: true });
+      await stopped;
+      result = await linuxMonitorCapture.start();
+    } else {
+      // Windows loopback audio is renderer-owned: getDisplayMedia is gated on
+      // a fresh user gesture, so there is no safe restart hook to call here.
+      return null;
+    }
+    if (!result || result.ok !== true) {
+      send('status', { message: 'System audio could not be restarted. Stop and start Listening to restore the other side.' });
+    }
+    return result;
+  } catch {
+    send('status', { message: 'System audio could not be restarted. Stop and start Listening to restore the other side.' });
+    return null;
+  }
+}
+
+const themSilenceWatchdog = createThemSilenceWatchdog({
+  onSilence: () => send('status', { message: 'System audio stopped; reconnecting' }),
+  restart: () => { void restartThemAudioSource(); },
 });
 const MAX_SAVED_TASK_IMAGES_PER_REQUEST = 39;
 const MAX_PENDING_SLIDE_OCR_JOBS = 2;
@@ -364,6 +445,8 @@ const transcriptionDiagnostics = {
   acousticEchoSuppressed: 0,
   lastEchoCorrelation: 0,
   maxEchoCorrelation: 0,
+  lastEchoLabel: 'local',
+  lastEchoLocalShare: 0,
   micDelayDropped: 0,
 };
 
@@ -1017,6 +1100,8 @@ function getSessionDiagnostics() {
       crossTalkSuppressed: transcriptionDiagnostics.crossTalkSuppressed,
       acousticEchoSuppressed: transcriptionDiagnostics.acousticEchoSuppressed,
       lastEchoCorrelation: Number(transcriptionDiagnostics.lastEchoCorrelation.toFixed(3)),
+      lastEchoLabel: transcriptionDiagnostics.lastEchoLabel,
+      lastEchoLocalShare: Number(transcriptionDiagnostics.lastEchoLocalShare.toFixed(2)),
       maxEchoCorrelation: Number(transcriptionDiagnostics.maxEchoCorrelation.toFixed(3)),
       micDelayDropped: transcriptionDiagnostics.micDelayDropped,
     },
@@ -1954,6 +2039,7 @@ async function startTranscriptionPipeline() {
       language: localLanguage,
       vocabulary: localTerms,
       backend: transcription.speechBackend || 'auto',
+      ...(transcription.streamPreset === 'fast' ? { preset: 'fast' } : {}),
       vad: resolveVadSettings(audio),
       onPartial: (event) => {
         if (generation !== sessionGeneration || epoch !== transcriptEpoch || localSpeechStreamManager !== manager) return;
@@ -2301,6 +2387,8 @@ function processMicrophonePcm(pcm) {
   if (audio.micEnabled !== false && audio.systemEnabled !== false) {
     const echo = acousticEchoFilter.inspectMicrophone(pcm);
     transcriptionDiagnostics.lastEchoCorrelation = echo.correlation;
+    transcriptionDiagnostics.lastEchoLabel = echo.label || (echo.suppress ? 'bleed' : 'local');
+    transcriptionDiagnostics.lastEchoLocalShare = Number(echo.localShare) || 0;
     transcriptionDiagnostics.maxEchoCorrelation = Math.max(transcriptionDiagnostics.maxEchoCorrelation, echo.correlation);
     if (echo.suppress) {
       transcriptionDiagnostics.acousticEchoSuppressed += 1;
@@ -2317,6 +2405,9 @@ function acceptPcm(channel, arrayBuffer) {
   if (!pcm.length || pcm.length > AUDIO_SAMPLE_RATE * 2 * 2) return;
   if (channel === 'them') {
     micEchoCoordinator.observeSystem(pcm);
+    // rms16 reads Int16 samples; a truncated odd buffer contributes no sample
+    // and must not throw on the PCM path.
+    if (pcm.length % 2 === 0) themSilenceWatchdog.feed(rms16(pcm));
     routePcm('them', pcm);
     return;
   }
@@ -2769,6 +2860,7 @@ async function applyCaptureState(active) {
     if (!desiredCapturing) return false;
     const audio = store.getSettings().audio || {};
     micEchoCoordinator.clear();
+    micEchoCoordinator.delayMs = echoInspectionDelayMs(audio);
     acousticEchoFilter.reset();
     transcriptionDiagnostics.acousticEchoSuppressed = 0;
     transcriptionDiagnostics.lastEchoCorrelation = 0;
@@ -2791,6 +2883,9 @@ async function applyCaptureState(active) {
     // "What should I say?" answer could be spoken in front of new participants
     // using the previous meeting's context.
     chatHistory.clear();
+    // A new capture session starts a new watchdog episode. Mic-only sessions
+    // stay unarmed: there is no system source to report on or restart.
+    themSilenceWatchdog.arm(audio.systemEnabled !== false);
     startSlideTracking();
     captureStartedAt = pendingRestoredStartedAt || Date.now();
     pendingRestoredStartedAt = null;
@@ -2813,6 +2908,7 @@ async function applyCaptureState(active) {
   else micEchoCoordinator.drain();
   acousticEchoFilter.reset();
   state.capturing = false;
+  themSilenceWatchdog.disarm();
   stopSlideTracking();
   lastCaptureEndedAt = Date.now();
   const captureStartedAtEnd = captureStartedAt;
@@ -2992,6 +3088,8 @@ function startNewSession() {
     clearTaskContext();
     buffers.you = []; buffers.them = [];
     retryQueues.you = []; retryQueues.them = [];
+    // A new session is a new silence episode even though capture continues.
+    themSilenceWatchdog.reset();
     state.transcribing.you = false;
     state.transcribing.them = false;
     if (restartTranscription && state.capturing && desiredCapturing) {

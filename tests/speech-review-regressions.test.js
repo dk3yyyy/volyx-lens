@@ -73,6 +73,7 @@ function createCaptureHarness({ gateBusy = false } = {}) {
         return new Promise(() => {});
       },
     },
+    themSilenceWatchdog: { arm() {}, disarm() {}, reset() {}, feed() {} },
   });
   const script = `${sourceBlock('function clearDiarizationRecorder()', 'async function reconcileCaptureState()')}
 globalThis.api = {

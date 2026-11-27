@@ -98,6 +98,115 @@ test('stream manager forwards vocabulary and language to every channel', async (
   await manager.stop();
 });
 
+test('stream manager forwards latency presets and records the applied tuning', async () => {
+  const worker = fakeWorker();
+  const seen = [];
+  const states = [];
+  const originalStart = worker.streamStart;
+  worker.streamStart = async (options) => {
+    seen.push({ channel: options.channel, chunkMs: options.chunkMs, rightMs: options.rightMs });
+    const ready = await originalStart(options);
+    return { ...ready, appliedTuning: 'custom', chunkMs: options.chunkMs, rightMs: options.rightMs };
+  };
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    chunkMs: 240,
+    rightMs: 400,
+    onState: (event) => states.push(event),
+  });
+
+  await manager.start();
+
+  assert.deepEqual(seen, [
+    { channel: 'you', chunkMs: 240, rightMs: 400 },
+    { channel: 'them', chunkMs: 240, rightMs: 400 },
+  ]);
+  const streaming = states.filter((event) => event.status === 'streaming');
+  assert.deepEqual(streaming.map((event) => [event.channel, event.appliedTuning, event.chunkMs, event.rightMs]), [
+    ['you', 'custom', 240, 400],
+    ['them', 'custom', 240, 400],
+  ]);
+  assert.deepEqual(streaming[0].requestedTuning, { chunkMs: 240, rightMs: 400 });
+  assert.deepEqual(manager.appliedTuning, {
+    you: { appliedTuning: 'custom', chunkMs: 240, rightMs: 400 },
+    them: { appliedTuning: 'custom', chunkMs: 240, rightMs: 400 },
+  });
+  await manager.stop();
+  assert.deepEqual(manager.appliedTuning, {});
+});
+
+test('stream manager lets a start override replace the constructed preset', async () => {
+  const worker = fakeWorker();
+  const seen = [];
+  const originalStart = worker.streamStart;
+  worker.streamStart = async (options) => {
+    seen.push([options.preset, options.chunkMs, options.rightMs]);
+    return originalStart(options);
+  };
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    preset: 'fast',
+  });
+  await manager.start({ chunkMs: 400, rightMs: 800 });
+  // The constructed preset stays in the request; explicit slots override it.
+  assert.deepEqual(seen, [['fast', 400, 800]]);
+  await manager.stop();
+});
+
+test('stream manager omits tuning options when none were requested', async () => {
+  const worker = fakeWorker();
+  const seen = [];
+  const states = [];
+  const originalStart = worker.streamStart;
+  worker.streamStart = async (options) => {
+    seen.push(options);
+    return originalStart(options);
+  };
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    onState: (event) => states.push(event),
+  });
+  await manager.start();
+  for (const options of seen) {
+    assert.equal(Object.hasOwn(options, 'chunkMs'), false);
+    assert.equal(Object.hasOwn(options, 'rightMs'), false);
+    assert.equal(Object.hasOwn(options, 'preset'), false);
+  }
+  const streaming = states.filter((event) => event.status === 'streaming');
+  assert.equal(streaming.every((event) => event.appliedTuning === 'default'), true);
+  assert.equal(streaming.some((event) => Object.hasOwn(event, 'requestedTuning')), false);
+  await manager.stop();
+});
+
+test('stream manager surfaces the native fallback reason when a preset is rejected', async () => {
+  const worker = fakeWorker();
+  const states = [];
+  const reason = 'Requested Parakeet buffered tuning chunk 560, right 560 ms was rejected; using default streaming settings.';
+  worker.streamStart = async (options) => ({
+    modelId: options.modelId,
+    appliedTuning: 'default',
+    appliedTuningReason: reason,
+  });
+  const manager = createLocalSpeechStreamManager({
+    worker,
+    modelId: 'parakeet-unified-en',
+    channels: ['you'],
+    preset: 'fast',
+    onState: (event) => states.push(event),
+  });
+  await manager.start();
+  const streaming = states.find((event) => event.status === 'streaming');
+  assert.equal(streaming.appliedTuning, 'default');
+  assert.equal(streaming.appliedTuningReason, reason);
+  assert.deepEqual(streaming.requestedTuning, { preset: 'fast' });
+  assert.deepEqual(manager.appliedTuning, { you: { appliedTuning: 'default', appliedTuningReason: reason } });
+  await manager.stop();
+});
+
 test('cancels the first stream when the second channel cannot load', async () => {
   const worker = fakeWorker({ failChannel: 'them' });
   const manager = createLocalSpeechStreamManager({ worker, modelId: 'nemotron-3.5-asr-streaming-0.6b' });

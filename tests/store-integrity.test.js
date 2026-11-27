@@ -36,7 +36,7 @@ test('partial nested settings patches preserve omitted preferences', () => {
     endpoints: { azure: 'https://one.openai.azure.com/openai/v1', azureRealtime: 'https://two.openai.azure.com/openai/v1' },
     models: { openai: { fast: 'fast-one', smart: 'smart-one' } },
     transcription: { mode: 'realtime', realtimeProvider: 'azure', language: 'en', delay: 'medium' },
-    audio: { inputDeviceId: 'mic-one', micEnabled: false, systemEnabled: true, sensitivity: 'noisy', silenceMs: 700, preRollMs: 300, costWarningMinutes: 45, maxSessionMinutes: 90 },
+    audio: { inputDeviceId: 'mic-one', micEnabled: false, systemEnabled: true, sensitivity: 'noisy', silenceMs: 700, preRollMs: 300, costWarningMinutes: 45, maxSessionMinutes: 90, echoDelayMs: 500 },
   });
 
   const updated = store.setSettings({
@@ -59,6 +59,10 @@ test('partial nested settings patches preserve omitted preferences', () => {
   assert.equal(updated.audio.sensitivity, 'noisy');
   assert.equal(updated.audio.silenceMs, 900);
   assert.equal(updated.audio.maxSessionMinutes, 90);
+  assert.equal(updated.audio.echoDelayMs, 500);
+
+  assert.equal(store.setSettings({ audio: { echoDelayMs: 99999 } }).audio.echoDelayMs, 2000);
+  assert.equal(store.setSettings({ audio: { echoDelayMs: -40 } }).audio.echoDelayMs, 0);
 });
 
 test('local GGUF selection defaults to legacy Whisper and survives an atomic settings reload', () => {

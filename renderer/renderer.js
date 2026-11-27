@@ -3,6 +3,7 @@
   const { icon } = window.ICONS;
   const { renderNotesHtml } = window.volyxLensNotesMarkup;
   const { formatLastChecked } = window.volyxLensRelativeTime;
+  const captureGuards = window.volyxLensCaptureGuards;
   const volyxLens = window.volyxLens; // exposed by preload
   const $ = (s) => document.querySelector(s);
 
@@ -1904,16 +1905,37 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const epoch = captureEpoch;
     micStartPromise = (async () => {
       let stream = null;
+      let deviceFallback = null;
       try {
-        const deviceId = settings.audio && settings.audio.inputDeviceId;
+        const requestedDeviceId = settings.audio && settings.audio.inputDeviceId;
         const browserProcessing = !settings.audio || settings.audio.browserMicProcessing !== false;
         stream = await navigator.mediaDevices.getUserMedia({ audio: {
           echoCancellation: browserProcessing,
           noiseSuppression: browserProcessing,
           autoGainControl: browserProcessing,
           channelCount: 1,
-          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+          ...(requestedDeviceId ? { deviceId: { exact: requestedDeviceId } } : {}),
         } });
+        // A device that reports zero input channels opens but records digital
+        // silence. Reopen the default microphone and say why instead of
+        // starting a session that cannot hear the user.
+        deviceFallback = captureGuards.inputDeviceFallback(requestedDeviceId, stream.getAudioTracks()[0]);
+        if (deviceFallback) {
+          stream.getTracks().forEach((track) => track.stop());
+          stream = null;
+          volyxLens.log('mic: ' + deviceFallback.message);
+          showStatus(deviceFallback.message);
+          stream = await navigator.mediaDevices.getUserMedia({ audio: {
+            echoCancellation: browserProcessing,
+            noiseSuppression: browserProcessing,
+            autoGainControl: browserProcessing,
+            channelCount: 1,
+          } });
+          if (captureGuards.hasNoInputChannels(stream.getAudioTracks()[0])) {
+            showStatus('No microphone with input channels is available. Listening will not capture your voice.');
+            throw new Error('No microphone with input channels is available.');
+          }
+        }
         const capture = await createAudioCapture(stream, 'you', (buffer) => volyxLens.micPcm(buffer), () => handleUnexpectedTrackEnd('you'));
         if (epoch !== captureEpoch) { await closeAudioCapture(capture); return null; }
         micCapture = capture;
@@ -1945,7 +1967,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       let stream = null;
       volyxLens.setDisplayCaptureIntent(true);
       try {
-        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        stream = await navigator.mediaDevices.getDisplayMedia(captureGuards.displayMediaConstraints(volyxLens.platform));
         stream.getVideoTracks().forEach((track) => track.stop());
         if (!stream.getAudioTracks().length) {
           stream.getTracks().forEach((track) => track.stop());
@@ -2636,7 +2658,8 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const select = $('#audio-input-device');
     const selected = (settings.audio && settings.audio.inputDeviceId) || select.value || '';
     try {
-      const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === 'audioinput');
+      const devices = (await navigator.mediaDevices.enumerateDevices())
+        .filter((device) => device.kind === 'audioinput' && captureGuards.isSelectableInput(device));
       select.innerHTML = '<option value="">System default</option>';
       devices.forEach((device, index) => {
         const option = document.createElement('option');
@@ -2644,7 +2667,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         option.textContent = device.label || `Microphone ${index + 1}`;
         select.appendChild(option);
       });
-      select.value = devices.some((device) => device.deviceId === selected) ? selected : '';
+      // A saved device that disappeared or reports no input channels falls
+      // back to the system default rather than being preselected.
+      const choice = captureGuards.chooseInputDevice(devices, selected);
+      select.value = choice.deviceId;
+      if (choice.rejected === 'no-input-channels') volyxLens.log('audio device rejected: zero input channels');
     } catch (error) { volyxLens.log('audio device enumeration failed: ' + (error && error.message)); }
   }
   function renderPersonalContext() {
@@ -3791,6 +3818,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-fallback-model').value = transcription.fallbackModel || '';
     $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || '';
     $('#stt-speech-backend').value = transcription.speechBackend || 'auto';
+    $('#stt-faster-live').checked = transcription.streamPreset === 'fast';
     const offlineWhisper = settings.offlineWhisper || { available: true };
     const localSpeech = settings.localSpeech || { available: offlineWhisper.available !== false };
     const offlineToggle = $('#stt-offline-enabled');
@@ -4065,6 +4093,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       offlineEnabled: $('#stt-offline-enabled').checked,
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
       speechBackend: $('#stt-speech-backend').value,
+      streamPreset: $('#stt-faster-live').checked ? 'fast' : 'default',
       whisperModel: $('#stt-whisper-model').value,
       localModelId: $('#stt-local-model').value,
       language: languageSetting,

@@ -122,6 +122,7 @@ function load() {
   data.transcription.speechBackend = ['auto', 'cpu', 'gpu'].includes(data.transcription.speechBackend)
     ? data.transcription.speechBackend
     : DEFAULTS.transcription.speechBackend;
+  data.transcription.streamPreset = data.transcription.streamPreset === 'fast' ? 'fast' : 'default';
   const storedLocalModelId = String(data.transcription.localModelId || '').trim().toLowerCase().slice(0, 100);
   const storedLocalModel = getSpeechModel(storedLocalModelId);
   data.transcription.localModelId = storedLocalModel && storedLocalModel.runtime === 'transcribe-cpp'
@@ -360,6 +361,7 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'offlineEnabled') && typeof value.offlineEnabled === 'boolean') transcription.offlineEnabled = value.offlineEnabled;
     if (Object.hasOwn(value, 'offlineCloudFallback') && typeof value.offlineCloudFallback === 'boolean') transcription.offlineCloudFallback = value.offlineCloudFallback;
     if (Object.hasOwn(value, 'speechBackend') && ['auto', 'cpu', 'gpu'].includes(value.speechBackend)) transcription.speechBackend = value.speechBackend;
+    if (Object.hasOwn(value, 'streamPreset') && ['fast', 'default'].includes(value.streamPreset)) transcription.streamPreset = value.streamPreset;
     if (Object.hasOwn(value, 'language')) transcription.language = String(value.language || '').slice(0, 20);
     if (Object.hasOwn(value, 'customVocabulary')) transcription.customVocabulary = String(value.customVocabulary || '').slice(0, 4000);
     if (Object.hasOwn(value, 'transcriptRules')) transcription.transcriptRules = String(value.transcriptRules || '').slice(0, 4000);
@@ -396,6 +398,7 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'systemEnabled') && typeof value.systemEnabled === 'boolean') audio.systemEnabled = value.systemEnabled;
     if (Object.hasOwn(value, 'browserMicProcessing') && typeof value.browserMicProcessing === 'boolean') audio.browserMicProcessing = value.browserMicProcessing;
     if (Object.hasOwn(value, 'sensitivity') && ['quiet', 'balanced', 'noisy'].includes(value.sensitivity)) audio.sensitivity = value.sensitivity;
+    if (Object.hasOwn(value, 'echoDelayMs')) audio.echoDelayMs = Math.max(0, Math.min(2000, Number(value.echoDelayMs) || 0));
     if (Object.hasOwn(value, 'silenceMs')) audio.silenceMs = Math.max(300, Math.min(2000, Number(value.silenceMs) || 700));
     if (Object.hasOwn(value, 'preRollMs')) audio.preRollMs = Math.max(0, Math.min(1000, Number(value.preRollMs) || 250));
     if (Object.hasOwn(value, 'costWarningMinutes')) audio.costWarningMinutes = Math.max(5, Math.min(240, Number(value.costWarningMinutes) || 30));

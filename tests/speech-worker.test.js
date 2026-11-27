@@ -430,6 +430,76 @@ test('speech worker forwards vocabulary when starting a stream', async () => {
   await worker.stop();
 });
 
+test('speech worker forwards streaming latency presets to the native worker', async () => {
+  const { worker, children } = fixture();
+  const result = await worker.streamStart({
+    modelId: 'fake-stream',
+    channel: 'you',
+    chunkMs: 240,
+    rightMs: 400,
+  });
+  const start = children[0].requests.find((entry) => entry.command === 'stream-start');
+  assert.equal(start.chunkMs, 240);
+  assert.equal(start.rightMs, 400);
+  assert.equal(Object.hasOwn(start, 'preset'), false);
+  assert.equal(result.appliedTuning, 'default');
+  await worker.streamCancel('you');
+
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'them', preset: 'fast' });
+  const presetStart = children[0].requests.filter((entry) => entry.command === 'stream-start')[1];
+  assert.equal(presetStart.preset, 'fast');
+  assert.equal(Object.hasOwn(presetStart, 'chunkMs'), false);
+  await worker.streamCancel('them');
+  await worker.stop();
+});
+
+test('speech worker sends no tuning keys when no preset was requested', async () => {
+  const { worker, children } = fixture();
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you' });
+  const start = children[0].requests.find((entry) => entry.command === 'stream-start');
+  for (const key of ['preset', 'chunkMs', 'rightMs']) {
+    assert.equal(Object.hasOwn(start, key), false, `${key} must not be sent by default`);
+  }
+  await worker.streamCancel('you');
+  await worker.stop();
+});
+
+test('speech worker rejects off-menu latency values before sending a request', async () => {
+  const { worker, children } = fixture();
+  for (const options of [
+    { chunkMs: 100 },
+    { rightMs: 100 },
+    { chunkMs: 0 },
+    { chunkMs: 4_080 },
+    { chunkMs: 240.5 },
+    { chunkMs: '240' },
+    { rightMs: false },
+    { preset: 'slow' },
+    { preset: 560 },
+  ]) {
+    await assert.rejects(
+      worker.streamStart({ modelId: 'fake-stream', channel: 'you', ...options }),
+      (error) => error instanceof TypeError
+        && error.code === 'invalid_stream_tuning'
+        && /chunkMs|rightMs|preset/.test(error.message),
+      `expected ${JSON.stringify(options)} to be refused`,
+    );
+  }
+  assert.equal(children.length, 0, 'invalid tuning must not spawn the native worker');
+});
+
+test('normalizeStreamTuning validates presets and merges explicit slots', () => {
+  const { normalizeStreamTuning } = loadSpeechWorkerModule();
+  assert.deepEqual(normalizeStreamTuning({}), {});
+  assert.deepEqual(normalizeStreamTuning({ preset: 'fast' }), { preset: 'fast' });
+  assert.deepEqual(normalizeStreamTuning({ chunkMs: 240 }), { chunkMs: 240 });
+  assert.deepEqual(normalizeStreamTuning({ preset: 'fast', chunkMs: 240 }), { preset: 'fast', chunkMs: 240 });
+  assert.deepEqual(normalizeStreamTuning({ chunkMs: 80, rightMs: 4_000 }), { chunkMs: 80, rightMs: 4_000 });
+  // Nulls are absent knobs, not zero values.
+  assert.deepEqual(normalizeStreamTuning({ chunkMs: null, rightMs: null }), {});
+  assert.throws(() => normalizeStreamTuning({ rightMs: 120 }), { code: 'invalid_stream_tuning' });
+});
+
 test('sanitizeVocabulary accepts only strings and never widens the provider caps', () => {
   const { sanitizeVocabulary } = loadSpeechWorkerModule();
   assert.deepEqual(sanitizeVocabulary(null), []);
