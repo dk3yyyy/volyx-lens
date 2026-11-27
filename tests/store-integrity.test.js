@@ -108,6 +108,44 @@ test('hand-edited local model and backend values are normalized on load', () => 
   assert.equal(transcription.speechBackend, 'auto');
 });
 
+test('custom vocabulary and transcript processing settings persist with safe defaults', () => {
+  const userData = temporaryUserData();
+  const store = loadStore(userData);
+  const defaults = store.getSettings().transcription;
+  assert.equal(defaults.customVocabulary, '');
+  assert.equal(defaults.transcriptRules, '');
+  assert.equal(defaults.postProcessTranscript, true);
+  assert.equal(defaults.normalizeSpokenDigits, true);
+  store.setSettings({ transcription: {
+    customVocabulary: 'Volyx Lens, Parakeet',
+    transcriptRules: 'volyx lens => Volyx Lens',
+    postProcessTranscript: false,
+    normalizeSpokenDigits: false,
+  } });
+  const saved = loadStore(userData).getSettings().transcription;
+  assert.equal(saved.customVocabulary, 'Volyx Lens, Parakeet');
+  assert.equal(saved.transcriptRules, 'volyx lens => Volyx Lens');
+  assert.equal(saved.postProcessTranscript, false);
+  assert.equal(saved.normalizeSpokenDigits, false);
+});
+
+test('hand-edited transcript processing settings are normalized on load', () => {
+  const userData = temporaryUserData();
+  fs.writeFileSync(path.join(userData, 'volyx-lens-data.json'), JSON.stringify({
+    transcription: {
+      customVocabulary: 123,
+      transcriptRules: 'x'.repeat(5000),
+      postProcessTranscript: 'no',
+      normalizeSpokenDigits: null,
+    },
+  }));
+  const transcription = loadStore(userData).getSettings().transcription;
+  assert.equal(transcription.customVocabulary, '123');
+  assert.equal(transcription.transcriptRules.length, 4000);
+  assert.equal(transcription.postProcessTranscript, true);
+  assert.equal(transcription.normalizeSpokenDigits, true);
+});
+
 test('Deepgram realtime provider, model, and credential survive the atomic Settings save', () => {
   const userData = temporaryUserData();
   // Keys only persist when secure storage works; without it they are session-only

@@ -44,12 +44,13 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Credentials | `clearCredential` |
 | Personal context | `personalContextGet`, `personalContextImport`, `personalContextRemove`, `personalContextSetEnabled` |
 | Local speech models | `speechModelsGet`, `speechModelDownload`, `speechModelCancelDownload`, `speechModelRemove`, `speechModelWarm`, `speechModelUnload` |
+| Workspace index | `workspaceIndexGet`, `workspaceIndexAdd`, `workspaceIndexRefresh`, `workspaceIndexRebuild`, `workspaceIndexSetEnabled`, `workspaceIndexRemove` |
 | Conversation | `ask`, `cancelResponse` |
 | Capture | `captureToggle`, `captureStop`, `captureState`, `setDisplayCaptureIntent` |
 | Session | `newSession` |
 | Task context | `taskContextGet`, `taskContextList`, `taskContextCapture`, `taskContextUndo`, `taskContextRemove`, `taskContextPin`, `taskContextClear` |
 | Transcript | `transcriptGet`, `recapPlan`, `transcriptCopy`, `transcriptCopyTurn`, `transcriptClear`, `transcriptExport` |
-| History | `historyList`, `historyLimits`, `historyGet`, `historyDelete`, `historyDeleteMany`, `historyUndoDelete`, `historyRestoreTrash`, `historyClear`, `historyExport`, `historyBackupAll`, `historyRestoreAll`, `historyRecap`, `historyClean`, `historyParticipant`, `historyDiscardCleaned` |
+| History | `historyList`, `historyLimits`, `historyGet`, `historyDelete`, `historyDeleteMany`, `historyUndoDelete`, `historyRestoreTrash`, `historyClear`, `historyExport`, `historyBackupAll`, `historyRestoreAll`, `historyRecap`, `historyClean`, `historyParticipant`, `historyDiscardCleaned`, `meetingMemoryList`, `meetingMemorySave`, `meetingMemoryUpdate`, `meetingMemorySetEnabled`, `meetingMemoryRemove` |
 | Recovery | `recoveryGet`, `recoveryRestore`, `recoveryDiscard` |
 | Diagnostics | `diagnosticsGet`, `diagnosticsCopy` |
 | Clipboard | `copyText` |
@@ -64,7 +65,7 @@ The preload script (`preload.js`) is the only sanctioned channel between the two
 | Lifecycle | `rendererReady`, `quit`, `relaunch`, `log` |
 | Events | `on(channel, cb)`, a filtered allowlist of 33 IPC channels, including `update:open` and `deeplink:open` |
 
-The bridge exposes 92 members in total: 89 methods plus the `platform`, `audioConfig`, and `initialAccentTheme` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
+The bridge exposes 103 members in total: 100 methods plus the `platform`, `audioConfig`, and `initialAccentTheme` values; the table groups the methods by purpose. Credentials are written through `settingsSet` (`apiKeyUpdates`), not a separate call.
 
 The `on()` listener uses a strict allowlist of event channels. Any channel not in the allowlist is silently ignored, preventing the renderer from subscribing to unintended IPC traffic.
 
@@ -146,6 +147,9 @@ The local GGUF path is separate from the legacy whisper.cpp server:
 - `scripts/verify-speech-worker-package.js` inspects ELF/PE/Mach-O architecture, rejects unsafe POSIX permissions, and runs the packaged worker's model-free self-test whenever the host matches the target. The self-test declares the batch-only protocol and disabled optional features.
 - Each model retains its own license metadata and the Settings UI asks users to review the license. The pinned Cohere artifact is the selected public GGUF conversion; upstream model license terms still apply.
 
+- `src/transcript-postprocess.js` applies bounded, deterministic correction rules and optional spoken-digit normalization once inside `recordTranscript()`, after the generation guard and before cross-talk detection/grouping. Configuration is snapshotted when a transcription pipeline starts; partials, diagnostics, restored drafts, imports, and exports are never reprocessed.
+- Recognition vocabulary is separate from replacement rules. `src/transcript-hygiene.js` merges custom terms ahead of personal-context terms and generic seeds for provider prompts/keyterms/phrase lists where supported. Processed turns retain optional `rawText`; grouping, cross-talk removal, recovery, history, JSON export, and raw history/export views preserve it without changing the existing AI-cleaned copy.
+
 ## Capture pipelines
 
 Volyx Lens maintains three intentionally separate capture pipelines. Each has its own lifecycle, format, and transport to the main process.
@@ -183,7 +187,7 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 ## Request lifecycle
 
 1. User triggers an action (shortcut, button, or `/command`).
-2. Renderer sends an `ask` IPC message with mode, text, and confirmation flags. The main process captures the screen, selects transcript turns and personal-context excerpts, and applies the budgets.
+2. Renderer sends an `ask` IPC message with mode, text, and confirmation flags. The main process captures the screen, selects transcript turns, personal-context excerpts, and bounded workspace matches, retrieves matching source-grounded meeting memories when saved meeting context is enabled, and applies the budgets.
 3. Main process runs local controls: permission checks, memory budgets, deduplication, image cap, confirmation for expensive requests.
 4. `createResponseRoute` builds primary + fallback LLM instances.
 5. `chooseInitialProvider` selects the best compatible provider.
@@ -193,10 +197,12 @@ Volyx Lens maintains three intentionally separate capture pipelines. Each has it
 
 ## On-device state
 
-- `src/meeting-store.js` keeps at most 200 records, writes atomically, and holds deleted records for 30 days before pruning. A restore that does not fit is refused rather than pruned.
+- `src/meeting-store.js` keeps at most 200 records, writes atomically, and holds sanitized deleted records for 30 days before pruning. Linked memory is removed before the live source record is deleted and is intentionally not restored by Undo. A restore that does not fit is refused rather than pruned.
 - `src/meeting-recovery.js` writes a 0600 checkpoint of an in-progress transcript and offers restore or discard after an unexpected exit.
-- `src/meeting-backup.js` exports one file per record plus an index; import validates each record and never overwrites an existing id.
+- `src/meeting-backup.js` exports one file per record plus an index with a shared 16 MiB per-file limit for planning and restore; import validates each record and never overwrites an existing id.
 - `src/meeting-notes.js` and `src/transcript-cleanup.js` run one model job at a time over saved meetings, require confirmation for multi-request work, and store the source hash with generated notes.
+- `src/workspace-index.js` stores an FTS5 index of explicitly selected text/source files in the app's local user-data folder. Folder selection and index removal are main-process IPC operations; workspace search is disabled until the user enables that folder. The index is not encrypted by Volyx Lens, refresh is user-triggered, and incomplete indexes are excluded from answer context.
+- `src/inspectable-memory.js` formats notes into a bounded versioned memory record and performs lexical retrieval. Memory is stored inside its source meeting record, so retention, backups, and deletion remain tied to meeting history; entries are included only after explicit user save and per-entry/global enablement.
 - `src/slide-tracking.js` samples the screen while listening and keeps at most 20 previews (8 MB) in memory; it never calls a provider.
 
 ## Update path

@@ -36,7 +36,7 @@ test('hard session boundaries await speech teardown and clear retry audio before
   assert.match(immediateBlock, /if \(manager\) await Promise\.allSettled\(\[manager\.stop\(\)\]\)/);
   assert.match(immediateBlock, /await defaultSpeechWorker\.stop\(\)/);
   assert.match(immediateBlock, /await Promise\.allSettled\(\[\.\.\.drainingRealtimeManagers\]/);
-  assert.match(immediateBlock, /transcriptEpoch \+= 1;/);
+  assert.match(immediateBlock, /transcriptEpoch \+= 1/);
   assert.doesNotMatch(immediateBlock, /transcript\.length = 0/, 'immediate teardown invalidates work without clearing visible transcript');
   assert.match(immediateBlock, /retryQueues\.you = \[\]; retryQueues\.them = \[\]/);
   assert.match(immediateBlock, /flushPromises\.you = null; flushPromises\.them = null/);

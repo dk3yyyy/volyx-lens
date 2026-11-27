@@ -26,6 +26,18 @@ test('segment cleanup trims and collapses whitespace without changing wording', 
   assert.equal(cleanSegmentText('  basis   vectors\nare useful  '), 'basis vectors are useful');
 });
 
+test('conversation turns preserve original recognizer wording alongside processed text', () => {
+  const turns = [];
+  const first = appendConversationSegment(turns, {
+    id: 1, channel: 'you', text: 'Volyx Lens', rawText: 'volyx lens', ts: 1,
+  }, () => 1);
+  const second = appendConversationSegment(turns, {
+    id: 2, channel: 'you', text: 'is ready.', ts: 2,
+  }, () => 2);
+  assert.equal(first.turn.text, 'Volyx Lens is ready.');
+  assert.equal(second.turn.rawText, 'volyx lens is ready.');
+});
+
 test('conversation turns change only when the speaker channel changes', () => {
   const turns = [];
   let nextTurnId = 0;

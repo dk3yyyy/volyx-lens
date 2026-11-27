@@ -11,7 +11,10 @@
 const INDEX_KIND = 'volyx-lens-backup-index';
 const INDEX_NAME = 'volyx-lens-backup-index.json';
 const MAX_BACKUP_FILES = 5000;
-const MAX_BACKUP_FILE_BYTES = 8 * 1024 * 1024;
+// Operational limit shared by planning and restore. A store can legally hold a
+// record larger than this; backup refuses that record before writing anything
+// rather than producing a file Restore would silently reject.
+const MAX_BACKUP_FILE_BYTES = 16 * 1024 * 1024;
 
 function twoDigits(value) {
   return String(value).padStart(2, '0');
@@ -56,6 +59,10 @@ function buildBackupPlan(records, { appVersion = null, now = Date.now() } = {}) 
     }
     used.add(name);
     const content = JSON.stringify(record, null, 2);
+    const bytes = Buffer.byteLength(content, 'utf8');
+    if (bytes > MAX_BACKUP_FILE_BYTES) {
+      throw new Error(`Meeting ${String(record.id || 'record').slice(0, 100)} is too large for the backup limit (${bytes} bytes; maximum ${MAX_BACKUP_FILE_BYTES}). Export it individually before clearing history.`);
+    }
     characters += content.length;
     files.push({
       name,
@@ -113,7 +120,7 @@ function readBackupFolder(entries) {
       continue;
     }
     const text = String(entry.text || '');
-    if (text.length > MAX_BACKUP_FILE_BYTES) {
+    if (Buffer.byteLength(text, 'utf8') > MAX_BACKUP_FILE_BYTES) {
       skipped.push({ name, reason: 'file_too_large' });
       continue;
     }

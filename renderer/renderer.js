@@ -37,6 +37,7 @@
   // ---- state -------------------------------------------------------------
   let settings = null;
   let personalContext = null;
+  let workspaceIndexState = [];
   let taskContext = { count: 0, maxCaptures: null, maxTotalBytes: 96 * 1024 * 1024, totalBytes: 0, pinnedCount: 0, lastCapturedAt: null, revision: 0, lastEviction: null, nearDuplicatesRejected: 0, fingerprintFailures: 0, ocrBytes: 0, ocrReadyCount: 0, ocrPendingCount: 0, ocrUnavailableCount: 0, ocrFailedCount: 0, ocrEvictedCount: 0, overlapLinkedCount: 0 };
   const taskContextPage = { offset: 0, limit: 50, total: 0, captures: [], revision: -1 };
   let taskContextListRequest = 0;
@@ -479,6 +480,10 @@
   let meetingHistoryRequest = 0;
   let meetingDetail = null;
   let meetingNotesText = '';
+  let meetingMemoryEntries = [];
+  // Unfinished editor text survives list rerenders. Entries leave this map only
+  // after their own save or delete succeeds.
+  const meetingMemoryDrafts = new Map();
   let meetingHistorySearchTimer = null;
   // How many records the store keeps, and how long a deleted one stays
   // recoverable. Both are fetched rather than hardcoded so the sentences the
@@ -614,7 +619,9 @@
       if (record.hasNotes) {
         const notesBadge = document.createElement('span');
         notesBadge.className = 'history-notes-badge';
-        notesBadge.textContent = record.notesSource === 'cleaned' ? 'Notes · cleaned' : 'Notes';
+        notesBadge.textContent = record.notesSource === 'cleaned'
+          ? 'Notes · cleaned'
+          : (record.notesSource === 'processed' ? 'Notes · processed' : 'Notes');
         when.append(' ', notesBadge);
       }
       if (record.hasCleaned) {
@@ -638,12 +645,14 @@
       remove.title = 'Delete this meeting';
       remove.setAttribute('aria-label', 'Delete meeting');
       remove.addEventListener('click', async () => {
-        if (!window.confirm('Delete this saved meeting? You can undo this right after.')) return;
+        if (!window.confirm('Delete this saved meeting? Any saved memory linked to it will also be deleted and will not return on Undo.')) return;
         try {
           const result = await volyxLens.historyDelete(record.id);
           meetingSelected.delete(record.id);
           setHistoryUndo(result && result.removed ? [record.id] : []);
-          showStatus(result && result.removed ? 'Meeting deleted. Undo is in the history pane.' : 'That meeting is no longer available.');
+          showStatus(result && result.removed
+            ? `Meeting deleted.${result.memoryRemoved ? ' Its saved memory was also deleted.' : ''} Undo is in the history pane.`
+            : 'That meeting is no longer available.');
           await refreshHistoryLimits();
           await loadMeetingHistory();
         } catch (error) { showStatus(error && error.message ? error.message : 'The meeting could not be deleted.'); }
@@ -866,15 +875,18 @@
   $('#meeting-history-delete-selected').addEventListener('click', async () => {
     const ids = [...meetingSelected];
     if (!ids.length) return;
-    if (!window.confirm(`Delete ${ids.length} saved meeting${ids.length === 1 ? '' : 's'}? You can undo this right after.`)) return;
+    if (!window.confirm(`Delete ${ids.length} saved meeting${ids.length === 1 ? '' : 's'}? Any linked memories will also be deleted and will not return on Undo.`)) return;
     try {
       const result = await volyxLens.historyDeleteMany(ids);
       meetingSelected.clear();
       meetingSelectMode = false;
       setHistoryUndo(result && result.removed ? (Array.isArray(result.ids) ? result.ids : ids) : []);
+      const memoryFailureNotice = result && result.memoryFailures
+        ? ` ${result.memoryFailures} meeting${result.memoryFailures === 1 ? '' : 's'} could not be deleted with its linked memory.`
+        : '';
       showStatus(result && result.removed
-        ? `Deleted ${result.removed} saved meeting${result.removed === 1 ? '' : 's'}. Undo is in the history pane.`
-        : 'Nothing was deleted.');
+        ? `Deleted ${result.removed} saved meeting${result.removed === 1 ? '' : 's'}${result.memoriesRemoved ? ` and ${result.memoriesRemoved} linked memor${result.memoriesRemoved === 1 ? 'y' : 'ies'}` : ''}.${memoryFailureNotice} Undo is in the history pane.`
+        : memoryFailureNotice || 'Nothing was deleted.');
       await refreshHistoryLimits();
       await loadMeetingHistory();
       updateMeetingSelectionUi();
@@ -888,8 +900,24 @@
       && meetingDetail.cleaned.texts.length === meetingDetail.turns.length;
   }
 
+  function hasOriginalWording() {
+    return !!meetingDetail && Array.isArray(meetingDetail.turns)
+      && meetingDetail.turns.some((turn) => typeof turn.rawText === 'string' && turn.rawText !== turn.text);
+  }
+
+  // The deterministic processed copy is the saved turn.text. It deserves its own
+  // stop only when an AI-cleaned copy would otherwise be the only readable view
+  // and the recognizer's raw wording is also present.
+  function hasProcessedView() {
+    return hasCleanedView() && hasOriginalWording();
+  }
+
   function readableMeetingTurns() {
     if (!meetingDetail) return [];
+    if (meetingViewMode === 'raw') {
+      return meetingDetail.turns.map((turn) => turn.rawText ? { ...turn, text: turn.rawText } : turn);
+    }
+    if (meetingViewMode === 'processed') return meetingDetail.turns;
     if (meetingViewMode !== 'cleaned' || !hasCleanedView()) return meetingDetail.turns;
     return meetingDetail.turns.map((turn, index) => ({
       ...turn,
@@ -897,22 +925,32 @@
     }));
   }
 
-  const VIEW_ORDER = ['cleaned', 'raw', 'changes'];
-  const VIEW_LABELS = { cleaned: 'Cleaned', raw: 'Raw', changes: 'Changes' };
+  const VIEW_ORDER = ['cleaned', 'raw', 'processed', 'changes'];
+  const VIEW_LABELS = { cleaned: 'Cleaned', raw: 'Raw', processed: 'Processed', changes: 'Changes' };
   const VIEW_TITLES = {
     cleaned: 'Showing the cleaned copy. Click for the exact wording that was heard.',
     raw: 'Showing the exact wording that was heard. Click to see what cleanup changed.',
+    processed: 'Showing the saved deterministic processing result. Click to see what cleanup changed.',
     changes: 'Showing only the turns where the wording changed. Click to return to the cleaned copy.',
   };
+
+  // Processed joins the cycle only when all three copies exist; with two copies
+  // the existing Cleaned/Raw (or Processed/Raw) cycle is unchanged.
+  function meetingViewOrder() {
+    if (!hasCleanedView()) return ['cleaned', 'raw'];
+    return hasProcessedView() ? VIEW_ORDER : ['cleaned', 'raw', 'changes'];
+  }
 
   function updateMeetingViewToggle() {
     const toggle = $('#meeting-view-toggle');
     if (!toggle) return;
-    const available = hasCleanedView();
+    const available = hasCleanedView() || hasOriginalWording();
     toggle.classList.toggle('hidden', !available);
     toggle.setAttribute('aria-pressed', String(available && meetingViewMode === 'cleaned'));
-    toggle.textContent = VIEW_LABELS[meetingViewMode] || 'Raw';
-    toggle.title = VIEW_TITLES[meetingViewMode] || VIEW_TITLES.raw;
+    toggle.textContent = meetingViewMode === 'cleaned' && !hasCleanedView() ? 'Processed' : (VIEW_LABELS[meetingViewMode] || 'Raw');
+    toggle.title = meetingViewMode === 'cleaned' && !hasCleanedView()
+      ? 'Showing the processed transcript. Click for original recognizer wording.'
+      : (VIEW_TITLES[meetingViewMode] || VIEW_TITLES.raw);
   }
 
   // Compare what was said, not how it was punctuated. Cleanup adds a full stop
@@ -930,12 +968,13 @@
     let punctuationOnly = 0;
     meetingDetail.turns.forEach((turn, index) => {
       const cleaned = String(meetingDetail.cleaned.texts[index] || '').trim();
-      if (!cleaned || cleaned === String(turn.text || '').trim()) return;
-      if (normalizeMeetingText(cleaned) === normalizeMeetingText(turn.text)) {
+      const original = String(turn.rawText || turn.text || '').trim();
+      if (!cleaned || cleaned === original) return;
+      if (normalizeMeetingText(cleaned) === normalizeMeetingText(original)) {
         punctuationOnly += 1;
         return;
       }
-      rows.push({ channel: turn.channel, raw: turn.text, cleaned, ts: turn.ts });
+      rows.push({ channel: turn.channel, raw: original, cleaned, ts: turn.ts });
     });
     return { rows, punctuationOnly };
   }
@@ -1014,11 +1053,21 @@
 
   let meetingDetailOpenerId = null;
 
+  function hasMeetingNotes(notes) {
+    return Boolean(notes && (
+      notes.summary || notes.keyPoints?.length || notes.decisions?.length
+      || notes.actionItems?.length || notes.followUp?.length
+    ));
+  }
+
   async function openMeetingDetail(id) {
     try {
       const record = await volyxLens.historyGet(id);
       if (!record) { showStatus('That meeting is no longer available.'); return; }
       meetingDetail = record;
+      const memoryButton = $('#meeting-memory-save');
+      memoryButton.disabled = !hasMeetingNotes(record.notes);
+      memoryButton.textContent = record.memory ? 'Update saved memory' : 'Save notes to memory';
       meetingDetailOpenerId = id;
       meetingNotesText = '';
       meetingViewMode = 'cleaned';
@@ -1026,15 +1075,16 @@
       out.classList.add('hidden');
       out.textContent = '';
       renderMeetingTurns();
-      if (record.notes && (record.notes.summary || record.notes.keyPoints?.length || record.notes.actionItems?.length)) {
+      if (hasMeetingNotes(record.notes)) {
         const out = $('#meeting-notes-output');
         out.innerHTML = renderNotesHtml(record.notes, '');
         const source = document.createElement('p');
         source.className = 'notes-source';
         if (record.notes.source === 'cleaned') source.textContent = 'These notes were generated from the cleaned transcript.';
+        else if (record.notes.source === 'processed') source.textContent = 'These notes were generated from the processed transcript after deterministic cleanup.';
         else if (record.notes.source === 'raw') source.textContent = 'These notes were generated from the transcript as it was heard.';
         if (source.textContent) {
-          if (record.notes.source === 'raw' && hasCleanedView()) source.textContent += ' Regenerate them to use the cleaned copy.';
+          if ((record.notes.source === 'raw' || record.notes.source === 'processed') && hasCleanedView()) source.textContent += ' Regenerate them to use the cleaned copy.';
           out.prepend(source);
         }
         out.classList.remove('hidden');
@@ -1067,7 +1117,8 @@
     if (!meetingDetail) return;
     const button = $('#meeting-history-export'); button.disabled = true;
     try {
-      const result = await volyxLens.historyExport(meetingDetail.id, $('#meeting-history-export-format').value);
+      const exportSource = meetingViewMode === 'raw' ? 'raw' : (meetingViewMode === 'processed' ? 'processed' : 'auto');
+      const result = await volyxLens.historyExport(meetingDetail.id, $('#meeting-history-export-format').value, exportSource);
       if (result && !result.canceled) showStatus(`Exported ${result.turns} ${result.turns === 1 ? 'turn' : 'turns'} to ${result.filename}.`);
     } catch (error) { showStatus(error && error.message ? error.message : 'This meeting could not be exported.'); }
     finally { button.disabled = false; }
@@ -1075,7 +1126,7 @@
 
   $('#meeting-history-delete').addEventListener('click', async () => {
     if (!meetingDetail) return;
-    if (!window.confirm('Delete this saved meeting? You can undo this right after.')) return;
+    if (!window.confirm('Delete this saved meeting? Any saved memory linked to it will also be deleted and will not return on Undo.')) return;
     const deletedId = meetingDetail.id;
     try {
       const result = await volyxLens.historyDelete(meetingDetail.id);
@@ -1083,13 +1134,15 @@
       await refreshHistoryLimits();
       closeMeetingDetail();
       await loadMeetingHistory();
-      showStatus(result && result.removed ? 'Meeting deleted.' : 'That meeting is no longer available.');
+      showStatus(result && result.removed
+        ? `Meeting deleted.${result.memoryRemoved ? ' Its saved memory was also deleted.' : ''}`
+        : 'That meeting is no longer available.');
     } catch (error) { showStatus(error && error.message ? error.message : 'The meeting could not be deleted.'); }
   });
 
   $('#meeting-history-clear').addEventListener('click', async () => {
     if (!meetingHistoryRecords.length) return;
-    if (!window.confirm('Delete ALL saved meetings? This cannot be undone, and it permanently removes the undo copies of earlier deletes.')) return;
+    if (!window.confirm('Delete ALL saved meetings and their linked memories? This cannot be undone, and it permanently removes the undo copies of earlier deletes.')) return;
     try {
       const result = await volyxLens.historyClear();
       setHistoryUndo([]);
@@ -1102,7 +1155,7 @@
       const cleanupNotice = result.recoveryDraftCleared === false
         ? ' The on-device recovery draft could not be removed and will be offered again on the next launch.'
         : '';
-      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'}.${recoveredNotice}${cleanupNotice}`);
+      showStatus(`Deleted ${result.cleared} saved ${result.cleared === 1 ? 'meeting' : 'meetings'} and their linked memories.${recoveredNotice}${cleanupNotice}`);
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting history could not be cleared.'); }
   });
 
@@ -1110,6 +1163,7 @@
 $('#meeting-notes-generate').addEventListener('click', async () => {
     if (!meetingDetail) return;
     const button = $('#meeting-notes-generate');
+    const memoryButton = $('#meeting-memory-save');
     const original = button.textContent;
     meetingNotesGenerating = true;
     button.disabled = true;
@@ -1123,6 +1177,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         const result = await volyxLens.historyRecap(meetingDetail.id, confirmed);
         if (result && result.ok) {
           meetingNotesText = result.text || '';
+          meetingDetail = { ...meetingDetail, notes: result.notes };
+          memoryButton.disabled = !hasMeetingNotes(result.notes);
+          memoryButton.textContent = meetingDetail.memory ? 'Update saved memory' : 'Save notes to memory';
           out.innerHTML = renderNotesHtml(result.notes || null, meetingNotesText);
           out.classList.remove('hidden');
           showStatus('Meeting notes ready.');
@@ -1141,13 +1198,30 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         break;
       }
     } catch (error) { showStatus(error && error.message ? error.message : 'Meeting notes could not be generated.'); }
-    finally { meetingNotesGenerating = false; button.disabled = false; button.textContent = original; }
+    finally { meetingNotesGenerating = false; button.disabled = false; button.textContent = original; memoryButton.disabled = !hasMeetingNotes(meetingDetail && meetingDetail.notes); }
+  });
+
+  $('#meeting-memory-save').addEventListener('click', async () => {
+    if (!meetingDetail || !meetingDetail.notes) return;
+    const button = $('#meeting-memory-save');
+    button.disabled = true;
+    try {
+      const result = await volyxLens.meetingMemorySave(meetingDetail.id);
+      meetingDetail = { ...meetingDetail, memory: result.memory };
+      button.textContent = 'Update saved memory';
+      showStatus(result.created ? 'Meeting notes saved to inspectable memory.' : 'Saved memory updated from meeting notes.');
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'Meeting notes could not be saved to memory.');
+    } finally {
+      button.disabled = false;
+    }
   });
 
   $('#meeting-view-toggle').addEventListener('click', () => {
-    if (!meetingDetail || !hasCleanedView()) return;
-    const next = (VIEW_ORDER.indexOf(meetingViewMode) + 1) % VIEW_ORDER.length;
-    meetingViewMode = VIEW_ORDER[next];
+    if (!meetingDetail || (!hasCleanedView() && !hasOriginalWording())) return;
+    const order = meetingViewOrder();
+    const next = (order.indexOf(meetingViewMode) + 1) % order.length;
+    meetingViewMode = order[next];
     renderMeetingTurns();
   });
 
@@ -1301,17 +1375,21 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   function contextUsagePrefix(badge) {
     const labels = [];
     if (badge.dataset.contextSources) labels.push(`Personal context selected: ${badge.dataset.contextSources}`);
+    if (badge.dataset.workspaceContextSources) labels.push(`Workspace files: ${badge.dataset.workspaceContextSources}`);
+    if (badge.dataset.meetingMemorySources) labels.push(`Saved meeting memory: ${badge.dataset.meetingMemorySources}`);
     const taskCount = Math.max(0, Number(badge.dataset.taskContextCount) || 0);
     const taskTotal = Math.max(taskCount, Number(badge.dataset.taskContextTotalCount) || 0);
     if (taskCount) labels.push(taskTotal > taskCount ? `Task context: ${taskCount} of ${taskTotal} saved screens attached` : `Task context: ${taskCount} saved ${taskCount === 1 ? 'screen' : 'screens'} attached`);
     return labels.length ? `${labels.join(' · ')} · ` : '';
   }
 
-  function addContextUsage(sources, taskContextCount, taskContextTotalCount, responseProvider) {
+  function addContextUsage(sources, workspaceSources, meetingMemorySources, taskContextCount, taskContextTotalCount, responseProvider) {
     const badge = document.createElement('div');
     badge.className = 'context-usage';
     badge.id = 'response-provider-usage';
     badge.dataset.contextSources = Array.isArray(sources) ? sources.join(' + ') : '';
+    badge.dataset.workspaceContextSources = Array.isArray(workspaceSources) ? workspaceSources.join(' + ') : '';
+    badge.dataset.meetingMemorySources = Array.isArray(meetingMemorySources) ? meetingMemorySources.join(' + ') : '';
     badge.dataset.taskContextCount = String(Math.max(0, Number(taskContextCount) || 0));
     badge.dataset.taskContextTotalCount = String(Math.max(0, Number(taskContextTotalCount) || 0));
     badge.textContent = `${contextUsagePrefix(badge)}Response provider: ${responseProvider || settings.provider}`;
@@ -2131,10 +2209,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       $('#transcript-latency').textContent = 'Latency —';
     }
   });
-  volyxLens.on('llm:start', ({ userBubble, small, contextSources, taskContextCount, taskContextTotalCount, responseProvider }) => {
+  volyxLens.on('llm:start', ({ userBubble, small, contextSources, workspaceContextSources, meetingMemorySources, taskContextCount, taskContextTotalCount, responseProvider }) => {
     clearMessages();
     if (userBubble) addUserBubble(userBubble);
-    addContextUsage(contextSources, taskContextCount, taskContextTotalCount, responseProvider);
+    addContextUsage(contextSources, workspaceContextSources, meetingMemorySources, taskContextCount, taskContextTotalCount, responseProvider);
     startAi(!!small);
     const inferredMode = String(userBubble || '').startsWith('Assist') ? 'assist' : activeRequestMode;
     setBusy(true, inferredMode);
@@ -2211,6 +2289,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     else if (event.cleared) closeMeetingDetail();
     if (event.pruned > 0) showHistoryPruneNotice(event.pruned);
     loadMeetingHistory({ quiet: true });
+    loadMeetingMemoryEntries();
   });
   volyxLens.on('history:recap-token', ({ id, text }) => {
     if (!meetingDetail || meetingDetail.id !== id) return;
@@ -2380,6 +2459,273 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       : (state.secure ? 'Extracted text is encrypted with safeStorage / macOS Keychain.' : 'Warning: safeStorage is unavailable; extracted text uses a local 0600 plaintext fallback.');
     const warning = state.warning ? ` ${state.warning}` : '';
     $('#context-storage-status').textContent = `PDF, DOCX, TXT, or Markdown · 5 MB maximum. ${storage}${warning} Relevant excerpts are sent only when you request an answer.`;
+  }
+
+  function renderWorkspaceIndex() {
+    const list = $('#workspace-index-list');
+    list.replaceChildren();
+    if (!workspaceIndexState.length) {
+      const empty = document.createElement('div');
+      empty.className = 'context-meta';
+      empty.textContent = 'No project folders indexed.';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const workspace of workspaceIndexState) {
+      const card = document.createElement('div');
+      card.className = 'context-document';
+      const head = document.createElement('div');
+      head.className = 'context-document-head';
+      const title = document.createElement('strong');
+      title.textContent = workspace.name;
+      const useLabel = document.createElement('label');
+      useLabel.className = 'context-enable';
+      const enabled = document.createElement('input');
+      enabled.type = 'checkbox';
+      enabled.checked = workspace.enabled;
+      enabled.setAttribute('aria-label', `Use ${workspace.name} in answers`);
+      useLabel.append(enabled, document.createTextNode(' Use in answers'));
+      head.append(title, useLabel);
+
+      const meta = document.createElement('div');
+      meta.className = 'context-meta';
+      const indexedAt = Number.isFinite(workspace.indexedAt) ? new Date(workspace.indexedAt).toLocaleString() : 'Not indexed';
+      const indexStatus = workspace.indexComplete ? 'ready' : 'incomplete or not indexed; unavailable to answers';
+      meta.textContent = `${workspace.rootPath} · ${workspace.fileCount} files · ${indexStatus} · ${indexedAt}`;
+
+      const actions = document.createElement('div');
+      actions.className = 'context-actions';
+      const refresh = document.createElement('button');
+      refresh.type = 'button';
+      refresh.textContent = 'Refresh index';
+      refresh.setAttribute('aria-label', `Refresh ${workspace.name} index`);
+      const rebuild = document.createElement('button');
+      rebuild.type = 'button';
+      rebuild.textContent = 'Rebuild';
+      rebuild.setAttribute('aria-label', `Rebuild ${workspace.name} index`);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove ${workspace.name} index`);
+      actions.append(refresh, rebuild, remove);
+      card.append(head, meta, actions);
+      list.appendChild(card);
+
+      enabled.addEventListener('change', async () => {
+        enabled.disabled = true;
+        try {
+          const updated = await volyxLens.workspaceIndexSetEnabled(workspace.id, enabled.checked);
+          workspaceIndexState = workspaceIndexState.map((item) => item.id === updated.id ? updated : item);
+          $('#workspace-index-status').textContent = updated.enabled
+            ? `${updated.name} is enabled. Matching local snippets may be sent to your configured provider when you explicitly request an answer.`
+            : `${updated.name} is disabled and will not be included in answers.`;
+        } catch (error) {
+          enabled.checked = workspace.enabled;
+          showStatus(error && error.message ? error.message : 'Workspace settings could not be updated.');
+        } finally {
+          renderWorkspaceIndex();
+        }
+      });
+
+      const updateIndex = async (rebuildAll) => {
+        if (rebuildAll && !window.confirm(`Rebuild the local index for ${workspace.name}? This will not change source files.`)) return;
+        refresh.disabled = true;
+        rebuild.disabled = true;
+        remove.disabled = true;
+        $('#workspace-index-status').textContent = `${rebuildAll ? 'Rebuilding' : 'Refreshing'} ${workspace.name}…`;
+        try {
+          const result = rebuildAll
+            ? await volyxLens.workspaceIndexRebuild(workspace.id)
+            : await volyxLens.workspaceIndexRefresh(workspace.id);
+          workspaceIndexState = workspaceIndexState.map((item) => item.id === workspace.id ? result.workspace : item);
+          const detail = `${result.indexed} added, ${result.updated} updated, ${result.removed} removed, ${result.unchanged} unchanged, ${result.skipped} skipped, ${result.unreadableFiles} unreadable files, ${result.unreadableDirectories} unreadable folders`;
+          $('#workspace-index-status').textContent = result.incomplete
+            ? `Index ${rebuildAll ? 'rebuild' : 'refresh'} incomplete (${detail}). Some files could not be indexed or limits were reached.`
+            : `Index ${rebuildAll ? 'rebuilt' : 'refreshed'} (${detail}).`;
+          renderWorkspaceIndex();
+        } catch (error) {
+          await showWorkspaceIndexError(error);
+        } finally {
+          refresh.disabled = false;
+          rebuild.disabled = false;
+          remove.disabled = false;
+        }
+      };
+      refresh.addEventListener('click', () => updateIndex(false));
+      rebuild.addEventListener('click', () => updateIndex(true));
+
+      remove.addEventListener('click', async () => {
+        if (!window.confirm(`Remove the local index for ${workspace.name}? This will not change source files.`)) return;
+        remove.disabled = true;
+        try {
+          const result = await volyxLens.workspaceIndexRemove(workspace.id);
+          workspaceIndexState = result.workspaces;
+          $('#workspace-index-status').textContent = `${workspace.name} and its local index were removed.`;
+          renderWorkspaceIndex();
+        } catch (error) {
+          showStatus(error && error.message ? error.message : 'Workspace index could not be removed.');
+          remove.disabled = false;
+        }
+      });
+    }
+  }
+
+  async function showWorkspaceIndexError(error) {
+    let message = error && error.message ? error.message : 'Workspace index operation failed.';
+    try {
+      workspaceIndexState = await volyxLens.workspaceIndexGet();
+      renderWorkspaceIndex();
+    } catch (stateError) {
+      message += ` Workspace list could not be refreshed: ${stateError && stateError.message ? stateError.message : 'unknown error'}`;
+    }
+    $('#workspace-index-status').textContent = message;
+  }
+
+  function renderMeetingMemoryEntries() {
+    const list = $('#meeting-memory-list');
+    list.replaceChildren();
+    if (!meetingMemoryEntries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'context-meta';
+      empty.textContent = 'No saved meeting memories. Open a meeting with generated notes and choose “Save notes to memory”.';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const entry of meetingMemoryEntries) {
+      const card = document.createElement('div');
+      card.className = 'context-document';
+      const head = document.createElement('div');
+      head.className = 'context-document-head';
+      const title = document.createElement('strong');
+      const sourceDate = Number.isFinite(entry.memory.source.endedAt)
+        ? new Date(entry.memory.source.endedAt).toLocaleString()
+        : 'date unavailable';
+      title.textContent = `Meeting notes · ${sourceDate}`;
+      const enabledLabel = document.createElement('label');
+      enabledLabel.className = 'context-enable';
+      const enabled = document.createElement('input');
+      enabled.type = 'checkbox';
+      enabled.checked = entry.memory.enabled;
+      enabled.setAttribute('aria-label', `Use memory from ${sourceDate} in answers`);
+      enabledLabel.append(enabled, document.createTextNode(' Use in answers'));
+      head.append(title, enabledLabel);
+
+      const source = document.createElement('div');
+      source.className = 'context-meta';
+      const transcriptSource = entry.memory.source.transcriptSource;
+      const provenance = ['cleaned', 'raw', 'processed'].includes(transcriptSource) ? transcriptSource : 'unknown provenance';
+      source.textContent = `Source: saved meeting notes from the ${provenance} transcript.`;
+      const content = document.createElement('textarea');
+      content.className = 'memory-content-editor';
+      content.rows = 4;
+      content.maxLength = 4000;
+      const draft = meetingMemoryDrafts.get(entry.id);
+      content.value = draft ? draft.text : entry.memory.content;
+      content.setAttribute('aria-label', `Edit saved meeting memory from ${sourceDate}`);
+      content.addEventListener('input', () => {
+        meetingMemoryDrafts.set(entry.id, { text: content.value, base: entry.memory.content });
+      });
+      const actions = document.createElement('div');
+      actions.className = 'context-actions';
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.textContent = 'Save edits';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'context-remove';
+      remove.textContent = 'Delete memory';
+      actions.append(save, remove);
+      card.append(head, source, content, actions);
+      list.appendChild(card);
+
+      enabled.addEventListener('change', async () => {
+        enabled.disabled = true;
+        try {
+          const result = await volyxLens.meetingMemorySetEnabled(entry.id, enabled.checked);
+          if (!result.updated) throw new Error(meetingMemoryFailureMessage(result));
+          meetingMemoryEntries = meetingMemoryEntries.map((item) => item.id === entry.id
+            ? { ...item, memory: result.memory }
+            : item);
+          $('#meeting-memory-status').textContent = result.memory.enabled
+            ? 'This memory may be included in relevant live requests when saved meeting context is enabled.'
+            : 'This memory is disabled and will not be included in answers.';
+          renderMeetingMemoryEntries();
+        } catch (error) {
+          enabled.checked = entry.memory.enabled;
+          $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Memory settings could not be updated.';
+        } finally {
+          enabled.disabled = false;
+        }
+      });
+
+      save.addEventListener('click', async () => {
+        save.disabled = true;
+        const draft = content.value;
+        meetingMemoryDrafts.set(entry.id, { text: draft, base: entry.memory.content });
+        try {
+          const result = await volyxLens.meetingMemoryUpdate(entry.id, draft);
+          if (!result.updated) throw new Error(meetingMemoryFailureMessage(result));
+          if (meetingMemoryDrafts.get(entry.id)?.text === draft) {
+            meetingMemoryDrafts.delete(entry.id);
+          } else if (meetingMemoryDrafts.has(entry.id)) {
+            // The user kept typing during the save; their newer draft is still
+            // unsaved, so its base must be the text that just landed.
+            meetingMemoryDrafts.get(entry.id).base = result.memory.content;
+          }
+          meetingMemoryEntries = meetingMemoryEntries.map((item) => item.id === entry.id
+            ? { ...item, memory: result.memory }
+            : item);
+          $('#meeting-memory-status').textContent = 'Saved memory updated.';
+          renderMeetingMemoryEntries();
+        } catch (error) {
+          $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Saved memory could not be updated.';
+        } finally {
+          save.disabled = false;
+        }
+      });
+
+      remove.addEventListener('click', async () => {
+        if (!window.confirm(`Delete the saved memory from ${sourceDate}? The meeting transcript and notes will remain.`)) return;
+        remove.disabled = true;
+        try {
+          const result = await volyxLens.meetingMemoryRemove(entry.id);
+          if (!result.removed) throw new Error(meetingMemoryFailureMessage(result));
+          meetingMemoryDrafts.delete(entry.id);
+          meetingMemoryEntries = meetingMemoryEntries.filter((item) => item.id !== entry.id);
+          $('#meeting-memory-status').textContent = 'Saved memory deleted. The meeting transcript and notes were not changed.';
+          renderMeetingMemoryEntries();
+        } catch (error) {
+          $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Saved memory could not be deleted.';
+          remove.disabled = false;
+        }
+      });
+    }
+  }
+
+  function meetingMemoryFailureMessage(result) {
+    if (result && result.reason === 'read_failed') return 'The source meeting could not be read from this device.';
+    if (result && result.reason === 'write_failed') return 'The saved memory could not be written to this device.';
+    return 'This saved memory is no longer available.';
+  }
+
+  async function loadMeetingMemoryEntries() {
+    try {
+      const listed = await volyxLens.meetingMemoryList();
+      // A draft belongs to one entry id. If that entry is gone (source deleted,
+      // then undone into a re-created memory), the stale draft must not mask the
+      // newly saved text when the editor reopens.
+      const listedById = new Map(listed.map((item) => [item.id, item]));
+      for (const [id, draft] of meetingMemoryDrafts) {
+        const live = listedById.get(id);
+        if (!live || live.memory.content !== draft.base) meetingMemoryDrafts.delete(id);
+      }
+      meetingMemoryEntries = listed;
+      renderMeetingMemoryEntries();
+    } catch (error) {
+      $('#meeting-memory-status').textContent = error && error.message ? error.message : 'Saved meeting memory could not be loaded.';
+    }
   }
 
   // Glyph shortcuts that render differently on Windows. main.js registers the
@@ -2656,6 +3002,13 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       try { personalContext = await volyxLens.personalContextGet(); }
       catch (error) { showStatus(error && error.message ? error.message : 'Personal context could not be loaded.'); }
     }
+    try {
+      workspaceIndexState = await volyxLens.workspaceIndexGet();
+      renderWorkspaceIndex();
+    } catch (error) {
+      $('#workspace-index-status').textContent = error && error.message ? error.message : 'Workspace index is unavailable.';
+    }
+    await loadMeetingMemoryEntries();
     providerView = settings.provider || 'openai';
     fillSettings();
     clearProviderTestResult();
@@ -3003,6 +3356,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-azure-speech-region').value = transcription.azureSpeechRegion || '';
     $('#stt-azure-speech-phrases').value = transcription.azureSpeechPhrases || '';
     $('#stt-language').value = transcription.language || '';
+    $('#stt-custom-vocabulary').value = transcription.customVocabulary || '';
+    $('#stt-transcript-rules').value = transcription.transcriptRules || '';
+    $('#stt-postprocess-enabled').checked = transcription.postProcessTranscript !== false;
+    $('#stt-normalize-spoken-digits').checked = transcription.normalizeSpokenDigits !== false;
     $('#stt-delay').value = transcription.delay || 'low';
     $('#stt-fallback-model').value = transcription.fallbackModel || '';
     $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || '';
@@ -3171,6 +3528,32 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       if (!(personalContext && personalContext.locked)) button.disabled = false;
     }
   }));
+  $('#workspace-index-add').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = 'Choosing folder…';
+    $('#workspace-index-status').textContent = 'Choose a folder to index its supported text files locally.';
+    try {
+      const result = await volyxLens.workspaceIndexAdd();
+      if (result.canceled) {
+        $('#workspace-index-status').textContent = 'No folder selected.';
+        return;
+      }
+      workspaceIndexState = result.workspaces;
+      renderWorkspaceIndex();
+      const refresh = result.refresh;
+      const detail = `${refresh.indexed} added, ${refresh.updated} updated, ${refresh.removed} removed, ${refresh.unchanged} unchanged, ${refresh.skipped} skipped, ${refresh.unreadableFiles} unreadable files, ${refresh.unreadableDirectories} unreadable folders`;
+      $('#workspace-index-status').textContent = refresh.incomplete
+        ? `Indexing incomplete (${detail}). Some files could not be indexed or limits were reached.`
+        : `Folder indexed (${detail}). Enable “Use in answers” to attach matching snippets to explicit requests.`;
+    } catch (error) {
+      await showWorkspaceIndexError(error);
+    } finally {
+      button.textContent = original;
+      button.disabled = false;
+    }
+  });
   document.querySelectorAll('.context-remove').forEach((button) => button.addEventListener('click', async () => {
     const kind = button.dataset.kind;
     const label = kind === 'resume' ? 'resume/CV' : 'job description';
@@ -3238,6 +3621,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       whisperModel: $('#stt-whisper-model').value,
       localModelId: $('#stt-local-model').value,
       language: languageSetting,
+      customVocabulary: $('#stt-custom-vocabulary').value.trim(),
+      transcriptRules: $('#stt-transcript-rules').value.trim(),
+      postProcessTranscript: $('#stt-postprocess-enabled').checked,
+      normalizeSpokenDigits: $('#stt-normalize-spoken-digits').checked,
       delay: $('#stt-delay').value,
       historyEnabled: $('#stt-history-enabled').checked,
       meetingMemory: $('#stt-meeting-memory').checked,

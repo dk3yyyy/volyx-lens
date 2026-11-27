@@ -27,6 +27,10 @@ test('defaults enable realtime Whisper with a bounded batch fallback', () => {
     offlineCloudFallback: false,
     speechBackend: 'auto',
     language: '',
+    customVocabulary: '',
+    transcriptRules: '',
+    postProcessTranscript: true,
+    normalizeSpokenDigits: true,
     delay: 'low',
     whisperModel: 'base.en',
     localModelId: '',
@@ -39,7 +43,7 @@ test('defaults enable realtime Whisper with a bounded batch fallback', () => {
 });
 
 test('settings UI exposes realtime transcription controls and persists them', () => {
-  for (const id of ['stt-mode', 'stt-realtime-provider', 'stt-azure-deployment', 'stt-deepgram-model', 'stt-language', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model', 'stt-offline-enabled', 'stt-offline-cloud-fallback', 'stt-local-model', 'stt-speech-backend', 'stt-azure-speech-region', 'stt-azure-speech-phrases']) {
+  for (const id of ['stt-mode', 'stt-realtime-provider', 'stt-azure-deployment', 'stt-deepgram-model', 'stt-language', 'stt-custom-vocabulary', 'stt-transcript-rules', 'stt-postprocess-enabled', 'stt-normalize-spoken-digits', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model', 'stt-offline-enabled', 'stt-offline-cloud-fallback', 'stt-local-model', 'stt-speech-backend', 'stt-azure-speech-region', 'stt-azure-speech-phrases']) {
     assert.match(html, new RegExp(`id="${id}"`));
     assert.match(renderer, new RegExp(`\\$\\('#${id}'\\)`));
   }

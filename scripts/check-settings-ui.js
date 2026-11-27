@@ -27,17 +27,25 @@ const settings = {
   audio: { inputDeviceId: '', micEnabled: true, systemEnabled: true, sensitivity: 'balanced', silenceMs: 700, costWarningMinutes: 30, maxSessionMinutes: 60 }
 };
 const personalContext = { documents: { resume: { present: false, enabled: false }, jobDescription: { present: false, enabled: false } }, secure: true, locked: false };
+const workspaces = [];
 const emptyTaskContext = { count: 0, totalBytes: 0, pinnedCount: 0, revision: 0 };
 
 ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
 ipcMain.handle('personal-context:get', () => personalContext);
+ipcMain.handle('workspace-index:get', () => workspaces);
+ipcMain.handle('workspace-index:add', () => ({ canceled: true, workspaces }));
+ipcMain.handle('workspace-index:refresh', () => ({ workspaces: [], incomplete: false }));
+ipcMain.handle('workspace-index:rebuild', () => ({ workspaces: [], incomplete: false }));
+ipcMain.handle('workspace-index:set-enabled', (_event, payload) => ({ id: payload.id, enabled: payload.enabled }));
+ipcMain.handle('workspace-index:remove', () => ({ removed: true, workspaces: [] }));
 ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyTaskContext);
 // The renderer fetches history on boot; a stub keeps the run free of
 // "No handler registered" noise that can mask a real error.
 ipcMain.handle('history:list', () => []);
 ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: 0 }));
+ipcMain.handle('history:memory-list', () => []);
 ipcMain.handle('recovery:get', () => recoveryDraft);
 ipcMain.handle('recovery:discard', () => ({ cleared: true }));
 ipcMain.handle('task-context:list', () => ({ ...emptyTaskContext, captures: [], offset: 0, limit: 50, total: 0 }));

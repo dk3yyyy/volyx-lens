@@ -27,12 +27,16 @@ const settings = {
 ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
 ipcMain.handle('personal-context:get', () => ({ documents: {}, secure: true, locked: false }));
+ipcMain.handle('workspace-index:get', () => []);
 ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyContext);
 // The renderer fetches history and its limits on boot. Stub them so the run has
 // no "No handler registered" noise masking a real error.
 ipcMain.handle('history:list', () => []);
 ipcMain.handle('history:limits', () => ({ maxRecords: 200, trashRetentionDays: 30, trashCount: 0 }));
+ipcMain.handle('history:memory-list', () => []);
+
+ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.8.9', status: 'unsupported', message: '', availableVersion: null, progress: null }));
 ipcMain.handle('recovery:get', () => null);
 ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false, transitioning: false }));

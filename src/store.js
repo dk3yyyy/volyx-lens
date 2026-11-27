@@ -112,6 +112,14 @@ function load() {
   data.transcription.localModelId = storedLocalModel && storedLocalModel.runtime === 'transcribe-cpp'
     ? storedLocalModel.id
     : '';
+  data.transcription.customVocabulary = String(data.transcription.customVocabulary || '').slice(0, 4000);
+  data.transcription.transcriptRules = String(data.transcription.transcriptRules || '').slice(0, 4000);
+  data.transcription.postProcessTranscript = typeof data.transcription.postProcessTranscript === 'boolean'
+    ? data.transcription.postProcessTranscript
+    : DEFAULTS.transcription.postProcessTranscript;
+  data.transcription.normalizeSpokenDigits = typeof data.transcription.normalizeSpokenDigits === 'boolean'
+    ? data.transcription.normalizeSpokenDigits
+    : DEFAULTS.transcription.normalizeSpokenDigits;
   data.notifiedUpdateKeys = sanitizeNotifiedUpdateKeys(storedUpdateKeys);
   // A profile created before history defaulted to on keeps it off unless the
   // person already stored a choice, so upgrading never starts writing
@@ -337,6 +345,10 @@ function sanitizeSettingsPatch(patch = {}) {
     if (Object.hasOwn(value, 'offlineCloudFallback') && typeof value.offlineCloudFallback === 'boolean') transcription.offlineCloudFallback = value.offlineCloudFallback;
     if (Object.hasOwn(value, 'speechBackend') && ['auto', 'cpu', 'gpu'].includes(value.speechBackend)) transcription.speechBackend = value.speechBackend;
     if (Object.hasOwn(value, 'language')) transcription.language = String(value.language || '').slice(0, 20);
+    if (Object.hasOwn(value, 'customVocabulary')) transcription.customVocabulary = String(value.customVocabulary || '').slice(0, 4000);
+    if (Object.hasOwn(value, 'transcriptRules')) transcription.transcriptRules = String(value.transcriptRules || '').slice(0, 4000);
+    if (Object.hasOwn(value, 'postProcessTranscript') && typeof value.postProcessTranscript === 'boolean') transcription.postProcessTranscript = value.postProcessTranscript;
+    if (Object.hasOwn(value, 'normalizeSpokenDigits') && typeof value.normalizeSpokenDigits === 'boolean') transcription.normalizeSpokenDigits = value.normalizeSpokenDigits;
     if (Object.hasOwn(value, 'historyEnabled') && typeof value.historyEnabled === 'boolean') transcription.historyEnabled = value.historyEnabled;
     if (Object.hasOwn(value, 'meetingMemory') && typeof value.meetingMemory === 'boolean') transcription.meetingMemory = value.meetingMemory;
     if (Object.hasOwn(value, 'historyRetentionDays')) {

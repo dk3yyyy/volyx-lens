@@ -27,6 +27,8 @@ function createFlushHarness() {
     state: { transcribing: { you: false, them: false } },
     sessionGeneration: 1,
     transcriptEpoch: 1,
+    transcriptProcessingOptions: { enabled: true, normalizeDigits: true, rules: [] },
+    activeCustomVocabulary: '',
     sttDisabled: false,
     sttFailures: 0,
     sttBackoffUntil: 0,

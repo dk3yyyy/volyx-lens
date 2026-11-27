@@ -194,6 +194,11 @@ test('long privacy notes are collapsed into disclosures instead of stacked parag
   assert.match(styles, /\.s-note-details[\s\S]*?\.s-note-details\[open\]/);
 });
 
+test('vocabulary and correction textareas share the Settings control styling', () => {
+  assert.match(styles, /\.s-field input, \.s-field select, \.s-field textarea/);
+  assert.match(styles, /\.s-field textarea \{[^}]*min-height: 54px[^}]*resize: vertical/);
+});
+
 test('checkbox rows use a two-column grid and keyless custom providers are ready without a key', () => {
   assert.match(styles, /\.s-field:has\(input\[type="checkbox"\]\) \{[^}]*display: grid[^}]*grid-template-columns: minmax\(0, 1fr\) auto/);
   assert.match(renderer, /const customEndpoint = provider === 'custom'/);

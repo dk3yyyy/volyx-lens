@@ -30,6 +30,10 @@ test('the history harness covers the behaviours the pane promises', () => {
     'meeting-participant',
     'meeting-discard-cleaned',
     'meeting-history-delete-selected',
+    'meeting-memory-list',
+    'memory-content-editor',
+    'Unfinished draft A',
+    'Unfinished draft B',
   ]) {
     assert.ok(script.includes(marker), `${marker} is exercised`);
   }

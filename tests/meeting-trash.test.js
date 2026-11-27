@@ -84,6 +84,39 @@ test('deleted meetings are purged from the trash after the retention window', ()
   assert.equal(store.restoreDeleted([saved.id]).restored, 0, 'nothing left to restore');
 });
 
+test('trash temp files are swept by age on startup, purge, and deletion', () => {
+  const directory = temporaryDirectory();
+  const trashDir = `${directory}-trash`;
+  const clock = 1_800_000_000_000;
+  const stale = path.join(trashDir, '1000-2000-crashed.json.pid-dead.tmp');
+  const recent = path.join(trashDir, '1000-2000-inflight.json.pid-live.tmp');
+  fs.mkdirSync(trashDir, { recursive: true });
+  const plantTempFiles = () => {
+    fs.writeFileSync(stale, '{"notes":"PRIVATE STALE NOTES"}');
+    fs.writeFileSync(recent, '{"notes":"IN-FLIGHT NOTES"}');
+    const old = (clock - 10 * 60 * 1000) / 1000;
+    const fresh = (clock - 30 * 1000) / 1000;
+    fs.utimesSync(stale, old, old);
+    fs.utimesSync(recent, fresh, fresh);
+  };
+
+  plantTempFiles();
+  const store = createMeetingStore({ dir: directory, now: () => clock });
+  assert.equal(fs.existsSync(stale), false, 'startup removes a crashed trash write');
+  assert.equal(fs.existsSync(recent), true, 'startup preserves another instance\'s recent trash write');
+
+  plantTempFiles();
+  store.purgeTrash();
+  assert.equal(fs.existsSync(stale), false, 'purge removes a crashed trash write');
+  assert.equal(fs.existsSync(recent), true, 'purge preserves another instance\'s recent trash write');
+
+  plantTempFiles();
+  const saved = save(store, 'Delete after the crash', clock);
+  assert.equal(store.remove(saved.id).removed, true);
+  assert.equal(fs.existsSync(stale), false, 'deletion removes a crashed trash write');
+  assert.equal(fs.existsSync(recent), true, 'deletion preserves another instance\'s recent trash write');
+});
+
 test('clearing history is permanent and takes the undo copies with it', () => {
   const directory = temporaryDirectory();
   const store = createMeetingStore({ dir: directory });
@@ -97,6 +130,19 @@ test('clearing history is permanent and takes the undo copies with it', () => {
   assert.equal(result.trashCleared, 1);
   assert.deepEqual(fs.readdirSync(`${directory}-trash`), [], 'clear all leaves no copy behind');
   assert.equal(store.restoreDeleted([deleted.id]).restored, 0);
+});
+
+test('clear all removes future-dated and malformed trash copies too', () => {
+  const directory = temporaryDirectory();
+  const store = createMeetingStore({ dir: directory });
+  const trashDir = `${directory}-trash`;
+  fs.mkdirSync(trashDir, { recursive: true });
+  fs.writeFileSync(path.join(trashDir, '9999999999999999-1000-future.json'), '{"memory":"private"}');
+  fs.writeFileSync(path.join(trashDir, 'orphan.json'), '{"memory":"private"}');
+
+  const result = store.clear();
+  assert.equal(result.trashCleared, 2);
+  assert.deepEqual(fs.readdirSync(trashDir), []);
 });
 
 test('a restore into a full history is refused and reported, not silently pruned', () => {
@@ -143,6 +189,6 @@ test('undo is wired through the pane, the bridge and the main process', () => {
   assert.match(preload, /historyRestoreTrash: \(\) => ipcRenderer\.invoke\('history:restore-trash'\)/);
   assert.ok(html.includes('id="meeting-history-restore-trash"'), 'the pane can restore after a relaunch');
   assert.ok(html.includes('id="meeting-history-undo"'), 'the pane offers the undo control');
-  assert.match(renderer, /You can undo this right after/);
+  assert.match(renderer, /saved memory linked to it will also be deleted and will not return on Undo/);
   assert.match(renderer, /Clear all is permanent|permanently removes/);
 });

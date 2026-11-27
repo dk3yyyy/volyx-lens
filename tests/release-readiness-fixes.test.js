@@ -41,7 +41,7 @@ test('all primary Settings fields have explicit programmatic labels', () => {
     'endpoint-azure', 'model-fast', 'model-smart', 'endpoint-fast', 'endpoint-smart', 'key-fast', 'key-smart', 'provider-test-tier', 'stt-mode', 'auto-answer-enabled', 'auto-answer-confidence', 'auto-answer-cooldown',
     'stt-realtime-provider', 'key-azureRealtime', 'endpoint-azure-realtime', 'stt-azure-deployment',
     'key-deepgram', 'stt-deepgram-model',
-    'stt-language', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model',
+    'stt-language', 'stt-custom-vocabulary', 'stt-transcript-rules', 'stt-postprocess-enabled', 'stt-normalize-spoken-digits', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model',
     'stt-offline-enabled', 'stt-offline-cloud-fallback', 'stt-local-model', 'stt-speech-backend', 'audio-input-device', 'audio-mic-enabled',
     'audio-system-enabled', 'audio-browser-processing', 'audio-sensitivity', 'audio-silence', 'audio-cost-warning',
     'audio-session-limit', 'question-detection-enabled'
@@ -114,7 +114,7 @@ test('transcript clear invalidates old async results and restarts active transcr
   assert.match(block, /handleTrusted\('transcript:clear', async \(\)/);
   assert.match(block, /transcriptEpoch \+= 1/);
   assert.match(block, /retryQueues\.you = \[\]; retryQueues\.them = \[\]/);
-  assert.match(block, /if \(state\.capturing\) \{\s*await stopTranscriptionPipeline\(\{ immediate: true \}\);\s*await startTranscriptionPipeline\(\);\s*\}/);
+  assert.match(block, /captureTransition = captureTransition\.then\(operation, operation\)/);
   assert.ok(block.indexOf('await stopTranscriptionPipeline') < block.indexOf('await startTranscriptionPipeline'), 'clear must finish teardown before restarting');
 });
 

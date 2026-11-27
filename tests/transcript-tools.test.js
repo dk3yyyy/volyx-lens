@@ -29,6 +29,14 @@ test('JSON transcript export is structured, bounded, and versioned', () => {
   assert.equal(normalized[0].channel, 'them');
 });
 
+test('JSON transcript export carries original recognizer wording when it differs', () => {
+  const parsed = JSON.parse(formatTranscript([
+    { channel: 'you', text: 'Volyx Lens', rawText: 'volyx lens', ts: 1 },
+  ], 'json', 2));
+  assert.equal(parsed.turns[0].text, 'Volyx Lens');
+  assert.equal(parsed.turns[0].rawText, 'volyx lens');
+});
+
 test('transcript filename uses only a timestamp and supported extension', () => {
   const filename = transcriptFilename('md', Date.UTC(2026, 0, 2, 3, 4, 5));
   assert.equal(filename, 'volyx-lens-transcript-2026-01-02T03-04-05-000Z.md');
