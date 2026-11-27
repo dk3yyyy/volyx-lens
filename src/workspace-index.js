@@ -292,7 +292,9 @@ function createWorkspaceIndex({
     // Windows temp lives under AppData. A project inside the system temp tree is
     // scratch, not app data, so only the OS app-data names are waived there;
     // dot-private folders keep blocking wherever they appear.
-    const insideSystemTemp = isWithinRoot(path.resolve(os.tmpdir()), root);
+    // Compare canonical forms: os.tmpdir() can report the Windows 8.3 short
+    // name while the root was realpath'd to its long form.
+    const insideSystemTemp = isWithinRoot(canonicalPath(os.tmpdir()), root);
     let current = path.resolve(root);
     while (true) {
       const parent = path.dirname(current);
