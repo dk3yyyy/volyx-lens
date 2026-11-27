@@ -31,19 +31,37 @@ function shouldUseLocalWhisper(transcription, env) {
   );
 }
 
-// Offline-first is a routing contract: enabled offline transcription uses the
-// bounded batch pipeline before any cloud realtime manager can start.
-function resolveTranscriptionMode(settings) {
+// Offline-first is a routing contract, not just a batch fallback filter. When it
+// is enabled, realtime cloud sockets must never bypass offlineCloudFallback.
+// Native-streaming models can still stream locally; every other offline route
+// uses the bounded batch pipeline, which owns local/cloud fallback ordering.
+function resolveTranscriptionMode(settings, {
+  speechWorkerAvailable = false,
+  hasAudioChannels = true,
+  channelCount = 1,
+  memoryLimitMb = Infinity,
+} = {}) {
   const transcription = settings && settings.transcription || {};
   if (transcription.offlineEnabled !== true) return 'realtime';
-  // Offline-first only owns the pipeline when it can actually transcribe.
-  // Enabling it without a verified GGUF model (or the legacy whisper.cpp model)
-  // used to disable a working realtime provider and fail every flush instead.
   const models = settings && Array.isArray(settings.speechModels) ? settings.speechModels : [];
-  const selected = models.find((model) => model.id === transcription.localModelId);
-  // A selected GGUF model decides on its own: if it is missing, realtime keeps
-  // working instead of silently substituting the legacy default Whisper name.
-  if (selected) return selected.installed === true ? 'batch' : 'realtime';
+  const selectedId = transcription.localModelId || '';
+  if (selectedId) {
+    const selected = models.find((model) => model.id === selectedId);
+    // A selected GGUF model decides on its own: when it is missing, realtime
+    // keeps working instead of entering a batch path that cannot run.
+    if (!selected || selected.installed !== true) return 'realtime';
+    const estimatedMemoryMb = Number(selected.hardware && selected.hardware.estimatedMemoryMb);
+    const withinMemoryBudget = !Number.isFinite(estimatedMemoryMb)
+      || estimatedMemoryMb * Math.max(1, channelCount) <= memoryLimitMb;
+    if (selected.runtime === 'transcribe-cpp'
+        && selected.streaming === true
+        && speechWorkerAvailable
+        && hasAudioChannels
+        && withinMemoryBudget) {
+      return 'local-stream';
+    }
+    return 'batch';
+  }
   return transcription.whisperModel ? 'batch' : 'realtime';
 }
 

@@ -47,7 +47,10 @@ function createFlushHarness(overrides = {}) {
     STT_RETRY_MAX_MS: 120000,
     MIN_BYTES: 32,
     RMS_GATE: 240,
+    AUDIO_SAMPLE_RATE: 24000,
     MAX_RETRY_CHUNKS: 180,
+    MAX_RETRY_BYTES: 24000 * 2 * 120,
+    boundRetryQueue() {},
     transcriptionMode: 'batch',
     realtimeManager: null,
     drainingRealtimeManagers: new Set(),
@@ -57,6 +60,13 @@ function createFlushHarness(overrides = {}) {
     personalContextStore: { getEnabledDocuments: () => [] },
     buildSttVocab: () => '',
     rms16: () => 1000,
+    getSpeechModel: () => null,
+    isSpeechDetectorInstalled: () => false,
+    mapVadSegments: () => [],
+    defaultSpeechWorker: { loadVad: async () => {}, detectSpeech: async () => ({ speech: true, segments: [] }), stop: async () => {} },
+    localSpeechStreamManager: null,
+    localManager: undefined,
+    stopSpeechWorkerAfterStreamFailure: async () => true,
     createSTT: () => {
       const transcription = deferred();
       transcriptions.push(transcription);

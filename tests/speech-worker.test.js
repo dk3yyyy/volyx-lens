@@ -21,10 +21,18 @@ function loadSpeechWorkerModule() {
           id: 'fake-gguf',
           name: 'Fake GGUF',
           runtime: 'transcribe-cpp',
-        } : null,
+        } : (id === 'fake-stream' ? {
+          id: 'fake-stream',
+          name: 'Fake Stream',
+          runtime: 'transcribe-cpp',
+          streaming: true,
+        } : null),
         isInstalled: () => true,
-        modelPaths: () => ({ model: '/tmp/fake-gguf.gguf' }),
+        modelPaths: (id) => ({ model: id === 'fake-stream' ? '/tmp/fake-stream.gguf' : '/tmp/fake-gguf.gguf' }),
         verifyModel: (...args) => modelVerification(...args),
+        speechDetectorPaths: () => ({ model: '/tmp/silero-vad.gguf' }),
+        isSpeechDetectorInstalled: () => true,
+        verifySpeechDetector: async () => true,
       };
     }
     return originalLoad.call(this, request, parent, isMain);
@@ -56,11 +64,21 @@ class FakeChild extends EventEmitter {
         if (message.command === 'load') {
           const fallback = message.backend === 'gpu' && !this.runtimeFallback;
           this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: {
-            modelId: 'fake-gguf',
+            modelId: message.modelId || 'fake-gguf',
             backend: this.runtimeFallback ? 'mtl0' : 'cpu',
             backendFallback: fallback,
             capabilities: { nativeSampleRate: 16000, languages: ['en'], languageDetection: false, maxAudioMs: 30000 },
           } })}\n`);
+        } else if (message.command === 'stream-start') {
+          const fallback = message.backend === 'gpu' && !this.runtimeFallback;
+          this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { modelId: 'fake-stream', backend: this.runtimeFallback ? 'mtl0' : 'cpu', backendFallback: fallback, capabilities: { streaming: true } } })}
+`);
+        } else if (message.command === 'vad-load') {
+          this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { loaded: true } })}
+`);
+        } else if (message.command === 'vad-detect') {
+          this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { speech: true, segmentCount: 1 } })}
+`);
         } else if (message.command === 'hardware-info') {
           this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { devices: [{ name: 'CPU', kind: 'cpu' }], backends: [{ name: 'cpu', available: true }] } })}\n`);
         } else if (message.command === 'warm') {
@@ -115,11 +133,13 @@ function fixture({ hangFirst = false, modelOperationTimeoutMs = 120_000, runtime
   return { worker, children };
 }
 
-test('speech worker exposes only batch lifecycle and model operations', () => {
+test('speech worker exposes batch, streaming, and VAD operations', () => {
   const { worker } = fixture();
   assert.deepEqual(Object.keys(worker).sort(), [
-    'activeBackend', 'activeBackendFallback', 'events', 'hardwareInfo', 'loadModel',
-    'loadedModelId', 'pid', 'stop', 'transcribe', 'unloadModel', 'warmModel', 'warmedModelId',
+    'activeBackend', 'activeBackendFallback', 'detectSpeech', 'events', 'hardwareInfo',
+    'loadModel', 'loadVad', 'loadedModelId', 'pid', 'stop', 'streamBoundary', 'streamCancel',
+    'streamFeed', 'streamFinish', 'streamStart', 'transcribe', 'unloadModel', 'unloadVad',
+    'vadLoaded', 'warmModel', 'warmedModelId',
   ]);
 });
 
@@ -405,4 +425,115 @@ test('concurrent cold loads share one worker start', async () => {
   } finally {
     modelVerification = previous;
   }
+});
+
+test('speech worker streams a channel and clears model state when the last stream ends', async () => {
+  const { worker, children } = fixture();
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you', language: 'en', backend: 'cpu' });
+  assert.equal(worker.loadedModelId, 'fake-stream');
+  await worker.streamFeed('you', Buffer.from([1, 0, 2, 0]));
+  await worker.streamBoundary('you');
+  const finished = await worker.streamFinish('you');
+
+  const commands = children[0].requests.map((request) => request.command);
+  for (const command of ['stream-start', 'stream-feed', 'stream-boundary', 'stream-finish']) {
+    assert.ok(commands.includes(command), `${command} reaches the worker`);
+  }
+  const start = children[0].requests.find((request) => request.command === 'stream-start');
+  assert.equal(start.channel, 'you');
+  assert.equal(start.language, 'en');
+  assert.equal(start.pcm16Base64, undefined);
+  const feed = children[0].requests.find((request) => request.command === 'stream-feed');
+  assert.equal(feed.pcm16Base64, Buffer.from([1, 0, 2, 0]).toString('base64'));
+  assert.deepEqual(finished, {});
+  assert.equal(worker.loadedModelId, '', 'the last stream release also releases model bookkeeping');
+  await worker.stop();
+});
+
+test('speech worker refuses to stream a model without native streaming support', async () => {
+  const { worker } = fixture();
+  await assert.rejects(worker.streamStart({ modelId: 'fake-gguf', channel: 'you' }), { code: 'speech_model_streaming_unsupported' });
+  await assert.rejects(worker.streamStart({ modelId: 'fake-stream', channel: 'sidecar' }), TypeError);
+  await assert.rejects(worker.streamFeed('you', Buffer.from([1, 0])), { code: 'speech_stream_not_started' });
+  await assert.rejects(worker.streamFeed('you', Buffer.alloc(0)), { code: 'speech_stream_not_started' });
+});
+
+test('speech worker rejects a second stream on the same channel', async () => {
+  const { worker } = fixture();
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you' });
+  await assert.rejects(worker.streamStart({ modelId: 'fake-stream', channel: 'you' }), { code: 'speech_stream_already_started' });
+  await assert.rejects(worker.streamStart({ modelId: 'fake-stream', channel: 'you', backend: 'gpu' }), { code: 'speech_stream_already_started' });
+  await worker.streamCancel('you');
+  await worker.stop();
+});
+
+test('speech worker reuses a CPU fallback when GPU-preferring streaming starts', async () => {
+  const { worker, children } = fixture();
+  await worker.loadModel('fake-stream', { backend: 'gpu' });
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you', backend: 'gpu' });
+  const start = children[0].requests.find((request) => request.command === 'stream-start');
+  assert.equal(start.backend, 'cpu');
+  assert.equal(worker.activeBackendFallback, true);
+  assert.equal(children[0].requests.some((request) => request.command === 'unload'), false);
+  await worker.stop();
+});
+
+test('speech worker reloads when a loaded CPU model must switch to GPU streaming', async () => {
+  const { worker, children } = fixture();
+  await worker.loadModel('fake-stream', { backend: 'cpu' });
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you', backend: 'gpu' });
+  const commands = children[0].requests.map((request) => request.command);
+  assert.ok(commands.includes('unload'));
+  assert.ok(commands.indexOf('unload') < commands.indexOf('stream-start'));
+  assert.equal(children[0].requests.find((request) => request.command === 'stream-start').backend, 'gpu');
+  await worker.stop();
+});
+
+test('speech worker loads, runs, and unloads the neural VAD detector', async () => {
+  const { worker, children } = fixture();
+  await worker.loadVad();
+  assert.equal(worker.vadLoaded, true);
+  const result = await worker.detectSpeech(Buffer.from([1, 0, 2, 0]));
+  assert.equal(result.speech, true);
+  assert.equal(result.segmentCount, 1);
+  const detect = children[0].requests.find((request) => request.command === 'vad-detect');
+  assert.equal(detect.pcm16Base64, Buffer.from([1, 0, 2, 0]).toString('base64'));
+  assert.equal(detect.threshold, 0.4);
+  assert.equal(detect.minSpeechMs, 160);
+  await worker.unloadVad();
+  assert.equal(worker.vadLoaded, false);
+  await worker.stop();
+});
+
+test('speech worker rejects VAD inference before the detector is loaded', async () => {
+  const { worker } = fixture();
+  await assert.rejects(worker.detectSpeech(Buffer.from([1, 0])), { code: 'speech_vad_not_loaded' });
+  await worker.stop();
+});
+
+test('cancelling a stream frees the channel slot for a new stream', async () => {
+  const { worker, children } = fixture();
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you' });
+  assert.deepEqual(await worker.streamCancel('you'), {});
+  assert.equal(worker.loadedModelId, '', 'cancel releases the model bookkeeping for the slot');
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you' });
+  assert.equal(children[0].requests.filter((request) => request.command === 'stream-start').length, 2);
+  await worker.streamCancel('you');
+  await worker.stop();
+});
+
+test('a late exit from an old speech worker cannot destroy replacement stream state', async () => {
+  const { worker, children } = fixture();
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you' });
+  const oldChild = children[0];
+
+  await worker.stop();
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you' });
+  const replacement = children[1];
+  assert.equal(replacement.requests.some((request) => request.command === 'stream-start'), true);
+
+  oldChild.exit();
+  await worker.streamFeed('you', Buffer.from([1, 0]));
+  assert.equal(replacement.requests.some((request) => request.command === 'stream-feed'), true);
+  await worker.stop();
 });
