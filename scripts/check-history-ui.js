@@ -161,7 +161,7 @@ let memories = [
   memoryEntry('memory-b', 'Saved memory B.', 1_700_000_090_000),
 ];
 let nextMemoryFailure = '';
-const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [], memoryList: 0, memoryEnable: [], memoryUpdate: [], memoryRemove: [], export: [] };
+const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [], memoryList: 0, memoryEnable: [], memoryUpdate: [], memoryRemove: [], export: [], restoreSuppressed: [] };
 
 let deletedRecords = [];
 
@@ -195,6 +195,13 @@ ipcMain.handle('speech-diarizer:get', () => ({
 ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
 ipcMain.handle('personal-context:get', () => ({ documents: { resume: { present: false, enabled: false }, jobDescription: { present: false, enabled: false } }, secure: true, locked: false }));
 ipcMain.handle('transcript:get', () => []);
+ipcMain.handle('transcript:restore-suppressed', (_event, id) => {
+  calls.restoreSuppressed.push(id);
+  if (id !== 'suppressed-ui') return { restored: false, reason: 'not_found' };
+  const turn = { id: 72, channel: 'you', text: 'This was my real answer.', ts: 1700000001500 };
+  if (win && !win.isDestroyed()) win.webContents.send('transcript', turn);
+  return { restored: true, turn };
+});
 ipcMain.handle('task-context:get', () => ({ count: 0, totalBytes: 0, pinnedCount: 0, revision: 0 }));
 ipcMain.handle('recovery:get', () => null);
 ipcMain.handle('capture:state', () => ({ active: false }));
@@ -397,6 +404,42 @@ app.whenReady().then(async () => {
   await run(win, "window.dispatchEvent(new Event('focus'))");
   await waitFor(win, "!document.body.classList.contains('window-inactive')", 'the focused window state');
   assert.equal(await run(win, "getComputedStyle(document.body).getPropertyValue('--accent').trim()"), focusedLook.accent, 'focus restores the live accent');
+
+  // A suppressed echo is disclosed beside its matching Them turn, starts
+  // collapsed, and can be restored through the narrow IPC bridge.
+  win.webContents.send('transcript', { id: 71, channel: 'them', text: 'Visible question from the other speaker.', ts: 1700000001000 });
+  win.webContents.send('transcript:suppressed', {
+    id: 'suppressed-ui', channel: 'you', duplicateOf: 71, reason: 'cross_talk',
+    text: 'This was my real answer.', ts: 1700000001500,
+  });
+  await waitFor(win, "document.querySelector('#transcript-list .transcript-suppressed') !== null", 'the hidden echo marker');
+  const collapsedMarker = await run(win, `(() => {
+    const marker = document.querySelector('#transcript-list .transcript-suppressed');
+    const summary = marker.querySelector('summary');
+    return {
+      open: marker.open,
+      summary: summary.textContent,
+      summaryTag: summary.tagName,
+      previousTurn: marker.previousElementSibling?.dataset.turnId,
+      previousChannel: marker.previousElementSibling?.classList.contains('them'),
+      text: marker.querySelector('.transcript-suppressed-text').textContent,
+    };
+  })()`);
+  assert.equal(collapsedMarker.open, false, 'the marker does not auto-open');
+  assert.equal(collapsedMarker.summary, '1 line hidden as echo · Show');
+  assert.equal(collapsedMarker.summaryTag, 'SUMMARY', 'Show is a native keyboard-accessible disclosure');
+  assert.equal(collapsedMarker.previousTurn, '71');
+  assert.equal(collapsedMarker.previousChannel, true, 'the marker is attached to the matching Them turn');
+  assert.equal(collapsedMarker.text, 'This was my real answer.');
+  await run(win, "document.querySelector('#transcript-list .transcript-suppressed summary').click()");
+  assert.equal(await run(win, "document.querySelector('#transcript-list .transcript-suppressed').open"), true, 'Show reveals the retained text');
+  await run(win, "document.querySelector('#transcript-list .transcript-suppressed-restore').click()");
+  await waitForHost(() => calls.restoreSuppressed.includes('suppressed-ui'), 'Restore reaches the main process');
+  await waitFor(win, "document.querySelector('#transcript-list .transcript-suppressed') === null && [...document.querySelectorAll('#transcript-list .transcript-turn.you .transcript-text')].some((node) => node.textContent.includes('This was my real answer.'))", 'the marker is removed and the restored You turn is visible');
+  assert.deepEqual(calls.restoreSuppressed, ['suppressed-ui']);
+  const unknownRestore = await run(win, "volyxLens.transcriptRestoreSuppressed('missing-suppressed-line')");
+  assert.deepEqual(unknownRestore, { restored: false, reason: 'not_found' }, 'an unknown id is rejected without throwing');
+
   // System accessibility settings have to reach the real window, not just exist
   // in the stylesheet. Emulate them through the debugger and read what the
   // window actually computes.
@@ -875,7 +918,7 @@ app.whenReady().then(async () => {
   await run(win, "document.querySelector('#s-close').click()");
   await waitFor(win, "document.querySelector('#settings-scrim').classList.contains('hidden')", 'settings closed');
 
-  console.log('History UI behavior passed: inactive window state, context menus, accessibility preferences, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, backup/restore status, and inspectable memory draft preservation.');
+  console.log('History UI behavior passed: inactive window state, context menus, accessibility preferences, suppressed echo Show/Restore, search, keyboard, cleaned/raw/changes views, speaker name, discard, bulk delete, undo, restore deleted, record cap notice, backup/restore status, and inspectable memory draft preservation.');
   await guards.finish(0);
 }).catch(async (error) => {
   await guards.finish(1, error);

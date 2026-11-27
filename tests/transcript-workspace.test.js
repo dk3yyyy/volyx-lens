@@ -41,6 +41,8 @@ test('transcript workspace exposes timestamps, speakers, partial state, and boun
 
 test('transcript and diagnostics actions cross narrow IPC boundaries without renderer file access', () => {
   for (const channel of ['transcript:get', 'transcript:copy', 'transcript:copy-turn', 'transcript:clear', 'transcript:export', 'diagnostics:get', 'diagnostics:copy']) assert.match(main, new RegExp(`handleTrusted\\('${channel}'`));
+  assert.match(main, /handleTrusted\('transcript:restore-suppressed'/);
+  assert.match(preload, /transcriptRestoreSuppressed: \(id\) => ipcRenderer\.invoke\('transcript:restore-suppressed', id\)/);
   assert.match(preload, /transcriptExport: \(format\) => ipcRenderer\.invoke\('transcript:export', format\)/);
   assert.match(preload, /diagnosticsCopy: \(\) => ipcRenderer\.invoke\('diagnostics:copy'\)/);
   assert.doesNotMatch(preload, /writeFile|showSaveDialog|clipboard/);
@@ -69,6 +71,9 @@ test('cross-talk suppression prefers direct system audio and removes only the le
   assert.match(preload, /'transcript:suppressed'/);
   assert.match(renderer, /volyxLens\.on\('transcript:remove', removeTranscriptTurn\)/);
   assert.match(renderer, /volyxLens\.on\('transcript:suppressed', clearSuppressedPartial\)/);
+  assert.match(renderer, /1 line hidden as echo ·/);
+  assert.match(renderer, /volyxLens\.transcriptRestoreSuppressed/);
+  assert.match(styles, /\.transcript-suppressed/);
   assert.match(html, /id="diag-cross-talk"/);
   assert.match(renderer, /crossTalkSuppressed/);
   assert.match(main, /createAcousticEchoFilter/);

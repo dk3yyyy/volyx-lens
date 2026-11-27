@@ -52,6 +52,7 @@ const { buildPersonalContext } = require('./src/personal-context');
 const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
 const { joinTranscriptSegments, joinRawTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
+const { findSuppressedYouIndex, normalizeSuppressedYouSegments, restoreSuppressedYouSegment, MAX_SUPPRESSED_YOU_SEGMENTS } = require('./src/suppressed-you');
 const { postProcessTranscript, parseTranscriptRules, inspectVocabulary } = require('./src/transcript-postprocess');
 const { drainPendingAudio, buildDrainGap } = require('./src/drain-batch-buffers');
 const { normalizeAnswerText } = require('./src/answer-normalize');
@@ -235,13 +236,19 @@ const acousticCoupling = createAcousticCoupling({ mode: (store.getSettings().aud
 // being spliced out of the stream.
 const echoGapFill = createEchoGapFill();
 // You text removed as cross-talk, kept so it can be shown and restored.
-const MAX_SUPPRESSED_YOU_SEGMENTS = 200;
 const suppressedYouSegments = [];
+let suppressedYouSequence = 0;
 function rememberSuppressedYou(entry) {
-  suppressedYouSegments.push(entry);
+  const suppliedId = typeof entry.id === 'string' ? entry.id : '';
+  const idMatch = suppliedId.match(/^suppressed-(\d+)$/);
+  const id = idMatch ? suppliedId : `suppressed-${++suppressedYouSequence}`;
+  if (idMatch) suppressedYouSequence = Math.max(suppressedYouSequence, Number(idMatch[1]));
+  const remembered = { ...entry, id };
+  suppressedYouSegments.push(remembered);
   if (suppressedYouSegments.length > MAX_SUPPRESSED_YOU_SEGMENTS) {
     suppressedYouSegments.splice(0, suppressedYouSegments.length - MAX_SUPPRESSED_YOU_SEGMENTS);
   }
+  return remembered;
 }
 function resetEchoState() {
   acousticEchoFilter.reset();
@@ -986,6 +993,7 @@ function resetTranscriptData() {
   finalizedSegmentWatermark = 0;
   transcriptionDiagnostics.crossTalkSuppressed = 0;
   suppressedYouSegments.length = 0;
+  suppressedYouSequence = 0;
 }
 
 function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch, processingOptions = transcriptProcessingOptions) {
@@ -1015,14 +1023,15 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     transcriptionDiagnostics.lastStatus = 'cross_talk_suppressed';
     transcriptionDiagnostics.lastStatusAt = receivedAt;
     if (normalizedChannel === 'you') {
-      rememberSuppressedYou({ text: clean, ts: timestamp, duplicateOf: duplicate.turn.turnId, match: duplicate.match, reason: 'cross_talk' });
-      send('transcript:suppressed', { channel: 'you', duplicateOf: duplicate.turn.turnId, reason: 'cross_talk', text: clean, ts: timestamp });
+      const suppressed = rememberSuppressedYou({ text: clean, ts: timestamp, duplicateOf: duplicate.turn.turnId, match: duplicate.match, reason: 'cross_talk' });
+      send('transcript:suppressed', { id: suppressed.id, channel: 'you', duplicateOf: suppressed.duplicateOf, reason: suppressed.reason, text: suppressed.text, ts: suppressed.ts });
+      persistMeetingRecovery();
       return;
     }
+    const lateSuppressed = [];
     for (const leakedSegment of duplicate.turns || [duplicate.turn]) {
       if (leakedSegment.channel === 'you') {
-        rememberSuppressedYou({ text: leakedSegment.text, ts: leakedSegment.ts, duplicateOf: null, match: duplicate.match, reason: 'cross_talk_late' });
-        send('transcript:suppressed', { channel: 'you', duplicateOf: duplicate.turn.turnId, reason: 'cross_talk_late', text: leakedSegment.text, ts: leakedSegment.ts });
+        lateSuppressed.push(rememberSuppressedYou({ text: leakedSegment.text, ts: leakedSegment.ts, duplicateOf: null, match: duplicate.match, reason: 'cross_talk_late' }));
       }
       removeRecentTranscriptSegment(leakedSegment.id);
       const survivingTs = removeTranscriptSegment(leakedSegment);
@@ -1063,6 +1072,10 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
   }
   persistMeetingRecovery();
   send(updated ? 'transcript:update' : 'transcript', publicTranscriptTurn(turn));
+  for (const suppressed of lateSuppressed) {
+    suppressed.duplicateOf = turn.id;
+    send('transcript:suppressed', { id: suppressed.id, channel: 'you', duplicateOf: turn.id, reason: suppressed.reason, text: suppressed.text, ts: suppressed.ts });
+  }
   if (normalizedChannel === 'you') {
     send('question:clear', { reason: 'user_replied' });
   } else if (store.getSettings().questionDetection !== false) {
@@ -1080,6 +1093,43 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
       send('meeting:detected', { since: state.detectedSince });
     }
   }
+}
+
+// Restoring is an explicit user override: keep the original words and timestamp,
+// but do not run cross-talk dedupe over the line again. The grouping helper is
+// the same one used by live finals, with chronological insertion.
+function restoreSuppressedYou(idOrIndex) {
+  const index = findSuppressedYouIndex(suppressedYouSegments, idOrIndex);
+  if (index < 0) return { restored: false, reason: 'not_found' };
+  const [entry] = suppressedYouSegments.splice(index, 1);
+  const segmentId = ++transcriptSegmentSequence;
+  const { turn, updated } = restoreSuppressedYouSegment(transcript, entry, {
+    segmentId,
+    createTurnId: () => ++transcriptSequence,
+  });
+  const segment = turn.segments.find((candidate) => candidate.id === segmentId);
+  rememberTranscriptSegment(segment, Date.now());
+  if (transcript.length > MAX_TRANSCRIPT_TURNS) {
+    const removed = [];
+    while (transcript.length > MAX_TRANSCRIPT_TURNS) {
+      // An explicit restore must not be evicted by the same bounded-list trim
+      // that inserted it. If it is the oldest turn, make room just after it.
+      const removeIndex = transcript[0].id === turn.id ? 1 : 0;
+      removed.push(transcript.splice(removeIndex, 1)[0]);
+    }
+    transcriptDroppedTurns += countUnsavedTurns(removed, finalizedSegmentWatermark);
+    const removedTurnIds = new Set(removed.map((oldTurn) => oldTurn.id));
+    for (const oldTurn of removed) send('transcript:remove', { id: oldTurn.id, channel: oldTurn.channel, reason: 'bounded_history' });
+    for (let recentIndex = recentTranscriptSegments.length - 1; recentIndex >= 0; recentIndex -= 1) {
+      if (!removedTurnIds.has(recentTranscriptSegments[recentIndex].turnId)) continue;
+      transcriptSegmentArrivalTimes.delete(recentTranscriptSegments[recentIndex].id);
+      recentTranscriptSegments.splice(recentIndex, 1);
+    }
+  }
+  persistMeetingRecovery({ immediate: true });
+  send(updated ? 'transcript:update' : 'transcript', publicTranscriptTurn(turn));
+  send('question:clear', { reason: 'user_replied' });
+  return { restored: true, turn: publicTranscriptTurn(turn), suppressedCount: suppressedYouSegments.length };
 }
 
 // Opt-in automatic assistance (Milestone 3). Manual "Draft answer" stays
@@ -2547,6 +2597,7 @@ function finalizeMeeting(reason = 'capture-stop', opts = {}) {
   const pendingTurns = pendingFinalizeTurns();
   const result = meetingStore.finalize({
     turns: pendingTurns,
+    suppressedYouSegments,
     enabled: true,
     reason,
     meeting: meetingDetector.snapshot().meeting,
@@ -2599,6 +2650,7 @@ function writeMeetingRecovery() {
     meetingRecovery.save({
       enabled: historyEnabled,
       turns: pendingFinalizeTurns(),
+      suppressedYouSegments,
       droppedTurns: transcriptDroppedTurns,
       clippedTurns: transcriptClippedTurns,
       startedAt: captureStartedAt || lastCaptureStartedAt,
@@ -2644,13 +2696,14 @@ function restoreMeetingRecovery() {
     const rawText = typeof turn.rawText === 'string' && turn.rawText !== turn.text ? turn.rawText : undefined;
     transcript.push({ id, channel: turn.channel, text: turn.text, ...(rawText ? { rawText } : {}), ts: segment.ts, segments: [segment] });
   }
+  for (const entry of normalizeSuppressedYouSegments(recovery.suppressedYouSegments)) rememberSuppressedYou(entry);
   lastCaptureStartedAt = recovery.startedAt;
   pendingRestoredStartedAt = Number.isFinite(recovery.startedAt) ? recovery.startedAt : null;
   // Text the earlier draft already lost stays lost; carry the counts so a second
   // crash reports the real total instead of restarting from zero.
   transcriptDroppedTurns = Number.isFinite(recovery.truncated) ? recovery.truncated : 0;
   transcriptClippedTurns = Number.isFinite(recovery.clippedTurns) ? recovery.clippedTurns : 0;
-  return { restored: true, turns: transcript.map(publicTranscriptTurn), startedAt: recovery.startedAt, updatedAt: recovery.updatedAt };
+  return { restored: true, turns: transcript.map(publicTranscriptTurn), suppressedYouSegments: suppressedYouSegments.map((entry) => ({ ...entry })), startedAt: recovery.startedAt, updatedAt: recovery.updatedAt };
 }
 
 function clearDiarizationRecorder() {
@@ -4348,7 +4401,7 @@ handleTrusted('recovery:get', () => {
   const settings = store.getSettings();
   const recovery = meetingRecovery.load({ enabled: Boolean(settings.transcription && settings.transcription.historyEnabled) });
   return recovery
-    ? { turnCount: recovery.turns.length, totalTurns: recovery.totalTurns, truncated: recovery.truncated, clippedTurns: recovery.clippedTurns, startedAt: recovery.startedAt, updatedAt: recovery.updatedAt }
+    ? { turnCount: recovery.turns.length, suppressedCount: recovery.suppressedYouSegments.length, totalTurns: recovery.totalTurns, truncated: recovery.truncated, clippedTurns: recovery.clippedTurns, startedAt: recovery.startedAt, updatedAt: recovery.updatedAt }
     : null;
 });
 handleTrusted('recovery:restore', () => restoreMeetingRecovery());
@@ -4379,6 +4432,7 @@ handleTrusted('slide-tracking:review', (_event, payload = {}) => {
   return prepareSlideReview();
 });
 handleTrusted('transcript:get', () => transcript.map(publicTranscriptTurn));
+handleTrusted('transcript:restore-suppressed', (_event, id) => restoreSuppressedYou(id));
 handleTrusted('recap:plan', () => {
   const plan = planMeetingRecap(transcript);
   return { requiresChunking: plan.requiresChunking, sourceCharacters: plan.sourceCharacters, parts: plan.chunks.length, requestCount: plan.requestCount, sampled: plan.sampled };

@@ -50,6 +50,8 @@
   let busy = false;
   let transcriptTurns = [];
   let transcriptGaps = [];
+  let suppressedTranscript = [];
+  const openSuppressedTranscript = new Set();
   const partialTranscript = { you: null, them: null };
   let listeningActive = false;
   let meetingDetectedSince = null;
@@ -450,6 +452,7 @@
     try {
       const result = await volyxLens.recoveryRestore();
       transcriptTurns = result.turns.map((turn) => normalizeTranscriptTurn(turn)).filter(Boolean);
+      suppressedTranscript = normalizeSuppressedTranscriptEntries(result.suppressedYouSegments);
       renderTranscriptWorkspace();
       meetingRecoveryDialog.close();
       volyxLens.setModalState(false);
@@ -2043,6 +2046,25 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     };
   }
 
+  function normalizeSuppressedTranscript(event, index = 0) {
+    const text = String((event && event.text) || '').trim();
+    if (!text) return null;
+    const id = typeof event.id === 'string' && event.id ? event.id : null;
+    return {
+      id,
+      restoreIndex: id ? null : index,
+      duplicateOf: Number.isFinite(event.duplicateOf) ? event.duplicateOf : null,
+      reason: String((event && event.reason) || '').slice(0, 40),
+      text,
+      ts: Number.isFinite(event.ts) ? event.ts : Date.now(),
+    };
+  }
+
+  function normalizeSuppressedTranscriptEntries(entries) {
+    if (!Array.isArray(entries)) return [];
+    return entries.map((entry, index) => normalizeSuppressedTranscript(entry, index)).filter(Boolean).slice(-200);
+  }
+
   function appendTranscriptDisplayText(current, next) {
     const left = String(current || '').trim();
     const right = String(next || '').trim();
@@ -2089,6 +2111,62 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     return 'Transcription gap: some audio was not transcribed';
   }
 
+  function suppressedTranscriptSummary(open) {
+    return `1 line hidden as echo · ${open ? 'Hide' : 'Show'}`;
+  }
+
+  async function restoreSuppressedTranscript(entry, button) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    try {
+      const result = await volyxLens.transcriptRestoreSuppressed(entry.id || entry.restoreIndex);
+      if (!result || result.restored !== true) {
+        showStatus('That hidden line is no longer available.');
+        return;
+      }
+      const restoreKey = entry.id || String(entry.restoreIndex);
+      suppressedTranscript = suppressedTranscript.filter((candidate) => (candidate.id || String(candidate.restoreIndex)) !== restoreKey);
+      openSuppressedTranscript.delete(restoreKey);
+      if (result.turn) updateTranscriptTurn(result.turn);
+      else renderTranscriptWorkspace();
+      showStatus('Hidden line restored to the transcript.');
+    } catch (error) {
+      showStatus(error && error.message ? error.message : 'The hidden line could not be restored.');
+    } finally {
+      button.removeAttribute('aria-busy');
+      if (button.isConnected) button.disabled = false;
+    }
+  }
+
+  function createSuppressedTranscriptMarker(entry) {
+    const marker = document.createElement('details');
+    marker.className = 'transcript-suppressed';
+    marker.dataset.suppressedId = entry.id || String(entry.restoreIndex);
+    const key = entry.id || String(entry.restoreIndex);
+    marker.open = openSuppressedTranscript.has(key);
+    const summary = document.createElement('summary');
+    summary.textContent = suppressedTranscriptSummary(marker.open);
+    const content = document.createElement('div');
+    content.className = 'transcript-suppressed-content';
+    const text = document.createElement('p');
+    text.className = 'transcript-suppressed-text';
+    text.textContent = entry.text;
+    const restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'transcript-suppressed-restore';
+    restore.textContent = 'Restore';
+    restore.title = 'Restore this line as a You turn at its original time';
+    restore.addEventListener('click', () => restoreSuppressedTranscript(entry, restore));
+    content.append(text, restore);
+    marker.append(summary, content);
+    marker.addEventListener('toggle', () => {
+      summary.textContent = suppressedTranscriptSummary(marker.open);
+      if (marker.open) openSuppressedTranscript.add(key);
+      else openSuppressedTranscript.delete(key);
+    });
+    return marker;
+  }
+
   function renderTranscriptWorkspace() {
     const workspace = $('#transcript-workspace');
     const list = $('#transcript-list');
@@ -2106,8 +2184,15 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     }
     // A realtime failure or an abandoned drain leaves audio that never became
     // text. Keep the marker in time order so the transcript does not look
-    // continuous across the hole (VR-13).
-    const orderedRows = rows.concat(transcriptGaps.map((gap) => ({ ...gap, gap: true })))
+    // continuous across the hole (VR-13). Suppressed lines normally attach to
+    // their matching Them turn; if that turn is gone, retain a standalone marker
+    // at the line's original timestamp instead of silently dropping it.
+    const matchedSuppressed = new Set(suppressedTranscript.filter((entry) => (
+      entry.duplicateOf !== null && transcriptTurns.some((turn) => turn.id === entry.duplicateOf)
+    )));
+    const standaloneSuppressed = suppressedTranscript.filter((entry) => !matchedSuppressed.has(entry))
+      .map((entry) => ({ ...entry, suppressedEntry: true }));
+    const orderedRows = rows.concat(transcriptGaps.map((gap) => ({ ...gap, gap: true })), standaloneSuppressed)
       .sort((a, b) => (Number(a.ts) || 0) - (Number(b.ts) || 0));
     const visibleRows = orderedRows.slice(-200);
     const hideWorkspace = !listeningActive && visibleRows.length === 0;
@@ -2119,6 +2204,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     }
     list.replaceChildren();
     for (const turn of visibleRows) {
+      if (turn.suppressedEntry) {
+        list.appendChild(createSuppressedTranscriptMarker(turn));
+        continue;
+      }
       if (turn.gap) {
         const row = document.createElement('div');
         row.className = 'transcript-gap';
@@ -2150,6 +2239,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         row.appendChild(copy);
       }
       list.appendChild(row);
+      for (const entry of suppressedTranscript) {
+        if (entry.duplicateOf !== turn.id) continue;
+        list.appendChild(createSuppressedTranscriptMarker(entry));
+      }
     }
     const total = transcriptTurns.length;
     $('#transcript-count').textContent = `${total} ${total === 1 ? 'turn' : 'turns'}`;
@@ -2195,12 +2288,23 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   function clearSuppressedPartial(event) {
     const channel = event && event.channel === 'them' ? 'them' : 'you';
     partialTranscript[channel] = null;
+    const suppressed = normalizeSuppressedTranscript(event, suppressedTranscript.length);
+    if (suppressed) {
+      const duplicate = suppressedTranscript.some((entry) => (
+        suppressed.id ? entry.id === suppressed.id : entry.restoreIndex === suppressed.restoreIndex
+          && entry.ts === suppressed.ts && entry.text === suppressed.text
+      ));
+      if (!duplicate) suppressedTranscript.push(suppressed);
+      if (suppressedTranscript.length > 200) suppressedTranscript = suppressedTranscript.slice(-200);
+    }
     renderTranscriptWorkspace();
   }
 
   function clearTranscriptWorkspace() {
     transcriptTurns = [];
     transcriptGaps = [];
+    suppressedTranscript = [];
+    openSuppressedTranscript.clear();
     partialTranscript.you = null;
     partialTranscript.them = null;
     clearQuestionSuggestion();

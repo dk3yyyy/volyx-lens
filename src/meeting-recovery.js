@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { normalizeSuppressedYouSegments } = require('./suppressed-you');
 
 const MAX_RECOVERY_TURNS = 500;
 const MAX_TURN_CHARACTERS = 12000;
@@ -48,7 +49,8 @@ function countValidTurns(turns) {
 function normalizeRecord(record) {
   if (!record || record.version !== 1 || !Array.isArray(record.turns)) return null;
   const turns = normalizeTurns(record.turns);
-  if (!turns.length) return null;
+  const suppressedYouSegments = normalizeSuppressedYouSegments(record.suppressedYouSegments);
+  if (!turns.length && !suppressedYouSegments.length) return null;
   const totalTurns = Math.max(
     Number.isFinite(record.totalTurns) ? record.totalTurns : turns.length,
     turns.length,
@@ -62,6 +64,7 @@ function normalizeRecord(record) {
     truncated: totalTurns - turns.length,
     clippedTurns,
     turns,
+    suppressedYouSegments,
   };
 }
 
@@ -114,7 +117,7 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
     }
   }
 
-  function save({ enabled = false, turns = [], startedAt = null, droppedTurns = 0, clippedTurns = 0 } = {}) {
+  function save({ enabled = false, turns = [], suppressedYouSegments = [], startedAt = null, droppedTurns = 0, clippedTurns = 0 } = {}) {
     if (!enabled) {
       clear();
       return { saved: false, reason: 'disabled' };
@@ -125,7 +128,8 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
     }
     const sanitized = sanitizeTurns(turns);
     const normalized = sanitized.turns;
-    if (!normalized.length) {
+    const normalizedSuppressed = normalizeSuppressedYouSegments(suppressedYouSegments);
+    if (!normalized.length && !normalizedSuppressed.length) {
       clear();
       return { saved: false, reason: 'empty' };
     }
@@ -139,6 +143,7 @@ function createMeetingRecovery({ file, fsImpl = fs, now = () => Date.now() } = {
       totalTurns,
       clippedTurns: totalClipped,
       turns: normalized,
+      suppressedYouSegments: normalizedSuppressed,
     };
     fsImpl.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const tmp = `${file}.tmp`;

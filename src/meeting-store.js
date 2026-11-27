@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { normalizeSuppressedYouSegments } = require('./suppressed-you');
 const {
   createMeetingMemory,
   restoreMeetingMemory,
@@ -306,7 +307,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
   // Stopping and starting Listening inside one meeting used to write a second
   // record, so each row held half the conversation and recap or notes worked on a
   // fragment (VR-08). `recordId` says which record the new turns belong to.
-  function appendToRecord(id, turns, { endedAt = null, meeting = false } = {}) {
+  function appendToRecord(id, turns, { endedAt = null, meeting = false, suppressedYouSegments } = {}) {
     if (!isSafeId(id)) return null;
     const target = recordPath(id);
     let existing = null;
@@ -322,30 +323,41 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
     // the same channel are the only reliable sign of an already-saved turn.
     const seen = new Set(existing.turns.map((turn) => `${turn.ts}:${turn.channel}:${turn.text}`));
     const additions = turns.filter((turn) => !seen.has(`${turn.ts}:${turn.channel}:${turn.text}`));
-    if (!additions.length) return { saved: false, reason: 'no_new_content', id };
+    const nextSuppressed = Array.isArray(suppressedYouSegments)
+      ? normalizeSuppressedYouSegments(suppressedYouSegments)
+      : normalizeSuppressedYouSegments(existing.suppressedYouSegments);
+    const suppressedChanged = JSON.stringify(nextSuppressed) !== JSON.stringify(normalizeSuppressedYouSegments(existing.suppressedYouSegments));
+    if (!additions.length && !suppressedChanged) return { saved: false, reason: 'no_new_content', id };
     const existingEnd = Number(existing.endedAt);
+    const mergedTurns = additions.length
+      ? [...existing.turns, ...additions].sort((left, right) => (Number.isFinite(left.ts) ? left.ts : Infinity) - (Number.isFinite(right.ts) ? right.ts : Infinity))
+      : existing.turns;
     const merged = {
       ...existing,
       endedAt: Number.isFinite(endedAt) ? Math.max(Number.isFinite(existingEnd) ? existingEnd : 0, endedAt) : existing.endedAt,
       meeting: existing.meeting === true || meeting === true,
-      turnCount: existing.turns.length + additions.length,
-      turns: [...existing.turns, ...additions],
+      turnCount: mergedTurns.length,
+      turns: mergedTurns,
+      // The live list is authoritative: restoring a line removes its hidden
+      // copy, and the same bounded list is checkpointed on later stops.
+      suppressedYouSegments: nextSuppressed,
     };
     writeRecord(target, merged, stat);
     return { saved: true, id, turnCount: merged.turnCount, pruned: 0, appended: true };
   }
 
-  function finalize({ turns = [], enabled = false, reason = 'capture-stop', meeting = false, startedAt = null, endedAt = null, recordId = null } = {}) {
+  function finalize({ turns = [], suppressedYouSegments = [], enabled = false, reason = 'capture-stop', meeting = false, startedAt = null, endedAt = null, recordId = null } = {}) {
     if (!enabled) return { saved: false, reason: 'disabled' };
     const normalized = snapshotTurns(turns);
-    if (!normalized.length) return { saved: false, reason: 'empty' };
+    if (!normalized.length && !recordId) return { saved: false, reason: 'empty' };
+    const normalizedSuppressed = normalizeSuppressedYouSegments(suppressedYouSegments);
     const fp = fingerprint(normalized);
-    if (lastSavedFingerprint && fp && fp.contentHash === lastSavedFingerprint.contentHash) {
+    if (!recordId && lastSavedFingerprint && fp && fp.contentHash === lastSavedFingerprint.contentHash) {
       return { saved: false, reason: 'no_new_content' };
     }
     if (recordId) {
       try {
-        const appended = appendToRecord(recordId, normalized, { endedAt, meeting });
+        const appended = appendToRecord(recordId, normalized, { endedAt, meeting, suppressedYouSegments: normalizedSuppressed });
         if (appended) {
           if (appended.saved) lastSavedFingerprint = fp;
           return appended;
@@ -356,6 +368,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         console.error('[meeting-store] append failed', String(error && error.message || 'unknown').slice(0, 160));
       }
     }
+    if (!normalized.length) return { saved: false, reason: 'empty' };
     ensureDir();
     const id = crypto.randomUUID();
     const record = {
@@ -367,6 +380,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       endedAt: Number.isFinite(endedAt) ? endedAt : now(),
       turnCount: normalized.length,
       turns: normalized,
+      suppressedYouSegments: normalizedSuppressed,
       // What the other channel is called in the UI and in exports. "Them" is a
       // placeholder, not a person.
       participant: null,
@@ -527,7 +541,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
       endedAt: record.endedAt,
       now: Number.isFinite(record.endedAt) ? record.endedAt : now(),
     });
-    return { ...record, turns, cleaned, memory, diarizationRuns: normalizeDiarizationRuns(record.diarizationRuns) };
+    return { ...record, turns, cleaned, memory, diarizationRuns: normalizeDiarizationRuns(record.diarizationRuns), suppressedYouSegments: normalizeSuppressedYouSegments(record.suppressedYouSegments) };
   }
 
   function readRecordForUpdate(id) {
@@ -1046,6 +1060,7 @@ function createMeetingStore({ dir, fsImpl = fs, now = () => Date.now() } = {}) {
         endedAt,
         turnCount: normalized.length,
         turns: normalized,
+        suppressedYouSegments: normalizeSuppressedYouSegments(candidate.suppressedYouSegments),
         participant: null,
         notes: null,
         cleaned: null,

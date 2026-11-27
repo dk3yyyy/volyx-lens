@@ -43,6 +43,10 @@ test('the history harness covers the behaviours the pane promises', () => {
     'memory-content-editor',
     'Unfinished draft A',
     'Unfinished draft B',
+    'transcript-suppressed',
+    '1 line hidden as echo · Show',
+    'transcript-suppressed-restore',
+    'missing-suppressed-line',
   ]) {
     assert.ok(script.includes(marker), `${marker} is exercised`);
   }

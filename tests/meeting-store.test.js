@@ -183,6 +183,103 @@ test('meeting history preserves original recognizer wording when processing chan
   }
 });
 
+test('saved meetings retain bounded suppressed lines while exports omit them', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const suppressedYouSegments = Array.from({ length: 205 }, (_, index) => ({
+      id: `suppressed-${index + 1}`,
+      text: `HIDDEN-ECHO-${index + 1}`,
+      ts: 500 + index,
+      duplicateOf: 1,
+      match: 'similarity',
+      reason: 'cross_talk',
+    }));
+    const saved = store.finalize({
+      turns: [{ id: 1, channel: 'them', text: 'Visible meeting turn', ts: 100 }],
+      suppressedYouSegments,
+      enabled: true,
+    });
+    const record = store.get(saved.id);
+    assert.equal(record.suppressedYouSegments.length, 200);
+    assert.equal(record.suppressedYouSegments[0].text, 'HIDDEN-ECHO-6');
+    const onDisk = JSON.parse(fs.readFileSync(path.join(dir, `${saved.id}.json`), 'utf8'));
+    assert.equal(onDisk.suppressedYouSegments.length, 200);
+
+    const { formatMeetingRecord } = require('../src/meeting-notes');
+    for (const format of ['txt', 'md', 'json', 'srt', 'vtt']) {
+      assert.doesNotMatch(formatMeetingRecord(record, format), /HIDDEN-ECHO-/, `${format} export excludes hidden lines`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('older saved meeting records without suppressed lines still load', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const id = crypto.randomUUID();
+    fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({
+      id,
+      version: 1,
+      turns: [{ id: 1, channel: 'them', text: 'Legacy meeting', ts: 100 }],
+    }));
+    const record = store.get(id);
+    assert.equal(record.turns[0].text, 'Legacy meeting');
+    assert.deepEqual(record.suppressedYouSegments, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('appending a restored turn updates saved order and removes its suppressed copy', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const hidden = { id: 'suppressed-1', text: 'My real answer', ts: 150, duplicateOf: 1, match: 'similarity', reason: 'cross_talk' };
+    const first = store.finalize({
+      turns: [{ id: 1, channel: 'them', text: 'Question', ts: 100 }, { id: 2, channel: 'them', text: 'Follow-up', ts: 300 }],
+      suppressedYouSegments: [hidden],
+      enabled: true,
+    });
+    const second = store.finalize({
+      turns: [{ id: 3, channel: 'you', text: 'My real answer', ts: 150 }],
+      suppressedYouSegments: [],
+      recordId: first.id,
+      enabled: true,
+    });
+    assert.equal(second.saved, true);
+    const record = store.get(first.id);
+    assert.deepEqual(record.turns.map((turn) => turn.text), ['Question', 'My real answer', 'Follow-up']);
+    assert.deepEqual(record.suppressedYouSegments, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('suppressed-only changes update an existing saved meeting', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const first = store.finalize({
+      turns: [{ id: 1, channel: 'them', text: 'Visible turn', ts: 100 }],
+      suppressedYouSegments: [{ id: 'suppressed-1', text: 'Old hidden line', ts: 150, duplicateOf: 1, match: 'similarity', reason: 'cross_talk' }],
+      enabled: true,
+    });
+    const second = store.finalize({
+      turns: [],
+      suppressedYouSegments: [{ id: 'suppressed-2', text: 'New hidden line', ts: 200, duplicateOf: 1, match: 'similarity', reason: 'cross_talk' }],
+      recordId: first.id,
+      enabled: true,
+    });
+    assert.equal(second.saved, true);
+    assert.deepEqual(store.get(first.id).suppressedYouSegments.map((entry) => entry.text), ['New hidden line']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('createMeetingStore finalizes and retrieves a meeting record', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
   const store = createMeetingStore({ dir });

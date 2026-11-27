@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('volyxLens', {
   slideTrackingSetEnabled: (enabled) => ipcRenderer.invoke('slide-tracking:set-enabled', enabled === true),
   slideTrackingReview: (payload = {}) => ipcRenderer.invoke('slide-tracking:review', payload),
   transcriptGet: () => ipcRenderer.invoke('transcript:get'),
+  transcriptRestoreSuppressed: (id) => ipcRenderer.invoke('transcript:restore-suppressed', id),
   recapPlan: () => ipcRenderer.invoke('recap:plan'),
   transcriptCopy: () => ipcRenderer.invoke('transcript:copy'),
   transcriptCopyTurn: (id) => ipcRenderer.invoke('transcript:copy-turn', id),
