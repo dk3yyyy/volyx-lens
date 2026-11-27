@@ -107,6 +107,8 @@ function verifySpeechWorkerPackage({
   hostArch = process.arch,
   fsImpl = fs,
   spawnImpl = spawnSync,
+  // Windows has no POSIX mode bits; a mode read there is meaningless.
+  checkPermissions = process.platform !== 'win32',
 } = {}) {
   if (!directory) throw new Error('A packaged application directory is required.');
   const expectedArch = normalizeArch(arch);
@@ -115,7 +117,7 @@ function verifySpeechWorkerPackage({
   if (!worker) throw new Error(`Packaged speech worker was not found: ${name}.`);
   const stat = fsImpl.lstatSync(worker);
   if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Packaged speech worker must be a regular file.');
-  if (platform !== 'win32' && (stat.mode & 0o002) !== 0) {
+  if (checkPermissions && platform !== 'win32' && (stat.mode & 0o002) !== 0) {
     throw new Error(`Packaged speech worker has unsafe permissions: ${worker}.`);
   }
   const header = Buffer.alloc(4096);

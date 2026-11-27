@@ -168,14 +168,14 @@ test('speech worker candidates use platform binary names and accept absolute ove
     arch: 'x64',
     resourcesPath: '',
     projectDir: '/project',
-  }), ['/usr/bin/true', '/project/native-bin/volyx-speech-worker']);
+  }), ['/usr/bin/true', path.join('/project', 'native-bin', 'volyx-speech-worker')]);
   assert.deepEqual(speechWorkerCandidates({
     env: {},
     platform: 'win32',
     arch: 'x64',
     resourcesPath: '/resources',
     projectDir: '/project',
-  }), ['/resources/native/volyx-speech-worker.exe', '/project/native-bin/volyx-speech-worker.exe']);
+  }), [path.join('/resources', 'native', 'volyx-speech-worker.exe'), path.join('/project', 'native-bin', 'volyx-speech-worker.exe')]);
   const relative = speechWorkerCandidates({
     env: { VOLYX_LENS_SPEECH_WORKER_BIN: 'relative/worker' },
     platform: 'darwin',

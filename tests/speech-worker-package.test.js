@@ -178,6 +178,7 @@ test('packaged speech worker verification rejects wrong architectures and unsafe
       hostPlatform: 'linux',
       hostArch: 'x64',
       fsImpl,
+      checkPermissions: true,
       spawnImpl: () => ({ status: 0, stdout: JSON.stringify(payload()), stderr: '' }),
     }), /unsafe permissions/);
   } finally {
