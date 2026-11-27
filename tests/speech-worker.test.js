@@ -8,9 +8,12 @@ const Module = require('node:module');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pcmToWav } = require('../src/wav');
 
 const workerPath = require.resolve('../src/speech-worker');
 let modelVerification = async () => true;
+let diarizerVerification = async () => true;
+let diarizerInstalled = true;
 
 function loadSpeechWorkerModule() {
   const originalLoad = Module._load;
@@ -33,6 +36,15 @@ function loadSpeechWorkerModule() {
         speechDetectorPaths: () => ({ model: '/tmp/silero-vad.gguf' }),
         isSpeechDetectorInstalled: () => true,
         verifySpeechDetector: async () => true,
+        speechDiarizerInfo: () => ({
+          id: 'fake-diarizer',
+          maxSpeakers: 4,
+          sampleRate: 16000,
+          artifact: { sha256: 'a'.repeat(64) },
+        }),
+        speechDiarizerPaths: () => ({ model: '/tmp/fake-diarizer.gguf' }),
+        isSpeechDiarizerInstalled: () => diarizerInstalled,
+        verifySpeechDiarizer: (...args) => diarizerVerification(...args),
       };
     }
     return originalLoad.call(this, request, parent, isMain);
@@ -43,11 +55,14 @@ function loadSpeechWorkerModule() {
 }
 
 class FakeChild extends EventEmitter {
-  constructor({ respond = true, runtimeFallback = false, failWarm = false } = {}) {
+  constructor({ respond = true, runtimeFallback = false, failWarm = false, emitDiarizeProgress = false, hangDiarizeRun = false, diarizeRunDelayMs = 0 } = {}) {
     super();
     this.respond = respond;
     this.runtimeFallback = runtimeFallback;
     this.failWarm = failWarm;
+    this.emitDiarizeProgress = emitDiarizeProgress;
+    this.hangDiarizeRun = hangDiarizeRun;
+    this.diarizeRunDelayMs = diarizeRunDelayMs;
     this.stdout = new PassThrough();
     this.stderr = new PassThrough();
     this.stdin = new EventEmitter();
@@ -78,6 +93,37 @@ class FakeChild extends EventEmitter {
 `);
         } else if (message.command === 'vad-detect') {
           this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { speech: true, segmentCount: 1 } })}
+`);
+        } else if (message.command === 'diarize-load') {
+          this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: {
+            modelId: 'fake-diarizer',
+            backend: this.runtimeFallback ? 'mtl0' : 'cpu',
+            backendFallback: false,
+            sampleRate: 16000,
+            maxSpeakers: 4,
+          } })}
+`);
+        } else if (message.command === 'diarize-run') {
+          if (this.hangDiarizeRun) return;
+          const respondDiarize = () => {
+            if (this.emitDiarizeProgress) {
+              this.stdout.write(`${JSON.stringify({ event: true, type: 'diarize-progress', progress: 0.5 })}
+`);
+            }
+            this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: {
+              modelId: 'fake-diarizer',
+              backend: 'cpu',
+              sampleRate: 16000,
+              maxSpeakers: 4,
+              durationMs: 12,
+              segments: [{ speakerId: 0, t0Ms: 0, t1Ms: 500 }, { speakerId: 1, t0Ms: 500, t1Ms: 900 }],
+            } })}
+`);
+          };
+          if (this.diarizeRunDelayMs > 0) setTimeout(respondDiarize, this.diarizeRunDelayMs);
+          else respondDiarize();
+        } else if (message.command === 'diarize-unload') {
+          this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { unloaded: true } })}
 `);
         } else if (message.command === 'hardware-info') {
           this.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { devices: [{ name: 'CPU', kind: 'cpu' }], backends: [{ name: 'cpu', available: true }] } })}\n`);
@@ -117,15 +163,16 @@ class FakeChild extends EventEmitter {
   }
 }
 
-function fixture({ hangFirst = false, modelOperationTimeoutMs = 120_000, runtimeFallback = false, failWarm = false } = {}) {
+function fixture({ hangFirst = false, modelOperationTimeoutMs = 120_000, runtimeFallback = false, failWarm = false, emitDiarizeProgress = false, hangDiarizeRun = false, diarizeRunDelayMs = 0, diarizationTimeoutSlackMs } = {}) {
   const { createSpeechWorker } = loadSpeechWorkerModule();
   const children = [];
   const worker = createSpeechWorker({
     binaryPath: '/fake/volyx-speech-worker',
     stopTimeoutMs: 5,
     modelOperationTimeoutMs,
+    ...(diarizationTimeoutSlackMs === undefined ? {} : { diarizationTimeoutSlackMs }),
     spawnImpl: () => {
-      const child = new FakeChild({ respond: !(hangFirst && children.length === 0), runtimeFallback, failWarm });
+      const child = new FakeChild({ respond: !(hangFirst && children.length === 0), runtimeFallback, failWarm, emitDiarizeProgress, hangDiarizeRun, diarizeRunDelayMs });
       children.push(child);
       return child;
     },
@@ -133,13 +180,14 @@ function fixture({ hangFirst = false, modelOperationTimeoutMs = 120_000, runtime
   return { worker, children };
 }
 
-test('speech worker exposes batch, streaming, and VAD operations', () => {
+test('speech worker exposes batch, streaming, VAD, and diarization operations', () => {
   const { worker } = fixture();
   assert.deepEqual(Object.keys(worker).sort(), [
-    'activeBackend', 'activeBackendFallback', 'detectSpeech', 'events', 'hardwareInfo',
-    'loadModel', 'loadVad', 'loadedModelId', 'pid', 'stop', 'streamBoundary', 'streamCancel',
-    'streamFeed', 'streamFinish', 'streamStart', 'transcribe', 'unloadModel', 'unloadVad',
-    'vadLoaded', 'warmModel', 'warmedModelId',
+    'activeBackend', 'activeBackendFallback', 'activeDiarizerBackend', 'detectSpeech', 'diarize',
+    'diarizerBackendFallback', 'diarizerLoaded', 'events', 'hardwareInfo', 'loadDiarizer',
+    'loadModel', 'loadVad', 'loadedModelId', 'pid', 'runDiarizer', 'stop', 'streamBoundary',
+    'streamCancel', 'streamFeed', 'streamFinish', 'streamStart', 'transcribe', 'unloadDiarizer',
+    'unloadModel', 'unloadVad', 'vadLoaded', 'warmModel', 'warmedModelId',
   ]);
 });
 
@@ -582,5 +630,189 @@ test('a late exit from an old speech worker cannot destroy replacement stream st
   oldChild.exit();
   await worker.streamFeed('you', Buffer.from([1, 0]));
   assert.equal(replacement.requests.some((request) => request.command === 'stream-feed'), true);
+  await worker.stop();
+});
+
+test('speech worker loads, runs, and unloads the diarizer and forwards progress', async () => {
+  const { worker, children } = fixture({ emitDiarizeProgress: true });
+  const progress = [];
+  const result = await worker.runDiarizer({
+    wav: Buffer.from('RIFF-diar'),
+    preset: 'high_latency',
+    backend: 'cpu',
+    onProgress: (event) => progress.push(event),
+  });
+  assert.equal(worker.diarizerLoaded, true);
+  assert.equal(worker.activeDiarizerBackend, 'cpu');
+  assert.equal(result.segments.length, 2);
+  const load = children[0].requests.find((request) => request.command === 'diarize-load');
+  assert.equal(load.modelId, 'fake-diarizer');
+  assert.equal(load.path, '/tmp/fake-diarizer.gguf');
+  assert.equal(load.backend, 'cpu');
+  const run = children[0].requests.find((request) => request.command === 'diarize-run');
+  assert.equal(run.preset, 'high_latency');
+  assert.equal(run.wavBase64, Buffer.from('RIFF-diar').toString('base64'));
+  assert.equal(progress.length, 1);
+  assert.equal(progress[0].type, 'diarize-progress');
+  assert.equal(progress[0].progress, 0.5);
+
+  await worker.unloadDiarizer();
+  assert.equal(worker.diarizerLoaded, false);
+  assert.equal(worker.activeDiarizerBackend, '');
+  assert.equal(children[0].requests.filter((request) => request.command === 'diarize-unload').length, 1);
+  await worker.stop();
+});
+
+test('speech worker reuses a loaded diarizer for the same backend preference', async () => {
+  const { worker, children } = fixture();
+  await worker.loadDiarizer({ backend: 'cpu' });
+  const cached = await worker.loadDiarizer({ backend: 'cpu' });
+  assert.equal(cached.cached, true);
+  await worker.runDiarizer({ wav: Buffer.from('RIFF-diar'), backend: 'cpu' });
+  assert.equal(children[0].requests.filter((request) => request.command === 'diarize-load').length, 1);
+  assert.equal(children[0].requests.filter((request) => request.command === 'diarize-run').length, 1);
+  await worker.stop();
+});
+
+test('speech worker rejects diarization without an installed or intact artifact', async () => {
+  diarizerInstalled = false;
+  try {
+    const { worker, children } = fixture();
+    await assert.rejects(worker.loadDiarizer(), { code: 'speech_diarizer_not_installed' });
+    assert.equal(children.length, 0, 'no worker starts without the artifact');
+    await worker.stop();
+  } finally {
+    diarizerInstalled = true;
+  }
+
+  diarizerVerification = async () => false;
+  try {
+    const { worker, children } = fixture();
+    await assert.rejects(worker.loadDiarizer(), { code: 'speech_diarizer_integrity_mismatch' });
+    assert.equal(children.length, 0, 'no worker starts with a corrupt artifact');
+    await worker.stop();
+  } finally {
+    diarizerVerification = async () => true;
+  }
+});
+
+test('speech worker validates diarization inputs and worker responses', async () => {
+  const { worker } = fixture();
+  await assert.rejects(worker.runDiarizer({ wav: 'not-a-buffer' }), TypeError);
+  await assert.rejects(worker.runDiarizer({ wav: Buffer.from('RIFF-diar'), preset: 'fastest' }), TypeError);
+  assert.equal(worker.diarizerLoaded, false);
+  await worker.stop();
+
+  const { createSpeechWorker } = loadSpeechWorkerModule();
+  const children = [];
+  const malformed = createSpeechWorker({
+    binaryPath: '/fake/volyx-speech-worker',
+    stopTimeoutMs: 5,
+    spawnImpl: () => {
+      const child = new FakeChild();
+      child.stdin.write = (line, callback) => {
+        const message = JSON.parse(String(line));
+        setImmediate(() => {
+          if (message.command === 'diarize-load') {
+            child.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { modelId: 'other-model', maxSpeakers: 4, sampleRate: 16000 } })}\n`);
+          } else if (message.command === 'diarize-unload') {
+            child.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: { unloaded: true } })}\n`);
+          }
+        });
+        if (callback) callback(null);
+      };
+      children.push(child);
+      return child;
+    },
+  });
+  await assert.rejects(malformed.loadDiarizer(), { code: 'speech_worker_protocol_error' });
+  await malformed.stop();
+});
+
+test('cancelling diarization before or after the load never runs inference', async () => {
+  const preCancelled = fixture();
+  await assert.rejects(preCancelled.worker.runDiarizer({
+    wav: Buffer.from('RIFF-diar'),
+    isCancelled: () => true,
+  }), { code: 'diarization_cancelled' });
+  assert.equal(preCancelled.children.length, 0, 'a cancelled analysis never spawns a worker');
+  await preCancelled.worker.stop();
+
+  const { worker, children } = fixture();
+  let calls = 0;
+  await assert.rejects(worker.runDiarizer({
+    wav: Buffer.from('RIFF-diar'),
+    // 1: entry, 2: load entry, 3: after artifact verification, 4: after load.
+    isCancelled: () => { calls += 1; return calls > 3; },
+  }), { code: 'diarization_cancelled' });
+  assert.equal(children[0].requests.some((request) => request.command === 'diarize-load'), true);
+  assert.equal(children[0].requests.some((request) => request.command === 'diarize-run'), false,
+    'cancellation after the weights load must not analyze the meeting');
+  await worker.stop();
+});
+
+test('stopping the speech worker clears diarizer bookkeeping and progress listeners', async () => {
+  const { worker } = fixture({ emitDiarizeProgress: true });
+  const progress = [];
+  await worker.runDiarizer({ wav: Buffer.from('RIFF-diar'), onProgress: (event) => progress.push(event) });
+  assert.equal(worker.diarizerLoaded, true);
+  await worker.stop();
+  assert.equal(worker.diarizerLoaded, false);
+  assert.equal(worker.activeDiarizerBackend, '');
+  assert.equal(worker.diarizerBackendFallback, false);
+  worker.events.emit('event', { event: true, type: 'diarize-progress', progress: 0.9 });
+  assert.equal(progress.length, 1, 'the run-scoped listener is removed when the run ends');
+});
+
+test('diarization timeout scales with the audio instead of the load budget', async () => {
+  const { diarizationTimeoutMs, wavAudioMs } = loadSpeechWorkerModule();
+  const seconds = (value) => pcmToWav(Buffer.alloc(24_000 * 2 * value), 24_000, 1);
+
+  assert.equal(wavAudioMs(seconds(60)), 60_000);
+  assert.equal(diarizationTimeoutMs(seconds(1), 120_000), 120_000, 'short audio keeps the load floor');
+  assert.equal(diarizationTimeoutMs(seconds(60), 120_000), 270_000, '4x audio plus 30 s');
+  assert.equal(diarizationTimeoutMs(seconds(600), 120_000), 15 * 60 * 1000, 'hard 15-minute ceiling');
+
+  // A response that outlives the model-load budget but not the audio-scaled
+  // budget must not be killed: this is the H2 regression.
+  const { worker, children } = fixture({ modelOperationTimeoutMs: 50, diarizeRunDelayMs: 150 });
+  const result = await worker.runDiarizer({ wav: seconds(10), backend: 'cpu' });
+  assert.equal(result.segments.length, 2);
+  assert.equal(children[0].killed, false, 'a legitimate multi-second run is not SIGKILLed');
+  await worker.stop();
+});
+
+test('a diarization timeout is not reported as a worker crash while the process is alive', async () => {
+  const { worker, children } = fixture({ modelOperationTimeoutMs: 50, diarizationTimeoutSlackMs: 10, hangDiarizeRun: true });
+  await assert.rejects(worker.runDiarizer({
+    wav: pcmToWav(Buffer.alloc(2400), 24_000, 1),
+  }), (error) => {
+    assert.equal(error.code, 'speech_diarizer_timeout');
+    assert.notEqual(error.code, 'speech_worker_exited');
+    return true;
+  });
+  assert.equal(children[0].killed, false, 'a live process is drained, not labelled a crash');
+  children[0].exit();
+  await worker.stop();
+});
+
+test('rejects audio payloads above the recorder bound before encoding them', async () => {
+  const { worker, children } = fixture();
+  await assert.rejects(
+    worker.runDiarizer({ wav: Buffer.alloc(28_800_045) }),
+    { code: 'speech_audio_payload_too_large' },
+  );
+  assert.equal(children.length, 0, 'no worker starts for an over-limit payload');
+
+  await worker.loadVad();
+  await assert.rejects(
+    worker.detectSpeech(Buffer.alloc(1024 * 1024 + 2)),
+    { code: 'speech_audio_payload_too_large' },
+  );
+  await worker.streamStart({ modelId: 'fake-stream', channel: 'you', backend: 'cpu' });
+  await assert.rejects(
+    worker.streamFeed('you', Buffer.alloc(1024 * 1024 + 2)),
+    { code: 'speech_audio_payload_too_large' },
+  );
   await worker.stop();
 });

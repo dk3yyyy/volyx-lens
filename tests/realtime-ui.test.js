@@ -31,6 +31,7 @@ test('defaults enable realtime Whisper with a bounded batch fallback', () => {
     transcriptRules: '',
     postProcessTranscript: true,
     normalizeSpokenDigits: true,
+    diarization: { enabled: false, preset: 'very_high_latency', maxMinutes: 5 },
     delay: 'low',
     whisperModel: 'base.en',
     localModelId: '',

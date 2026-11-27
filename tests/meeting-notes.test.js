@@ -67,6 +67,51 @@ test('txt export uses bracketed timestamps', () => {
   assert.match(out, /# Volyx Lens session/);
 });
 
+test('json export carries diarization sidecars without adding audio', () => {
+  const record = {
+    id: 'x',
+    turns: [{ channel: 'them', text: 'Hello', ts: 1 }],
+    diarizationRuns: [{
+      version: 1,
+      recordingId: 'diar-run-1',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'very_high_latency',
+      sampleRate: 16000,
+      durationMs: 5000,
+      segments: [{ speakerId: 1, t0Ms: 100, t1Ms: 2000 }],
+    }],
+  };
+  const parsed = JSON.parse(formatMeetingRecord(record, 'json', 2));
+  assert.equal(parsed.diarizationRuns.length, 1);
+  assert.equal(parsed.diarizationRuns[0].segments[0].speakerId, 1);
+  assert.equal('audio' in parsed.diarizationRuns[0], false, 'the sidecar carries timestamps only, never an audio payload');
+});
+
+test('non-json exports stay transcript-only and omit the diarization sidecar', () => {
+  const record = {
+    id: 'x',
+    turns: [{ channel: 'them', text: 'Hello', ts: 1 }],
+    diarizationRuns: [{
+      version: 1,
+      recordingId: 'diar-run-1',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'very_high_latency',
+      sampleRate: 16000,
+      durationMs: 5000,
+      segments: [{ speakerId: 2, t0Ms: 100, t1Ms: 2000 }],
+    }],
+  };
+  for (const format of ['md', 'txt', 'srt', 'vtt']) {
+    assert.doesNotMatch(formatMeetingRecord(record, format, 2), /System Speaker|diarization/i, `${format} export has no sidecar`);
+  }
+});
+
 test('raw exports use original recognizer wording when deterministic processing changed it', () => {
   const record = {
     id: 'x',

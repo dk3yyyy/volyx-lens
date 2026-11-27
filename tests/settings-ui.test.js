@@ -210,3 +210,77 @@ test('provider list treats stock model names as unconfigured unless the provider
   assert.match(renderer, /present\[`\$\{id\}\.fast`\]/);
   assert.doesNotMatch(renderer, /const configured = new Set\(\[settings\.provider, settings\.fallbackProvider\]/);
 });
+
+test('speaker activity is reachable from Settings and depends on its model download', () => {
+  for (const id of [
+    'stt-diarization-enabled',
+    'stt-diarization-preset',
+    'stt-diarization-max-minutes',
+    'speech-diarizer-download',
+    'speech-diarizer-cancel',
+    'speech-diarizer-remove',
+    'speech-diarizer-progress',
+    'speech-diarizer-status',
+  ]) {
+    assert.match(html, new RegExp(`id="${id}"`), `${id} exists`);
+  }
+  // Off by default, bounded 1-10 minutes, and the three backend presets.
+  assert.doesNotMatch(html, /id="stt-diarization-enabled"[^>]*checked/);
+  assert.match(html, /id="stt-diarization-max-minutes"[^>]*min="1"[^>]*max="10"/);
+  for (const preset of ['low_latency', 'high_latency', 'very_high_latency']) {
+    assert.match(html, new RegExp(`value="${preset}"`));
+  }
+  // The UI uses the preload bridge that already exists, not a new contract.
+  assert.match(renderer, /volyxLens\.speechDiarizerDownload\(\)/);
+  assert.match(renderer, /volyxLens\.speechDiarizerCancelDownload\(\)/);
+  assert.match(renderer, /volyxLens\.speechDiarizerRemove\(\)/);
+  assert.match(renderer, /volyxLens\.speechDiarizerGet\(\)/);
+  assert.match(renderer, /speech:diarizer-progress/);
+  assert.match(renderer, /aria-valuenow/);
+  // Persisted beside the other transcription settings.
+  assert.match(renderer, /diarization: \{[^}]*enabled:[^}]*preset:[^}]*maxMinutes:/);
+  assert.match(renderer, /Math\.max\(1, Math\.min\(10/);
+  // The model dependency is stated before the switch, and the switch is held
+  // off until the model is installed.
+  assert.match(html, /needs the Sortformer 4-speaker model downloaded/);
+  assert.match(renderer, /required before speaker activity can run/);
+  assert.match(renderer, /toggle\.disabled = runtimeAvailable === false \|\| \(!installed && toggle\.checked !== true\)/);
+});
+
+test('speech failures map to distinct actionable states instead of a retry toast', () => {
+  assert.match(html, /id="speech-failure-banner"[^>]*role="alert"/);
+  assert.match(html, /id="speech-failure-settings"/);
+  assert.match(html, /id="speech-failure-dismiss"/);
+  assert.match(renderer, /function classifySpeechStatus\(message\)/);
+  for (const code of [
+    'speech_model_not_installed',
+    'speech_model_integrity_mismatch',
+    'speech_worker_exited',
+    'speech_worker_spawn_failed',
+    'speech_worker_unavailable',
+    'speech_detector_missing',
+    'speech_vad_not_installed',
+    'speech_vad_integrity_mismatch',
+    'speech_diarizer_not_installed',
+    'speech_diarizer_integrity_mismatch',
+  ]) {
+    assert.match(renderer, new RegExp(code), `${code} has a state`);
+  }
+  assert.match(renderer, /Retrying cannot succeed until the file is present/);
+  assert.match(renderer, /pinned SHA-256/);
+  assert.match(renderer, /The on-device speech worker exited/);
+  // A repeated retry of the same code must not restart the toast loop.
+  assert.match(renderer, /if \(isNew\) showStatus/);
+});
+
+test('routing copy reports no Realtime sessions in batch and offline modes', () => {
+  assert.match(renderer, /0 active Realtime sessions when listening — on-device speech/);
+  assert.match(renderer, /0 active Realtime sessions when listening — batch transcription/);
+  assert.match(renderer, /\$\('#stt-mode'\)\.addEventListener\('change', updateAudioSessionCount\)/);
+  assert.match(renderer, /\$\('#stt-offline-enabled'\)\.addEventListener\('change', updateAudioSessionCount\)/);
+  // A provider item failure is not "no speech": the audio was captured and
+  // then discarded.
+  assert.match(renderer, /could not be transcribed \(provider error/);
+  assert.match(renderer, /that audio was skipped/);
+  assert.doesNotMatch(renderer, /No speech from \$\{speaker\}; still listening/);
+});

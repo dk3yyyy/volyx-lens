@@ -96,6 +96,49 @@ test('history panel loads on boot so the dock badge is accurate', () => {
   assert.match(icons, /history: '<path d="M3 12a9 9 0 1 0 9-9/);
 });
 
+test('history shows a diarization timeline that never implies a persistent identity', () => {
+  assert.match(html, /id="meeting-diarization"/);
+  assert.match(css, /\.history-diarization \{/);
+  assert.match(css, /\.history-diarization-list \{/);
+  assert.match(store, /function normalizeDiarizationRun\(run\)/);
+  assert.match(store, /function updateDiarization\(id, run\)/);
+  assert.match(store, /diarizationRuns: normalizeDiarizationRuns\(record\.diarizationRuns\)/);
+  assert.match(store, /audioStartOffsetMs/);
+  assert.match(renderer, /function renderMeetingDiarization\(\)/);
+  assert.match(renderer, /System Speaker \$\{segment\.speakerId\}/);
+  assert.match(renderer, /not names, and not arrival order/);
+  assert.match(renderer, /renderMeetingDiarization\(\);/);
+  // Slots are anchored to the meeting clock, shifted by each run's own
+  // recording start, not elapsed time that cannot be matched to a transcript row.
+  assert.match(renderer, /function diarizationAnchor\(offsetMs = 0\)/);
+  assert.match(renderer, /function diarizationRange\(startMs, endMs, anchored, offsetMs = 0\)/);
+  assert.match(renderer, /const base = diarizationAnchor\(offsetMs\)/);
+  assert.match(renderer, /const runOffset = Number\(run\.audioStartOffsetMs\) \|\| 0/);
+  assert.match(renderer, /diarizationRange\(segment\.t0Ms, segment\.t1Ms, anchored, runOffset\)/);
+  assert.match(renderer, /diarizationClock\(base \+ startMs\)/);
+  // A named participant is merged into every system turn; the note must say so
+  // instead of claiming turns remain You/Them.
+  assert.match(renderer, /label all system audio as/);
+  assert.match(html, /Other speaker \/ system audio/);
+  assert.match(html, /Applies to all system audio, which may include more than one person/);
+  // Bounded, scrollable, visually distinguishable slots.
+  assert.match(css, /\.history-diarization-list \{[^}]*max-height:[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.history-diarization-list \{[^}]*list-style:\s*none/);
+  assert.match(css, /\.history-diarization-segment\.speaker-slot-1/);
+  assert.match(css, /\.history-diarization-segment\.speaker-slot-4/);
+  assert.match(renderer, /MAX_RENDERED_DIARIZATION_SEGMENTS/);
+  assert.match(renderer, /mergeDiarizationSegments/);
+  // A run that crossed the bound was not analyzed at all; never print the
+  // truncated buffer as coverage.
+  assert.match(renderer, /not analyzed \(time limit\)/);
+  assert.match(renderer, /duration_limit_exceeded/);
+  // A speaker label must not be reachable through the transcript speaker
+  // label helper, so the two surfaces cannot be conflated.
+  const speakerLabel = renderer.match(/function speakerLabelFor\(channel\) \{[\s\S]*?\n  \}/);
+  assert.ok(speakerLabel, 'transcript speaker labels are defined separately');
+  assert.doesNotMatch(speakerLabel[0], /diarization/);
+});
+
 test('meeting memory is explicit, inspectable, and uses the trusted history bridge', () => {
   for (const id of ['meeting-memory-save', 'meeting-memory-list', 'meeting-memory-status']) {
     assert.match(html, new RegExp(`id="${id}"`));
