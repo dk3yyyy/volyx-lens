@@ -25,6 +25,76 @@ test('fingerprint keeps the legacy digest and separates rawText encodings', () =
   assert.notEqual(withRawText, withoutRawText, 'the recognizer wording remains part of the digest');
 });
 
+test('diarization runs append as validated sidecars without changing transcript turns', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({ turns: [{ channel: 'them', text: 'Hello', ts: 1 }], enabled: true });
+    assert.deepEqual(store.get(saved.id).diarizationRuns, []);
+    const run = {
+      version: 1,
+      recordingId: 'diar-run-1',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'very_high_latency',
+      sampleRate: 16000,
+      durationMs: 5000,
+      segments: [
+        { speakerId: 2, t0Ms: 2500, t1Ms: 4000 },
+        { speakerId: 1, t0Ms: 100, t1Ms: 2000 },
+      ],
+    };
+    assert.equal(store.updateDiarization(saved.id, run).updated, true);
+    const record = store.get(saved.id);
+    assert.equal(record.turns[0].channel, 'them');
+    assert.equal(record.diarizationRuns.length, 1);
+    assert.equal(record.diarizationRuns[0].segments[0].speakerId, 1, 'segments are chronological for display');
+    assert.equal(store.updateDiarization(saved.id, { ...run, recordingId: 'bad', sourceChannel: 'you' }).updated, false);
+    assert.equal(store.get(saved.id).diarizationRuns.length, 1);
+    const imported = store.importRecords([record]);
+    assert.equal(imported.imported, 1);
+    assert.equal(store.get(imported.ids[0]).diarizationRuns.length, 1, 'backup restore preserves the sidecar');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('diarization sidecars reject audio, out-of-range slots, and duplicate recordings', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({ turns: [{ channel: 'them', text: 'Hello', ts: 1 }], enabled: true });
+    const run = {
+      version: 1,
+      recordingId: 'diar-run-1',
+      sourceChannel: 'them',
+      status: 'ready',
+      modelId: 'diar-sortformer-4spk',
+      artifactSha256: 'a'.repeat(64),
+      preset: 'high_latency',
+      sampleRate: 16000,
+      durationMs: 5000,
+      segments: [{ speakerId: 1, t0Ms: 100, t1Ms: 2000 }],
+      audio: Buffer.from('not persisted').toString('base64'),
+    };
+    assert.equal(store.updateDiarization(saved.id, { ...run, segments: [{ speakerId: 5, t0Ms: 0, t1Ms: 1 }] }).updated, false);
+    assert.equal(store.updateDiarization(saved.id, { ...run, segments: [{ speakerId: 1, t0Ms: 0, t1Ms: 6000 }] }).updated, false);
+    assert.equal(store.updateDiarization(saved.id, run).updated, true);
+    const stored = store.get(saved.id).diarizationRuns[0];
+    assert.equal('audio' in stored, false, 'the sidecar carries timestamps only');
+    assert.equal(stored.segments.length, 1);
+    // A retried analysis of the same recording replaces its earlier attempt.
+    assert.equal(store.updateDiarization(saved.id, { ...run, segments: [{ speakerId: 3, t0Ms: 10, t1Ms: 20 }] }).updated, true);
+    const runs = store.get(saved.id).diarizationRuns;
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].segments[0].speakerId, 3);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('meeting history preserves original recognizer wording when processing changed text', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
   const store = createMeetingStore({ dir });

@@ -58,7 +58,7 @@ function fixture({ platform = 'linux', bytes = elf(62), mode = 0o755 } = {}) {
 }
 
 function payload() {
-  return { ok: true, engine: 'transcribe-cpp', protocol: 1, streaming: true, diarization: false };
+  return { ok: true, engine: 'transcribe-cpp', protocol: 1, streaming: true, diarization: true };
 }
 
 test('binary architecture inspection understands ELF, PE, and Mach-O desktop targets', () => {
@@ -211,6 +211,6 @@ test('packaged speech worker self-test payload is strict', () => {
   assert.equal(validateSelfTestPayload(payload()), true);
   assert.equal(validateSelfTestPayload({ ...payload(), protocol: 2 }), false);
   assert.equal(validateSelfTestPayload({ ...payload(), streaming: false }), false);
-  assert.equal(validateSelfTestPayload({ ...payload(), diarization: true }), false);
+  assert.equal(validateSelfTestPayload({ ...payload(), diarization: false }), false);
   assert.equal(validateSelfTestPayload(null), false);
 });

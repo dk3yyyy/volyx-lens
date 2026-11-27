@@ -21,6 +21,23 @@ const SPEECH_DETECTOR = Object.freeze({
   }),
   license: Object.freeze({ name: 'MIT', url: 'https://github.com/snakers4/silero-vad' }),
 });
+const SPEECH_DIARIZER = Object.freeze({
+  id: 'diar-sortformer-4spk',
+  name: 'Sortformer 4-speaker diarizer',
+  runtime: 'transcribe-cpp-diarize',
+  sampleRate: 16000,
+  maxSpeakers: 4,
+  presets: Object.freeze(['low_latency', 'high_latency', 'very_high_latency']),
+  artifact: Object.freeze({
+    format: 'gguf',
+    filename: 'diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf',
+    repository: 'handy-computer/diar_streaming_sortformer_4spk-v2.1-gguf',
+    revision: '60ebab3ef7cae9869be0abcde13360347e96ba03',
+    bytes: 139310336,
+    sha256: 'a5dacdc650790266c7a362e54e6bf51952015487edaa606c4e11632bc32442a9',
+  }),
+  license: Object.freeze({ name: 'NVIDIA Open Model License', url: 'https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/' }),
+});
 const TRANSCRIBE_CPP_MODELS = [
   {
     id: 'parakeet-unified-en',
@@ -293,6 +310,40 @@ function removeSpeechDetector() {
   return MODEL_ARTIFACT_STORE.removeModel(SPEECH_DETECTOR);
 }
 
+function speechDiarizerInfo() {
+  return {
+    ...SPEECH_DIARIZER,
+    presets: [...SPEECH_DIARIZER.presets],
+    artifact: { ...SPEECH_DIARIZER.artifact },
+    license: { ...SPEECH_DIARIZER.license },
+  };
+}
+
+function speechDiarizerPaths() {
+  const stored = MODEL_ARTIFACT_STORE.paths(SPEECH_DIARIZER);
+  return {
+    model: stored.modelPath,
+    index: stored.receiptPath,
+    partial: stored.partialPath,
+  };
+}
+
+function isSpeechDiarizerInstalled() {
+  return MODEL_ARTIFACT_STORE.isInstalled(SPEECH_DIARIZER);
+}
+
+function verifySpeechDiarizer() {
+  return MODEL_ARTIFACT_STORE.verifyModel(SPEECH_DIARIZER);
+}
+
+function prepareSpeechDiarizer(onProgress = () => {}, options = {}) {
+  return MODEL_ARTIFACT_STORE.prepareModel(SPEECH_DIARIZER, onProgress, options);
+}
+
+function removeSpeechDiarizer() {
+  return MODEL_ARTIFACT_STORE.removeModel(SPEECH_DIARIZER);
+}
+
 module.exports = {
   MODELS,
   getModel,
@@ -308,5 +359,11 @@ module.exports = {
   verifySpeechDetector,
   prepareSpeechDetector,
   removeSpeechDetector,
+  speechDiarizerInfo,
+  speechDiarizerPaths,
+  isSpeechDiarizerInstalled,
+  verifySpeechDiarizer,
+  prepareSpeechDiarizer,
+  removeSpeechDiarizer,
   MODEL_ARTIFACT_STORE,
 };

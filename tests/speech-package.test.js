@@ -19,9 +19,9 @@ test('packaged macOS verification includes the streaming speech worker', () => {
   assert.match(verifier, /engine === 'transcribe-cpp'/);
   assert.match(verifier, /protocol === 1/);
   assert.match(verifier, /streaming === true/);
-  assert.match(verifier, /p\.diarization === false/);
+  assert.match(verifier, /p\.diarization === true/);
   assert.match(nativeWorker, /"streaming": true/);
-  assert.match(nativeWorker, /"diarization": false/);
+  assert.match(nativeWorker, /"diarization": true/);
 });
 
 test('native speech worker tests and package verification run in desktop CI', () => {
@@ -72,11 +72,13 @@ test('preload exposes only local speech model management methods', () => {
   assert.match(preloadSource, /'speech:model-progress'/);
 });
 
-test('native worker source exposes batch, VAD, and streaming commands without diarization', () => {
+test('native worker source exposes batch, VAD, streaming and diarization commands', () => {
   assert.match(nativeWorker, /StreamCommand|ActiveStream/);
   assert.match(nativeWorker, /VadSession/);
-  assert.doesNotMatch(nativeWorker, /DiarizeSession|DiarizeInfo|Sortformer|speakerId/);
-  assert.doesNotMatch(nativeWorker, /"diarize-[a-z-]+"/);
+  assert.match(nativeWorker, /DiarizeSession|DiarizeInfo|Sortformer/);
+  for (const command of ['diarize-load', 'diarize-run', 'diarize-unload']) {
+    assert.match(nativeWorker, new RegExp(`"${command}" =>`), `${command} is dispatched`);
+  }
   for (const command of ['hardware-info', 'load', 'warm', 'transcribe', 'unload', 'vad-load', 'vad-detect', 'vad-unload', 'stream-start', 'stream-feed', 'stream-boundary']) {
     assert.match(nativeWorker, new RegExp(`"${command}" =>`), `${command} is dispatched`);
   }

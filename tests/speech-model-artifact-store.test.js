@@ -120,9 +120,10 @@ test('registry exports the ASR catalog, detector operations, and artifact operat
   const registry = require('../src/speech-model-registry');
   assert.deepEqual(Object.keys(registry).sort(), [
     'MODELS', 'MODEL_ARTIFACT_STORE', 'getModel', 'isInstalled', 'isSpeechDetectorInstalled',
-    'listModels', 'modelPaths', 'prepareModel', 'prepareSpeechDetector', 'removeModel',
-    'removeSpeechDetector', 'speechDetectorInfo', 'speechDetectorPaths', 'verifyModel',
-    'verifySpeechDetector',
+    'isSpeechDiarizerInstalled', 'listModels', 'modelPaths', 'prepareModel', 'prepareSpeechDetector',
+    'prepareSpeechDiarizer', 'removeModel', 'removeSpeechDetector', 'removeSpeechDiarizer',
+    'speechDetectorInfo', 'speechDetectorPaths', 'speechDiarizerInfo', 'speechDiarizerPaths',
+    'verifyModel', 'verifySpeechDetector', 'verifySpeechDiarizer',
   ]);
   const streaming = listModels().filter((model) => model.streaming === true).map((model) => model.id).sort();
   assert.deepEqual(streaming, ['nemotron-3.5-asr-streaming-0.6b', 'parakeet-unified-en']);
