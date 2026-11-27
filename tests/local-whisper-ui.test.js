@@ -16,7 +16,7 @@ const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
 
 function whisperSelectOptions() {
-  const match = html.match(/<select id="stt-whisper-model">([\s\S]*?)<\/select>/);
+  const match = html.match(/<select id="stt-whisper-model"[^>]*>([\s\S]*?)<\/select>/);
   assert.ok(match, 'renderer/index.html has a <select id="stt-whisper-model">');
   const options = [];
   const optionPattern = /<option\s+value="([^"]+)"([^>]*)>([^<]*)<\/option>/g;

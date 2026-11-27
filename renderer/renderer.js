@@ -1074,7 +1074,8 @@
     const runs = meetingDetail && Array.isArray(meetingDetail.diarizationRuns) ? meetingDetail.diarizationRuns : [];
     container.classList.toggle('hidden', runs.length === 0);
     if (!runs.length) return;
-    const heading = document.createElement('strong');
+    const heading = document.createElement('h3');
+    heading.id = 'meeting-diarization-title';
     heading.textContent = 'System speaker activity';
     const note = document.createElement('p');
     note.className = 'history-diarization-note';
@@ -1117,6 +1118,9 @@
       } else {
         const list = document.createElement('ol');
         list.className = 'history-diarization-list';
+        // The timeline is a named list so heading/list navigation reaches it and
+        // the visual title is also its accessible name.
+        list.setAttribute('aria-labelledby', 'meeting-diarization-title');
         // The store already orders segments, but a record read from an older
         // build may not be; display order is chronological either way.
         const segments = [...run.segments].sort((left, right) => left.t0Ms - right.t0Ms || left.t1Ms - right.t1Ms || left.speakerId - right.speakerId);
@@ -3518,7 +3522,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       const option = document.createElement('option');
       option.value = model.id;
       const sizeMb = model.artifact && model.artifact.estimatedSizeMb;
-      option.textContent = `${model.name}${sizeMb ? ` · ${sizeMb} MB` : ''}${model.streaming ? ' · streaming-capable' : ''}`;
+      option.textContent = `${model.name}${sizeMb ? ` · ${sizeMb} MB` : ''}${model.streaming ? ' · streaming-capable' : ''}${model.runtimeAvailable === true ? '' : ' (unavailable)'}`;
       option.disabled = model.runtimeAvailable !== true;
       options.push(option);
     }
@@ -3534,7 +3538,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const removeButton = $('#speech-model-remove');
     const downloading = Boolean(model && activeSpeechModelDownload === model.id);
     const anyDownloadActive = Boolean(activeSpeechModelDownload);
-    downloadButton.disabled = !model || model.runtimeAvailable !== true || downloading;
+    // One download at a time: the main process rejects a second, so every
+    // Download button is disabled while any model is in flight rather than
+    // accepting a click that silently does nothing.
+    downloadButton.disabled = !model || model.runtimeAvailable !== true || downloading || anyDownloadActive;
     downloadButton.textContent = model && model.installed ? 'Verify model download' : 'Download model';
     // A download keeps running while another model is selected, so Cancel must
     // stay reachable for the model that is actually downloading.
@@ -3544,7 +3551,14 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     removeButton.disabled = !model || model.installed !== true || downloading;
 
     if (!model) {
-      status.textContent = 'Choose a local model to view its download, license, and readiness status.';
+      const selectable = entries.filter((entry) => entry.runtimeAvailable === true);
+      if (!selectable.length) {
+        const reason = (settings.localSpeech && settings.localSpeech.gguf && settings.localSpeech.gguf.reason)
+          || 'no supported on-device GGUF runtime is included in this build';
+        status.textContent = `No on-device GGUF model is available in this build: ${reason}`;
+      } else {
+        status.textContent = 'Choose a local model to view its download, license, and readiness status.';
+      }
       return;
     }
     const details = [
@@ -3557,6 +3571,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     ].filter(Boolean);
     if (model.runtimeAvailable !== true) details.push('Runtime unavailable on this build');
     status.textContent = `${details.join(' · ')}.${model.runtimeAvailable !== true ? ' The local GGUF worker is unavailable in this build.' : ''}`;
+    if (anyDownloadActive && !downloading) {
+      const active = (settings.speechModels || []).find((entry) => entry.id === activeSpeechModelDownload);
+      status.textContent += ` Another download is in progress${active && active.name ? ` (${active.name})` : ''}; Download stays disabled until it finishes or is cancelled.`;
+    }
   }
 
   let activeDiarizerDownload = false;
@@ -4092,32 +4110,72 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     settings.transcription.localModelId = $('#stt-local-model').value;
     renderSpeechModelControls(settings.speechModels || [], settings.transcription.localModelId);
   });
+  let speechModelProgressAt = 0;
+  let speechModelProgressValue = -1;
+  function setSpeechModelProgress(percent) {
+    const bar = $('#speech-model-progress');
+    const fill = $('#speech-model-progress-fill');
+    if (bar) {
+      bar.classList.remove('hidden');
+      bar.setAttribute('aria-valuenow', String(percent));
+    }
+    if (fill) fill.style.width = `${percent}%`;
+  }
   volyxLens.on('speech:model-progress', (event) => {
-    if (!event || event.id !== activeSpeechModelDownload) return;
-    const model = selectedSpeechModel();
+    // Resolve the model from the download that is actually running, not from
+    // whatever the picker currently shows: switching the picker must not
+    // relabel another model's bytes.
+    if (!event || !activeSpeechModelDownload || event.id !== activeSpeechModelDownload) return;
+    const model = (settings.speechModels || []).find((entry) => entry.id === activeSpeechModelDownload) || selectedSpeechModel();
     const progress = Math.max(0, Math.min(1, Number(event.progress) || 0));
-    // Progress arrives per network chunk; rebuilding the option list here cost a
-    // full DOM rebuild tens of thousands of times for a multi-GB model.
-    $('#speech-model-status').textContent = `Downloading ${model ? model.name : 'local model'} · ${Math.round(progress * 100)}%.`;
+    const percent = Math.round(progress * 100);
+    const now = Date.now();
+    // A multi-GB download emits one event per network chunk. Drive the bar at
+    // most once a second and keep the polite live region to start/finish plus a
+    // throttled percentage, instead of announcing thousands of updates.
+    if (percent === speechModelProgressValue) return;
+    if (percent < 100 && now - speechModelProgressAt < 1000) return;
+    speechModelProgressValue = percent;
+    speechModelProgressAt = now;
+    setSpeechModelProgress(percent);
+    $('#speech-model-status').textContent = `Downloading ${model ? model.name : 'local model'} · ${percent}%.`;
   });
   $('#speech-model-download').addEventListener('click', async () => {
     const model = selectedSpeechModel();
-    if (!model || activeSpeechModelDownload) return;
+    if (!model) return;
+    if (activeSpeechModelDownload) {
+      $('#speech-model-status').textContent = 'Another download is in progress. Wait for it to finish or cancel it before starting a second one.';
+      return;
+    }
+    // prepareModel verifies an already-installed artifact and returns without
+    // downloading. Remember which action this was so the outcome line cannot
+    // claim a download that never happened.
+    const wasInstalled = model.installed === true;
     settings.transcription.localModelId = model.id;
     activeSpeechModelDownload = model.id;
+    speechModelProgressValue = -1;
+    speechModelProgressAt = 0;
+    // Verification of an installed file has no meaningful byte progress.
+    if (!wasInstalled) setSpeechModelProgress(0);
     renderSpeechModelControls(settings.speechModels || [], model.id);
-    $('#speech-model-status').textContent = `Preparing download for ${model.name}…`;
+    $('#speech-model-status').textContent = wasInstalled
+      ? `Checking ${model.name} on this device…`
+      : `Preparing download for ${model.name}…`;
     let outcomeMessage = '';
     try {
       await saveSettings();
       const result = await volyxLens.speechModelDownload(model.id);
       if (Array.isArray(result.models)) settings.speechModels = result.models;
       if (speechIssue && (speechIssue.kind === 'model-missing' || speechIssue.kind === 'integrity')) clearSpeechIssue();
-      outcomeMessage = `${model.name} downloaded and SHA-256 verified.`;
+      outcomeMessage = wasInstalled
+        ? `${model.name} passed its SHA-256 check and is ready.`
+        : `${model.name} downloaded and SHA-256 verified.`;
     } catch (error) {
       outcomeMessage = error && error.message ? error.message : 'The model download failed.';
     } finally {
       activeSpeechModelDownload = '';
+      const bar = $('#speech-model-progress');
+      if (bar) bar.classList.add('hidden');
       renderSpeechModelControls();
       if (outcomeMessage) $('#speech-model-status').textContent = outcomeMessage;
     }
@@ -4144,7 +4202,16 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       const result = await volyxLens.speechModelWarm(model.id);
       if (Array.isArray(result.models)) settings.speechModels = result.models;
       renderSpeechModelControls(settings.speechModels, model.id);
-      $('#speech-model-status').textContent = `${model.name} is loaded and warmed for local inference.`;
+      // renderSpeechModelControls had just shown "CPU fallback active"; the
+      // success line must not erase that. Report the backend that actually
+      // warmed, and call out the fallback explicitly.
+      const warmed = (settings.speechModels || []).find((entry) => entry.id === model.id);
+      const backend = warmed && warmed.backend ? String(warmed.backend) : '';
+      const fallback = Boolean(warmed && warmed.backendFallback === true);
+      const backendText = fallback
+        ? ' on CPU fallback — the GPU was unavailable or not selected, so inference will be slower'
+        : backend ? ` on ${backend}` : '';
+      $('#speech-model-status').textContent = `${model.name} is loaded and warmed for local inference${backendText}.`;
     } catch (error) {
       // Refresh first: rendering model details here used to overwrite the error.
       renderSpeechModelControls(settings.speechModels, model.id);

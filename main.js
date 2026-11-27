@@ -2585,6 +2585,34 @@ function cancelDiarizationForHistoryChange() {
   cancelDiarizationAnalysis();
 }
 
+// Worker speaker ids are model slots, but the UI promises arrival-order labels.
+// Renumber the distinct ids by first appearance to 1..N, capped at the model's
+// four slots, so a shuffled model output cannot render "Speaker 3" before
+// "Speaker 1". Input that already arrives as 1..N keeps its ids.
+const MAX_DIARIZATION_SPEAKER_SLOTS = 4;
+function orderSpeakerSegments(segments) {
+  if (!Array.isArray(segments)) return [];
+  const slots = new Map();
+  let changed = false;
+  const ordered = [];
+  for (const segment of segments) {
+    if (!segment || typeof segment !== 'object' || !Number.isSafeInteger(segment.speakerId)) {
+      ordered.push(segment);
+      continue;
+    }
+    const id = segment.speakerId;
+    if (!slots.has(id) && slots.size < MAX_DIARIZATION_SPEAKER_SLOTS) slots.set(id, slots.size + 1);
+    const mapped = slots.get(id);
+    if (mapped === undefined || mapped === id) {
+      ordered.push(segment);
+    } else {
+      ordered.push({ ...segment, speakerId: mapped });
+      changed = true;
+    }
+  }
+  return changed ? ordered : segments;
+}
+
 async function analyzeDiarization(recordId, detached = null) {
   const recording = detached || detachDiarizationRecording();
   const recorder = recording && recording.recorder;
@@ -2592,46 +2620,46 @@ async function analyzeDiarization(recordId, detached = null) {
   if (!recorder) return null;
   const snapshot = recorder.snapshot();
   recorder.clear();
-  if (!recordId) {
-    snapshot.pcm.fill(0);
-    return null;
-  }
-  const transcription = store.getSettings().transcription || {};
-  if (transcription.historyEnabled !== true) {
-    snapshot.pcm.fill(0);
-    return null;
-  }
-  const preset = config && ['low_latency', 'high_latency', 'very_high_latency'].includes(config.preset)
-    ? config.preset
-    : 'very_high_latency';
-  const backend = config && ['auto', 'cpu', 'gpu'].includes(config.backend)
-    ? config.backend
-    : 'auto';
-  // The run only covers audio from the moment this recorder was armed. Anchor
-  // it to the saved meeting so a recorder re-armed later in the same meeting
-  // cannot report times before it existed. Missing timestamps stay at 0, which
-  // is how records written before this field behaved.
-  const recorderStartedAt = Number(config && config.startedAt);
-  let meetingStartedAt = 0;
-  try {
-    const meetingRecord = recordId && typeof meetingStore.get === 'function' ? meetingStore.get(recordId) : null;
-    meetingStartedAt = Number(meetingRecord && meetingRecord.startedAt);
-  } catch {
-    meetingStartedAt = 0;
-  }
-  const audioStartOffsetMs = Number.isSafeInteger(recorderStartedAt)
-    && Number.isSafeInteger(meetingStartedAt)
-    && meetingStartedAt > 0
-    && recorderStartedAt > meetingStartedAt
-    ? recorderStartedAt - meetingStartedAt
-    : 0;
-  const analysisGeneration = ++diarizationAnalysisGeneration;
-  diarizationAnalysisActive = true;
-  activeDiarizationSnapshot = snapshot;
   let wav = null;
   let base = null;
   let run = null;
+  let analysisGeneration = 0;
+  let analysisRegistered = false;
+  // Everything after the snapshot is inside the guard: a bad manifest, a
+  // settings read, or any other prep failure must still zero the only retained
+  // copy of the meeting's system audio.
   try {
+    activeDiarizationSnapshot = snapshot;
+    if (!recordId) return null;
+    const transcription = store.getSettings().transcription || {};
+    if (transcription.historyEnabled !== true) return null;
+    const preset = config && ['low_latency', 'high_latency', 'very_high_latency'].includes(config.preset)
+      ? config.preset
+      : 'very_high_latency';
+    const backend = config && ['auto', 'cpu', 'gpu'].includes(config.backend)
+      ? config.backend
+      : 'auto';
+    // The run only covers audio from the moment this recorder was armed. Anchor
+    // it to the saved meeting so a recorder re-armed later in the same meeting
+    // cannot report times before it existed. Missing timestamps stay at 0, which
+    // is how records written before this field behaved.
+    const recorderStartedAt = Number(config && config.startedAt);
+    let meetingStartedAt = 0;
+    try {
+      const meetingRecord = recordId && typeof meetingStore.get === 'function' ? meetingStore.get(recordId) : null;
+      meetingStartedAt = Number(meetingRecord && meetingRecord.startedAt);
+    } catch {
+      meetingStartedAt = 0;
+    }
+    const audioStartOffsetMs = Number.isSafeInteger(recorderStartedAt)
+      && Number.isSafeInteger(meetingStartedAt)
+      && meetingStartedAt > 0
+      && recorderStartedAt > meetingStartedAt
+      ? recorderStartedAt - meetingStartedAt
+      : 0;
+    analysisGeneration = ++diarizationAnalysisGeneration;
+    diarizationAnalysisActive = true;
+    analysisRegistered = true;
     const info = speechDiarizerInfo();
     base = {
       version: 1,
@@ -2668,16 +2696,18 @@ async function analyzeDiarization(recordId, detached = null) {
         isCancelled: () => analysisGeneration !== diarizationAnalysisGeneration
           || store.getSettings().transcription.historyEnabled !== true,
       });
-      run = { ...base, status: 'ready', segments: result.segments };
+      run = { ...base, status: 'ready', segments: orderSpeakerSegments(result.segments) };
     }
   } catch (error) {
     run = { ...(base || {}), status: 'failed', reason: String(error && error.code || 'diarization_failed').slice(0, 80) };
   } finally {
     if (activeDiarizationSnapshot === snapshot) activeDiarizationSnapshot = null;
-    diarizationAnalysisActive = false;
+    if (analysisRegistered) diarizationAnalysisActive = false;
     snapshot.pcm.fill(0);
     if (wav) wav.fill(0);
-    try { await defaultSpeechWorker.unloadDiarizer(); } catch {}
+    if (analysisRegistered) {
+      try { await defaultSpeechWorker.unloadDiarizer(); } catch {}
+    }
   }
   const stillEnabled = (store.getSettings().transcription || {}).historyEnabled === true;
   if (analysisGeneration !== diarizationAnalysisGeneration || !stillEnabled) return null;

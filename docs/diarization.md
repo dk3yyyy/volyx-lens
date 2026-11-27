@@ -26,11 +26,13 @@ The artifact uses the same private, atomic, size/SHA-256-verified store as ASR a
 4. `meetingStore.updateDiarization()` appends a validated `diarizationRuns` sidecar to the saved meeting.
 5. JavaScript zeroes its retained PCM and WAV buffers; the diarizer is unloaded. Native runtime and allocator copies are released normally but are not guaranteed to be cryptographically scrubbed.
 
+That cleanup is best-effort, not guaranteed erasure. Zeroing a `Buffer` overwrites that allocation, but the same audio also travels across the worker boundary as base64 strings (`pcm16Base64` / `wavBase64`). JavaScript strings are immutable, so those copies cannot be wiped in place; they remain until garbage collection and V8 may keep a stale copy for longer. The worker and native runtime may also hold transient copies that are freed without being overwritten. Stopping analysis therefore drops the application's references and zeroes the buffers it owns, but it does not promise that every copy of the audio is unrecoverable.
+
 Immediate quit, sleep/lock, and New Session clear retained audio without analysis. Audio is never written to history, recovery, backups, or exports. Existing meetings cannot be diarized later because no audio was saved.
 
 ## Identity and timing limits
 
-- `speakerId` is an arrival-order slot within one recording. Labels reset on every run and are **not persistent identities**.
+- `speakerId` is the model's speaker slot (1–4) within one recording. Labels reset on every run; they are not persistent identities and are not guaranteed to be in arrival order.
 - Transcript `channel: 'you' | 'them'` remains capture-source attribution and is never replaced by a diarization label.
 - Sortformer exposes a whole-recording Rust API. Its internal “streaming” cache is not a public live diarization API.
 - Transcript-text alignment is not attempted. It requires sample-accurate source offsets and a shared capture clock; wall-clock transcript timestamps are insufficient.
@@ -63,7 +65,7 @@ The sidecar is a bounded array on the meeting record. `src/meeting-store.js` val
 
 ## History and export
 
-The meeting detail pane shows a compact **System speaker activity** timeline beneath the transcript. Every row reads `System Speaker N` with a local mm:ss range, followed by a note that arrival-order labels belong to that one recording. The pane never renames the transcript speakers: turns stay `You`/`Them`, and a saved participant name is never applied to a diarization slot.
+The meeting detail pane shows a compact **System speaker activity** timeline beneath the transcript. Every row reads `System Speaker N` with a local mm:ss range, followed by a note that the model's speaker slots belong to that one recording and are not arrival order. The pane never renames the transcript speakers: turns stay `You`/`Them`, and a saved participant name is never applied to a diarization slot.
 
 JSON export includes the validated `diarizationRuns` array so the timeline can be inspected elsewhere. Markdown, TXT, SRT, and VTT exports stay transcript-only. Backups restore the sidecar because it lives on the record itself.
 
