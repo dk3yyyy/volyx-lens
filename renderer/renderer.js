@@ -2465,12 +2465,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       content.className = 'memory-content-editor';
       content.rows = 4;
       content.maxLength = 4000;
-      content.value = meetingMemoryDrafts.has(entry.id)
-        ? meetingMemoryDrafts.get(entry.id)
-        : entry.memory.content;
+      const draft = meetingMemoryDrafts.get(entry.id);
+      content.value = draft ? draft.text : entry.memory.content;
       content.setAttribute('aria-label', `Edit saved meeting memory from ${sourceDate}`);
       content.addEventListener('input', () => {
-        meetingMemoryDrafts.set(entry.id, content.value);
+        meetingMemoryDrafts.set(entry.id, { text: content.value, base: entry.memory.content });
       });
       const actions = document.createElement('div');
       actions.className = 'context-actions';
@@ -2508,11 +2507,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       save.addEventListener('click', async () => {
         save.disabled = true;
         const draft = content.value;
-        meetingMemoryDrafts.set(entry.id, draft);
+        meetingMemoryDrafts.set(entry.id, { text: draft, base: entry.memory.content });
         try {
           const result = await volyxLens.meetingMemoryUpdate(entry.id, draft);
           if (!result.updated) throw new Error(meetingMemoryFailureMessage(result));
-          if (meetingMemoryDrafts.get(entry.id) === draft) meetingMemoryDrafts.delete(entry.id);
+          if (meetingMemoryDrafts.get(entry.id)?.text === draft) meetingMemoryDrafts.delete(entry.id);
           meetingMemoryEntries = meetingMemoryEntries.map((item) => item.id === entry.id
             ? { ...item, memory: result.memory }
             : item);
@@ -2555,9 +2554,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       // A draft belongs to one entry id. If that entry is gone (source deleted,
       // then undone into a re-created memory), the stale draft must not mask the
       // newly saved text when the editor reopens.
-      const liveIds = new Set(listed.map((item) => item.id));
-      for (const id of meetingMemoryDrafts.keys()) {
-        if (!liveIds.has(id)) meetingMemoryDrafts.delete(id);
+      const listedById = new Map(listed.map((item) => [item.id, item]));
+      for (const [id, draft] of meetingMemoryDrafts) {
+        const live = listedById.get(id);
+        if (!live || live.memory.content !== draft.base) meetingMemoryDrafts.delete(id);
       }
       meetingMemoryEntries = listed;
       renderMeetingMemoryEntries();

@@ -109,11 +109,11 @@ test('meeting memory is explicit, inspectable, and uses the trusted history brid
   assert.match(renderer, /volyxLens\.meetingMemorySave\(meetingDetail\.id\)/);
   assert.match(renderer, /volyxLens\.meetingMemoryUpdate\(entry\.id, draft\)/);
   assert.match(renderer, /const meetingMemoryDrafts = new Map\(\)/);
-  assert.match(renderer, /content\.addEventListener\('input', \(\) => \{\s*meetingMemoryDrafts\.set\(entry\.id, content\.value\);/);
-  assert.match(renderer, /content\.value = meetingMemoryDrafts\.has\(entry\.id\)/);
-  assert.match(renderer, /if \(meetingMemoryDrafts\.get\(entry\.id\) === draft\) meetingMemoryDrafts\.delete\(entry\.id\);/);
-  assert.match(renderer, /const liveIds = new Set\(listed\.map\(\(item\) => item\.id\)\);/);
-  assert.match(renderer, /if \(!liveIds\.has\(id\)\) meetingMemoryDrafts\.delete\(id\);/);
+  assert.match(renderer, /content\.addEventListener\('input', \(\) => \{\s*meetingMemoryDrafts\.set\(entry\.id, \{ text: content\.value, base: entry\.memory\.content \}\);/);
+  assert.match(renderer, /content\.value = draft \? draft\.text : entry\.memory\.content/);
+  assert.match(renderer, /if \(meetingMemoryDrafts\.get\(entry\.id\)\?\.text === draft\) meetingMemoryDrafts\.delete\(entry\.id\);/);
+  assert.match(renderer, /const listedById = new Map\(listed\.map\(\(item\) => \[item\.id, item\]\)\);/);
+  assert.match(renderer, /if \(!live \|\| live\.memory\.content !== draft\.base\) meetingMemoryDrafts\.delete\(id\);/);
   assert.match(renderer, /volyxLens\.meetingMemorySetEnabled\(entry\.id, enabled\.checked\)/);
   assert.match(renderer, /volyxLens\.meetingMemoryRemove\(entry\.id\)/);
   assert.match(renderer, /memoryButton\.disabled = !hasMeetingNotes\(meetingDetail && meetingDetail\.notes\);/);
