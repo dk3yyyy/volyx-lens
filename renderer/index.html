@@ -474,6 +474,10 @@
         <div class="s-field"><label for="stt-speech-backend">Compute backend</label>
           <select id="stt-speech-backend"><option value="auto">Automatic</option><option value="cpu">CPU only</option><option value="gpu">GPU when available</option></select>
         </div>
+        <div class="s-field"><label for="stt-faster-live">Faster live text</label>
+          <input id="stt-faster-live" type="checkbox" />
+          <span class="s-hint">Local streaming only. Shorter windows cut latency at the cost of more compute; falls back to the model's default window if the model rejects the setting.</span>
+        </div>
         <div class="speech-model-actions" role="group" aria-label="On-device model actions">
           <button id="speech-model-download" type="button">Download model</button>
           <button id="speech-model-cancel" type="button" disabled>Cancel download</button>
@@ -639,6 +643,7 @@
   <script src="icons.js"></script>
   <script src="plain-math.js"></script>
   <script src="notes-markup.js"></script>
+  <script src="capture-guards.js"></script>
   <script src="relative-time.js"></script>
   <script src="renderer.js"></script>
 </body>

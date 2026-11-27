@@ -15,6 +15,26 @@ const DEFAULT_FINISH_DEADLINE_MS = 3_000;
 // window at this length even while the speaker keeps talking.
 const DEFAULT_MAX_WINDOW_MS = 25_000;
 
+// Diagnostics helper: the worker's ready payload says which streaming preset
+// actually took effect. A default result also carries a reason when the model
+// refused the requested tuple, so the UI can explain the fallback.
+function describeAppliedTuning(result) {
+  if (!result || result.appliedTuning !== 'custom') {
+    const reason = result && typeof result.appliedTuningReason === 'string' && result.appliedTuningReason
+      ? result.appliedTuningReason
+      : null;
+    return {
+      appliedTuning: 'default',
+      ...(reason ? { appliedTuningReason: reason } : {}),
+    };
+  }
+  return {
+    appliedTuning: 'custom',
+    chunkMs: Number.isInteger(result.chunkMs) ? result.chunkMs : null,
+    rightMs: Number.isInteger(result.rightMs) ? result.rightMs : null,
+  };
+}
+
 function createLocalSpeechStreamManager({
   worker,
   modelId,
@@ -22,6 +42,9 @@ function createLocalSpeechStreamManager({
   language = '',
   vocabulary = [],
   backend = 'auto',
+  preset,
+  chunkMs,
+  rightMs,
   maxInFlight = 4,
   vad = {},
   maxWindowMs = DEFAULT_MAX_WINDOW_MS,
@@ -39,6 +62,15 @@ function createLocalSpeechStreamManager({
   }
   const activeChannels = [...new Set(channels)].filter((channel) => channel === 'you' || channel === 'them');
   if (!activeChannels.length) throw new TypeError('At least one valid speech channel is required.');
+
+  // Latency preset supplied at construction; a per-start override can replace
+  // any slot. Values are validated by the worker client before it sends, so an
+  // off-menu tuple fails startup without a native request.
+  const defaultTuning = {};
+  for (const [key, value] of Object.entries({ preset, chunkMs, rightMs })) {
+    if (value !== undefined && value !== null) defaultTuning[key] = value;
+  }
+  const appliedTunings = new Map();
 
   const inFlight = new Map(activeChannels.map((channel) => [channel, 0]));
   // `boundaries` is a FIFO of absolute chunk positions, one per VAD stop.
@@ -225,21 +257,38 @@ function createLocalSpeechStreamManager({
     }
   }
 
-  function start() {
+  function start(options = {}) {
     if (ready) return Promise.resolve({ started: true, channels: [...activeChannels] });
     if (startPromise) return startPromise;
     if (stopped) return Promise.reject(new Error('Local speech stream manager has already stopped.'));
+    const tuning = { ...defaultTuning };
+    for (const key of ['preset', 'chunkMs', 'rightMs']) {
+      if (options[key] !== undefined && options[key] !== null) tuning[key] = options[key];
+    }
     worker.events.on('event', handleWorkerEvent);
     startPromise = (async () => {
       const started = [];
       try {
         for (const channel of activeChannels) {
           if (stopped) throw startupCancelledError();
-          await worker.streamStart({ modelId, channel, language, backend, vocabulary });
+          const readyPayload = await worker.streamStart({
+            modelId, channel, language, backend, vocabulary, ...tuning,
+          });
           started.push(channel);
           startedChannels.add(channel);
           armLease(channel);
-          onState({ channel, status: 'streaming', modelId });
+          // Record what the native worker actually applied (it may fall back
+          // to the model default when the tuple is outside its menu) so
+          // diagnostics can show the preset in force, not merely requested.
+          const applied = describeAppliedTuning(readyPayload);
+          appliedTunings.set(channel, applied);
+          onState({
+            channel,
+            status: 'streaming',
+            modelId,
+            ...applied,
+            ...(Object.keys(tuning).length ? { requestedTuning: { ...tuning } } : {}),
+          });
           if (stopped) throw startupCancelledError();
         }
         ready = true;
@@ -248,6 +297,7 @@ function createLocalSpeechStreamManager({
         for (const channel of activeChannels) clearRecovery(channel);
         for (const channel of activeChannels) clearLease(channel);
         startedChannels.clear();
+        appliedTunings.clear();
         const cleanupResults = await Promise.allSettled(started.map((channel) => worker.streamCancel(channel)));
         worker.events.removeListener('event', handleWorkerEvent);
         const cleanupErrors = cleanupResults
@@ -317,6 +367,7 @@ function createLocalSpeechStreamManager({
       clearWindow(channel);
       backlogBytes.set(channel, 0);
     }
+    appliedTunings.clear();
     startedChannels.clear();
     stopPromise = (async () => {
       if (startPromise) {
@@ -400,6 +451,13 @@ function createLocalSpeechStreamManager({
         channel,
         Math.round(((windowBytes.get(channel) || 0) / BYTES_PER_SECOND) * 1000),
       ]));
+    },
+    // Diagnostics: the streaming preset each channel is actually running with,
+    // which can differ from the request when the native worker fell back.
+    get appliedTuning() {
+      return Object.fromEntries(activeChannels
+        .filter((channel) => appliedTunings.has(channel))
+        .map((channel) => [channel, { ...appliedTunings.get(channel) }]));
     },
   };
 }

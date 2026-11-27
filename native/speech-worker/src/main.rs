@@ -9,9 +9,9 @@ use base64::Engine;
 use serde_json::{json, Value};
 use transcribe_cpp::{
     Backend, Capabilities, DiarizeExtension, DiarizeInfo, DiarizeOptions, DiarizeSession,
-    DiarizeSessionOptions, Error, Model, ModelOptions, RunOptions, Session,
-    SortformerDiarizeOptions, SortformerPreset, SpeakerSegment, StreamOptions, Transcript,
-    VadOptions, VadSession,
+    DiarizeSessionOptions, Error, Model, ModelOptions, ParakeetBufferedStreamOptions, RunOptions,
+    Session, SortformerDiarizeOptions, SortformerPreset, SpeakerSegment, StreamExtension,
+    StreamOptions, Transcript, VadOptions, VadSession,
 };
 
 struct LoadedModel {
@@ -64,6 +64,175 @@ const MAX_REQUEST_LINE_BYTES: usize = 64 * 1024 * 1024;
 const MIN_AUDIO_SAMPLE_RATE: u32 = 8_000;
 const MAX_AUDIO_SAMPLE_RATE: u32 = 192_000;
 const DEFAULT_AUDIO_SAMPLE_RATE: u32 = 24_000;
+
+// Parakeet buffered streaming takes a discrete menu of chunk/right-context
+// tuples. 80 ms is the family's streaming frame grid, so anything off that grid
+// is refused instead of being rounded into a tuple the model never shipped.
+// The 4 s ceiling keeps a request at one utterance of lookahead rather than an
+// unbounded buffer, and mirrors the JS client's bound.
+const MIN_STREAM_TUNING_MS: i64 = 80;
+const MAX_STREAM_TUNING_MS: i64 = 4_000;
+const STREAM_TUNING_STEP_MS: i64 = 80;
+const FAST_PRESET_CHUNK_MS: i32 = 560;
+const FAST_PRESET_RIGHT_MS: i32 = 560;
+const INVALID_STREAM_TUNING: &str = "invalid_stream_tuning";
+
+/// A validated Parakeet buffered streaming tuple. `None` fields keep the
+/// family/model default for that slot, so `StreamTuning::default()` is exactly
+/// the pre-preset behaviour.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct StreamTuning {
+    chunk_ms: Option<i32>,
+    right_ms: Option<i32>,
+}
+
+impl StreamTuning {
+    fn is_default(self) -> bool {
+        self.chunk_ms.is_none() && self.right_ms.is_none()
+    }
+
+    /// Human-readable tuple for diagnostics: "chunk 240, right 400".
+    fn describe(self) -> String {
+        match (self.chunk_ms, self.right_ms) {
+            (Some(chunk_ms), Some(right_ms)) => {
+                format!("chunk {chunk_ms}, right {right_ms}")
+            }
+            (Some(chunk_ms), None) => format!("chunk {chunk_ms}"),
+            (None, Some(right_ms)) => format!("right {right_ms}"),
+            (None, None) => "default".to_string(),
+        }
+    }
+
+    /// `StreamOptions::default()` for the no-knob path, so a caller that never
+    /// opted into a preset gets byte-for-byte the previous stream request.
+    fn options(self) -> StreamOptions {
+        if self.is_default() {
+            return StreamOptions::default();
+        }
+        StreamOptions {
+            family: Some(StreamExtension::ParakeetBuffered(
+                ParakeetBufferedStreamOptions {
+                    left_ms: None,
+                    chunk_ms: self.chunk_ms,
+                    right_ms: self.right_ms,
+                },
+            )),
+            ..Default::default()
+        }
+    }
+}
+
+fn parse_stream_tuning_ms(
+    request: &Value,
+    field: &str,
+) -> Result<Option<i32>, (String, String)> {
+    let Some(value) = request.get(field) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    // `as_i64` refuses floats and strings: a fractional or quoted millisecond
+    // value would be silently truncated otherwise.
+    let Some(ms) = value.as_i64() else {
+        return Err((
+            INVALID_STREAM_TUNING.to_string(),
+            format!(
+                "{field} must be an integer between {MIN_STREAM_TUNING_MS} and {MAX_STREAM_TUNING_MS} ms."
+            ),
+        ));
+    };
+    if !(MIN_STREAM_TUNING_MS..=MAX_STREAM_TUNING_MS).contains(&ms) {
+        return Err((
+            INVALID_STREAM_TUNING.to_string(),
+            format!(
+                "{field} {ms} is outside the supported range {MIN_STREAM_TUNING_MS}..={MAX_STREAM_TUNING_MS} ms."
+            ),
+        ));
+    }
+    if ms % STREAM_TUNING_STEP_MS != 0 {
+        return Err((
+            INVALID_STREAM_TUNING.to_string(),
+            format!(
+                "{field} {ms} must be a multiple of {STREAM_TUNING_STEP_MS} ms (Parakeet's streaming frame grid)."
+            ),
+        ));
+    }
+    Ok(Some(ms as i32))
+}
+
+fn request_stream_tuning(request: &Value) -> Result<StreamTuning, (String, String)> {
+    let mut tuning = match request.get("preset") {
+        None | Some(Value::Null) => StreamTuning::default(),
+        Some(Value::String(value)) if value.is_empty() => StreamTuning::default(),
+        Some(Value::String(value)) if value == "fast" => StreamTuning {
+            chunk_ms: Some(FAST_PRESET_CHUNK_MS),
+            right_ms: Some(FAST_PRESET_RIGHT_MS),
+        },
+        Some(Value::String(value)) => {
+            return Err((
+                INVALID_STREAM_TUNING.to_string(),
+                format!("Unsupported stream tuning preset: {value}. Supported presets: fast."),
+            ))
+        }
+        Some(_) => {
+            return Err((
+                INVALID_STREAM_TUNING.to_string(),
+                "preset must be a string. Supported presets: fast.".to_string(),
+            ))
+        }
+    };
+    // An explicit value overrides the preset slot it names; the other slot
+    // keeps the preset (or the family default when no preset was given).
+    if let Some(chunk_ms) = parse_stream_tuning_ms(request, "chunkMs")? {
+        tuning.chunk_ms = Some(chunk_ms);
+    }
+    if let Some(right_ms) = parse_stream_tuning_ms(request, "rightMs")? {
+        tuning.right_ms = Some(right_ms);
+    }
+    Ok(tuning)
+}
+
+/// Only a "this model does not ship that tuple" style refusal should be retried
+/// with defaults. An OOM or backend loss is a real failure: retrying would hide
+/// it behind a misleading "preset rejected" reason.
+fn is_tuning_rejection(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::InvalidArgument(_) | Error::NotImplemented(_) | Error::Unsupported(_)
+    )
+}
+
+/// Builds the stream-start ready payload. With no applied tuning this is the
+/// existing model payload plus `appliedTuning: "default"`; nothing else moves.
+fn stream_ready_info(
+    mut info: Value,
+    requested: StreamTuning,
+    applied: StreamTuning,
+    rejection: Option<String>,
+) -> Value {
+    if applied.is_default() {
+        info["appliedTuning"] = json!("default");
+        if let Some(reason) = rejection {
+            info["appliedTuningReason"] = json!(reason);
+            if let Some(chunk_ms) = requested.chunk_ms {
+                info["requestedChunkMs"] = json!(chunk_ms);
+            }
+            if let Some(right_ms) = requested.right_ms {
+                info["requestedRightMs"] = json!(right_ms);
+            }
+        }
+    } else {
+        info["appliedTuning"] = json!("custom");
+        if let Some(chunk_ms) = applied.chunk_ms {
+            info["chunkMs"] = json!(chunk_ms);
+        }
+        if let Some(right_ms) = applied.right_ms {
+            info["rightMs"] = json!(right_ms);
+        }
+    }
+    info
+}
 
 fn ensure_base64_audio_size(encoded: &str, label: &str) -> Result<(), String> {
     if encoded.len() > MAX_AUDIO_BASE64_CHARS {
@@ -489,6 +658,7 @@ fn run_stream_thread(
     channel: String,
     language: String,
     vocabulary: Vec<String>,
+    tuning: StreamTuning,
     receiver: Receiver<StreamCommand>,
     ready: SyncSender<Result<Value, String>>,
     output: Arc<Mutex<io::Stdout>>,
@@ -501,7 +671,7 @@ fn run_stream_thread(
         return;
     }
 
-    let info = model_info(&loaded);
+    let mut info = model_info(&loaded);
     let mut session = loaded.session;
     let mut run_options = RunOptions::default();
     if !language.is_empty() && !language.eq_ignore_ascii_case("auto") {
@@ -515,13 +685,39 @@ fn run_stream_thread(
         )));
         return;
     }
-    let mut stream = match session.stream(&run_options, &StreamOptions::default()) {
-        Ok(stream) => stream,
-        Err(error) => {
-            let _ = ready.send(Err(format!("Could not start speech stream: {error}")));
-            return;
+    // Try the requested tuple once. The model's menu is discrete, so a tuple
+    // it does not ship is a tuning miss, not a fatal stream error: fall back to
+    // the default stream and tell the caller what was applied. The loop keeps
+    // each attempt's `Stream` temporary scoped so the session can be reopened.
+    let mut applied = tuning;
+    let mut rejection = None;
+    let mut first_error = None;
+    let mut stream_options = tuning.options();
+    let mut stream = loop {
+        match session.stream(&run_options, &stream_options) {
+            Ok(stream) => break stream,
+            Err(error) if !applied.is_default() && is_tuning_rejection(&error) => {
+                rejection = Some(format!(
+                    "Requested Parakeet buffered tuning {} ms was rejected ({error}); using default streaming settings.",
+                    tuning.describe()
+                ));
+                first_error = Some(error.to_string());
+                applied = StreamTuning::default();
+                stream_options = StreamOptions::default();
+            }
+            Err(error) => {
+                let message = match first_error {
+                    Some(first) => format!(
+                        "Could not start speech stream: {first}; default retry failed: {error}"
+                    ),
+                    None => format!("Could not start speech stream: {error}"),
+                };
+                let _ = ready.send(Err(message));
+                return;
+            }
         }
     };
+    info = stream_ready_info(info, tuning, applied, rejection);
     if ready.send(Ok(info)).is_err() {
         return;
     }
@@ -582,7 +778,7 @@ fn run_stream_thread(
                     }
                 }
                 drop(stream);
-                stream = match session.stream(&run_options, &StreamOptions::default()) {
+                stream = match session.stream(&run_options, &applied.options()) {
                     Ok(stream) => stream,
                     Err(error) => {
                         let _ = emit_stream_event(
@@ -1059,6 +1255,12 @@ fn handle_request(
                 .unwrap_or_default()
                 .to_string();
             let vocabulary = request_vocabulary(request);
+            // Validate the latency preset before touching the model: a bad
+            // tuple must not trigger a load that the caller has to undo.
+            let tuning = match request_stream_tuning(request) {
+                Ok(tuning) => tuning,
+                Err(error) => return (id, Err(error)),
+            };
             let preference = request
                 .get("backend")
                 .and_then(Value::as_str)
@@ -1108,6 +1310,7 @@ fn handle_request(
                     channel_name,
                     language,
                     vocabulary,
+                    tuning,
                     receiver,
                     ready_sender,
                     thread_output,
@@ -1300,8 +1503,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::{
         audio_to_16khz, backend_for_preference, diarize_preset, ensure_base64_audio_size,
-        handle_request, is_cpu_backend, pcm16_base64_to_16khz, request_sample_rate,
-        request_vocabulary, should_fallback_to_cpu, speaker_segments_json, transcript_segments_json,
+        handle_request, is_cpu_backend, is_tuning_rejection, pcm16_base64_to_16khz,
+        request_sample_rate, request_stream_tuning, request_vocabulary, should_fallback_to_cpu,
+        speaker_segments_json, stream_ready_info, transcript_segments_json, StreamTuning,
     };
     use base64::Engine;
     use hound::{SampleFormat, WavSpec, WavWriter};
@@ -1585,6 +1789,138 @@ mod tests {
         let (_, result) = call(&request, &mut current);
         let (code, _) = result.unwrap_err();
         assert_eq!(code, "invalid_request");
+    }
+
+    #[test]
+    fn stream_tuning_defaults_to_the_plain_stream_options() {
+        let request = serde_json::json!({});
+        let tuning = request_stream_tuning(&request).unwrap();
+        assert_eq!(tuning, StreamTuning::default());
+        assert!(tuning.is_default());
+        assert_eq!(tuning.options(), transcribe_cpp::StreamOptions::default());
+    }
+
+    #[test]
+    fn stream_tuning_parses_presets_and_explicit_overrides() {
+        let fast = request_stream_tuning(&serde_json::json!({ "preset": "fast" })).unwrap();
+        assert_eq!(fast, StreamTuning { chunk_ms: Some(560), right_ms: Some(560) });
+
+        let chunk_only =
+            request_stream_tuning(&serde_json::json!({ "chunkMs": 240 })).unwrap();
+        assert_eq!(chunk_only, StreamTuning { chunk_ms: Some(240), right_ms: None });
+
+        let right_only =
+            request_stream_tuning(&serde_json::json!({ "rightMs": 400 })).unwrap();
+        assert_eq!(right_only, StreamTuning { chunk_ms: None, right_ms: Some(400) });
+
+        let mixed = request_stream_tuning(
+            &serde_json::json!({ "preset": "fast", "chunkMs": 240 }),
+        )
+        .unwrap();
+        assert_eq!(mixed, StreamTuning { chunk_ms: Some(240), right_ms: Some(560) });
+
+        // Explicit nulls are absent knobs, not zero values.
+        let nulls = request_stream_tuning(
+            &serde_json::json!({ "chunkMs": null, "rightMs": null }),
+        )
+        .unwrap();
+        assert!(nulls.is_default());
+    }
+
+    #[test]
+    fn stream_tuning_rejects_values_off_the_frame_grid() {
+        for (request, fragment) in [
+            (serde_json::json!({ "chunkMs": 100 }), "multiple of 80"),
+            (serde_json::json!({ "rightMs": 100 }), "multiple of 80"),
+            (serde_json::json!({ "chunkMs": 0 }), "outside the supported range"),
+            (serde_json::json!({ "chunkMs": 4_080 }), "outside the supported range"),
+            (serde_json::json!({ "rightMs": 40 }), "outside the supported range"),
+            (serde_json::json!({ "chunkMs": 240.5 }), "must be an integer"),
+            (serde_json::json!({ "chunkMs": "240" }), "must be an integer"),
+            (serde_json::json!({ "preset": "slow" }), "Unsupported stream tuning preset"),
+            (serde_json::json!({ "preset": 560 }), "must be a string"),
+        ] {
+            let (code, message) = request_stream_tuning(&request).unwrap_err();
+            assert_eq!(code, "invalid_stream_tuning");
+            assert!(message.contains(fragment), "{message}");
+        }
+    }
+
+    #[test]
+    fn only_menu_rejections_trigger_the_tuning_fallback() {
+        for error in [
+            transcribe_cpp::Error::InvalidArgument("tuple outside menu".to_string()),
+            transcribe_cpp::Error::NotImplemented("no buffered path".to_string()),
+            transcribe_cpp::Error::Unsupported("unsupported stream family".to_string()),
+        ] {
+            assert!(is_tuning_rejection(&error), "{error}");
+        }
+        for error in [
+            transcribe_cpp::Error::OutOfMemory("device full".to_string()),
+            transcribe_cpp::Error::Backend("device lost".to_string()),
+            transcribe_cpp::Error::InputTooLong("too much audio".to_string()),
+        ] {
+            assert!(!is_tuning_rejection(&error), "{error}");
+        }
+    }
+
+    #[test]
+    fn stream_ready_payload_keeps_the_default_shape_plus_applied_tuning() {
+        let info = serde_json::json!({ "modelId": "parakeet", "capabilities": { "streaming": true } });
+        let payload = stream_ready_info(info.clone(), StreamTuning::default(), StreamTuning::default(), None);
+        let mut expected = info;
+        expected["appliedTuning"] = serde_json::json!("default");
+        assert_eq!(payload, expected);
+        assert!(payload.get("chunkMs").is_none());
+        assert!(payload.get("appliedTuningReason").is_none());
+    }
+
+    #[test]
+    fn stream_ready_payload_reports_custom_and_fallback_tuning() {
+        let info = serde_json::json!({ "modelId": "parakeet" });
+        let requested = StreamTuning { chunk_ms: Some(240), right_ms: Some(400) };
+
+        let custom = stream_ready_info(info.clone(), requested, requested, None);
+        assert_eq!(custom["appliedTuning"], "custom");
+        assert_eq!(custom["chunkMs"], 240);
+        assert_eq!(custom["rightMs"], 400);
+        assert!(custom.get("appliedTuningReason").is_none());
+
+        let fallback = stream_ready_info(
+            info,
+            requested,
+            StreamTuning::default(),
+            Some("rejected: tuple is not in the model menu".to_string()),
+        );
+        assert_eq!(fallback["appliedTuning"], "default");
+        assert_eq!(fallback["requestedChunkMs"], 240);
+        assert_eq!(fallback["requestedRightMs"], 400);
+        assert!(fallback["appliedTuningReason"]
+            .as_str()
+            .unwrap()
+            .contains("not in the model menu"));
+        assert!(fallback.get("chunkMs").is_none());
+    }
+
+    #[test]
+    fn stream_start_rejects_an_invalid_tuning_tuple_before_loading() {
+        let request = serde_json::json!({
+            "id": 7,
+            "command": "stream-start",
+            "modelId": "fake",
+            "path": "/definitely-missing-volyx-model.gguf",
+            "channel": "you",
+            "chunkMs": 100,
+            "rightMs": 240
+        });
+        let mut current = None;
+        let (id, result) = call(&request, &mut current);
+        assert_eq!(id, Some(7));
+        let (code, message) = result.unwrap_err();
+        assert_eq!(code, "invalid_stream_tuning");
+        assert!(message.contains("multiple of 80"), "{message}");
+        // Validation runs before the model path is touched, so nothing loaded.
+        assert!(current.is_none());
     }
 
     #[test]

@@ -36,6 +36,7 @@ function createCaptureHarness({ gateBusy = false } = {}) {
     console: { warn() {}, error() {}, log() {} },
     AUDIO_SAMPLE_RATE: 24000,
     createDiarizationRecorder,
+    captureGeneration: 0,
     state,
     desiredCapturing: false,
     pendingStopImmediate: false,
@@ -73,6 +74,7 @@ function createCaptureHarness({ gateBusy = false } = {}) {
         return new Promise(() => {});
       },
     },
+    themSilenceWatchdog: { arm() {}, disarm() {}, reset() {}, feed() {} },
   });
   const script = `${sourceBlock('function clearDiarizationRecorder()', 'async function reconcileCaptureState()')}
 globalThis.api = {
@@ -132,6 +134,7 @@ function createReplayHarness() {
     clearInterval,
     AUDIO_SAMPLE_RATE: 24000,
     MAX_BATCH_CHUNKS: 180,
+    captureGeneration: 0,
     LOCAL_SPEECH_LEASE_REFRESH_MS: 3000,
     localSpeechLeaseTimer: null,
     buffers,
@@ -252,7 +255,12 @@ globalThis.stopRefresh = stopLocalSpeechLeaseRefresh;`, context);
   };
   context.localSpeechStreamManager = manager;
   context.startRefresh(manager, 10);
-  await new Promise((resolve) => setTimeout(resolve, 45));
+  // A loaded CI runner can miss a fixed sleep, so wait for the condition
+  // instead of assuming two 10 ms ticks fit inside 45 ms.
+  const deadline = Date.now() + 1000;
+  while ((beats.you < 2 || beats.them < 2) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   assert.ok(beats.you >= 2, 'the microphone lease is refreshed without new PCM');
   assert.ok(beats.them >= 2, 'the system channel is refreshed too');
 

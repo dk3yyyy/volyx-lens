@@ -169,6 +169,62 @@ function sanitizeVocabulary(value) {
   return terms;
 }
 
+// Parakeet buffered streaming takes a discrete chunk/right-context menu. These
+// bounds mirror the native worker so an off-menu tuple is refused before any
+// request (and before the caller pays for a model load).
+const MIN_STREAM_TUNING_MS = 80;
+const MAX_STREAM_TUNING_MS = 4_000;
+const STREAM_TUNING_STEP_MS = 80;
+const STREAM_TUNING_PRESETS = { fast: { chunkMs: 560, rightMs: 560 } };
+
+function invalidStreamTuning(message) {
+  const error = new TypeError(message);
+  error.code = 'invalid_stream_tuning';
+  return error;
+}
+
+function streamTuningValue(value, field) {
+  if (value === undefined || value === null) return null;
+  if (!Number.isInteger(value)) {
+    throw invalidStreamTuning(
+      `${field} must be an integer between ${MIN_STREAM_TUNING_MS} and ${MAX_STREAM_TUNING_MS} ms.`,
+    );
+  }
+  if (value < MIN_STREAM_TUNING_MS || value > MAX_STREAM_TUNING_MS) {
+    throw invalidStreamTuning(
+      `${field} ${value} is outside the supported range ${MIN_STREAM_TUNING_MS}..=${MAX_STREAM_TUNING_MS} ms.`,
+    );
+  }
+  if (value % STREAM_TUNING_STEP_MS !== 0) {
+    throw invalidStreamTuning(
+      `${field} ${value} must be a multiple of ${STREAM_TUNING_STEP_MS} ms (Parakeet's streaming frame grid).`,
+    );
+  }
+  return value;
+}
+
+// Validates the latency knobs. `preset: 'fast'` (560/560 ms) is forwarded by
+// name and resolved by the native worker, so both sides share one definition
+// of the preset; explicit chunkMs/rightMs are validated here and override the
+// preset slot they name. Returns only the keys the caller supplied so a request
+// without tuning stays byte-for-byte identical to before.
+function normalizeStreamTuning({ preset, chunkMs, rightMs } = {}) {
+  const tuning = {};
+  if (preset !== undefined && preset !== null && preset !== '') {
+    if (typeof preset !== 'string' || !Object.hasOwn(STREAM_TUNING_PRESETS, preset)) {
+      throw invalidStreamTuning(
+        `Unsupported stream tuning preset: ${String(preset)}. Supported presets: fast.`,
+      );
+    }
+    tuning.preset = preset;
+  }
+  const chunk = streamTuningValue(chunkMs, 'chunkMs');
+  if (chunk !== null) tuning.chunkMs = chunk;
+  const right = streamTuningValue(rightMs, 'rightMs');
+  if (right !== null) tuning.rightMs = right;
+  return tuning;
+}
+
 function speechWorkerEnvironment(env = process.env) {
   const allowed = [
     'PATH', 'HOME', 'USERPROFILE', 'TMPDIR', 'TMP', 'TEMP', 'LANG',
@@ -651,12 +707,15 @@ function createSpeechWorker({
     }
   }
 
-  async function streamStart({ modelId, channel, language = '', backend = 'auto', vocabulary = [] } = {}) {
+  async function streamStart({ modelId, channel, language = '', backend = 'auto', vocabulary = [], preset, chunkMs, rightMs } = {}) {
     const model = getModel(modelId);
     if (!model || model.runtime !== 'transcribe-cpp' || model.streaming !== true) {
       throw workerError('speech_model_streaming_unsupported', `The selected local model does not support streaming: ${String(modelId || '')}`);
     }
     if (!['you', 'them'].includes(channel)) throw new TypeError('Local speech streaming requires a valid audio channel.');
+    // Validate the latency preset here, before the integrity check or a model
+    // load: an off-menu tuple is a caller error, not a worker failure.
+    const tuning = normalizeStreamTuning({ preset, chunkMs, rightMs });
     if (activeStreams.has(channel)) throw workerError('speech_stream_already_started', `A local speech stream is already active for ${channel}.`);
     if (!isInstalled(model.id)) {
       throw workerError('speech_model_not_installed', `Download ${model.name} before using it offline.`);
@@ -683,6 +742,7 @@ function createSpeechWorker({
         language: String(language || ''),
         backend: requestedBackend,
         ...(terms.length ? { vocabulary: terms } : {}),
+        ...tuning,
       }, modelOperationTimeoutMs);
       if (result.modelId !== model.id || !result.capabilities || result.capabilities.streaming !== true) {
         throw workerError('speech_worker_protocol_error', 'Speech worker started an unexpected model or omitted streaming capabilities.');
@@ -693,7 +753,10 @@ function createSpeechWorker({
       activeBackendFallback = result.backendFallback === true || reuseCpuFallback;
       warmedModelId = model.id;
       activeStreams.add(channel);
-      return result;
+      // The native worker reports the applied preset in its ready payload. An
+      // older helper that predates tuning reports nothing, which is the
+      // (accurate) default for it; normalise so diagnostics always have a value.
+      return { ...result, appliedTuning: result.appliedTuning === 'custom' ? 'custom' : 'default' };
     } catch (error) {
       if (activeStreams.size === 0) {
         loadedModelId = '';
@@ -845,6 +908,7 @@ module.exports = {
   createSpeechWorker,
   speechWorkerEnvironment,
   sanitizeVocabulary,
+  normalizeStreamTuning,
   wavAudioMs,
   diarizationTimeoutMs,
   defaultSpeechWorker,
