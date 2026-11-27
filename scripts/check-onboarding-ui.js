@@ -27,6 +27,7 @@ const settings = {
 ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (_event, patch) => Object.assign(settings, patch));
 ipcMain.handle('personal-context:get', () => ({ documents: {}, secure: true, locked: false }));
+ipcMain.handle('workspace-index:get', () => []);
 ipcMain.handle('transcript:get', () => []);
 ipcMain.handle('task-context:get', () => emptyContext);
 // The renderer fetches history and its limits on boot. Stub them so the run has

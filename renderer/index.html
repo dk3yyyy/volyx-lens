@@ -345,6 +345,10 @@
           <div class="context-actions"><button class="context-import" data-kind="jobDescription" type="button">Import Job Description</button><button class="context-remove hidden" data-kind="jobDescription" type="button">Remove</button></div>
         </div>
         <div id="context-storage-status" class="s-note">PDF, DOCX, TXT, or Markdown · 5 MB maximum. Extracted text is stored locally and protected by safeStorage/Keychain where available. Relevant excerpts are sent only when you request an answer.</div>
+        <label class="s-label">Project workspaces <span class="s-hint">local code and document search</span></label>
+        <div id="workspace-index-list" aria-live="polite"></div>
+        <div class="context-actions"><button id="workspace-index-add" type="button">Choose folder and index</button></div>
+        <div id="workspace-index-status" class="s-note" role="status">Supported source/text files only; common secret files, credential/private-data directories, obvious private-key/token patterns, dependencies, build output, binaries, symlinks, and lockfiles are skipped. Choose a specific project folder, not your Home folder or filesystem root. Limits: 20 folders, 5,000 files per folder, 512 KB per file, 64 MB total. Refresh manually to include file changes or rebuild an index; folders are not continuously monitored. Workspace search is off until enabled; matching snippets are sent to your configured provider only with an explicit answer request. The local index is not encrypted by Volyx Lens.</div>
           </section>
 
           <section class="s-page" id="settings-page-appearance" data-settings-page="appearance" aria-labelledby="settings-appearance-title" hidden>

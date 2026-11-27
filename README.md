@@ -68,6 +68,7 @@ Nothing is routed through a Volyx Lens-operated server. Provider requests go dir
 - **Screen-aware assistance:** ask about the visible screen, a conversation, or both.
 - **Separated meeting transcript:** stable timestamped **You** and **Them** turns.
 - **Task Context:** save multiple screens locally, pin important captures, deduplicate near-identical views, and attach a bounded relevant set only when you explicitly ask.
+- **Project workspaces:** index selected source/text folders locally and retrieve matching file/line citations for explicit answer requests; indexing is off for answers until you enable a folder.
 - **Meeting detection:** opt-in detection flags a sustained two-sided conversation while listening, tags the session, and shows a "Meeting in progress" indicator. Local and in-session only: no audio watcher, no disk writes, no model calls.
 - **Meeting history and recovery:** when enabled, finalized meetings and an in-progress transcript checkpoint are saved on device. After an unexpected exit, choose whether to restore or discard the draft.
 - **Meeting notes:** generate structured notes (Summary, Key Points, Decisions, Action Items, Follow-Up) for saved records using your configured provider, with long-meeting confirmation before paid requests. Notes persist in meeting history.
@@ -293,6 +294,12 @@ Task Context is for work revealed across multiple screens, for example a problem
 - Screens that are not selected remain local and are not presented as processed.
 
 Task Context cannot read files or code that never appeared on screen. Use it only when external assistance is permitted.
+
+## Project workspaces
+
+Open Settings → Context to select up to 20 project folders. Volyx Lens indexes supported source and text files locally, skips common secret files, credential/private-data directories, obvious private-key/token patterns, dependencies, build output, binaries, symlinks, and lockfiles, and returns matching snippets with relative file paths and line numbers. Choose a specific project folder: Home and filesystem roots are refused, and Volyx Lens's own user-data subtree is never indexed. Limits are 5,000 files per folder, 512 KB per file, and 64 MB total across folders. Refresh updates changed files; Rebuild recreates an index from scratch. Folders are not monitored continuously.
+
+Each folder is disabled for answers until you turn on **Use in answers**. When enabled, matching snippets can be sent to your configured response provider only as part of an explicit answer request. The SQLite index remains on this device under the app's user-data folder, is not encrypted by Volyx Lens, and can be removed from Settings. An incomplete index is not attached to answers.
 
 ## Meetings
 

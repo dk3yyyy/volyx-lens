@@ -26,6 +26,7 @@ const MODES = {
   assist: {
     needsScreen: true,
     usesPersonalContext: true,
+    usesWorkspaceContext: true,
     userBubble: null,
     small: false,
     maxTokens: { fast: 1200, smart: 2200 },
@@ -198,6 +199,7 @@ const MODES = {
   ask: {
     needsScreen: false,
     usesPersonalContext: true,
+    usesWorkspaceContext: true,
     userBubble: null, // uses the typed text as the bubble
     small: false,
     maxTokens: { fast: 1000, smart: 1800 },

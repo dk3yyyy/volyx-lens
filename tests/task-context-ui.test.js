@@ -84,7 +84,9 @@ test('scroll overlap and relevance selection remain local, bounded, and metadata
   assert.match(main, /detectOverlap: detectTextOverlap/);
   assert.match(main, /scoreRelevance: scoreTextRelevance/);
   assert.match(main, /orderedTranscript\.slice\(-24\)/);
-  assert.match(main, /relevanceQuery[\s\S]*slice\(-8000\)/);
+  assert.match(main, /const relevanceCharsLeft = relevanceBudget - relevanceQuestion\.length - 1;/);
+  assert.match(main, /relevanceCharsLeft > 0\s*\?/);
+  assert.match(main, /relevanceTranscript\.slice\(-relevanceCharsLeft\)/);
   assert.match(taskContextModule, /index - 8/);
   assert.match(taskContextModule, /ocrUniqueText \|\| capture\.ocrText/);
   assert.match(taskContextModule, /strategy: 'relevance'/);
