@@ -131,7 +131,7 @@ test('diarization runs validate a recording start offset and keep legacy sidecar
       ['string', '1000'],
       ['null', null],
       ['beyond safe integer', Number.MAX_SAFE_INTEGER + 1],
-      ['offset plus audio beyond 24 h', 24 * 60 * 60 * 1000 - 5000 + 1],
+      ['offset plus audio beyond 30 days', 30 * 24 * 60 * 60 * 1000 - 5000 + 1],
     ]) {
       assert.equal(
         store.updateDiarization(saved.id, { ...base, recordingId: `diar-bad-${label}`, audioStartOffsetMs }).updated,
@@ -141,7 +141,7 @@ test('diarization runs validate a recording start offset and keep legacy sidecar
     }
     // The inclusive bound is still a sane meeting.
     assert.equal(
-      store.updateDiarization(saved.id, { ...base, recordingId: 'diar-bound', audioStartOffsetMs: 24 * 60 * 60 * 1000 - 5000 }).updated,
+      store.updateDiarization(saved.id, { ...base, recordingId: 'diar-bound', audioStartOffsetMs: 30 * 24 * 60 * 60 * 1000 - 5000 }).updated,
       true,
     );
 

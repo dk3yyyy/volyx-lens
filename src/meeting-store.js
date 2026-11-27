@@ -19,7 +19,9 @@ const MAX_DIARIZATION_SEGMENTS = 5000;
 const MAX_DIARIZATION_DURATION_MS = 10 * 60 * 1000;
 // A run can start after its meeting began (recorder restarted mid-meeting), but
 // the offset plus the audio itself must still fit inside one plausible meeting.
-const MAX_DIARIZATION_MEETING_SPAN_MS = 24 * 60 * 60 * 1000;
+// A recovered draft can be continued days after it started, so the span is
+// generous; it only exists to reject nonsense values.
+const MAX_DIARIZATION_MEETING_SPAN_MS = 30 * 24 * 60 * 60 * 1000;
 // Deleting a saved meeting leaves a sanitized undo copy here, so a mistake costs
 // nothing for a month. Linked memory is removed from that copy before the live
 // record is deleted and is intentionally not restored by Undo. Clear all also

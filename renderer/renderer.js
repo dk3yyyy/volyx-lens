@@ -1217,6 +1217,17 @@
     ));
   }
 
+  // A late diarization result only changes the timeline. Re-opening the whole
+  // pane would wipe a participant name the user is typing and move focus.
+  async function refreshMeetingDiarization(id) {
+    try {
+      const record = await volyxLens.historyGet(id);
+      if (!record || !meetingDetail || meetingDetail.id !== id) return;
+      meetingDetail = { ...meetingDetail, diarizationRuns: record.diarizationRuns || [] };
+      renderMeetingDiarization();
+    } catch {}
+  }
+
   async function openMeetingDetail(id) {
     try {
       const record = await volyxLens.historyGet(id);
@@ -2453,7 +2464,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   volyxLens.on('history:changed', (event = {}) => {
     if (event.deleted && meetingDetail && event.id === meetingDetail.id) closeMeetingDetail();
     else if (event.cleared) closeMeetingDetail();
-    else if (event.id && meetingDetail && event.id === meetingDetail.id) openMeetingDetail(event.id);
+    else if (event.id && meetingDetail && event.id === meetingDetail.id) refreshMeetingDiarization(event.id);
     if (event.pruned > 0) showHistoryPruneNotice(event.pruned);
     loadMeetingHistory({ quiet: true });
     loadMeetingMemoryEntries();
