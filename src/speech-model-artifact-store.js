@@ -210,14 +210,29 @@ function createSpeechModelArtifactStore({
         throw new Error(`Model download failed${response ? ` with HTTP ${response.status}` : ''}.`);
       }
       if (offset > 0) {
-        if (response.status !== 206) {
-          // Range was ignored (200) — append would duplicate the prefix.
-          await restartFromZero();
-        } else {
+        let restart = response.status !== 206;
+        let refetch = false;
+        if (!restart) {
           const contentRange = typeof response.headers?.get === 'function'
             ? response.headers.get('content-range') : null;
           const start = /^bytes\s+(\d+)-/i.exec(String(contentRange || ''));
-          if (start && Number(start[1]) !== offset) await restartFromZero();
+          // A 206 that starts somewhere else is a tail of the artifact, not our
+          // remainder; it must be discarded and the full body requested again.
+          if (start && Number(start[1]) !== offset) {
+            restart = true;
+            refetch = true;
+          }
+        }
+        if (restart) {
+          await restartFromZero();
+          // A 200 body is already the whole artifact, so it can be written from
+          // zero. Only a misleading 206 needs a new request.
+          if (refetch) {
+            response = await requestArtifact(sourceUrl(model), 0, signal);
+            if (!response || !response.ok || !response.body) {
+              throw new Error(`Model download failed${response ? ` with HTTP ${response.status}` : ''}.`);
+            }
+          }
         }
       }
 

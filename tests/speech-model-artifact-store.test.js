@@ -168,7 +168,7 @@ test('a partial artifact resumes with a Range request and appends a 206 body', a
   assert.equal(fs.readFileSync(installed.path).toString(), bytes.toString(), 'the prefix is not duplicated or truncated');
   assert.equal(installed.sha256, model.artifact.sha256);
   assert.equal(fs.existsSync(partialPath), false);
-  assert.equal(fs.statSync(installed.path).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(installed.path).mode & 0o777, process.platform === 'win32' ? 0o666 : 0o600);
 
   const last = progress.at(-1);
   assert.equal(last.fraction, 1);
@@ -249,7 +249,7 @@ test('a connection dropped mid-stream resumes from the bytes already written', a
   await assert.rejects(fixture.store.prepareModel(model), /connection reset by peer/);
   assert.equal(fs.existsSync(partialPath), true, 'a transient network error leaves a resumable partial');
   assert.equal(fs.readFileSync(partialPath).toString(), bytes.subarray(0, 4).toString());
-  assert.equal(fs.statSync(partialPath).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(partialPath).mode & 0o777, process.platform === 'win32' ? 0o666 : 0o600);
 
   const installed = await fixture.store.prepareModel(model, (fraction, details) => progress.push({ fraction, details }));
 
@@ -366,4 +366,27 @@ test('catalog exposes the requested models as version-pinned registry entries', 
       assert.equal(modelEntry.artifact.sha256, '6c759ee4c9748c9b3f7a5a60ca74f0f7e685fb9d45d1378fce7cfd62f59adf29');
     }
   }
+});
+
+test('a 206 whose range starts elsewhere is discarded and refetched in full', async (t) => {
+  const calls = [];
+  const fixture = makeTempStore(async (url, options = {}) => {
+    calls.push(options);
+    if (calls.length === 1) {
+      // A misleading server: claims 206 but starts at the wrong byte.
+      return response(bytes.subarray(7), 206, {
+        'content-range': `bytes 7-${bytes.length - 1}/${bytes.length}`,
+        'content-length': String(bytes.length - 7),
+      });
+    }
+    return response(bytes, 200);
+  });
+  t.after(fixture.cleanup);
+  writePartial(fixture.store, bytes.subarray(0, 5));
+
+  const installed = await fixture.store.prepareModel(model);
+
+  assert.equal(calls.length, 2, 'the bad tail is not appended');
+  assert.equal(fs.readFileSync(installed.path).toString(), bytes.toString());
+  assert.equal(installed.sha256, model.artifact.sha256);
 });

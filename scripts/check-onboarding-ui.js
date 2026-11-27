@@ -305,7 +305,7 @@ app.whenReady().then(async () => {
       await waitForHost(() => settings.transcription.offlineEnabled === true && settings.transcription.localModelId === 'parakeet-unified-en', 'local speech activation');
       await waitFor(win, "document.querySelector('#ob-speech-use').textContent.includes('Local speech is on')", 'activation reflected in the step');
       const activation = await win.webContents.executeJavaScript(`({ status: document.querySelector('#ob-speech-status').textContent, useDisabled: document.querySelector('#ob-speech-use').disabled })`);
-      assert.match(activation.status, /Audio stays on this machine/);
+      assert.match(activation.status, /audio stays on this machine/i);
       assert.equal(activation.useDisabled, true, 'Use should not run twice');
 
       // 12 GB fixture: the multilingual model, already installed, offers Use

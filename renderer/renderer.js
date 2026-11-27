@@ -4678,6 +4678,9 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     loading: null,
   };
   let obSpeechPhase = 'idle';
+  // The card cannot be acted on until memory is known, or a click can download
+  // the wrong model just before the recommendation changes.
+  let obSpeechMemoryResolved = false;
   let obSpeechMessage = '';
   let obSpeechError = false;
   let obSpeechPercent = 0;
@@ -4823,7 +4826,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const size = onboardSpeechSize(model);
     download.classList.toggle('hidden', busy);
     cancel.classList.toggle('hidden', !downloading);
-    download.disabled = Boolean(unavailable) || installed || busy;
+    download.disabled = Boolean(unavailable) || installed || busy || !obSpeechMemoryResolved;
     setObButtonCopy(download,
       installed ? 'Downloaded' : 'Download model',
       installed ? `${size} on this device; integrity checked` : `Download ${size || 'this model'} to this computer`);
@@ -4860,6 +4863,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         }
       } finally {
         obSpeechData.loading = null;
+        obSpeechMemoryResolved = true;
       }
       if (obSteps[obIndex] && obSteps[obIndex].kind === 'speech') updateOnboardSpeech();
     })();
@@ -4933,7 +4937,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const use = $('#ob-speech-use');
     if (use) use.disabled = true;
     try {
-      let updated = await volyxLens.settingsSet({ transcription: { offlineEnabled: true, localModelId: model.id } });
+      let updated = await volyxLens.settingsSet({ transcription: { offlineEnabled: true, localModelId: model.id, offlineCloudFallback: false } });
       if (!updated || !updated.transcription) updated = await volyxLens.settingsGet().catch(() => null);
       if (updated && updated.transcription) settings = { ...settings, ...updated };
       const applied = Boolean(settings && settings.transcription
@@ -4941,7 +4945,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         && String(settings.transcription.localModelId || '') === model.id);
       obSpeechError = !applied;
       obSpeechMessage = applied
-        ? `Local speech is on for Listening: ${model.name}. Audio stays on this machine.`
+        ? `Local speech is on for Listening: ${model.name}. Cloud fallback is off, so audio stays on this machine.`
         : 'This build could not turn on local speech. Check Listening settings.';
     } catch (error) {
       obSpeechError = true;
@@ -5036,7 +5040,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     const btns = $('#ob-buttons');
     btns.replaceChildren(
       obActionButton({ id: 'ob-speech-download', icon: 'chevron-down', label: 'Download model', detail: 'Download to this computer', action: downloadOnboardSpeechModel }),
-      obActionButton({ id: 'ob-speech-cancel', icon: 'power', label: 'Cancel download', detail: 'Stop and discard the partial file', action: cancelOnboardSpeechDownload }),
+      obActionButton({ id: 'ob-speech-cancel', icon: 'power', label: 'Cancel download', detail: 'Stop the download; the partial stays and resumes next time', action: cancelOnboardSpeechDownload }),
       obActionButton({ id: 'ob-speech-use', icon: 'zap', label: 'Use local speech for Listening', detail: 'Download the model first', action: activateOnboardLocalSpeech })
     );
     updateOnboardSpeech();
