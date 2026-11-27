@@ -2511,7 +2511,13 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         try {
           const result = await volyxLens.meetingMemoryUpdate(entry.id, draft);
           if (!result.updated) throw new Error(meetingMemoryFailureMessage(result));
-          if (meetingMemoryDrafts.get(entry.id)?.text === draft) meetingMemoryDrafts.delete(entry.id);
+          if (meetingMemoryDrafts.get(entry.id)?.text === draft) {
+            meetingMemoryDrafts.delete(entry.id);
+          } else if (meetingMemoryDrafts.has(entry.id)) {
+            // The user kept typing during the save; their newer draft is still
+            // unsaved, so its base must be the text that just landed.
+            meetingMemoryDrafts.get(entry.id).base = result.memory.content;
+          }
           meetingMemoryEntries = meetingMemoryEntries.map((item) => item.id === entry.id
             ? { ...item, memory: result.memory }
             : item);
