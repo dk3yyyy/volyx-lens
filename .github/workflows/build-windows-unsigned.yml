@@ -21,6 +21,7 @@ permissions:
 jobs:
   build:
     name: Build unsigned Windows installer
+    environment: windows-release
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

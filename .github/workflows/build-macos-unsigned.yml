@@ -21,6 +21,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.arch }} unsigned macOS artifacts
+    environment: macos-release
     # Each architecture is built on a runner of that architecture. The x64 DMG used
     # to be produced on an arm64 runner, which shipped an arm64 OCR helper inside it.
     runs-on: ${{ matrix.runner }}
@@ -36,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
