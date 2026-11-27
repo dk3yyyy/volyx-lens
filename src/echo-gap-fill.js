@@ -61,7 +61,10 @@ class EchoGapFill {
   // to drop the chunk.
   suppressed(pcm, at = this.now()) {
     if (!Buffer.isBuffer(pcm) || !pcm.length || this.lastVoicedAt === null) return null;
-    if (at - this.lastVoicedAt > this.hangoverMs) return null;
+    // Hangover decides whether a run may start. Once it has started, let the
+    // byte budget decide when it ends, so a 300 ms hangover can still supply
+    // the 700 ms pause the local VAD needs to close a turn.
+    if (this.fillBytes <= 0 && at - this.lastVoicedAt > this.hangoverMs) return null;
     // The cap is audio duration, not elapsed clock time: queued chunks can be
     // drained back-to-back with the same timestamp and must not exceed holdMs.
     const remaining = this.maxFillBytes - this.fillBytes;

@@ -93,7 +93,7 @@ test('gap fill replaces echo inside speech with silence and drops it elsewhere',
   assert.ok(fill.suppressed(chunk));
 
   now += 400;
-  assert.equal(fill.suppressed(chunk), null, 'outside hangover nothing is filled');
+  assert.ok(fill.suppressed(chunk), 'an active run continues past hangover until its byte budget');
 });
 
 test('gap fill counts PCM duration, not wall-clock ticks', () => {
@@ -104,7 +104,8 @@ test('gap fill counts PCM duration, not wall-clock ticks', () => {
   const chunk = Buffer.alloc(100);
   fill.routed(tone(100, 8000));
   assert.equal(fill.suppressed(chunk).length, 100);
-  assert.equal(fill.suppressed(chunk).length, 100);
+  now += 500; // past hangover, but this run is already active
+  assert.equal(fill.suppressed(chunk).length, 100, 'an active run continues within its byte budget');
   assert.equal(fill.suppressed(chunk), null, 'the cap is measured in sent audio');
 });
 
