@@ -32,7 +32,7 @@ test('cleanup can be inspected and thrown away', () => {
   assert.match(body, /meetingDetail\.cleaned\.texts\[index\]/);
   assert.doesNotMatch(body, /innerHTML/);
 
-  assert.match(renderer, /const VIEW_ORDER = \['cleaned', 'raw', 'changes'\]/);
+  assert.match(renderer, /const VIEW_ORDER = \['cleaned', 'raw', 'processed', 'changes'\]/);
   assert.match(renderer, /history-text-before/);
   assert.match(renderer, /history-text-after/);
   assert.match(css, /\.history-text-before \{ color: var\(--tx-mut\); text-decoration: line-through/);

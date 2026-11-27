@@ -31,7 +31,7 @@ test('capture transitions and active New Session replacement share one serialize
   assert.match(main, /captureTransition = captureTransition\.then\(reconcileCaptureState/);
   assert.match(main, /function startNewSession[\s\S]*captureTransition = captureTransition\.then\(operation, operation\)/);
   assert.match(main, /if \(state\.capturing\) await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
-  assert.match(main, /if \(restartTranscription && state\.capturing && desiredCapturing\) startTranscriptionPipeline\(\)/);
+  assert.match(main, /if \(restartTranscription && state\.capturing && desiredCapturing\) await startTranscriptionPipeline\(\)/);
 });
 
 test('permission recovery exposes an explicit user-triggered relaunch action', () => {

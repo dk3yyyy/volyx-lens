@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { meetingFilename, meetingHeader, formatMeetingRecord, reasonLabel, normalizeTurns, localStamp } = require('../src/meeting-notes');
+const { meetingFilename, meetingHeader, formatMeetingRecord, reasonLabel, normalizeTurns, resolveTurns, localStamp } = require('../src/meeting-notes');
 
 const root = path.join(__dirname, '..');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
@@ -67,6 +67,38 @@ test('txt export uses bracketed timestamps', () => {
   assert.match(out, /# Volyx Lens session/);
 });
 
+test('raw exports use original recognizer wording when deterministic processing changed it', () => {
+  const record = {
+    id: 'x',
+    turns: [{ channel: 'you', text: 'Volyx Lens', rawText: 'volyx lens', ts: 1 }],
+  };
+  const markdown = formatMeetingRecord(record, 'md', 2, { source: 'raw' });
+  assert.match(markdown, /volyx lens/);
+  assert.doesNotMatch(markdown, /You:\*\* Volyx Lens/);
+  const automatic = formatMeetingRecord(record, 'md', 2);
+  assert.match(automatic, /You:\*\* Volyx Lens/);
+  const parsed = JSON.parse(formatMeetingRecord(record, 'json', 2));
+  assert.equal(parsed.turns[0].rawText, 'volyx lens');
+});
+
+test('rawText-only records retain distinct deterministic-processing provenance', () => {
+  const record = {
+    turns: [{ channel: 'you', text: 'Volyx Lens', rawText: 'volyx lens', ts: 1 }],
+  };
+  const automatic = resolveTurns(record);
+  assert.equal(automatic.cleaned, false, 'no AI-cleaned copy exists');
+  assert.equal(automatic.processed, true, 'the readable text came from deterministic processing');
+  assert.equal(automatic.turns[0].text, 'Volyx Lens');
+
+  const raw = resolveTurns(record, { source: 'raw' });
+  assert.equal(raw.cleaned, false);
+  assert.equal(raw.processed, false, 'an explicitly raw view is original recognizer wording');
+  assert.equal(raw.turns[0].text, 'volyx lens');
+
+  const unchanged = resolveTurns({ turns: [{ channel: 'you', text: 'Hello everyone', ts: 2 }] });
+  assert.equal(unchanged.processed, false, 'ordinary recognizer text is still raw provenance');
+});
+
 test('json export preserves metadata and full turn fidelity', () => {
   const parsed = JSON.parse(formatMeetingRecord(sampleRecord({ meeting: true }), 'json', 1700009999999));
   assert.equal(parsed.version, 1);
@@ -112,7 +144,7 @@ test('main process exports saved records and refuses empty ones through trusted 
 
 test('structured notes run through the recap pipeline with confirmation for long meetings', () => {
   assert.match(main, /async function recapMeetingRecord\(id, options = \{\}\)/);
-  assert.match(main, /const \{ turns: readableTurns, cleaned: readingCleaned \} = resolveTurns\(record\);/);
+  assert.match(main, /const \{ turns: readableTurns, cleaned: readingCleaned, processed: readingProcessed \} = resolveTurns\(record\);/);
   assert.match(main, /planMeetingRecap\(readableTurns\)/);
   assert.match(main, /requires_confirmation/);
   assert.match(main, /requestCount/);
@@ -191,4 +223,18 @@ test('a meeting with no named participant still reads as Them', () => {
   const record = sampleRecord();
   assert.match(formatMeetingRecord(record, 'md'), /Them:/);
   assert.doesNotMatch(formatMeetingRecord(record, 'md'), /Participants:/);
+});
+
+test('processed export keeps the saved deterministic wording over the cleaned copy', () => {
+  const record = {
+    turns: [{ channel: 'you', text: 'Volyx Lens', rawText: 'volyx lens', ts: 1 }],
+    cleaned: { texts: ['Volyx Lens, cleaned'] },
+  };
+  const automatic = resolveTurns(record);
+  assert.equal(automatic.turns[0].text, 'Volyx Lens, cleaned', 'auto prefers the AI-cleaned copy');
+  assert.equal(automatic.cleaned, true);
+
+  const processed = resolveTurns(record, { source: 'processed' });
+  assert.equal(processed.cleaned, false);
+  assert.equal(processed.turns[0].text, 'Volyx Lens', 'the selected Processed view is what gets exported');
 });

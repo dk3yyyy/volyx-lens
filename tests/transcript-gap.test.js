@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const { drainPendingAudio, buildDrainGap } = require('../src/drain-batch-buffers');
 const { AUDIO_SAMPLE_RATE, AUDIO_CHUNK_SAMPLES, AUDIO_CHUNK_DURATION_MS } = require('../src/audio-config');
 
@@ -83,6 +84,15 @@ test('the drain gap helper sanitises channels, counts, timestamps, and duration'
   assert.equal(clamped.durationMs, 10 * 60 * 1000, 'duration stays bounded');
 });
 
+test('batch flush owns detached audio and ignores stale session completions', () => {
+  const start = main.indexOf('async function flushChannel(');
+  const block = main.slice(start, main.indexOf('async function drainBatchBuffers()', start));
+  assert.match(block, /const chunks = buffers\[channel\];\s*buffers\[channel\] = \[\];/);
+  assert.match(block, /const pendingRetry = retryQueues\[channel\];\s*retryQueues\[channel\] = \[\];/);
+  assert.match(block, /if \(generation !== sessionGeneration \|\| epoch !== transcriptEpoch\) return;/);
+  assert.match(block, /if \(flushPromises\[channel\] === entry\) flushPromises\[channel\] = null;/);
+});
+
 test('the audio chunk duration matches the capture worklet', () => {
   const match = /this\.chunkSize = (\d+);/.exec(audioWorklet);
   assert.ok(match, 'the worklet declares its frame size');
@@ -98,9 +108,9 @@ test('the drain emits the gap next to the existing status line', () => {
   assert.match(block, /buildDrainGap\(\{ abandoned: outcome\.abandoned, droppedChunks \}\)/);
   assert.match(block, /send\('transcript:gap', gap\)/);
   assert.match(block, /Some speech captured just before the stop could not be transcribed/);
-  // buffers and retryQueues can hold the same chunks after a failed flush, so the
-  // duration estimate must not count that audio twice.
-  assert.match(block, /Math\.max\(buffers\[channel\]\.length, retryQueues\[channel\]\.length\)/);
+  // buffers holds audio that arrived after the detached attempt was taken, so
+  // both queues are dropped and both lengths belong in the gap estimate.
+  assert.match(block, /buffers\[channel\]\.length \+ retryQueues\[channel\]\.length/);
 });
 
 test('the renderer shows the drain reason and duration in the existing gap row', () => {
@@ -126,7 +136,7 @@ test('main still records a final that arrives while the manager drains', () => {
   const start = main.indexOf('      onFinal: (event) => {');
   const block = main.slice(start, main.indexOf('      onLateFinal:', start));
   assert.match(block, /drainingRealtimeManagers\.has\(manager\)/);
-  assert.match(block, /recordTranscript\(event, generation, epoch\)/);
+  assert.match(block, /recordTranscript\(event, generation, epoch, processingOptions\)/);
 });
 
 test('a final after the channel drain window emits one gap instead of disappearing', () => {
@@ -142,4 +152,30 @@ test('fallback enters batch once and emits exactly one gap', () => {
   const block = main.slice(start, main.indexOf('function startTranscriptionPipeline('));
   assert.match(block, /if \(!state\.capturing \|\| transcriptionMode === 'batch'\) return;/);
   assert.equal((block.match(/send\('transcript:gap'/g) || []).length, 1);
+});
+
+test('abandoned drain audio counts the buffered tail plus the detached retry attempt', async () => {
+  const start = main.indexOf('async function drainBatchBuffers()');
+  const end = main.indexOf('function handleSttError(', start);
+  assert.ok(start >= 0 && end > start, 'drainBatchBuffers is present');
+  const events = [];
+  const context = {
+    console,
+    buffers: { you: ['newer-1', 'newer-2', 'newer-3'], them: [] },
+    retryQueues: { you: ['detached-1', 'detached-2', 'detached-3', 'detached-4', 'detached-5'], them: [] },
+    drainPendingAudio: async () => ({ abandoned: ['you'] }),
+    flushChannel: async () => {},
+    buildDrainGap,
+    send: (channel, payload) => events.push({ channel, payload }),
+  };
+  vm.runInNewContext(`${main.slice(start, end)}\n`, context);
+  await context.drainBatchBuffers();
+
+  const gapEvent = events.find((event) => event.channel === 'transcript:gap');
+  assert.ok(gapEvent, 'the drop is reported as a gap');
+  // Both buffers were discarded: 3 chunks captured while the attempt was in
+  // flight plus the 5 chunks that attempt owned. Math.max reported only 5.
+  assert.equal(gapEvent.payload.durationMs, Math.round(8 * AUDIO_CHUNK_DURATION_MS));
+  assert.equal(context.buffers.you.length, 0);
+  assert.equal(context.retryQueues.you.length, 0);
 });

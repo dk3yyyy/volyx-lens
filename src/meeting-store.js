@@ -37,12 +37,15 @@ function snapshotTurns(turns) {
     if (!raw || typeof raw !== 'object') continue;
     const text = String(raw.text || '').slice(0, 12000);
     if (!text.trim()) continue;
-    normalized.push({
+    const turn = {
       id: Number.isFinite(raw.id) ? raw.id : undefined,
       channel: raw.channel === 'you' ? 'you' : 'them',
       text,
       ts: Number.isFinite(raw.ts) ? raw.ts : undefined,
-    });
+    };
+    const rawText = String(raw.rawText || '').slice(0, 12000);
+    if (rawText.trim() && rawText !== text) turn.rawText = rawText;
+    normalized.push(turn);
   }
   return normalized.slice(-MAX_RECORD_TURNS);
 }
@@ -52,8 +55,25 @@ function fingerprint(turns) {
   if (!normalized.length) return null;
   const last = normalized[normalized.length - 1];
   const digest = crypto.createHash('sha256');
-  for (const turn of normalized) {
-    digest.update(`${turn.id ?? ''}|${turn.channel}|${turn.text}|${turn.ts ?? ''}\n`);
+  const hasRawText = normalized.some((turn) => Boolean(turn.rawText));
+  if (hasRawText) {
+    // Legacy cleaned copies validate against the original four-field lines, so
+    // that byte stream must stay unchanged when rawText is absent. Once any
+    // recognizer wording is stored, use a separately tagged, unambiguous
+    // encoding: an extra pipe-delimited field could otherwise make different
+    // text/rawText boundaries (or a legacy transcript) hash identically.
+    digest.update('meeting-turns-raw-text-v2\n');
+    digest.update(JSON.stringify(normalized.map((turn) => [
+      turn.id ?? '',
+      turn.channel,
+      turn.text,
+      turn.rawText || '',
+      turn.ts ?? '',
+    ])));
+  } else {
+    for (const turn of normalized) {
+      digest.update(`${turn.id ?? ''}|${turn.channel}|${turn.text}|${turn.ts ?? ''}\n`);
+    }
   }
   return { count: normalized.length, lastId: last.id, lastTs: last.ts, contentHash: digest.digest('hex') };
 }

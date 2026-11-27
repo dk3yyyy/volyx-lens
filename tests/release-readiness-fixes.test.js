@@ -41,7 +41,7 @@ test('all primary Settings fields have explicit programmatic labels', () => {
     'endpoint-azure', 'model-fast', 'model-smart', 'endpoint-fast', 'endpoint-smart', 'key-fast', 'key-smart', 'provider-test-tier', 'stt-mode', 'auto-answer-enabled', 'auto-answer-confidence', 'auto-answer-cooldown',
     'stt-realtime-provider', 'key-azureRealtime', 'endpoint-azure-realtime', 'stt-azure-deployment',
     'key-deepgram', 'stt-deepgram-model',
-    'stt-language', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model',
+    'stt-language', 'stt-custom-vocabulary', 'stt-transcript-rules', 'stt-postprocess-enabled', 'stt-normalize-spoken-digits', 'stt-delay', 'stt-fallback-model', 'stt-gemini-fallback-model',
     'stt-offline-enabled', 'stt-offline-cloud-fallback', 'audio-input-device', 'audio-mic-enabled',
     'audio-system-enabled', 'audio-browser-processing', 'audio-sensitivity', 'audio-silence', 'audio-cost-warning',
     'audio-session-limit', 'question-detection-enabled'
@@ -109,7 +109,7 @@ test('main-process shortcuts honor modal state while emergency quit remains avai
 test('transcript clear invalidates old async results and restarts active transcription', () => {
   assert.match(main, /let transcriptEpoch = 0/);
   assert.match(main, /epoch !== transcriptEpoch/);
-  assert.match(main, /handleTrusted\('transcript:clear'[\s\S]*transcriptEpoch \+= 1[\s\S]*buffers\.you = \[\]; buffers\.them = \[\][\s\S]*if \(state\.capturing\) startTranscriptionPipeline\(\)/);
+  assert.match(main, /handleTrusted\('transcript:clear', async \(\)[\s\S]*transcriptEpoch \+= 1[\s\S]*await stopTranscriptionPipeline\(\{ immediate: true \}\)[\s\S]*await startTranscriptionPipeline\(\)/);
 });
 
 test('capture selection, disconnect cleanup, and settings durability are explicit', () => {

@@ -28,6 +28,21 @@ test('main-process reset invalidates old async work and clears all conversation 
   assert.match(main, /generation !== sessionGeneration/);
 });
 
+test('hard session boundaries await speech teardown and clear retry audio before restart', () => {
+  const stopStart = main.indexOf('async function stopTranscriptionPipeline(');
+  const stopBlock = main.slice(stopStart, main.indexOf('function routePcm', stopStart));
+  assert.match(stopBlock, /if \(manager\) await Promise\.allSettled\(\[manager\.stop\(\)\]\);/);
+  assert.match(stopBlock, /await Promise\.allSettled\(\[\.\.\.drainingRealtimeManagers\]/);
+  assert.match(stopBlock, /retryQueues\.you = \[\]; retryQueues\.them = \[\]/);
+  assert.match(stopBlock, /flushPromises\.you = null; flushPromises\.them = null;/);
+
+  const resetStart = main.indexOf('function startNewSession()');
+  const resetBlock = main.slice(resetStart, main.indexOf('async function importPersonalContextDocument', resetStart));
+  assert.match(resetBlock, /await stopTranscriptionPipeline\(\{ immediate: true \}\)/);
+  assert.match(resetBlock, /await startTranscriptionPipeline\(\)/);
+  assert.match(resetBlock, /retryQueues\.you = \[\]; retryQueues\.them = \[\]/);
+});
+
 test('startup begins with an empty conversation instead of canned demo content', () => {
   assert.doesNotMatch(renderer, /discounted cash flow|showExample/);
   assert.match(renderer, /async function boot\(\)[\s\S]*clearMessages\(\)[\s\S]*syncPlaceholder\(\)/);

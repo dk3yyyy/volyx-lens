@@ -769,7 +769,8 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .s-field:has(input[type="checkbox"]) input[type="checkbox"] { margin-left: 0; }
 .s-field:has(input[type="checkbox"]):has(select) { grid-template-columns: minmax(0, 1fr) auto auto; }
 .s-field > label { width: 150px; flex: 0 0 150px; color: var(--tx-mut); font-size: 12px; line-height: 1.25; }
-.s-field input, .s-field select { flex: 1; min-width: 0; padding: 9px 11px; border-radius: var(--r-control); border: 1px solid var(--field-border); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
+.s-field input, .s-field select, .s-field textarea { flex: 1; min-width: 0; padding: 9px 11px; border-radius: var(--r-control); border: 1px solid var(--field-border); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
+.s-field textarea { min-height: 54px; resize: vertical; line-height: 1.4; }
 .s-theme-group { border: 1px solid var(--bd-hair); border-radius: var(--r-control); padding: 12px; margin: 0; display: grid; gap: 6px; }
 .s-theme-group legend { padding: 0 4px; color: var(--tx-mut); font-size: 11px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
 .s-theme-option { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid transparent; border-radius: var(--r-control); cursor: pointer; }
@@ -784,8 +785,8 @@ body:has(#onboard-scrim:not(.hidden)) #app {
 .s-theme-swatch[data-theme-swatch="sage"] { background: var(--theme-sage); }
 .s-theme-swatch[data-theme-swatch="ember"] { background: var(--theme-ember); }
 
-.s-field input:focus, .s-field select:focus { border-color: var(--accent); }
-.s-field input:focus-visible, .s-field select:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
+.s-field input:focus, .s-field select:focus, .s-field textarea:focus { border-color: var(--accent); }
+.s-field input:focus-visible, .s-field select:focus-visible, .s-field textarea:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
 .s-field input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px; margin-left: auto; padding: 0; accent-color: var(--accent); cursor: pointer; }
 .s-field input.s-switch { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 36px; width: 36px; height: 20px; margin: 0; padding: 0; border: 1px solid color-mix(in srgb, var(--tx-mut) 38%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--tx-mut) 22%, transparent); cursor: pointer; transition: background 140ms ease, border-color 140ms ease; }
 .s-field input.s-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--tx-2); transition: transform 140ms ease, background 140ms ease; }

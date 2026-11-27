@@ -1,5 +1,7 @@
 'use strict';
 
+const { parseVocabulary } = require('./transcript-postprocess');
+
 // Transcript hygiene for the batch/offline transcription path.
 //
 // Two problems this module solves, both observed with local whisper.cpp:
@@ -79,13 +81,26 @@ function extractDomainTerms(text) {
 
 /**
  * Build the initial-prompt seed for STT from personal context text.
- * Returns a comma-joined string of the base vocabulary plus any domain terms
- * extracted from the context, capped at maxChars characters.
+ * Returns a comma-joined string ordered as custom terms, personal-context terms,
+ * then generic base vocabulary, capped at maxChars characters.
  */
-function buildSttVocab({ personalContext = '', base = BASE_STT_VOCAB, maxChars = 900 } = {}) {
-  const terms = extractDomainTerms(personalContext);
-  let vocab = base;
-  if (terms.length) vocab = `${base}, ${terms.join(', ')}`;
+function buildSttVocab({ personalContext = '', customVocabulary = '', base = BASE_STT_VOCAB, maxChars = 900 } = {}) {
+  const candidates = [
+    ...parseVocabulary(customVocabulary),
+    ...extractDomainTerms(personalContext),
+    ...String(base || '').split(','),
+  ];
+  const seen = new Set();
+  const ordered = [];
+  for (const raw of candidates) {
+    const term = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push(term);
+  }
+  let vocab = ordered.join(', ');
   if (vocab.length > maxChars) {
     // Cut at a word boundary rather than mid-token.
     vocab = vocab.slice(0, maxChars).replace(/,\s*[^,]*$/, '');
@@ -98,10 +113,11 @@ function buildSttVocab({ personalContext = '', base = BASE_STT_VOCAB, maxChars =
  * Deepgram keyterms and the OpenAI transcription prompt. The batch path uses
  * `buildSttVocab` (a sentence-style initial prompt); realtime APIs take terms.
  */
-function buildSttTermList({ personalContext = '', base = BASE_STT_VOCAB, limit = 40, maxTermCharacters = 40 } = {}) {
-  // Names and product terms go first: a fixed list of generic words must never
-  // take the slots that a recognizer miss on a person's name would need.
+function buildSttTermList({ personalContext = '', customVocabulary = '', base = BASE_STT_VOCAB, limit = 40, maxTermCharacters = 40 } = {}) {
+  // User terms go first, then names/product terms from context, then the fixed
+  // generic list. Limited provider slots should never be spent on generic words.
   const candidates = [
+    ...parseVocabulary(customVocabulary),
     ...extractDomainTerms(personalContext),
     ...String(base || '').split(','),
   ];
@@ -109,7 +125,9 @@ function buildSttTermList({ personalContext = '', base = BASE_STT_VOCAB, limit =
   const terms = [];
   for (const raw of candidates) {
     const term = String(raw || '').replace(/[\r\n,]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (term.length < 3 || term.length > maxTermCharacters) continue;
+    // Length policy belongs to parseVocabulary for custom terms; the only thing
+    // left to enforce here is the provider's per-term budget.
+    if (!term || term.length > maxTermCharacters) continue;
     const key = term.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);

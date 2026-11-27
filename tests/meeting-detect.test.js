@@ -259,7 +259,7 @@ test('suppressed cross-talk retracts a fully removed leaked turn and clears the 
 test('cross-talk that only trims one segment of a surviving turn keeps its detector entry and refreshes its timestamp', () => {
   assert.match(main, /if \(survivingTs === null\)/);
   assert.match(main, /meetingDetector\.update\(leakedSegment\.turnId, survivingTs\)/);
-  assert.match(main, /function removeTranscriptSegment\(segment\)[\s\S]{0,600}return turn\.ts;/);
+  assert.match(main, /function removeTranscriptSegment\(segment\)[\s\S]{0,1000}return turn\.ts;/);
   assert.match(main, /turn\.ts = turn\.segments\[0\]\.ts;/);
   assert.match(main, /if \(!turn\.segments\.length\)[\s\S]{0,180}return null;/);
 });

@@ -142,6 +142,48 @@ test('readBackupFolder names every file it refuses instead of importing it', () 
   ]);
 });
 
+test('a legacy cleaned sourceHash survives get, readAll and backup', () => {
+  const directory = temporaryDirectory();
+  const store = createMeetingStore({ dir: directory });
+  const source = sampleRecord({
+    turns: [
+      { id: 1, channel: 'them', text: 'so the vee four pro is going away', ts: 1000 },
+      { id: 2, channel: 'you', text: 'right the flash model stays', ts: 2000 },
+    ],
+    turnCount: 2,
+    cleaned: {
+      version: 1,
+      at: 1_700_000_050_000,
+      model: 'deepseek-flash',
+      provider: 'deepseek',
+      // Real SHA-256 from before rawText existed:
+      // `1|them|so the vee four pro is going away|1000\n`
+      // `2|you|right the flash model stays|2000\n`
+      sourceHash: '0cfbba9aead7095c4385b7e5f249c4045ba0d4a0f1efd08e632dd721aafe3622',
+      stats: null,
+      texts: ['So the V4 Pro is going away.', 'Right, the Flash model stays.'],
+    },
+  });
+  fs.writeFileSync(path.join(directory, `${source.id}.json`), JSON.stringify(source));
+  try {
+    const fetched = store.get(source.id);
+    assert.ok(fetched, 'the legacy record is readable');
+    assert.deepEqual(fetched.cleaned, source.cleaned, 'get retains the matching legacy cleaned copy');
+
+    const all = store.readAll();
+    assert.deepEqual(all.unreadable, []);
+    assert.equal(all.records.length, 1);
+    assert.deepEqual(all.records[0].cleaned, source.cleaned, 'readAll retains the legacy cleaned copy');
+
+    const plan = buildBackupPlan(all.records, { appVersion: '0.8.9', now: 1_700_000_100_000 });
+    assert.equal(plan.files.length, 1);
+    const backedUp = JSON.parse(plan.files[0].content);
+    assert.deepEqual(backedUp.cleaned, source.cleaned, 'the backup includes the legacy cleaned copy');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('importRecords restores turns, speaker, notes and the cleaned copy', () => {
   const directory = temporaryDirectory();
   const store = createMeetingStore({ dir: directory });

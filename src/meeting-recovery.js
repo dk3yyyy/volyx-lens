@@ -16,13 +16,19 @@ function sanitizeTurns(turns) {
     // Keep the end of a long turn. A single speaker can talk past the per-turn
     // limit, and the most recent words are what a recovery draft is for.
     const text = raw.length > MAX_TURN_CHARACTERS ? raw.slice(-MAX_TURN_CHARACTERS) : raw;
-    if (text.length !== raw.length) clippedTurns += 1;
-    return [{
+    const originalRawText = String(turn.rawText || '').trim();
+    const rawText = originalRawText.length > MAX_TURN_CHARACTERS
+      ? originalRawText.slice(-MAX_TURN_CHARACTERS)
+      : originalRawText;
+    if (text.length !== raw.length || rawText.length !== originalRawText.length) clippedTurns += 1;
+    const normalizedTurn = {
       id: Number.isFinite(turn.id) ? turn.id : undefined,
       channel: turn.channel === 'you' ? 'you' : 'them',
       text,
       ts: Number.isFinite(turn.ts) ? turn.ts : undefined,
-    }];
+    };
+    if (rawText && rawText !== text) normalizedTurn.rawText = rawText;
+    return [normalizedTurn];
   });
   return { turns: normalized, clippedTurns };
 }

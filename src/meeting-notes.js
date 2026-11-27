@@ -93,28 +93,52 @@ function meetingHeader(record = {}, { cleaned = false } = {}) {
 /**
  * Pick the turn list an export should print. A cleaned copy is used only when
  * it is parallel to the saved turns (same length, non-empty text per turn), so
- * an export can never silently lose or reorder a turn. Raw wording is the
- * fallback and stays authoritative.
+ * an export can never silently lose or reorder a turn. Without an AI-cleaned
+ * copy, `processed` distinguishes deterministic cleanup from recognizer wording
+ * whenever the saved rawText is still available.
  */
 function resolveTurns(record = {}, { source = 'auto' } = {}) {
-  const raw = normalizeTurns(record);
-  if (source === 'raw') return { turns: raw, cleaned: false };
+  const normalized = normalizeTurns(record);
+  if (source === 'processed') {
+    // The saved turn text is the deterministic processing result; it must not
+    // silently fall back to the AI-cleaned copy the way 'auto' does.
+    return {
+      turns: normalized,
+      cleaned: false,
+      processed: normalized.some((turn) => Boolean(turn.rawText)),
+    };
+  }
+  if (source === 'raw') {
+    return {
+      turns: normalized.map((turn) => turn.rawText ? { ...turn, text: turn.rawText } : turn),
+      cleaned: false,
+      processed: false,
+    };
+  }
   const cleaned = record && record.cleaned && Array.isArray(record.cleaned.texts) ? record.cleaned.texts : null;
-  if (!cleaned || !cleaned.length || cleaned.length !== raw.length) return { turns: raw, cleaned: false };
-  const merged = raw.map((turn, index) => {
+  if (!cleaned || !cleaned.length || cleaned.length !== normalized.length) {
+    return { turns: normalized, cleaned: false, processed: normalized.some((turn) => Boolean(turn.rawText)) };
+  }
+  const merged = normalized.map((turn, index) => {
     const text = String(cleaned[index] || '').trim().slice(0, 12000);
-    return text ? { channel: turn.channel, text, ts: turn.ts } : turn;
+    return text ? { ...turn, text } : turn;
   });
-  return { turns: merged, cleaned: true };
+  return { turns: merged, cleaned: true, processed: false };
 }
 
 function normalizeTurns(record = {}) {
   return (Array.isArray(record.turns) ? record.turns : [])
-    .map((turn) => ({
-      channel: turn && turn.channel === 'you' ? 'you' : 'them',
-      text: String((turn && turn.text) || '').trim().slice(0, 12000),
-      ts: Number.isFinite(turn && turn.ts) ? turn.ts : undefined,
-    }))
+    .map((turn) => {
+      const text = String((turn && turn.text) || '').trim().slice(0, 12000);
+      const normalized = {
+        channel: turn && turn.channel === 'you' ? 'you' : 'them',
+        text,
+        ts: Number.isFinite(turn && turn.ts) ? turn.ts : undefined,
+      };
+      const rawText = String(turn && turn.rawText || '').trim().slice(0, 12000);
+      if (rawText && rawText !== text) normalized.rawText = rawText;
+      return normalized;
+    })
     .filter((turn) => turn.text);
 }
 

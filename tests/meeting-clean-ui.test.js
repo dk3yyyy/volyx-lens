@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -73,8 +74,79 @@ test('the cleaned view is rendered as text, never as HTML', () => {
   assert.match(renderer, /text\.className = 'history-text'; text\.textContent = turn\.text;/);
 });
 
+function changedMeetingTurnsFor(detail) {
+  const cleanedStart = renderer.indexOf('function hasCleanedView()');
+  const cleanedEnd = renderer.indexOf('function hasOriginalWording()', cleanedStart);
+  const changesStart = renderer.indexOf('function normalizeMeetingText(');
+  const changesEnd = renderer.indexOf('function speakerLabelFor(', changesStart);
+  assert.ok(cleanedStart >= 0 && cleanedEnd > cleanedStart, 'cleaned-view helper is present');
+  assert.ok(changesStart >= 0 && changesEnd > changesStart, 'change helper is present');
+  const context = { meetingDetail: detail };
+  vm.runInNewContext(
+    `${renderer.slice(cleanedStart, cleanedEnd)}\n${renderer.slice(changesStart, changesEnd)}`,
+    context,
+  );
+  return context.changedMeetingTurns();
+}
+
+test('changes compare AI cleanup with original rawText when deterministic processing already ran', () => {
+  const result = changedMeetingTurnsFor({
+    turns: [{ channel: 'you', text: 'roadmap', rawText: 'road map', ts: 1 }],
+    cleaned: { texts: ['roadmap.'] },
+  });
+  assert.equal(result.rows.length, 1, 'the original road map to roadmap repair stays visible');
+  assert.equal(result.rows[0].raw, 'road map');
+  assert.equal(result.rows[0].cleaned, 'roadmap.');
+  assert.equal(result.punctuationOnly, 0);
+
+  const punctuationOnly = changedMeetingTurnsFor({
+    turns: [{ channel: 'you', text: 'roadmap', ts: 2 }],
+    cleaned: { texts: ['roadmap.'] },
+  });
+  assert.equal(punctuationOnly.rows.length, 0, 'punctuation-only cleanup is still summarized separately');
+  assert.equal(punctuationOnly.punctuationOnly, 1);
+});
+
+test('the transcript view offers the saved processed copy when raw and cleaned also exist', () => {
+  const start = renderer.indexOf('function hasCleanedView()');
+  const end = renderer.indexOf('function speakerLabelFor(', start);
+  assert.ok(start >= 0 && end > start, 'view helpers are present');
+  const load = (detail) => {
+    const context = { meetingDetail: detail, meetingViewMode: 'cleaned' };
+    vm.runInNewContext(
+      `${renderer.slice(start, end)}\nthis.views = { meetingViewOrder, readableMeetingTurns, VIEW_LABELS };`,
+      context,
+    );
+    return context;
+  };
+
+  const allThree = load({
+    turns: [{ channel: 'you', text: 'Q3 roadmap', rawText: 'Q three road map', ts: 1 }],
+    cleaned: { texts: ['Q3 roadmap.'] },
+  });
+  assert.deepEqual([...allThree.views.meetingViewOrder()], ['cleaned', 'raw', 'processed', 'changes']);
+  assert.equal(allThree.views.VIEW_LABELS.processed, 'Processed');
+  allThree.meetingViewMode = 'processed';
+  assert.equal(allThree.views.readableMeetingTurns()[0].text, 'Q3 roadmap', 'processed mode shows turn.text');
+  allThree.meetingViewMode = 'raw';
+  assert.equal(allThree.views.readableMeetingTurns()[0].text, 'Q three road map');
+  allThree.meetingViewMode = 'cleaned';
+  assert.equal(allThree.views.readableMeetingTurns()[0].text, 'Q3 roadmap.');
+
+  const cleanedOnly = load({
+    turns: [{ channel: 'you', text: 'roadmap', ts: 2 }],
+    cleaned: { texts: ['roadmap.'] },
+  });
+  assert.deepEqual([...cleanedOnly.views.meetingViewOrder()], ['cleaned', 'raw', 'changes'], 'two copies keep the existing cycle');
+
+  const rawOnly = load({
+    turns: [{ channel: 'you', text: 'Q3 roadmap', rawText: 'Q three road map', ts: 3 }],
+  });
+  assert.deepEqual([...rawOnly.views.meetingViewOrder()], ['cleaned', 'raw'], 'two copies keep the existing cycle');
+});
+
 test('notes record which transcript they were generated from', () => {
-  assert.match(main, /source: readingCleaned \? 'cleaned' : 'raw'/);
+  assert.match(main, /source: readingCleaned \? 'cleaned' : \(readingProcessed \? 'processed' : 'raw'\)/);
   assert.match(main, /sourceHash:/);
 });
 

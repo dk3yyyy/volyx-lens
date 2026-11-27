@@ -619,7 +619,9 @@
       if (record.hasNotes) {
         const notesBadge = document.createElement('span');
         notesBadge.className = 'history-notes-badge';
-        notesBadge.textContent = record.notesSource === 'cleaned' ? 'Notes · cleaned' : 'Notes';
+        notesBadge.textContent = record.notesSource === 'cleaned'
+          ? 'Notes · cleaned'
+          : (record.notesSource === 'processed' ? 'Notes · processed' : 'Notes');
         when.append(' ', notesBadge);
       }
       if (record.hasCleaned) {
@@ -898,8 +900,24 @@
       && meetingDetail.cleaned.texts.length === meetingDetail.turns.length;
   }
 
+  function hasOriginalWording() {
+    return !!meetingDetail && Array.isArray(meetingDetail.turns)
+      && meetingDetail.turns.some((turn) => typeof turn.rawText === 'string' && turn.rawText !== turn.text);
+  }
+
+  // The deterministic processed copy is the saved turn.text. It deserves its own
+  // stop only when an AI-cleaned copy would otherwise be the only readable view
+  // and the recognizer's raw wording is also present.
+  function hasProcessedView() {
+    return hasCleanedView() && hasOriginalWording();
+  }
+
   function readableMeetingTurns() {
     if (!meetingDetail) return [];
+    if (meetingViewMode === 'raw') {
+      return meetingDetail.turns.map((turn) => turn.rawText ? { ...turn, text: turn.rawText } : turn);
+    }
+    if (meetingViewMode === 'processed') return meetingDetail.turns;
     if (meetingViewMode !== 'cleaned' || !hasCleanedView()) return meetingDetail.turns;
     return meetingDetail.turns.map((turn, index) => ({
       ...turn,
@@ -907,22 +925,32 @@
     }));
   }
 
-  const VIEW_ORDER = ['cleaned', 'raw', 'changes'];
-  const VIEW_LABELS = { cleaned: 'Cleaned', raw: 'Raw', changes: 'Changes' };
+  const VIEW_ORDER = ['cleaned', 'raw', 'processed', 'changes'];
+  const VIEW_LABELS = { cleaned: 'Cleaned', raw: 'Raw', processed: 'Processed', changes: 'Changes' };
   const VIEW_TITLES = {
     cleaned: 'Showing the cleaned copy. Click for the exact wording that was heard.',
     raw: 'Showing the exact wording that was heard. Click to see what cleanup changed.',
+    processed: 'Showing the saved deterministic processing result. Click to see what cleanup changed.',
     changes: 'Showing only the turns where the wording changed. Click to return to the cleaned copy.',
   };
+
+  // Processed joins the cycle only when all three copies exist; with two copies
+  // the existing Cleaned/Raw (or Processed/Raw) cycle is unchanged.
+  function meetingViewOrder() {
+    if (!hasCleanedView()) return ['cleaned', 'raw'];
+    return hasProcessedView() ? VIEW_ORDER : ['cleaned', 'raw', 'changes'];
+  }
 
   function updateMeetingViewToggle() {
     const toggle = $('#meeting-view-toggle');
     if (!toggle) return;
-    const available = hasCleanedView();
+    const available = hasCleanedView() || hasOriginalWording();
     toggle.classList.toggle('hidden', !available);
     toggle.setAttribute('aria-pressed', String(available && meetingViewMode === 'cleaned'));
-    toggle.textContent = VIEW_LABELS[meetingViewMode] || 'Raw';
-    toggle.title = VIEW_TITLES[meetingViewMode] || VIEW_TITLES.raw;
+    toggle.textContent = meetingViewMode === 'cleaned' && !hasCleanedView() ? 'Processed' : (VIEW_LABELS[meetingViewMode] || 'Raw');
+    toggle.title = meetingViewMode === 'cleaned' && !hasCleanedView()
+      ? 'Showing the processed transcript. Click for original recognizer wording.'
+      : (VIEW_TITLES[meetingViewMode] || VIEW_TITLES.raw);
   }
 
   // Compare what was said, not how it was punctuated. Cleanup adds a full stop
@@ -940,12 +968,13 @@
     let punctuationOnly = 0;
     meetingDetail.turns.forEach((turn, index) => {
       const cleaned = String(meetingDetail.cleaned.texts[index] || '').trim();
-      if (!cleaned || cleaned === String(turn.text || '').trim()) return;
-      if (normalizeMeetingText(cleaned) === normalizeMeetingText(turn.text)) {
+      const original = String(turn.rawText || turn.text || '').trim();
+      if (!cleaned || cleaned === original) return;
+      if (normalizeMeetingText(cleaned) === normalizeMeetingText(original)) {
         punctuationOnly += 1;
         return;
       }
-      rows.push({ channel: turn.channel, raw: turn.text, cleaned, ts: turn.ts });
+      rows.push({ channel: turn.channel, raw: original, cleaned, ts: turn.ts });
     });
     return { rows, punctuationOnly };
   }
@@ -1052,9 +1081,10 @@
         const source = document.createElement('p');
         source.className = 'notes-source';
         if (record.notes.source === 'cleaned') source.textContent = 'These notes were generated from the cleaned transcript.';
+        else if (record.notes.source === 'processed') source.textContent = 'These notes were generated from the processed transcript after deterministic cleanup.';
         else if (record.notes.source === 'raw') source.textContent = 'These notes were generated from the transcript as it was heard.';
         if (source.textContent) {
-          if (record.notes.source === 'raw' && hasCleanedView()) source.textContent += ' Regenerate them to use the cleaned copy.';
+          if ((record.notes.source === 'raw' || record.notes.source === 'processed') && hasCleanedView()) source.textContent += ' Regenerate them to use the cleaned copy.';
           out.prepend(source);
         }
         out.classList.remove('hidden');
@@ -1087,7 +1117,8 @@
     if (!meetingDetail) return;
     const button = $('#meeting-history-export'); button.disabled = true;
     try {
-      const result = await volyxLens.historyExport(meetingDetail.id, $('#meeting-history-export-format').value);
+      const exportSource = meetingViewMode === 'raw' ? 'raw' : (meetingViewMode === 'processed' ? 'processed' : 'auto');
+      const result = await volyxLens.historyExport(meetingDetail.id, $('#meeting-history-export-format').value, exportSource);
       if (result && !result.canceled) showStatus(`Exported ${result.turns} ${result.turns === 1 ? 'turn' : 'turns'} to ${result.filename}.`);
     } catch (error) { showStatus(error && error.message ? error.message : 'This meeting could not be exported.'); }
     finally { button.disabled = false; }
@@ -1187,9 +1218,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   });
 
   $('#meeting-view-toggle').addEventListener('click', () => {
-    if (!meetingDetail || !hasCleanedView()) return;
-    const next = (VIEW_ORDER.indexOf(meetingViewMode) + 1) % VIEW_ORDER.length;
-    meetingViewMode = VIEW_ORDER[next];
+    if (!meetingDetail || (!hasCleanedView() && !hasOriginalWording())) return;
+    const order = meetingViewOrder();
+    const next = (order.indexOf(meetingViewMode) + 1) % order.length;
+    meetingViewMode = order[next];
     renderMeetingTurns();
   });
 
@@ -3261,6 +3293,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     $('#stt-azure-speech-region').value = transcription.azureSpeechRegion || '';
     $('#stt-azure-speech-phrases').value = transcription.azureSpeechPhrases || '';
     $('#stt-language').value = transcription.language || '';
+    $('#stt-custom-vocabulary').value = transcription.customVocabulary || '';
+    $('#stt-transcript-rules').value = transcription.transcriptRules || '';
+    $('#stt-postprocess-enabled').checked = transcription.postProcessTranscript !== false;
+    $('#stt-normalize-spoken-digits').checked = transcription.normalizeSpokenDigits !== false;
     $('#stt-delay').value = transcription.delay || 'low';
     $('#stt-fallback-model').value = transcription.fallbackModel || '';
     $('#stt-gemini-fallback-model').value = transcription.geminiFallbackModel || '';
@@ -3517,6 +3553,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       offlineCloudFallback: $('#stt-offline-cloud-fallback').checked,
       whisperModel: $('#stt-whisper-model').value,
       language: languageSetting,
+      customVocabulary: $('#stt-custom-vocabulary').value.trim(),
+      transcriptRules: $('#stt-transcript-rules').value.trim(),
+      postProcessTranscript: $('#stt-postprocess-enabled').checked,
+      normalizeSpokenDigits: $('#stt-normalize-spoken-digits').checked,
       delay: $('#stt-delay').value,
       historyEnabled: $('#stt-history-enabled').checked,
       meetingMemory: $('#stt-meeting-memory').checked,
