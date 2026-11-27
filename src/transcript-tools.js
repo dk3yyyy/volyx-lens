@@ -34,12 +34,18 @@ function normalizeSpokenDigits(value) {
 }
 
 function normalizeTurns(turns) {
-  return (Array.isArray(turns) ? turns : []).slice(-500).map((turn) => ({
-    id: Number.isFinite(turn.id) ? turn.id : undefined,
-    channel: turn.channel === 'you' ? 'you' : 'them',
-    text: String(turn.text || '').trim().slice(0, 12000),
-    ts: Number.isFinite(turn.ts) ? turn.ts : Date.now(),
-  })).filter((turn) => turn.text);
+  return (Array.isArray(turns) ? turns : []).slice(-500).map((turn) => {
+    const text = String(turn.text || '').trim().slice(0, 12000);
+    const normalized = {
+      id: Number.isFinite(turn.id) ? turn.id : undefined,
+      channel: turn.channel === 'you' ? 'you' : 'them',
+      text,
+      ts: Number.isFinite(turn.ts) ? turn.ts : Date.now(),
+    };
+    const rawText = String(turn.rawText || '').trim().slice(0, 12000);
+    if (rawText && rawText !== text) normalized.rawText = rawText;
+    return normalized;
+  }).filter((turn) => turn.text);
 }
 
 function timeLabel(ts) {

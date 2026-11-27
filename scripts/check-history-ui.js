@@ -69,11 +69,11 @@ function recordA() {
     endedAt: 1700003600000,
     turnCount: 3,
     turns: [
-      { id: 1, channel: 'them', text: 'so the pineapple road map is going ahead', ts: 1700000001000 },
+      { id: 1, channel: 'them', text: 'so the pineapple roadmap is going ahead', rawText: 'so the pineapple road map is going ahead', ts: 1700000001000 },
       { id: 2, channel: 'you', text: 'right and we will not ship before the audit', ts: 1700000002000 },
       { id: 3, channel: 'them', text: 'agreed', ts: 1700000003000 },
     ],
-    notes: { summary: 'Talked about mango plans', source: 'raw' },
+    notes: { summary: 'Talked about mango plans', source: 'processed' },
     cleaned: {
       version: 1,
       at: 1700004000000,
@@ -98,14 +98,14 @@ function recordB() {
     startedAt: 1700005000000,
     endedAt: 1700005600000,
     turnCount: 1,
-    turns: [{ id: 4, channel: 'them', text: 'standalone note about kiwis', ts: 1700005001000 }],
+    turns: [{ id: 4, channel: 'them', text: 'standalone note about Volyx Lens', rawText: 'standalone note about volyx lens', ts: 1700005001000 }],
     notes: null,
     cleaned: null,
   };
 }
 
 let records = [recordA(), recordB()];
-const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [] };
+const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [], export: [] };
 let deletedRecords = [];
 
 function listedRecords() {
@@ -196,7 +196,10 @@ ipcMain.handle('history:undo-delete', (_event, ids) => {
 });
 ipcMain.handle('history:clean', () => ({ ok: false, code: 'no_change', message: 'not used in this harness' }));
 ipcMain.handle('history:recap', () => ({ ok: false, code: 'error', message: 'not used in this harness' }));
-ipcMain.handle('history:export', () => ({ canceled: true }));
+ipcMain.handle('history:export', (_event, payload) => {
+  calls.export.push(payload);
+  return { canceled: true };
+});
 ipcMain.handle('history:backup-all', () => {
   calls.backup.push(true);
   return { canceled: false, directory: '/tmp/vlx-backup', records: 2, unreadable: 0 };
@@ -456,7 +459,10 @@ app.whenReady().then(async () => {
   assert.match(toggleState.meta, /3 of 3 turns cleaned/);
   assert.equal(toggleState.speaker, 'Them');
   assert.match(toggleState.firstText, /pineapple roadmap is going ahead\./, 'the cleaned copy is shown by default');
-  assert.match(await run(win, "document.querySelector('.notes-source').textContent"), /as it was heard/);
+  const processedNotesSource = await run(win, "document.querySelector('.notes-source').textContent");
+  assert.match(processedNotesSource, /processed transcript after deterministic cleanup/);
+  assert.match(processedNotesSource, /Regenerate them to use the cleaned copy/);
+  assert.doesNotMatch(processedNotesSource, /as it was heard/);
 
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
   await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Raw'", 'the raw view to render');
@@ -466,6 +472,9 @@ app.whenReady().then(async () => {
   })`);
   assert.equal(rawView.label, 'Raw');
   assert.doesNotMatch(rawView.firstText, /\.$/, 'raw wording has no added punctuation');
+  await run(win, "document.querySelector('#meeting-history-export').click()");
+  await waitForHost(() => calls.export.some((entry) => entry.id === 'meeting-a' && entry.source === 'raw'), 'the selected Raw view to reach export');
+  assert.equal(calls.export.at(-1).source, 'raw');
 
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
   await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Changes'", 'the changes view to render');
@@ -506,21 +515,42 @@ app.whenReady().then(async () => {
   await run(win, "document.querySelector('#meeting-view-toggle').click()");
   await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Cleaned'", 'the cleaned view before discarding the copy');
   await run(win, "document.querySelector('#meeting-discard-cleaned').click()");
-  await waitFor(win, "document.querySelector('#meeting-view-toggle').classList.contains('hidden')", 'the cleaned copy to be discarded');
+  await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Raw'", 'the original wording view after discarding the copy');
   await waitForHost(() => calls.discard.includes('meeting-a'), 'the discard to reach the main process');
   assert.deepEqual(calls.discard, ['meeting-a']);
   const afterDiscard = await run(win, `({
     toggleHidden: document.querySelector('#meeting-view-toggle').classList.contains('hidden'),
+    label: document.querySelector('#meeting-view-toggle').textContent,
     firstText: document.querySelector('#meeting-history-turns .history-text').textContent,
   })`);
-  assert.equal(afterDiscard.toggleHidden, true, 'no cleaned copy means no view toggle');
-  assert.match(afterDiscard.firstText, /pineapple road map is going ahead$/, 'raw wording remains and keeps its name');
+  assert.equal(afterDiscard.toggleHidden, false, 'rawText still provides a processed/raw toggle without AI-cleaned texts');
+  assert.equal(afterDiscard.label, 'Raw');
+  assert.match(afterDiscard.firstText, /pineapple road map is going ahead$/, 'original recognizer wording remains available');
+  await run(win, "document.querySelector('#meeting-view-toggle').click()");
+  await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Processed'", 'the processed view without AI-cleaned texts');
+  assert.match(await run(win, "document.querySelector('#meeting-history-turns .history-text').textContent"), /pineapple roadmap is going ahead$/);
 
   // Back returns focus to the row it came from.
   await run(win, "document.querySelector('#meeting-history-back').click()");
   await waitFor(win, "document.querySelector('#meeting-history-detail').classList.contains('hidden')", 'back to the list');
   const focusedAfterBack = await run(win, "document.activeElement.closest('.history-entry')?.dataset.meetingId");
   assert.equal(focusedAfterBack, 'meeting-a');
+
+  // A record with rawText but no AI-cleaned texts still exposes both the
+  // deterministically processed wording and the original recognizer wording.
+  await run(win, "document.querySelector('#meeting-history-list .history-entry[data-meeting-id=\"meeting-b\"] .history-entry-open').click()");
+  await waitFor(win, "!document.querySelector('#meeting-history-detail').classList.contains('hidden')", 'the rawText-only meeting detail');
+  const processedOnly = await run(win, `({
+    label: document.querySelector('#meeting-view-toggle').textContent,
+    firstText: document.querySelector('#meeting-history-turns .history-text').textContent,
+  })`);
+  assert.equal(processedOnly.label, 'Processed');
+  assert.match(processedOnly.firstText, /Volyx Lens$/);
+  await run(win, "document.querySelector('#meeting-view-toggle').click()");
+  await waitFor(win, "document.querySelector('#meeting-view-toggle').textContent === 'Raw'", 'the original wording for the rawText-only meeting');
+  assert.match(await run(win, "document.querySelector('#meeting-history-turns .history-text').textContent"), /volyx lens$/);
+  await run(win, "document.querySelector('#meeting-history-back').click()");
+  await waitFor(win, "document.querySelector('#meeting-history-detail').classList.contains('hidden')", 'back from the rawText-only meeting');
 
   // Bulk delete through one confirmation.
   await run(win, "document.querySelector('#meeting-history-select').click()");

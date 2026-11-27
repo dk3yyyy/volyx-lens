@@ -41,10 +41,9 @@ test('extractDomainTerms excludes stop words and number words', () => {
   assert.ok(terms.includes('FY26'), 'acronym with a digit is kept');
 });
 
-test('buildSttVocab prepends the base vocabulary and caps the total length', () => {
+test('buildSttVocab prioritizes personal terms over the generic base and caps the total length', () => {
   const vocab = buildSttVocab({ personalContext: 'Optum EKS Terraform AWS SRE nova-3 gpt-4o-mini-transcribe'.repeat(20) });
-  assert.ok(vocab.startsWith(BASE_STT_VOCAB.split(',')[0]));
-  assert.ok(vocab.includes('Optum'));
+  assert.ok(vocab.startsWith('Optum'));
   assert.ok(vocab.includes('nova-3'));
   assert.ok(vocab.length <= 900);
   assert.ok(!/, $/.test(vocab), 'no dangling comma');
@@ -53,6 +52,27 @@ test('buildSttVocab prepends the base vocabulary and caps the total length', () 
 test('buildSttVocab with empty context returns the base vocabulary', () => {
   assert.equal(buildSttVocab({}), BASE_STT_VOCAB);
   assert.equal(buildSttVocab({ personalContext: '' }), BASE_STT_VOCAB);
+});
+
+test('buildSttVocab includes custom vocabulary and still caps the prompt', () => {
+  const vocab = buildSttVocab({ customVocabulary: 'Volyx Lens, Parakeet', personalContext: 'Optum EKS' });
+  assert.match(vocab, /Volyx Lens/);
+  assert.match(vocab, /Parakeet/);
+  assert.match(vocab, /Optum/);
+  assert.ok(vocab.length <= 900);
+});
+
+test('buildSttVocab keeps long custom vocabularies ahead of generic seeds', () => {
+  const custom = Array.from({ length: 80 }, (_, index) => `Custom${index}-${'x'.repeat(60)}`).join(', ');
+  const vocab = buildSttVocab({ customVocabulary: custom, maxChars: 900 });
+  assert.ok(vocab.startsWith('Custom0-'));
+  assert.ok(!vocab.includes('Custom79-'));
+  assert.ok(!vocab.includes('meeting, transcription'));
+});
+
+test('buildSttTermList prioritizes custom vocabulary over generic base terms', () => {
+  const terms = buildSttTermList({ customVocabulary: 'Volyx Lens, Parakeet', personalContext: 'Optum EKS', limit: 2 });
+  assert.deepEqual(terms, ['Volyx Lens', 'Parakeet']);
 });
 
 test('filterTranscript returns empty for artifacts and trimmed text otherwise', () => {

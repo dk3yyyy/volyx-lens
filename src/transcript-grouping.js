@@ -19,6 +19,13 @@ function joinTranscriptSegments(segments) {
   );
 }
 
+function joinRawTranscriptSegments(segments) {
+  return (Array.isArray(segments) ? segments : []).reduce(
+    (text, segment) => appendSegmentText(text, segment && typeof segment.rawText === 'string' ? segment.rawText : (segment && segment.text)),
+    '',
+  );
+}
+
 function appendConversationSegment(turns, segment, createTurnId) {
   if (!Array.isArray(turns)) throw new TypeError('turns must be an array');
   const channel = segment && segment.channel === 'you' ? 'you' : 'them';
@@ -31,8 +38,11 @@ function appendConversationSegment(turns, segment, createTurnId) {
   segment.turnId = turn.id;
   turn.segments.push(segment);
   turn.text = joinTranscriptSegments(turn.segments);
+  const rawText = joinRawTranscriptSegments(turn.segments);
+  if (rawText && rawText !== turn.text) turn.rawText = rawText;
+  else delete turn.rawText;
   turn.ts = turn.segments[0].ts;
   return { turn, updated };
 }
 
-module.exports = { cleanSegmentText, appendSegmentText, joinTranscriptSegments, appendConversationSegment };
+module.exports = { cleanSegmentText, appendSegmentText, joinTranscriptSegments, joinRawTranscriptSegments, appendConversationSegment };

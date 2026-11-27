@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -73,8 +74,41 @@ test('the cleaned view is rendered as text, never as HTML', () => {
   assert.match(renderer, /text\.className = 'history-text'; text\.textContent = turn\.text;/);
 });
 
+function changedMeetingTurnsFor(detail) {
+  const cleanedStart = renderer.indexOf('function hasCleanedView()');
+  const cleanedEnd = renderer.indexOf('function hasOriginalWording()', cleanedStart);
+  const changesStart = renderer.indexOf('function normalizeMeetingText(');
+  const changesEnd = renderer.indexOf('function speakerLabelFor(', changesStart);
+  assert.ok(cleanedStart >= 0 && cleanedEnd > cleanedStart, 'cleaned-view helper is present');
+  assert.ok(changesStart >= 0 && changesEnd > changesStart, 'change helper is present');
+  const context = { meetingDetail: detail };
+  vm.runInNewContext(
+    `${renderer.slice(cleanedStart, cleanedEnd)}\n${renderer.slice(changesStart, changesEnd)}`,
+    context,
+  );
+  return context.changedMeetingTurns();
+}
+
+test('changes compare AI cleanup with original rawText when deterministic processing already ran', () => {
+  const result = changedMeetingTurnsFor({
+    turns: [{ channel: 'you', text: 'roadmap', rawText: 'road map', ts: 1 }],
+    cleaned: { texts: ['roadmap.'] },
+  });
+  assert.equal(result.rows.length, 1, 'the original road map to roadmap repair stays visible');
+  assert.equal(result.rows[0].raw, 'road map');
+  assert.equal(result.rows[0].cleaned, 'roadmap.');
+  assert.equal(result.punctuationOnly, 0);
+
+  const punctuationOnly = changedMeetingTurnsFor({
+    turns: [{ channel: 'you', text: 'roadmap', ts: 2 }],
+    cleaned: { texts: ['roadmap.'] },
+  });
+  assert.equal(punctuationOnly.rows.length, 0, 'punctuation-only cleanup is still summarized separately');
+  assert.equal(punctuationOnly.punctuationOnly, 1);
+});
+
 test('notes record which transcript they were generated from', () => {
-  assert.match(main, /source: readingCleaned \? 'cleaned' : 'raw'/);
+  assert.match(main, /source: readingCleaned \? 'cleaned' : \(readingProcessed \? 'processed' : 'raw'\)/);
   assert.match(main, /sourceHash:/);
 });
 

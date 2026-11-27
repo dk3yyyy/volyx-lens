@@ -28,9 +28,10 @@ const { createShortcutValidator, sanitizeShortcutsPatch, applyShortcuts, normali
 const { createPersonalContextStore, KINDS: PERSONAL_CONTEXT_KINDS } = require('./src/personal-context-store');
 const { parseContextDocument, MAX_FILE_BYTES } = require('./src/document-context');
 const { buildPersonalContext } = require('./src/personal-context');
-const { normalizeSpokenDigits, formatTranscript, transcriptFilename } = require('./src/transcript-tools');
+const { formatTranscript, transcriptFilename } = require('./src/transcript-tools');
 const { findCrossTalkDuplicate, findCrossTalkDuplicateAcrossCandidateWindow } = require('./src/transcript-dedupe');
-const { joinTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
+const { joinTranscriptSegments, joinRawTranscriptSegments, appendConversationSegment } = require('./src/transcript-grouping');
+const { postProcessTranscript, parseTranscriptRules } = require('./src/transcript-postprocess');
 const { drainPendingAudio, buildDrainGap } = require('./src/drain-batch-buffers');
 const { normalizeAnswerText } = require('./src/answer-normalize');
 const { createStreamingNormalizer } = require('./src/streaming-normalizer');
@@ -202,8 +203,8 @@ const STT_RETRY_BASE_MS = 8000;
 const STT_RETRY_MAX_MS = 120000;
 const buffers = { you: [], them: [] };
 const flushPromises = { you: null, them: null };
-const transcript = []; // grouped conversation turns: { id, channel, text, ts, segments }
-const recentTranscriptSegments = []; // bounded raw finals used only for cross-talk detection
+const transcript = []; // grouped turns: { id, channel, text, rawText?, ts, segments }
+const recentTranscriptSegments = []; // bounded processed finals used only for cross-talk detection
 const transcriptSegmentArrivalTimes = new Map();
 const detectedQuestionsByTurn = new Map();
 let transcriptSegmentSequence = 0;
@@ -232,6 +233,8 @@ const MAX_BATCH_CHUNKS = 180; // ~15 seconds per speaker at 2048 samples/chunk (
 const MAX_TRANSCRIPT_TURNS = 500;
 let flushTimer = null;
 let realtimeManager = null;
+let transcriptProcessingOptions = { enabled: true, normalizeDigits: true, rules: [] };
+let activeCustomVocabulary = '';
 const drainingRealtimeManagers = new Set();
 let transcriptionMode = 'idle';
 let sessionGeneration = 0;
@@ -727,6 +730,9 @@ function removeTranscriptSegment(segment) {
     return null;
   }
   turn.text = joinTranscriptSegments(turn.segments);
+  const rawText = joinRawTranscriptSegments(turn.segments);
+  if (rawText && rawText !== turn.text) turn.rawText = rawText;
+  else delete turn.rawText;
   turn.ts = turn.segments[0].ts;
   send('transcript:update', publicTranscriptTurn(turn));
   return turn.ts;
@@ -757,9 +763,16 @@ function resetTranscriptData() {
   transcriptionDiagnostics.crossTalkSuppressed = 0;
 }
 
-function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch) {
+function recordTranscript({ channel, text, ts = Date.now() }, generation = sessionGeneration, epoch = transcriptEpoch, processingOptions = transcriptProcessingOptions) {
   if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
-  const clean = normalizeSpokenDigits(String(text || '').trim()).slice(0, 12000);
+  let processed;
+  try {
+    processed = postProcessTranscript(text, processingOptions);
+  } catch {
+    const rawText = String(text || '').trim().slice(0, 12000);
+    processed = { text: rawText, rawText, changed: false, replacements: [] };
+  }
+  const clean = processed.text;
   if (!clean) return;
   const normalizedChannel = channel === 'you' ? 'you' : 'them';
   const timestamp = Number.isFinite(ts) ? ts : Date.now();
@@ -793,7 +806,13 @@ function recordTranscript({ channel, text, ts = Date.now() }, generation = sessi
     }
   }
 
-  const segment = { id: ++transcriptSegmentSequence, channel: normalizedChannel, text: clean, ts: timestamp };
+  const segment = {
+    id: ++transcriptSegmentSequence,
+    channel: normalizedChannel,
+    text: clean,
+    rawText: processed.changed ? processed.rawText : undefined,
+    ts: timestamp,
+  };
   const { turn, updated } = appendConversationSegment(transcript, segment, () => ++transcriptSequence);
   rememberTranscriptSegment(segment, receivedAt);
 
@@ -1402,38 +1421,45 @@ const retryQueues = { you: [], them: [] };
 const MAX_RETRY_CHUNKS = MAX_BATCH_CHUNKS;
 
 async function flushChannel(channel, { drain = false } = {}) {
-  if (flushPromises[channel]) return flushPromises[channel];
+  const generation = sessionGeneration;
+  const epoch = transcriptEpoch;
+  const processingOptions = transcriptProcessingOptions;
+  const customVocabulary = activeCustomVocabulary;
+  const active = flushPromises[channel];
+  if (active && active.generation === generation && active.epoch === epoch) return active.task;
   const task = (async () => {
-    const generation = sessionGeneration;
-    const epoch = transcriptEpoch;
     if (sttDisabled) { buffers[channel] = []; retryQueues[channel] = []; return; }
     // Transient backoff: postpone transcription and keep the buffered speech instead
     // of discarding it. A final drain on stop still flushes best-effort so nothing
     // captured up to that point is lost. Buffering stays bounded by MAX_BATCH_CHUNKS.
     if (!drain && sttBackoffUntil && Date.now() < sttBackoffUntil) return;
+    // Detach the audio this attempt owns. New PCM can arrive while the provider is
+    // running without being erased when this older attempt succeeds.
     const chunks = buffers[channel];
-    if (!chunks.length && !retryQueues[channel].length) return;
-    // Prepend any preserved retry chunks so older audio is not lost on error.
+    buffers[channel] = [];
     const pendingRetry = retryQueues[channel];
+    retryQueues[channel] = [];
+    if (!chunks.length && !pendingRetry.length) return;
+    // Prepend any preserved retry chunks so older audio is not lost on error.
     let allChunks = pendingRetry.length ? [...pendingRetry, ...chunks] : chunks;
     // Trim allChunks itself to stay bounded BEFORE using it for both retryQueues and Buffer.concat.
     if (allChunks.length > MAX_RETRY_CHUNKS) allChunks = allChunks.slice(-MAX_RETRY_CHUNKS);
-    // Do NOT clear buffers[channel] yet — only clear after successful transcription.
-    // retryQueues holds preserved audio if the current attempt fails.
+    // retryQueues holds this attempt's audio if it fails; it never owns newer PCM.
     retryQueues[channel] = allChunks;
     const pcm = Buffer.concat(allChunks);
     if (pcm.length < MIN_BYTES) { retryQueues[channel] = allChunks; return; }
-    if (rms16(pcm) < RMS_GATE) { retryQueues[channel] = allChunks; return; } // silence gate
+    const settings = store.getSettings();
+    if (rms16(pcm) < RMS_GATE) { retryQueues[channel] = []; return; } // silence gate
 
     state.transcribing[channel] = true;
     try {
-      const settings = store.getSettings();
       // Seed batch/offline STT with domain terms from the user's enabled
       // personal-context documents so model names and acronyms transcribe
       // correctly (see src/transcript-hygiene.js).
       const stt = createSTT(settings, {
         vocab: buildSttVocab({
           personalContext: personalContextStore.getEnabledDocuments().map((document) => document.text || '').join(' '),
+          customVocabulary,
         }),
       });
       if (!stt.available) {
@@ -1444,27 +1470,30 @@ async function flushChannel(channel, { drain = false } = {}) {
         return;
       }
       const res = await stt.transcribe(pcm);
+      if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
       if (res.error) {
         if (res.error.code === 'offline_cancelled') return;
         handleSttError(res.error);
         // Keep retryQueues populated — chunks are preserved for the next flush.
         return;
       }
-      // Success: now it is safe to clear the buffer and retry queue.
-      buffers[channel] = [];
-      retryQueues[channel] = [];
+      // Success: clear only the retry audio this attempt owned. New PCM remains in
+      // the detached buffers array and survives for the next flush.
+      if (retryQueues[channel] === allChunks) retryQueues[channel] = [];
       if (sttFailures || sttBackoffUntil) { sttFailures = 0; sttBackoffUntil = 0; } // recovered
-      if (res.text && res.text.trim()) recordTranscript({ channel, text: res.text }, generation, epoch);
+      if (res.text && res.text.trim()) recordTranscript({ channel, text: res.text }, generation, epoch, processingOptions);
     } catch (e) {
+      if (generation !== sessionGeneration || epoch !== transcriptEpoch) return;
       console.log('[stt] unexpected error', String(e && e.code || 'unknown').slice(0, 80));
       // Keep retryQueues populated for retry.
     } finally {
-      state.transcribing[channel] = false;
+      if (generation === sessionGeneration && epoch === transcriptEpoch) state.transcribing[channel] = false;
     }
   })();
-  flushPromises[channel] = task;
+  const entry = { task, generation, epoch };
+  flushPromises[channel] = entry;
   try { return await task; }
-  finally { if (flushPromises[channel] === task) flushPromises[channel] = null; }
+  finally { if (flushPromises[channel] === entry) flushPromises[channel] = null; }
 }
 
 async function drainBatchBuffers() {
@@ -1480,8 +1509,8 @@ async function drainBatchBuffers() {
   let dropped = 0;
   const droppedChunks = {};
   for (const channel of outcome.abandoned) {
-    // A failed flush leaves retryQueues holding the same chunks that are still in
-    // buffers, so count the larger of the two instead of counting that audio twice.
+    // A failed flush leaves its detached attempt in retryQueues; count the
+    // larger queue so abandoned audio is not counted twice.
     const chunks = Math.max(buffers[channel].length, retryQueues[channel].length);
     droppedChunks[channel] = chunks;
     dropped += chunks;
@@ -1552,14 +1581,22 @@ function activateBatchTranscription(reason) {
   if (reason) send('status', { message: `Realtime transcription unavailable (${reason}). Using batch transcription for this listening session.` });
 }
 
-function startTranscriptionPipeline() {
+async function startTranscriptionPipeline() {
   stopFlushLoop();
   const previous = realtimeManager;
   realtimeManager = null;
   if (previous) previous.stop();
+  if (!state.capturing) return;
   buffers.you = []; buffers.them = [];
+  retryQueues.you = []; retryQueues.them = [];
   const settings = store.getSettings();
   const transcription = settings.transcription || {};
+  activeCustomVocabulary = transcription.customVocabulary || '';
+  transcriptProcessingOptions = {
+    enabled: transcription.postProcessTranscript !== false,
+    normalizeDigits: transcription.normalizeSpokenDigits !== false,
+    rules: parseTranscriptRules(transcription.transcriptRules),
+  };
   const audio = settings.audio || {};
   const realtime = resolveRealtimeTranscription(settings);
   const enabledChannels = [audio.micEnabled !== false ? 'you' : null, audio.systemEnabled !== false ? 'them' : null].filter(Boolean);
@@ -1567,6 +1604,7 @@ function startTranscriptionPipeline() {
   const epoch = transcriptEpoch;
 
   if (transcription.mode === 'realtime' && realtime.ready) {
+    const processingOptions = transcriptProcessingOptions;
     transcriptionMode = 'realtime';
     let manager;
     manager = new RealtimeTranscriptionManager({
@@ -1579,6 +1617,7 @@ function startTranscriptionPipeline() {
       // path uses, so names and product ids are not the thing that gets missed.
       vocab: buildSttTermList({
         personalContext: personalContextStore.getEnabledDocuments().map((document) => document.text || '').join(' '),
+        customVocabulary: activeCustomVocabulary,
       }),
       model: realtime.model,
       // An empty language in the UI is labelled Auto-detect. For Deepgram that
@@ -1592,7 +1631,7 @@ function startTranscriptionPipeline() {
       preRollMs: Math.max(0, Math.min(1000, Number(audio.preRollMs) || 250)),
       onPartial: (event) => { if (generation === sessionGeneration && epoch === transcriptEpoch && realtimeManager === manager) send('transcript:partial', event); },
       onFinal: (event) => {
-        if (generation === sessionGeneration && epoch === transcriptEpoch && (realtimeManager === manager || drainingRealtimeManagers.has(manager))) recordTranscript(event, generation, epoch);
+        if (generation === sessionGeneration && epoch === transcriptEpoch && (realtimeManager === manager || drainingRealtimeManagers.has(manager))) recordTranscript(event, generation, epoch, processingOptions);
       },
       onLateFinal: (event) => {
         // The channel finished its drain without this final, so main can no longer
@@ -1645,12 +1684,20 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
   realtimeManager = null;
 
   if (immediate) {
+    // Retry and stop/start deliberately keep the session generation and visible
+    // transcript. Invalidate the pipeline run instead, so a deferred batch STT
+    // result cannot record into the restarted pipeline or clear its busy flag.
+    transcriptEpoch += 1;
     micEchoCoordinator.clear();
     acousticEchoFilter.reset();
-    if (manager) manager.stop();
-    for (const draining of drainingRealtimeManagers) draining.stop();
+    if (manager) await Promise.allSettled([manager.stop()]);
+    await Promise.allSettled([...drainingRealtimeManagers].map((draining) => draining.stop()));
     drainingRealtimeManagers.clear();
     buffers.you = []; buffers.them = [];
+    retryQueues.you = []; retryQueues.them = [];
+    flushPromises.you = null; flushPromises.them = null;
+    state.transcribing.you = false;
+    state.transcribing.them = false;
     transcriptionMode = 'idle';
     updateTranscriptionDiagnostics({ status: 'stopped' });
     send('transcription:state', { mode: 'idle', status: 'stopped' });
@@ -1662,10 +1709,11 @@ async function stopTranscriptionPipeline({ immediate = false } = {}) {
     await manager.stop({ graceMs: 750 });
     drainingRealtimeManagers.delete(manager);
   }
-  if (previousMode === 'batch' || flushPromises.you || flushPromises.them || buffers.you.length || buffers.them.length) {
+  if (previousMode === 'batch' || flushPromises.you || flushPromises.them || buffers.you.length || buffers.them.length || retryQueues.you.length || retryQueues.them.length) {
     await drainBatchBuffers();
   }
   buffers.you = []; buffers.them = [];
+  retryQueues.you = []; retryQueues.them = [];
   transcriptionMode = 'idle';
   updateTranscriptionDiagnostics({ status: 'stopped' });
   send('transcription:state', { mode: 'idle', status: 'stopped' });
@@ -1742,7 +1790,8 @@ function pendingFinalizeTurns() {
     if (!fresh.length) continue;
     const text = joinTranscriptSegments(fresh);
     if (!String(text || '').trim()) continue;
-    turns.push({ id: turn.id, channel: turn.channel, text, ts: fresh[0].ts });
+    const rawText = joinRawTranscriptSegments(fresh);
+    turns.push({ id: turn.id, channel: turn.channel, text, rawText: rawText && rawText !== text ? rawText : undefined, ts: fresh[0].ts });
   }
   return turns;
 }
@@ -1865,10 +1914,12 @@ function restoreMeetingRecovery() {
       id: ++transcriptSegmentSequence,
       channel: turn.channel,
       text: turn.text,
+      rawText: typeof turn.rawText === 'string' && turn.rawText !== turn.text ? turn.rawText : undefined,
       ts: Number.isFinite(turn.ts) ? turn.ts : recovery.updatedAt,
       turnId: id,
     };
-    transcript.push({ id, channel: turn.channel, text: turn.text, ts: segment.ts, segments: [segment] });
+    const rawText = typeof turn.rawText === 'string' && turn.rawText !== turn.text ? turn.rawText : undefined;
+    transcript.push({ id, channel: turn.channel, text: turn.text, ...(rawText ? { rawText } : {}), ts: segment.ts, segments: [segment] });
   }
   lastCaptureStartedAt = recovery.startedAt;
   pendingRestoredStartedAt = Number.isFinite(recovery.startedAt) ? recovery.startedAt : null;
@@ -1917,7 +1968,7 @@ async function applyCaptureState(active) {
     transcriptionDiagnostics.lastStatusAt = Date.now();
     transcriptionDiagnostics.crossTalkSuppressed = 0;
     scheduleCaptureTimers();
-    startTranscriptionPipeline();
+    await startTranscriptionPipeline();
     send('capture:state', { active: true });
     return true;
   }
@@ -2066,9 +2117,10 @@ function startNewSession() {
     chatHistory.clear();
     clearTaskContext();
     buffers.you = []; buffers.them = [];
+    retryQueues.you = []; retryQueues.them = [];
     state.transcribing.you = false;
     state.transcribing.them = false;
-    if (restartTranscription && state.capturing && desiredCapturing) startTranscriptionPipeline();
+    if (restartTranscription && state.capturing && desiredCapturing) await startTranscriptionPipeline();
     send('session:cleared', { capturing: state.capturing, generation: sessionGeneration });
     send('status', { message: state.capturing ? 'New session started. Listening continues with fresh context.' : 'New session started. Previous conversation context was cleared.' });
     return { capturing: state.capturing, generation: sessionGeneration };
@@ -2491,7 +2543,7 @@ async function recapMeetingRecord(id, options = {}) {
   // The plan and the text must come from the same view of the record, or a
   // cleaned transcript could flip a single-request recap into a chunked one
   // between the confirmation and the run.
-  const { turns: readableTurns, cleaned: readingCleaned } = resolveTurns(record);
+  const { turns: readableTurns, cleaned: readingCleaned, processed: readingProcessed } = resolveTurns(record);
   const plan = planMeetingRecap(readableTurns);
   if (plan.requiresChunking && !confirmed) {
     return {
@@ -2544,7 +2596,7 @@ async function recapMeetingRecord(id, options = {}) {
     const cleanedAnswer = normalizeAnswerText(fullAnswer);
     const notes = {
       ...parseNotes(cleanedAnswer),
-      source: readingCleaned ? 'cleaned' : 'raw',
+      source: readingCleaned ? 'cleaned' : (readingProcessed ? 'processed' : 'raw'),
       sourceHash: (meetingStore.fingerprint(readableTurns) || {}).contentHash || null,
     };
     const stored = meetingStore.updateNotes(record.id, notes);
@@ -2780,7 +2832,7 @@ async function retryTranscription() {
   resetSttErrorState();
   await stopTranscriptionPipeline({ immediate: true });
   if (!state.capturing) return { ok: false, message: 'Listening stopped before Realtime could restart.' };
-  startTranscriptionPipeline();
+  await startTranscriptionPipeline();
   send('status', { message: 'Realtime transcription connection restarted.' });
   return { ok: true };
 }
@@ -2989,7 +3041,7 @@ handleTrusted('transcript:copy-turn', (_event, id) => {
   clipboard.writeText(text);
   return { copied: true, id: turn.id, characters: text.length };
 });
-handleTrusted('transcript:clear', () => {
+handleTrusted('transcript:clear', async () => {
   // The renderer owns the busy state, so it must hear that the run ended. A
   // silent invalidation left the composer disabled with an orphaned answer.
   cancelActiveFeature('transcript-clear', { notify: true, invalidate: true });
@@ -3005,7 +3057,11 @@ handleTrusted('transcript:clear', () => {
   meetingRecovery.clearBestEffort();
   pendingRestoredStartedAt = null;
   buffers.you = []; buffers.them = [];
-  if (state.capturing) startTranscriptionPipeline();
+  retryQueues.you = []; retryQueues.them = [];
+  if (state.capturing) {
+    await stopTranscriptionPipeline({ immediate: true });
+    await startTranscriptionPipeline();
+  }
   send('transcript:cleared', {});
   return { cleared };
 });

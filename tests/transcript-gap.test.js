@@ -83,6 +83,15 @@ test('the drain gap helper sanitises channels, counts, timestamps, and duration'
   assert.equal(clamped.durationMs, 10 * 60 * 1000, 'duration stays bounded');
 });
 
+test('batch flush owns detached audio and ignores stale session completions', () => {
+  const start = main.indexOf('async function flushChannel(');
+  const block = main.slice(start, main.indexOf('async function drainBatchBuffers()', start));
+  assert.match(block, /const chunks = buffers\[channel\];\s*buffers\[channel\] = \[\];/);
+  assert.match(block, /const pendingRetry = retryQueues\[channel\];\s*retryQueues\[channel\] = \[\];/);
+  assert.match(block, /if \(generation !== sessionGeneration \|\| epoch !== transcriptEpoch\) return;/);
+  assert.match(block, /if \(flushPromises\[channel\] === entry\) flushPromises\[channel\] = null;/);
+});
+
 test('the audio chunk duration matches the capture worklet', () => {
   const match = /this\.chunkSize = (\d+);/.exec(audioWorklet);
   assert.ok(match, 'the worklet declares its frame size');
@@ -126,7 +135,7 @@ test('main still records a final that arrives while the manager drains', () => {
   const start = main.indexOf('      onFinal: (event) => {');
   const block = main.slice(start, main.indexOf('      onLateFinal:', start));
   assert.match(block, /drainingRealtimeManagers\.has\(manager\)/);
-  assert.match(block, /recordTranscript\(event, generation, epoch\)/);
+  assert.match(block, /recordTranscript\(event, generation, epoch, processingOptions\)/);
 });
 
 test('a final after the channel drain window emits one gap instead of disappearing', () => {

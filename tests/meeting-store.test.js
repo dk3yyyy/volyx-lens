@@ -3,7 +3,43 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert');
-const { createMeetingStore } = require('../src/meeting-store');
+const { createMeetingStore, fingerprint } = require('../src/meeting-store');
+
+test('fingerprint keeps the legacy digest and separates rawText encodings', () => {
+  const legacyTurns = [{ id: 1, channel: 'you', text: 'hello | 2000', ts: 3000 }];
+  // SHA-256 of the exact pre-rawText line: `1|you|hello | 2000|3000\n`.
+  const legacyHash = fingerprint(legacyTurns).contentHash;
+  assert.equal(legacyHash, '7c0f47fdc1a4715f7e59bd563078b292ecbfd368c6e2af2bc5ffde69dea87abd');
+
+  // The old five-field encoding made these different transcripts identical.
+  const rawTextTurns = [{ id: 1, channel: 'you', text: 'hello ', rawText: ' 2000', ts: 3000 }];
+  assert.notEqual(fingerprint(rawTextTurns).contentHash, legacyHash);
+
+  // Delimiters inside either wording must not alias two rawText transcripts.
+  const rawTextA = [{ id: 1, channel: 'you', text: 'a|b', rawText: 'c', ts: 3000 }];
+  const rawTextB = [{ id: 1, channel: 'you', text: 'a', rawText: 'b|c', ts: 3000 }];
+  assert.notEqual(fingerprint(rawTextA).contentHash, fingerprint(rawTextB).contentHash);
+
+  const withoutRawText = fingerprint([{ id: 2, channel: 'them', text: 'hello', ts: 4000 }]).contentHash;
+  const withRawText = fingerprint([{ id: 2, channel: 'them', text: 'hello', rawText: 'hola', ts: 4000 }]).contentHash;
+  assert.notEqual(withRawText, withoutRawText, 'the recognizer wording remains part of the digest');
+});
+
+test('meeting history preserves original recognizer wording when processing changed text', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));
+  const store = createMeetingStore({ dir });
+  try {
+    const saved = store.finalize({
+      turns: [{ channel: 'you', text: 'Volyx Lens', rawText: 'volyx lens', ts: 1000 }],
+      enabled: true,
+    });
+    const record = store.get(saved.id);
+    assert.equal(record.turns[0].text, 'Volyx Lens');
+    assert.equal(record.turns[0].rawText, 'volyx lens');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('createMeetingStore finalizes and retrieves a meeting record', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-store-'));

@@ -35,6 +35,23 @@ test('meeting recovery stores a bounded transcript atomically and loads it', () 
   assert.equal(recovery.load({ enabled: true }), null);
 });
 
+test('meeting recovery retains original recognizer wording without reprocessing it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
+  const file = path.join(dir, 'recovery.json');
+  try {
+    const recovery = createMeetingRecovery({ file, now: () => 1000 });
+    recovery.save({
+      enabled: true,
+      turns: [{ id: 1, channel: 'you', text: 'Volyx Lens', rawText: 'volyx lens', ts: 600 }],
+    });
+    const draft = recovery.load({ enabled: true });
+    assert.equal(draft.turns[0].text, 'Volyx Lens');
+    assert.equal(draft.turns[0].rawText, 'volyx lens');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a fresh recovery store can load the saved draft after a process restart', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-recovery-'));
   const file = path.join(dir, 'recovery.json');
