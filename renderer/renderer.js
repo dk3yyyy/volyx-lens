@@ -104,8 +104,8 @@
       trackingToggle.setAttribute('aria-checked', slideTracking.enabled ? 'true' : 'false');
       trackingToggle.classList.toggle('active', slideTracking.active);
       trackingToggle.title = slideTracking.enabled
-        ? 'Slide tracking is on while Listening. Click to turn it off.'
-        : 'Track presentation slides while Listening.';
+        ? 'Slide tracking is on. Click to turn it off.'
+        : 'Track presentation slides independently of Listening.';
     }
     const settingsToggle = $('#stt-slide-tracking');
     const settingsOpen = !$('#settings-scrim').classList.contains('hidden');
@@ -119,7 +119,7 @@
     $('#slide-tracking-review').disabled = !slideTracking.slides.some((slide) => slide.ocrStatus === 'ready' && String(slide.text || '').trim());
     $('#slide-tracking-note').textContent = slideTracking.active
       ? 'Slide previews and nearby transcript stay in memory on this device and are never uploaded automatically.'
-      : 'Slide previews clear when Listening stops or the session is cleared.';
+      : 'Slide previews stay in memory until tracking is turned off or the session is cleared.';
 
     const list = $('#slide-tracking-list');
     list.replaceChildren();
@@ -386,8 +386,8 @@
       renderSlideTracking(nextState);
       showStatus(next
         ? (nextState.active
-          ? 'Slide tracking on. It watches for stable slide changes while Listening continues.'
-          : 'Slide tracking on. It will start with Listening and clear when Listening stops.')
+          ? 'Slide tracking on. It watches for stable slide changes independently of Listening.'
+          : 'Slide tracking is enabled, but the sampler is not active.')
         : 'Slide tracking off. Tracked slide previews and transcript excerpts were cleared from memory.');
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Slide tracking could not be changed.');

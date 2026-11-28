@@ -198,7 +198,7 @@ test('slide review uses supplied slide text and transcript without attaching a s
   assert.equal(shouldAttachScreen({ mode: 'slide-review', userText: prompt }), false);
 });
 
-test('slide tracking is opt-in, only active while listening, visible, and clearable', () => {
+test('slide tracking is opt-in, independent of listening, visible, and clearable', () => {
   const html = read('renderer/index.html');
   const renderer = read('renderer/renderer.js');
   const main = read('main.js');
@@ -219,7 +219,7 @@ test('slide tracking is opt-in, only active while listening, visible, and cleara
   assert.match(renderer, /slideTrackingSetEnabled/);
   assert.match(preload, /slideTrackingSetEnabled: \(enabled\) => ipcRenderer\.invoke\('slide-tracking:set-enabled'/);
   assert.match(main, /handleTrusted\('slide-tracking:set-enabled'/);
-  assert.match(main, /if \(next && state\.capturing\) startSlideTracking\(\)/);
+  assert.match(main, /if \(next\) startSlideTracking\(\)/);
   assert.match(main, /else if \(!next\) stopSlideTracking\(\)/);
   assert.match(main, /function pauseSlideTracking\(\)/);
   assert.match(main, /pauseSlideTracking\(\);\n\s*send\('status'/);
@@ -257,7 +257,7 @@ test('slide review confirmation previews and sends the same transcript snapshot'
   assert.match(renderer, /review\.transcriptContext/);
 });
 
-test('clearing slide tracking invalidates in-flight sampling and resumes while listening', () => {
+test('clearing slide tracking invalidates in-flight sampling and resumes when enabled', () => {
   const main = read('main.js');
   const clearFunction = main.match(/function clearSlideTrackingData\(\) \{[\s\S]*?\n\}/)?.[0] || '';
 
@@ -266,10 +266,17 @@ test('clearing slide tracking invalidates in-flight sampling and resumes while l
   assert.match(clearFunction, /if \(restartTracking\) startSlideTracking\(\)/);
 });
 
-test('capture lifecycle starts enabled tracking and clears it when listening stops', () => {
+test('microphone capture does not start or stop slide tracking', () => {
   const main = read('main.js');
   const captureFunction = main.match(/async function applyCaptureState\(active\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const startFunction = main.match(/function startSlideTracking\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const sampleFunction = main.match(/async function sampleSlideFrame\(generation\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const stateFunction = main.match(/function slideTrackingState\(\) \{[\s\S]*?\n\}/)?.[0] || '';
 
-  assert.match(captureFunction, /state\.capturing = true;[\s\S]*?startSlideTracking\(\);/);
-  assert.match(captureFunction, /state\.capturing = false;[\s\S]*?stopSlideTracking\(\);/);
+  assert.doesNotMatch(captureFunction, /startSlideTracking|stopSlideTracking/);
+  assert.doesNotMatch(startFunction, /state\.capturing/);
+  assert.doesNotMatch(sampleFunction, /state\.capturing/);
+  assert.doesNotMatch(stateFunction, /state\.capturing/);
+  assert.match(main, /app\.whenReady\(\)\.then\([\s\S]*?startSlideTracking\(\)/);
+  assert.match(main, /permission === 'display-capture'[\s\S]*?slideTracking === true/);
 });
