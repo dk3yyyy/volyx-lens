@@ -219,8 +219,8 @@ test('slide tracking is opt-in, independent of listening, visible, and clearable
   assert.match(renderer, /slideTrackingSetEnabled/);
   assert.match(preload, /slideTrackingSetEnabled: \(enabled\) => ipcRenderer\.invoke\('slide-tracking:set-enabled'/);
   assert.match(main, /handleTrusted\('slide-tracking:set-enabled'/);
-  assert.match(main, /if \(next\) startSlideTracking\(\)/);
-  assert.match(main, /else if \(!next\) stopSlideTracking\(\)/);
+  assert.match(main, /if \(!current\) \{[\s\S]*?startSlideTracking\(\)/);
+  assert.match(main, /else if \(current \|\| persisted[\s\S]*?stopSlideTracking\(\)/);
   assert.match(main, /function pauseSlideTracking\(\)/);
   assert.match(main, /pauseSlideTracking\(\);\n\s*send\('status'/);
   assert.match(renderer, /slideSettingDirty/);
@@ -278,5 +278,5 @@ test('microphone capture does not start or stop slide tracking', () => {
   assert.doesNotMatch(sampleFunction, /state\.capturing/);
   assert.doesNotMatch(stateFunction, /state\.capturing/);
   assert.match(main, /app\.whenReady\(\)\.then\([\s\S]*?startSlideTracking\(\)/);
-  assert.match(main, /permission === 'display-capture'[\s\S]*?slideTracking === true/);
+  assert.match(main, /permission === 'display-capture'[\s\S]*?slideTrackingState\(\)\.enabled/);
 });

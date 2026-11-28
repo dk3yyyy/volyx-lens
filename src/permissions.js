@@ -76,7 +76,9 @@ async function requestMediaPermission(kind, dependencies) {
       developmentClient: isPackaged !== true,
       message: granted
         ? undefined
-        : 'The browser prompt for ' + (kind === 'microphone' ? 'microphone' : 'screen') + ' access will appear when you start using Volyx Lens.',
+        : status === 'denied'
+          ? `${kind === 'microphone' ? 'Microphone' : 'Screen'} access was denied. Allow it in your browser or operating system prompt, then try again.`
+          : 'The browser prompt for ' + (kind === 'microphone' ? 'microphone' : 'screen') + ' access will appear when you start using Volyx Lens.',
     };
   }
 

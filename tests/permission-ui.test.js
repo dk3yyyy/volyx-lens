@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
@@ -96,9 +97,10 @@ test('permission recovery restart action is an intentional rounded glass control
 
 test('permission actions expose optionality and visible text states', () => {
   assert.match(renderer, /Each permission is optional/);
-  assert.match(renderer, /permissionStates = \{[\s\S]*microphone: \{ text: 'Not requested', className: '' \}[\s\S]*screen: \{ text: 'Not requested', className: '' \}/);
+  assert.match(renderer, /const browserManagedPermissions = volyxLens\.platform !== 'darwin'/);
+  assert.match(renderer, /microphone: \{ text: browserManagedPermissions \? 'Ask on use' : 'Not requested'/);
   assert.match(renderer, /trailing\.className = `ob-permission-state \$\{state\.className\}`/);
-  for (const state of ['Requesting…', 'Granted', 'Needs settings', 'Unavailable', 'Request failed']) {
+  for (const state of ['Requesting…', 'Granted', 'Needs settings', 'Access blocked', 'Unavailable', 'Request failed']) {
     assert.match(renderer, new RegExp(state));
   }
   assert.match(styles, /\.ob-permission-state\.granted/);
@@ -157,4 +159,33 @@ test('browser-managed microphone permission is described as ask-on-use, not unav
   const renderer = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
   assert.match(renderer, /volyxLens\.platform !== 'darwin' && result\.status === 'not-determined'/);
   assert.match(renderer, /setPermissionState\(kind, 'Ask on use', ''\)/);
+});
+
+function extractedFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `${name} must exist`);
+  const next = source.slice(start + 1).match(/\n[ \t]*function\s+/);
+  return source.slice(start, next ? start + 1 + next.index : source.length);
+}
+
+test('screen-capture guidance names macOS settings only on macOS', () => {
+  const source = extractedFunction(main, 'screenCapturePermissionGuidance');
+  const linux = vm.runInNewContext(`${source}\nscreenCapturePermissionGuidance();`, { process: { platform: 'linux' } });
+  const macos = vm.runInNewContext(`${source}\nscreenCapturePermissionGuidance();`, { process: { platform: 'darwin' } });
+
+  assert.match(linux, /display-capture availability/i);
+  assert.doesNotMatch(linux, /System Settings|macOS/);
+  assert.match(macos, /System Settings/);
+});
+
+test('live microphone denial guidance is platform-specific', () => {
+  const source = extractedFunction(renderer, 'microphonePermissionDeniedMessage');
+  const linux = vm.runInNewContext(`${source}\nmicrophonePermissionDeniedMessage();`, { volyxLens: { platform: 'linux' } });
+  const macos = vm.runInNewContext(`${source}\nmicrophonePermissionDeniedMessage();`, { volyxLens: { platform: 'darwin' } });
+
+  assert.match(linux, /browser or operating system prompt/i);
+  assert.doesNotMatch(linux, /System Settings|macOS/);
+  assert.match(macos, /System Settings → Privacy & Security → Microphone/);
+  assert.match(renderer, /volyxLens\.platform === 'darwin' && permission\.developmentClient/);
+  assert.match(main, /if \(process\.platform !== 'darwin'\) return \{ ok: false, error: 'unsupported' \}/);
 });

@@ -135,13 +135,20 @@ ipcMain.handle('task-context:list', () => ({ ...emptyContext, captures: [], offs
 ipcMain.handle('capture:state', () => ({ active: false, transitioning: false }));
 ipcMain.handle('shortcuts:get', () => []);
 let developmentPermissionClient = false;
-ipcMain.handle('permissions:request', (_event, kind) => (
-  kind === 'screen'
-    ? developmentPermissionClient
-      ? { kind, granted: false, status: 'denied', settingsOpened: false, requiresSettings: true, developmentClient: true, message: 'This npm start development build is a separate macOS permission client.' }
-      : { kind, granted: false, settingsOpened: false, requiresSettings: true, developmentClient: false }
-    : { kind, granted: true }
-));
+let screenPermissionDenied = false;
+function permissionRequestResult(kind) {
+  if (process.platform !== 'darwin') {
+    if (kind !== 'screen') return { kind, granted: true };
+    return screenPermissionDenied
+      ? { kind, granted: false, status: 'denied', settingsOpened: false, developmentClient: true }
+      : { kind, granted: false, status: 'not-determined', settingsOpened: false, developmentClient: true };
+  }
+  if (kind !== 'screen') return { kind, granted: true };
+  return developmentPermissionClient
+    ? { kind, granted: false, status: 'denied', settingsOpened: false, requiresSettings: true, developmentClient: true, message: 'This npm start development build is a separate macOS permission client.' }
+    : { kind, granted: false, settingsOpened: false, requiresSettings: true, developmentClient: false };
+}
+ipcMain.handle('permissions:request', (_event, kind) => permissionRequestResult(kind));
 ipcMain.handle('permissions:status', (_event, kind) => ({ kind, status: 'not-determined', granted: false }));
 ipcMain.on('mouse:ignore', () => {});
 
@@ -356,49 +363,79 @@ app.whenReady().then(async () => {
       await waitFor(win, "document.querySelector('#ob-speech-card').dataset.model === 'parakeet-unified-en' && document.querySelector('#ob-speech-badge').textContent === 'Installed'", 'restored speech step');
     }
     if (index === 1) {
-      await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
-      await waitFor(win, "document.querySelector('#ob-permission-status').classList.contains('has-action')", 'permission recovery action');
-      const recovery = await win.webContents.executeJavaScript(`(() => {
-        const status = document.querySelector('#ob-permission-status');
-        const restart = status.querySelector('.ob-restart');
-        const style = getComputedStyle(restart);
-        return {
-          statusDisplay: getComputedStyle(status).display,
-          radius: style.borderRadius,
-          height: restart.getBoundingClientRect().height,
-          background: style.backgroundColor
-        };
-      })()`);
-      assert.equal(recovery.statusDisplay, 'flex', 'permission recovery should align its message and action');
-      assert.equal(recovery.radius, '999px', 'restart action should use the app pill radius');
-      assert.ok(Math.abs(recovery.height - 30) < 0.1, 'restart action should stay compact');
-      assert.notEqual(recovery.background, 'rgba(0, 0, 0, 0)', 'restart action should use a glass fill');
-      await waitForPaint(win);
-      const recoveryLayout = await win.webContents.executeJavaScript(`(() => {
-        const content = document.querySelector('#ob-content');
-        const status = document.querySelector('#ob-permission-status').getBoundingClientRect();
-        const contentRect = content.getBoundingClientRect();
-        return {
-          contentOverflowY: content.scrollHeight > content.clientHeight,
-          statusInsideContent: status.left >= contentRect.left && status.right <= contentRect.right && status.bottom <= contentRect.bottom
-        };
-      })()`);
-      assert.equal(recoveryLayout.contentOverflowY, false, 'permission recovery must not make onboarding scroll');
-      assert.equal(recoveryLayout.statusInsideContent, true, 'permission recovery must fit inside the content panel');
-      await capture(win, 'permission-recovery');
+      if (process.platform !== 'darwin') {
+        await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
+        await waitFor(win, "document.querySelector('[data-permission-kind=\"screen\"] .ob-permission-state').textContent === 'Ask on use'", 'browser-managed permission state');
+        const askOnUse = await win.webContents.executeJavaScript(`(() => {
+          const status = document.querySelector('#ob-permission-status');
+          return {
+            state: document.querySelector('[data-permission-kind="screen"] .ob-permission-state').textContent,
+            status: status.textContent,
+            hasAction: Boolean(status.querySelector('.ob-restart')),
+            note: document.querySelector('#ob-stage-note').textContent,
+            body: document.querySelector('#ob-body').textContent,
+          };
+        })()`);
+        assert.equal(askOnUse.state, 'Ask on use');
+        assert.equal(askOnUse.hasAction, false);
+        assert.doesNotMatch(askOnUse.status + askOnUse.note + askOnUse.body, /System Settings|macOS/);
 
-      developmentPermissionClient = true;
-      await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
-      await waitFor(win, "document.querySelector('#ob-permission-status').textContent.includes('npm start')", 'development permission identity guidance');
-      const developmentRecovery = await win.webContents.executeJavaScript(`({
-        text: document.querySelector('#ob-permission-status').textContent,
-        state: document.querySelector('[data-permission-kind="screen"] .ob-permission-state').textContent,
-        restart: Boolean(document.querySelector('#ob-permission-status .ob-restart'))
-      })`);
-      assert.match(developmentRecovery.text, /separate from Volyx Lens\.app/i, 'development guidance should explain the separate permission client');
-      assert.equal(developmentRecovery.state, 'Use packaged app', 'development permission state should direct users to the packaged app');
-      assert.equal(developmentRecovery.restart, false, 'development mismatch must not offer an ineffective relaunch');
-      developmentPermissionClient = false;
+        screenPermissionDenied = true;
+        await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
+        await waitFor(win, "document.querySelector('#ob-permission-status').textContent.includes('denied')", 'browser-managed denial guidance');
+        const denied = await win.webContents.executeJavaScript(`({
+          status: document.querySelector('#ob-permission-status').textContent,
+          hasAction: Boolean(document.querySelector('#ob-permission-status .ob-restart')),
+        })`);
+        assert.match(denied.status, /browser or operating system/i);
+        assert.equal(denied.hasAction, false);
+        assert.doesNotMatch(denied.status, /System Settings|macOS/);
+        screenPermissionDenied = false;
+      } else {
+        await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
+        await waitFor(win, "document.querySelector('#ob-permission-status').classList.contains('has-action')", 'permission recovery action');
+        const recovery = await win.webContents.executeJavaScript(`(() => {
+          const status = document.querySelector('#ob-permission-status');
+          const restart = status.querySelector('.ob-restart');
+          const style = getComputedStyle(restart);
+          return {
+            statusDisplay: getComputedStyle(status).display,
+            radius: style.borderRadius,
+            height: restart.getBoundingClientRect().height,
+            background: style.backgroundColor
+          };
+        })()`);
+        assert.equal(recovery.statusDisplay, 'flex', 'permission recovery should align its message and action');
+        assert.equal(recovery.radius, '999px', 'restart action should use the app pill radius');
+        assert.ok(Math.abs(recovery.height - 30) < 0.1, 'restart action should stay compact');
+        assert.notEqual(recovery.background, 'rgba(0, 0, 0, 0)', 'restart action should use a glass fill');
+        await waitForPaint(win);
+        const recoveryLayout = await win.webContents.executeJavaScript(`(() => {
+          const content = document.querySelector('#ob-content');
+          const status = document.querySelector('#ob-permission-status').getBoundingClientRect();
+          const contentRect = content.getBoundingClientRect();
+          return {
+            contentOverflowY: content.scrollHeight > content.clientHeight,
+            statusInsideContent: status.left >= contentRect.left && status.right <= contentRect.right && status.bottom <= contentRect.bottom
+          };
+        })()`);
+        assert.equal(recoveryLayout.contentOverflowY, false, 'permission recovery must not make onboarding scroll');
+        assert.equal(recoveryLayout.statusInsideContent, true, 'permission recovery must fit inside the content panel');
+        await capture(win, 'permission-recovery');
+
+        developmentPermissionClient = true;
+        await win.webContents.executeJavaScript("document.querySelector('[data-permission-kind=\"screen\"]').click()");
+        await waitFor(win, "document.querySelector('#ob-permission-status').textContent.includes('npm start')", 'development permission identity guidance');
+        const developmentRecovery = await win.webContents.executeJavaScript(`({
+          text: document.querySelector('#ob-permission-status').textContent,
+          state: document.querySelector('[data-permission-kind="screen"] .ob-permission-state').textContent,
+          restart: Boolean(document.querySelector('#ob-permission-status .ob-restart'))
+        })`);
+        assert.match(developmentRecovery.text, /separate from Volyx Lens\.app/i, 'development guidance should explain the separate permission client');
+        assert.equal(developmentRecovery.state, 'Use packaged app', 'development permission state should direct users to the packaged app');
+        assert.equal(developmentRecovery.restart, false, 'development mismatch must not offer an ineffective relaunch');
+        developmentPermissionClient = false;
+      }
     }
     if (index < names.length - 1) {
       await win.webContents.executeJavaScript("document.querySelector('#ob-next').click()");

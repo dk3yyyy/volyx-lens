@@ -429,6 +429,7 @@ let captureLimitTimer = null;
 let slideTrackingTimer = null;
 let slideTrackingGeneration = 0;
 let slideTrackingInFlight = false;
+let slideTrackingPaused = false;
 let slideOcrJobSequence = 0;
 const slideOcrJobs = new Map();
 let pendingSlideReview = null;
@@ -649,9 +650,13 @@ function taskContextPage(page) {
 function slideTrackingState() {
   const settings = store.getSettings().transcription || {};
   const tracking = slideTracker.list();
+  const enabled = slideTrackingPaused === false
+    && settings.slideTracking === true
+    && slideTrackingTimer !== null;
   return {
-    enabled: settings.slideTracking === true,
-    active: settings.slideTracking === true && slideTrackingTimer !== null,
+    enabled,
+    active: enabled,
+    paused: slideTrackingPaused,
     slides: tracking.slides,
     total: tracking.total,
   };
@@ -712,22 +717,37 @@ function confirmSlideReview(token) {
   if (state.busy || responseDiagnosticPromise) {
     throw new Error('Wait for the active response or provider test to finish before sending slide context.');
   }
+  if (activeHistoryJob) {
+    throw new Error('Wait for the active meeting-history task to finish before sending slide context.');
+  }
   const review = pendingSlideReview;
-  pendingSlideReview = null;
   if (!review || typeof token !== 'string' || token !== review.token || Date.now() - review.createdAt > 120000) {
+    pendingSlideReview = null;
     throw new Error('Slide review expired. Prepare the review again before sending.');
   }
-  if (review.sessionGeneration !== sessionGeneration) throw new Error('The session changed. Prepare the slide review again.');
+  if (review.sessionGeneration !== sessionGeneration) {
+    pendingSlideReview = null;
+    throw new Error('The session changed. Prepare the slide review again.');
+  }
   const settings = store.getSettings();
   const selection = chooseInitialProvider(createResponseRoute(settings), { requiresVision: false });
   const provider = selection.llm && (selection.llm.label || settings.provider);
   if (!selection.llm || !selection.llm.ready) throw new Error(selection.reason || (selection.llm && selection.llm.configurationError) || 'No compatible response provider is configured.');
   if (provider !== review.provider) throw new Error('The selected provider changed. Prepare the slide review again to confirm the new destination.');
+  pendingSlideReview = null;
   void runFeature('slide-review', '', {
     slideContext: review.slideContext,
     slideReviewTranscript: review.transcriptSnapshot,
   });
   return { started: true, slideCount: slideTracker.list().slides.filter((slide) => slide.ocrStatus === 'ready' && slide.text.trim()).length, provider };
+}
+
+function cancelSlideReview(token) {
+  const canceled = pendingSlideReview !== null
+    && typeof token === 'string'
+    && pendingSlideReview.token === token;
+  if (canceled) pendingSlideReview = null;
+  return { canceled };
 }
 
 function recentSlideTranscriptExcerpt(now = Date.now()) {
@@ -743,7 +763,7 @@ function recentSlideTranscriptExcerpt(now = Date.now()) {
 
 async function sampleSlideFrame(generation) {
   if (slideTrackingInFlight || generation !== slideTrackingGeneration
-    || store.getSettings().transcription.slideTracking !== true) return;
+    || slideTrackingPaused || store.getSettings().transcription.slideTracking !== true) return;
   slideTrackingInFlight = true;
   try {
     const displayId = activeDisplayId();
@@ -806,8 +826,9 @@ async function processSlideOcr(sequence, preview, generation) {
   slideOcrJobs.set(sequence, jobId);
   try {
     const result = await localOcr.recognize(preview, { jobId });
-    if (generation !== slideTrackingGeneration || slideOcrJobs.get(sequence) !== jobId) return;
-    slideOcrJobs.delete(sequence);
+    const ownsJob = slideOcrJobs.get(sequence) === jobId;
+    if (ownsJob) slideOcrJobs.delete(sequence);
+    if (generation !== slideTrackingGeneration || !ownsJob) return;
     const status = result && result.status === 'ready'
       ? (String(result.text || '').trim() ? 'ready' : 'empty')
       : (result && ['unavailable', 'failed'].includes(result.status) ? result.status : 'failed');
@@ -824,7 +845,9 @@ async function processSlideOcr(sequence, preview, generation) {
 
 function startSlideTracking() {
   if (store.getSettings().transcription.slideTracking !== true || slideTrackingTimer !== null) return false;
-  slideTracker.clear();
+  const resuming = slideTrackingPaused;
+  slideTrackingPaused = false;
+  if (!resuming) slideTracker.clear();
   const generation = ++slideTrackingGeneration;
   slideTrackingTimer = setInterval(() => { void sampleSlideFrame(generation); }, 3000);
   publishSlideTrackingState();
@@ -833,6 +856,7 @@ function startSlideTracking() {
 }
 
 function stopSlideTracking() {
+  slideTrackingPaused = false;
   if (slideTrackingTimer !== null) clearInterval(slideTrackingTimer);
   slideTrackingTimer = null;
   slideTrackingGeneration += 1;
@@ -844,8 +868,16 @@ function stopSlideTracking() {
 // start fresh. The toggle reflects the real state instead of staying "on" with
 // no sampler behind it.
 function pauseSlideTracking() {
+  slideTrackingPaused = true;
   if (slideTrackingTimer !== null) clearInterval(slideTrackingTimer);
   slideTrackingTimer = null;
+  slideTrackingGeneration += 1;
+  // These jobs can no longer update the paused tracker. Release their bounded
+  // queue slots now and leave preserved previews in a terminal OCR state.
+  for (const sequence of slideOcrJobs.keys()) {
+    cancelSlideOcr(sequence);
+    slideTracker.attachText(sequence, '', 'failed');
+  }
   try {
     if (store.getSettings().transcription.slideTracking === true) {
       store.setSettings({ transcription: { slideTracking: false } });
@@ -877,13 +909,19 @@ async function processTaskContextOcr(captureId, dataUrl, generation) {
   }
 }
 
+function screenCapturePermissionGuidance() {
+  return process.platform === 'darwin'
+    ? 'On macOS, check Screen Recording permission for Volyx Lens in System Settings.'
+    : 'On Windows or Linux, check display-capture availability in your browser or operating system, then try again.';
+}
+
 async function captureTaskContextScreen() {
   if (taskContextCapturePromise) return taskContextCapturePromise;
   taskContextCapturePromise = (async () => {
     const generation = taskContextGeneration;
     const dataUrl = await captureScreenshot({ maxWidth: 1920, format: 'jpeg', quality: 80, displayId: activeDisplayId() });
     if (generation !== taskContextGeneration) return taskContextState({ added: false, canceled: true });
-    if (!dataUrl) throw new Error('No screen image was available. Check macOS Screen Recording permission.');
+    if (!dataUrl) throw new Error(`No screen image was available. ${screenCapturePermissionGuidance()}`);
     const ocrAvailability = localOcr.availability();
     const ocrAvailable = ocrAvailability.available;
     const result = taskContext.add(dataUrl, {
@@ -3478,7 +3516,7 @@ async function runFeature(mode, userText, {
       let currentScreen = null;
       try { currentScreen = await captureScreenshot({ displayId: activeDisplayId(), maxLongEdge: MAX_LONG_EDGE_PX, format: 'jpeg', quality: REQUEST_JPEG_QUALITY }); }
       catch (e) {
-        if (isCurrent()) send('status', { message: 'Screen capture needs permission — grant Screen Recording to Volyx Lens in System Settings.' });
+        if (isCurrent()) send('status', { message: `Screen capture needs permission. ${screenCapturePermissionGuidance()}` });
       }
       savedTaskSelection = taskContext.selectImages(taskImageLimit, { query: relevanceQuery });
       const savedTaskImages = savedTaskSelection.images;
@@ -4170,6 +4208,7 @@ handleTrusted('settings:set', (_e, patch = {}) => {
     patch = { ...patch, transcription: { ...patch.transcription, offlineEnabled: false } };
   }
   const previous = JSON.parse(JSON.stringify(store.getSettings()));
+  const wasSlideTrackingRuntimeEnabled = slideTrackingState().enabled;
   const updates = patch && patch.apiKeyUpdates;
   const updated = store.updateSettingsAndApiKeys(patch, updates && typeof updates === 'object' ? updates : {});
   const wasHistoryEnabled = previous.transcription && previous.transcription.historyEnabled === true;
@@ -4240,10 +4279,15 @@ handleTrusted('settings:set', (_e, patch = {}) => {
   }
   const wasSlideTrackingEnabled = previous.transcription && previous.transcription.slideTracking === true;
   const isSlideTrackingEnabled = updated.transcription && updated.transcription.slideTracking === true;
-  if (wasSlideTrackingEnabled !== isSlideTrackingEnabled) {
-    if (isSlideTrackingEnabled) startSlideTracking();
-    else if (!isSlideTrackingEnabled) stopSlideTracking();
-    else publishSlideTrackingState();
+  const slideTrackingExplicit = !!(patch && patch.transcription
+    && Object.prototype.hasOwnProperty.call(patch.transcription, 'slideTracking'));
+  if (isSlideTrackingEnabled && slideTrackingExplicit && !wasSlideTrackingRuntimeEnabled) {
+    startSlideTracking();
+  } else if (wasSlideTrackingRuntimeEnabled && !isSlideTrackingEnabled) {
+    // Settings mirrors may repeat slideTracking:false after a failure pause.
+    // Only a live ON-to-OFF transition here owns the destructive stop path;
+    // the dedicated Slides action handles explicit OFF while paused.
+    stopSlideTracking();
   }
   // The notification toggle is also the switch that arms background checking.
   updateScheduler.sync();
@@ -4441,11 +4485,16 @@ handleTrusted('task-context:pin', (_event, payload = {}) => pinTaskContextCaptur
 handleTrusted('task-context:clear', () => clearTaskContext());
 handleTrusted('slide-tracking:set-enabled', (_event, enabled) => {
   const next = enabled === true;
-  const current = store.getSettings().transcription.slideTracking === true;
-  if (next !== current) {
-    store.setSettings({ transcription: { slideTracking: next } });
-    if (next) startSlideTracking();
-    else if (!next) stopSlideTracking();
+  const current = slideTrackingState().enabled;
+  const persisted = store.getSettings().transcription.slideTracking === true;
+  if (next) {
+    if (!current) {
+      store.setSettings({ transcription: { slideTracking: true } });
+      startSlideTracking();
+    }
+  } else if (current || persisted || slideTrackingTimer !== null || slideTrackingPaused) {
+    store.setSettings({ transcription: { slideTracking: false } });
+    stopSlideTracking();
   }
   return publishSlideTrackingState();
 });
@@ -4454,6 +4503,7 @@ handleTrusted('slide-tracking:clear', () => {
   return { ...slideTrackingState(), cleared: result.cleared };
 });
 handleTrusted('slide-tracking:review', (_event, payload = {}) => {
+  if (payload.cancelled === true) return cancelSlideReview(payload.token);
   if (payload.confirmed === true) return confirmSlideReview(payload.token);
   return prepareSlideReview();
 });
@@ -4748,6 +4798,7 @@ handleTrusted('provider:capability', (_event, payload = {}) => {
   return { supportsVision: resolved.supportsVision === true, model: resolved.model };
 });
 handleTrusted('permissions:open-settings', async (_event, kind) => {
+  if (process.platform !== 'darwin') return { ok: false, error: 'unsupported' };
   const pane = PRIVACY_PANES[String(kind || '')];
   if (!pane) return { ok: false, error: 'unsupported' };
   await shell.openExternal(pane);
@@ -4949,7 +5000,7 @@ app.whenReady().then(() => {
   const allowMedia = (permission, details = {}) => {
     if (permission === 'media') return audioOnlyMediaRequest(details);
     if (permission === 'display-capture') return pendingDisplayCapture || state.capturing
-      || store.getSettings().transcription.slideTracking === true;
+      || slideTrackingState().enabled;
     return permission === 'microphone' || permission === 'audioCapture';
   };
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
