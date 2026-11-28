@@ -651,7 +651,7 @@ function slideTrackingState() {
   const tracking = slideTracker.list();
   return {
     enabled: settings.slideTracking === true,
-    active: settings.slideTracking === true && state.capturing && slideTrackingTimer !== null,
+    active: settings.slideTracking === true && slideTrackingTimer !== null,
     slides: tracking.slides,
     total: tracking.total,
   };
@@ -664,7 +664,7 @@ function publishSlideTrackingState() {
 }
 
 function clearSlideTrackingData() {
-  const restartTracking = slideTrackingTimer !== null && state.capturing
+  const restartTracking = slideTrackingTimer !== null
     && store.getSettings().transcription.slideTracking === true;
   if (slideTrackingTimer !== null) clearInterval(slideTrackingTimer);
   slideTrackingTimer = null;
@@ -731,6 +731,7 @@ function confirmSlideReview(token) {
 }
 
 function recentSlideTranscriptExcerpt(now = Date.now()) {
+  if (!state.capturing) return '';
   const cutoff = now - 60000;
   return transcript
     .filter((turn) => Number.isFinite(turn.ts) && turn.ts >= cutoff)
@@ -742,7 +743,7 @@ function recentSlideTranscriptExcerpt(now = Date.now()) {
 
 async function sampleSlideFrame(generation) {
   if (slideTrackingInFlight || generation !== slideTrackingGeneration
-    || !state.capturing || store.getSettings().transcription.slideTracking !== true) return;
+    || store.getSettings().transcription.slideTracking !== true) return;
   slideTrackingInFlight = true;
   try {
     const displayId = activeDisplayId();
@@ -822,7 +823,7 @@ async function processSlideOcr(sequence, preview, generation) {
 }
 
 function startSlideTracking() {
-  if (!state.capturing || store.getSettings().transcription.slideTracking !== true || slideTrackingTimer !== null) return false;
+  if (store.getSettings().transcription.slideTracking !== true || slideTrackingTimer !== null) return false;
   slideTracker.clear();
   const generation = ++slideTrackingGeneration;
   slideTrackingTimer = setInterval(() => { void sampleSlideFrame(generation); }, 3000);
@@ -3030,7 +3031,6 @@ async function applyCaptureState(active) {
     // A new capture session starts a new watchdog episode. Mic-only sessions
     // stay unarmed: there is no system source to report on or restart.
     themSilenceWatchdog.arm(audio.systemEnabled !== false);
-    startSlideTracking();
     captureStartedAt = pendingRestoredStartedAt || Date.now();
     pendingRestoredStartedAt = null;
     lastCaptureStartedAt = captureStartedAt;
@@ -3058,7 +3058,6 @@ async function applyCaptureState(active) {
   state.capturing = false;
   captureGeneration += 1;
   themSilenceWatchdog.disarm();
-  stopSlideTracking();
   lastCaptureEndedAt = Date.now();
   const captureStartedAtEnd = captureStartedAt;
   captureStartedAt = null;
@@ -4242,7 +4241,7 @@ handleTrusted('settings:set', (_e, patch = {}) => {
   const wasSlideTrackingEnabled = previous.transcription && previous.transcription.slideTracking === true;
   const isSlideTrackingEnabled = updated.transcription && updated.transcription.slideTracking === true;
   if (wasSlideTrackingEnabled !== isSlideTrackingEnabled) {
-    if (isSlideTrackingEnabled && state.capturing) startSlideTracking();
+    if (isSlideTrackingEnabled) startSlideTracking();
     else if (!isSlideTrackingEnabled) stopSlideTracking();
     else publishSlideTrackingState();
   }
@@ -4445,7 +4444,7 @@ handleTrusted('slide-tracking:set-enabled', (_event, enabled) => {
   const current = store.getSettings().transcription.slideTracking === true;
   if (next !== current) {
     store.setSettings({ transcription: { slideTracking: next } });
-    if (next && state.capturing) startSlideTracking();
+    if (next) startSlideTracking();
     else if (!next) stopSlideTracking();
   }
   return publishSlideTrackingState();
@@ -4932,6 +4931,8 @@ function resetShortcuts() {
 // -------- lifecycle --------
 app.whenReady().then(() => {
   if (!primaryInstance) return;
+  // Slides are an independent opt-in surface, not a side effect of Listening.
+  startSlideTracking();
   enforceHistoryRetention();
   // Undo has a lifetime: purge copies deleted more than TRASH_RETENTION_DAYS ago
   // at startup, so the window is a promise and not an approximation.
@@ -4947,7 +4948,8 @@ app.whenReady().then(() => {
   };
   const allowMedia = (permission, details = {}) => {
     if (permission === 'media') return audioOnlyMediaRequest(details);
-    if (permission === 'display-capture') return pendingDisplayCapture || state.capturing;
+    if (permission === 'display-capture') return pendingDisplayCapture || state.capturing
+      || store.getSettings().transcription.slideTracking === true;
     return permission === 'microphone' || permission === 'audioCapture';
   };
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {

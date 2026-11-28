@@ -161,7 +161,7 @@ let memories = [
   memoryEntry('memory-b', 'Saved memory B.', 1_700_000_090_000),
 ];
 let nextMemoryFailure = '';
-const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [], memoryList: 0, memoryEnable: [], memoryUpdate: [], memoryRemove: [], export: [], restoreSuppressed: [] };
+const calls = { participant: [], discard: [], deleteMany: [], deleteOne: [], backup: [], restore: [], undo: [], restoreTrash: 0, menu: [], clipboard: [], memoryList: 0, memoryEnable: [], memoryUpdate: [], memoryRemove: [], export: [], restoreSuppressed: [], slideSetEnabled: [] };
 
 let deletedRecords = [];
 
@@ -206,6 +206,14 @@ ipcMain.handle('transcript:restore-suppressed', (_event, id) => {
 ipcMain.handle('task-context:get', () => ({ count: 0, totalBytes: 0, pinnedCount: 0, revision: 0 }));
 ipcMain.handle('recovery:get', () => null);
 ipcMain.handle('capture:state', () => ({ active: false }));
+ipcMain.handle('slide-tracking:set-enabled', (_event, enabled) => {
+  const next = enabled === true;
+  calls.slideSetEnabled.push(next);
+  settings.transcription.slideTracking = next;
+  const state = { enabled: next, active: next, slides: [], total: 0 };
+  if (win && !win.isDestroyed()) win.webContents.send('slide-tracking:state', state);
+  return state;
+});
 ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.7.3', status: 'unsupported', message: '', availableVersion: null, progress: null }));
 ipcMain.handle('shortcuts:get', () => []);
 ipcMain.handle('history:list', () => listedRecords());
@@ -405,6 +413,29 @@ app.whenReady().then(async () => {
   await run(win, "window.dispatchEvent(new Event('focus'))");
   await waitFor(win, "!document.body.classList.contains('window-inactive')", 'the focused window state');
   assert.equal(await run(win, "getComputedStyle(document.body).getPropertyValue('--accent').trim()"), focusedLook.accent, 'focus restores the live accent');
+
+  // Slides are an explicit control and do not follow the microphone capture
+  // button. The real switch, IPC bridge and Settings mirror are exercised here.
+  assert.equal(await run(win, "document.querySelector('#slide-tracking-toggle').getAttribute('aria-checked')"), 'false');
+  await run(win, "document.querySelector('#slide-tracking-toggle').click()");
+  await waitForHost(() => calls.slideSetEnabled.length === 1, 'slides enabled without Listening');
+  assert.equal(calls.slideSetEnabled[0], true);
+  assert.equal(await run(win, "document.querySelector('#slide-tracking-toggle').getAttribute('aria-checked')"), 'true');
+
+  await run(win, "document.querySelector('#more-btn').click()");
+  await waitFor(win, "!document.querySelector('#settings-scrim').classList.contains('hidden')", 'settings open for slide mirror');
+  assert.equal(await run(win, "document.querySelector('#stt-slide-tracking').checked"), true, 'Settings mirrors the live slide switch');
+  await run(win, "document.querySelector('#s-close').click()");
+  await waitFor(win, "document.querySelector('#settings-scrim').classList.contains('hidden')", 'settings closed');
+
+  win.webContents.send('capture:state', { active: true });
+  await waitFor(win, "document.querySelector('#slide-tracking-toggle').getAttribute('aria-checked') === 'true'", 'microphone start leaves slides on');
+  win.webContents.send('capture:state', { active: false });
+  await waitFor(win, "document.querySelector('#slide-tracking-toggle').getAttribute('aria-checked') === 'true'", 'microphone stop leaves slides on');
+  await run(win, "document.querySelector('#slide-tracking-toggle').click()");
+  await waitForHost(() => calls.slideSetEnabled.length === 2, 'slides disabled explicitly');
+  assert.deepEqual(calls.slideSetEnabled, [true, false]);
+  assert.equal(await run(win, "document.querySelector('#slide-tracking-toggle').getAttribute('aria-checked')"), 'false');
 
   // A suppressed echo is disclosed beside its matching Them turn, starts
   // collapsed, and can be restored through the narrow IPC bridge.
