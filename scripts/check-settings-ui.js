@@ -61,14 +61,19 @@ ipcMain.handle('recovery:get', () => recoveryDraft);
 ipcMain.handle('recovery:discard', () => ({ cleared: true }));
 ipcMain.handle('task-context:list', () => ({ ...emptyTaskContext, captures: [], offset: 0, limit: 50, total: 0 }));
 ipcMain.handle('capture:state', () => ({ active: false }));
-ipcMain.handle('permissions:request', (_event, kind) => ({
-  kind,
-  granted: false,
-  status: 'denied',
-  settingsOpened: false, requiresSettings: true,
-  developmentClient: true,
-  message: 'This npm start development build is a separate macOS permission client. Quit it and open the packaged app; a grant for Volyx Lens.app does not apply to this process.',
-}));
+let livePermissionStatus = 'not-determined';
+ipcMain.handle('permissions:request', (_event, kind) => (
+  process.platform !== 'darwin'
+    ? { kind, granted: false, status: livePermissionStatus, settingsOpened: false, developmentClient: true }
+    : {
+      kind,
+      granted: false,
+      status: 'denied',
+      settingsOpened: false, requiresSettings: true,
+      developmentClient: true,
+      message: 'This npm start development build is a separate macOS permission client. Quit it and open the packaged Volyx Lens app; a grant for Volyx Lens.app does not apply to this process.',
+    }
+));
 ipcMain.handle('update:get-state', () => ({ supported: false, currentVersion: '0.2.0', status: 'unsupported', message: 'This build cannot install updates automatically. Use Open Latest Release to download the current version.', availableVersion: null, progress: null }));
 let releasePageOpens = 0;
 ipcMain.handle('update:open-releases', () => { releasePageOpens += 1; return { opened: true }; });
@@ -217,7 +222,20 @@ app.whenReady().then(async () => {
   assert.equal(inactiveAccent, '#8FA891', 'the inactive palette follows the selected theme');
 
   await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"listening\"]').click(); document.querySelector('#test-live-transcription-btn').click()");
-  await waitFor(win, "document.querySelector('#realtime-test-result').textContent.includes('permission_client_mismatch')", 'development permission identity guidance');
+  if (process.platform === 'darwin') {
+    await waitFor(win, "document.querySelector('#realtime-test-result').textContent.includes('permission_client_mismatch')", 'development permission identity guidance');
+  } else {
+    await waitFor(win, "document.querySelector('#realtime-test-result').textContent.includes('ask_on_use')", 'browser-managed ask-on-use guidance');
+    const askOnUse = await win.webContents.executeJavaScript("document.querySelector('#realtime-test-result').textContent");
+    assert.match(askOnUse, /browser or operating system prompt/i);
+    assert.doesNotMatch(askOnUse, /System Settings|macOS/);
+    livePermissionStatus = 'denied';
+    await win.webContents.executeJavaScript("document.querySelector('#test-live-transcription-btn').click()");
+    await waitFor(win, "document.querySelector('#realtime-test-result').textContent.includes('permission_denied')", 'browser-managed denial guidance');
+    const denied = await win.webContents.executeJavaScript("document.querySelector('#realtime-test-result').textContent");
+    assert.match(denied, /browser or operating system prompt/i);
+    assert.doesNotMatch(denied, /System Settings|macOS/);
+  }
   const slideSwitch = await win.webContents.executeJavaScript(`(() => {
     const input = document.querySelector('#stt-slide-tracking');
     const label = document.querySelector('label[for="stt-slide-tracking"]');
@@ -228,6 +246,7 @@ app.whenReady().then(async () => {
       height: style.height,
       labelled: !!(label && label.control === input),
       checked: input && input.checked,
+      ariaChecked: input && input.getAttribute('aria-checked'),
     };
   })()`);
   assert.equal(slideSwitch.role, 'switch', 'slide tracking is exposed as a switch');
@@ -235,6 +254,7 @@ app.whenReady().then(async () => {
   assert.equal(slideSwitch.height, '20px', 'the slide switch uses the compact switch height');
   assert.equal(slideSwitch.labelled, true, 'the slide switch is associated with its visible label');
   assert.equal(slideSwitch.checked, false, 'slide tracking remains off by default in settings');
+  assert.equal(slideSwitch.ariaChecked, 'false', 'the Settings switch exposes the same off state');
   const speakerActivity = await win.webContents.executeJavaScript(`(() => {
     const toggle = document.querySelector('#stt-diarization-enabled');
     const status = document.querySelector('#speech-diarizer-status');
@@ -269,9 +289,15 @@ app.whenReady().then(async () => {
     text: document.querySelector('#realtime-test-result').textContent,
     startAttempted: document.querySelector('#test-live-transcription-btn').textContent !== 'Test Live Mic'
   })`);
-  assert.match(permissionDiagnostic.text, /npm start/i, 'development diagnostic should name the active npm start client');
-  assert.match(permissionDiagnostic.text, /packaged app/i, 'development diagnostic should direct users to the packaged app');
-  assert.equal(permissionDiagnostic.startAttempted, false, 'development mismatch should stop before opening microphone capture');
+  assert.equal(permissionDiagnostic.startAttempted, false, 'permission failure should stop before opening microphone capture');
+  if (process.platform === 'darwin') {
+    assert.match(permissionDiagnostic.text, /npm start/i, 'development diagnostic should name the active npm start client');
+    assert.match(permissionDiagnostic.text, /packaged app/i, 'development diagnostic should direct users to the packaged app');
+  } else {
+    assert.match(permissionDiagnostic.text, /permission_denied/);
+    assert.match(permissionDiagnostic.text, /browser or operating system prompt/i);
+    assert.doesNotMatch(permissionDiagnostic.text, /System Settings|macOS/);
+  }
 
   await win.webContents.executeJavaScript("document.querySelector('[data-settings-section=\"shortcuts\"]').click()");
   await waitFor(win, "document.activeElement && document.activeElement.id === 'settings-shortcuts-title'", 'shortcuts heading focus before reverse tab test');

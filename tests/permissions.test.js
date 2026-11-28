@@ -151,3 +151,17 @@ test('Windows and Linux microphone permission defers to the browser prompt', asy
   assert.equal(result.settingsOpened, false);
   assert.match(result.message, /browser prompt/);
 });
+
+test('Windows and Linux capture denial gives browser or operating-system guidance', async () => {
+  const result = await requestMediaPermission('screen', {
+    platform: 'linux',
+    desktopCapturer: { async getSources() { throw new Error('portal denied'); } },
+    openExternal: async () => {},
+    isPackaged: true,
+  });
+  assert.equal(result.granted, false);
+  assert.equal(result.status, 'denied');
+  assert.match(result.message, /denied/i);
+  assert.match(result.message, /browser or operating system/i);
+  assert.doesNotMatch(result.message, /will appear/i);
+});

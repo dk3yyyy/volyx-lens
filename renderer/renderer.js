@@ -55,7 +55,7 @@
   const partialTranscript = { you: null, them: null };
   let listeningActive = false;
   let meetingDetectedSince = null;
-  let slideTracking = { enabled: false, active: false, slides: [], total: 0 };
+  let slideTracking = { enabled: false, active: false, paused: false, slides: [], total: 0 };
   let slideSettingDirty = false;
   let diagnosticsTimer = null;
   let activeRequestMode = null;
@@ -76,6 +76,12 @@
   }
   updateListeningButton(false);
 
+  function microphonePermissionDeniedMessage() {
+    return volyxLens.platform === 'darwin'
+      ? 'Allow Volyx Lens in System Settings → Privacy & Security → Microphone, then restart the app.'
+      : 'Allow microphone access in your browser or operating system prompt, then try again.';
+  }
+
   function formatTaskContextBytes(bytes) {
     const value = Math.max(0, Number(bytes) || 0);
     if (!value) return '0 MB';
@@ -90,9 +96,11 @@
 
   function renderSlideTracking(value) {
     if (value && typeof value === 'object') {
+      const active = value.enabled === true && value.active === true;
       slideTracking = {
-        enabled: value.enabled === true,
-        active: value.active === true,
+        enabled: active,
+        active,
+        paused: value.paused === true || (value.enabled === true && value.active !== true),
         slides: Array.isArray(value.slides) ? value.slides : [],
         total: Math.max(0, Number(value.total) || 0),
       };
@@ -103,14 +111,19 @@
     if (trackingToggle) {
       trackingToggle.setAttribute('aria-checked', slideTracking.enabled ? 'true' : 'false');
       trackingToggle.classList.toggle('active', slideTracking.active);
-      trackingToggle.title = slideTracking.enabled
-        ? 'Slide tracking is on. Click to turn it off.'
-        : 'Track presentation slides independently of Listening.';
+      trackingToggle.title = slideTracking.paused
+        ? 'Slide tracking is paused after a capture failure. Click to retry.'
+        : slideTracking.enabled
+          ? 'Slide tracking is on. Click to turn it off.'
+          : 'Track presentation slides independently of Listening.';
     }
     const settingsToggle = $('#stt-slide-tracking');
     const settingsOpen = !$('#settings-scrim').classList.contains('hidden');
     if (!settingsOpen || !slideSettingDirty) {
-      if (settingsToggle) settingsToggle.checked = slideTracking.enabled;
+      if (settingsToggle) {
+        settingsToggle.checked = slideTracking.enabled;
+        settingsToggle.setAttribute('aria-checked', slideTracking.enabled ? 'true' : 'false');
+      }
       if (settings && settings.transcription) settings.transcription.slideTracking = slideTracking.enabled;
     }
     $('#slide-tracking-panel').classList.toggle('hidden', !slideTracking.active && slideTracking.slides.length === 0);
@@ -119,7 +132,9 @@
     $('#slide-tracking-review').disabled = !slideTracking.slides.some((slide) => slide.ocrStatus === 'ready' && String(slide.text || '').trim());
     $('#slide-tracking-note').textContent = slideTracking.active
       ? 'Slide previews and nearby transcript stay in memory on this device and are never uploaded automatically.'
-      : 'Slide previews stay in memory until tracking is turned off or the session is cleared.';
+      : slideTracking.paused
+        ? 'Slide tracking paused because screen capture was unavailable. Existing previews were kept; turn Slides on to retry.'
+        : 'Slide previews stay in memory until tracking is turned off or the session is cleared.';
 
     const list = $('#slide-tracking-list');
     list.replaceChildren();
@@ -384,11 +399,11 @@
       const result = await volyxLens.slideTrackingSetEnabled(next);
       const nextState = result && typeof result === 'object' ? result : slideTracking;
       renderSlideTracking(nextState);
-      showStatus(next
-        ? (nextState.active
-          ? 'Slide tracking on. It watches for stable slide changes independently of Listening.'
-          : 'Slide tracking is enabled, but the sampler is not active.')
-        : 'Slide tracking off. Tracked slide previews and transcript excerpts were cleared from memory.');
+      showStatus(nextState.enabled
+        ? 'Slide tracking on. It watches for stable slide changes independently of Listening.'
+        : nextState.paused
+          ? 'Slide tracking is paused because screen capture is unavailable. Existing previews were kept; click Slides to retry.'
+          : 'Slide tracking off. Tracked slide previews and transcript excerpts were cleared from memory.');
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Slide tracking could not be changed.');
     } finally {
@@ -412,6 +427,7 @@
         `This will send locally recognized text from ${review.slideCount} slide${review.slideCount === 1 ? '' : 's'} and the current session transcript to ${review.provider}. Screenshots are not sent. Review the exact slide text below.`;
       $('#slide-review-preview').textContent = `SLIDE TEXT (local OCR; may contain errors)\n${review.slideContext}\n\nMEETING TRANSCRIPT\n${review.transcriptContext || '(no transcript captured)'}`;
       $('#slide-review-confirm').dataset.reviewToken = review.token;
+      $('#slide-review-confirm').disabled = false;
       document.getElementById('slide-review-dialog').showModal();
     } catch (error) {
       showStatus(error && error.message ? error.message : 'Slide review could not be prepared.');
@@ -422,17 +438,33 @@
   $('#slide-review-confirm').addEventListener('click', async () => {
     const button = $('#slide-review-confirm');
     const token = button.dataset.reviewToken;
+    if (!token) return;
     button.disabled = true;
     try {
       const result = await volyxLens.slideTrackingReview({ confirmed: true, token });
+      delete button.dataset.reviewToken;
       document.getElementById('slide-review-dialog').close();
       showStatus(`Sent text from ${result.slideCount} tracked slides to ${result.provider}; screenshots were not sent.`);
     } catch (error) {
-      showStatus(error && error.message ? error.message : 'Slide review could not be sent.');
+      const message = error && error.message ? error.message : 'Slide review could not be sent.';
+      showStatus(message);
+      if (/expired|session changed|selected provider changed/i.test(message)) {
+        delete button.dataset.reviewToken;
+        button.disabled = true;
+        document.getElementById('slide-review-dialog').close();
+        void volyxLens.slideTrackingReview({ cancelled: true, token }).catch(() => {});
+      }
     } finally {
-      button.disabled = false;
-      delete button.dataset.reviewToken;
+      button.disabled = !button.dataset.reviewToken;
     }
+  });
+  document.getElementById('slide-review-dialog').addEventListener('close', () => {
+    const button = $('#slide-review-confirm');
+    const token = button.dataset.reviewToken;
+    if (!token) return;
+    delete button.dataset.reviewToken;
+    button.disabled = true;
+    void volyxLens.slideTrackingReview({ cancelled: true, token }).catch(() => {});
   });
   async function getRecoverySummary() {
     try {
@@ -3965,6 +3997,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     if ($('#stt-retention-days')) $('#stt-retention-days').value = String(transcription.historyRetentionDays || 0);
     $('#stt-meeting-detection').checked = transcription.meetingDetection === true;
     $('#stt-slide-tracking').checked = transcription.slideTracking === true;
+    $('#stt-slide-tracking').setAttribute('aria-checked', transcription.slideTracking === true ? 'true' : 'false');
     slideSettingDirty = false;
     const audio = settings.audio || {};
     $('#audio-input-device').value = audio.inputDeviceId || '';
@@ -4070,7 +4103,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   $('#ai-rules-text').addEventListener('change', () => { void saveAiRules().catch((error) => showStatus(error && error.message ? error.message : 'AI rules could not be saved.')); });
   $('#ai-rules-enabled').addEventListener('change', () => { void saveAiRules().catch((error) => showStatus(error && error.message ? error.message : 'AI rules could not be saved.')); });
   $('#stt-realtime-provider').addEventListener('change', renderTranscriptionProviderConfig);
-  $('#stt-slide-tracking').addEventListener('change', () => { slideSettingDirty = true; });
+  $('#stt-slide-tracking').addEventListener('change', (event) => {
+    slideSettingDirty = true;
+    event.currentTarget.setAttribute('aria-checked', event.currentTarget.checked ? 'true' : 'false');
+  });
   document.querySelectorAll('.key-clear').forEach((button) => {
     if (!button.hasAttribute('aria-label')) {
       const label = button.dataset.key
@@ -4575,9 +4611,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       const permission = await volyxLens.requestPermission('microphone');
       if (!permission || permission.granted !== true) {
         resultEl.className = 's-diag-result error';
-        resultEl.textContent = permission && permission.developmentClient
+        resultEl.textContent = permission && volyxLens.platform === 'darwin' && permission.developmentClient
           ? `microphone · permission_client_mismatch: ${permission.message || 'This npm start session uses a separate macOS permission client. Quit it and open the packaged Volyx Lens app.'}`
-          : 'microphone · permission_denied: Allow Volyx Lens in System Settings → Privacy & Security → Microphone, then restart the app.';
+          : volyxLens.platform !== 'darwin' && permission && permission.status === 'not-determined'
+            ? 'microphone · ask_on_use: Allow microphone access in your browser or operating system prompt when you start Listening, then run Test Live Mic again.'
+            : `microphone · permission_denied: ${microphonePermissionDeniedMessage()}`;
         return;
       }
       resultEl.textContent = 'Opening a one-channel Realtime session…';
@@ -4619,7 +4657,7 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       resultEl.className = 's-diag-result error';
       const permissionDenied = error && (error.name === 'NotAllowedError' || /permission denied/i.test(error.message || ''));
       resultEl.textContent = permissionDenied
-        ? 'microphone · permission_denied: macOS or Electron denied microphone capture. Restart Volyx Lens after granting access.'
+        ? `microphone · permission_denied: ${microphonePermissionDeniedMessage()}`
         : 'live diagnostic · ipc_error: The live microphone test could not run.';
     } finally {
       if (capture) await closeAudioCapture(capture);
@@ -4672,9 +4710,10 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
   // ---- onboarding / first-run tutorial -----------------------------------
   const obScrim = $('#onboard-scrim');
   const obPermissionStatus = $('#ob-permission-status');
+  const browserManagedPermissions = volyxLens.platform !== 'darwin';
   const permissionStates = {
-    microphone: { text: 'Not requested', className: '' },
-    screen: { text: 'Not requested', className: '' }
+    microphone: { text: browserManagedPermissions ? 'Ask on use' : 'Not requested', className: '' },
+    screen: { text: browserManagedPermissions ? 'Ask on use' : 'Not requested', className: '' }
   };
   let obPreviousFocus = null;
   let obResumeAfterSettings = false;
@@ -4715,9 +4754,17 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
           obPermissionStatus.textContent = label + ' access granted.';
           obPermissionStatus.className = 'ob-permission-status granted';
         }
-      } else if (result.developmentClient) {
+      } else if (volyxLens.platform === 'darwin' && result.developmentClient) {
         showDevelopmentPermissionMismatch(kind);
-      } else if (result.requiresSettings) {
+      } else if (volyxLens.platform !== 'darwin' && result.status === 'not-determined') {
+        setPermissionState(kind, 'Ask on use', '');
+        obPermissionStatus.textContent = result.message || (label + ' access will be requested when you start using Volyx Lens.');
+        obPermissionStatus.className = 'ob-permission-status';
+      } else if (volyxLens.platform !== 'darwin' && ['denied', 'restricted'].includes(result.status)) {
+        setPermissionState(kind, 'Access blocked', 'denied');
+        obPermissionStatus.textContent = `${label} access was denied. Allow it in your browser or operating system prompt, then try again.`;
+        obPermissionStatus.className = 'ob-permission-status denied';
+      } else if (volyxLens.platform === 'darwin' && result.requiresSettings) {
         setPermissionState(kind, 'Needs settings', 'denied');
         const message = document.createElement('span');
         message.textContent = label + ' is off in macOS. Open the pane, switch Volyx Lens on, and this screen updates when you come back.';
@@ -4742,10 +4789,6 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
         });
         obPermissionStatus.replaceChildren(message, openSettings);
         obPermissionStatus.className = 'ob-permission-status denied has-action';
-      } else if (volyxLens.platform !== 'darwin' && result.status === 'not-determined') {
-        setPermissionState(kind, 'Ask on use', '');
-        obPermissionStatus.textContent = result.message || (label + ' access will be requested when you start using Volyx Lens.');
-        obPermissionStatus.className = 'ob-permission-status';
       } else {
         setPermissionState(kind, 'Unavailable', 'denied');
         obPermissionStatus.textContent = result.message || (label + ' access is unavailable.');
@@ -4765,14 +4808,17 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
     }));
     for (const result of results) {
       if (result.granted) setPermissionState(result.kind, 'Granted', 'granted');
-      else if (result.developmentClient && ['denied', 'restricted'].includes(result.status)) setPermissionState(result.kind, 'Use packaged app', 'denied');
+      else if (volyxLens.platform === 'darwin' && result.developmentClient && ['denied', 'restricted'].includes(result.status)) setPermissionState(result.kind, 'Use packaged app', 'denied');
+      else if (volyxLens.platform !== 'darwin' && result.status === 'not-determined') setPermissionState(result.kind, 'Ask on use', '');
+      else if (volyxLens.platform !== 'darwin' && ['denied', 'restricted'].includes(result.status)) setPermissionState(result.kind, 'Access blocked', 'denied');
       else if (['denied', 'restricted'].includes(result.status)) setPermissionState(result.kind, 'Needs settings', 'denied');
       else if (result.status === 'unsupported') setPermissionState(result.kind, 'Unavailable', 'denied');
       else setPermissionState(result.kind, 'Not requested', '');
     }
     if (rerender && obIndex === 1) {
       renderOnboard();
-      const mismatch = results.find((result) => result.developmentClient && ['denied', 'restricted'].includes(result.status));
+      const mismatch = results.find((result) => volyxLens.platform === 'darwin'
+        && result.developmentClient && ['denied', 'restricted'].includes(result.status));
       if (mismatch) showDevelopmentPermissionMismatch(mismatch.kind);
     }
     const newlyGranted = results.filter((result) => result.granted
@@ -4780,15 +4826,20 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       && previousStates[result.kind].className === 'denied');
     if (newlyGranted.length && obScrim && !obScrim.classList.contains('hidden')) {
       const label = newlyGranted[0].kind === 'microphone' ? 'Microphone' : 'Screen Recording';
-      const applied = document.createElement('span');
-      applied.textContent = label + ' is allowed now. macOS applies it after the app restarts.';
-      const restart = document.createElement('button');
-      restart.type = 'button';
-      restart.className = 'ob-restart';
-      restart.textContent = 'Restart Volyx Lens';
-      restart.addEventListener('click', () => volyxLens.relaunch());
-      obPermissionStatus.replaceChildren(applied, restart);
-      obPermissionStatus.className = 'ob-permission-status granted has-action';
+      if (volyxLens.platform === 'darwin') {
+        const applied = document.createElement('span');
+        applied.textContent = label + ' is allowed now. macOS applies it after the app restarts.';
+        const restart = document.createElement('button');
+        restart.type = 'button';
+        restart.className = 'ob-restart';
+        restart.textContent = 'Restart Volyx Lens';
+        restart.addEventListener('click', () => volyxLens.relaunch());
+        obPermissionStatus.replaceChildren(applied, restart);
+        obPermissionStatus.className = 'ob-permission-status granted has-action';
+      } else {
+        obPermissionStatus.textContent = label + ' is allowed now.';
+        obPermissionStatus.className = 'ob-permission-status granted';
+      }
       obPermissionStatus.classList.remove('hidden');
     }
   }
@@ -5195,9 +5246,11 @@ $('#meeting-notes-generate').addEventListener('click', async () => {
       stepLabel: 'Permissions',
       icon: 'mic',
       kicker: 'You stay in control',
-      note: 'macOS permission prompts come from the system. Volyx Lens cannot bypass them.',
+      note: browserManagedPermissions
+        ? 'Microphone and screen access use browser or operating-system prompts on first use.'
+        : 'macOS permission prompts come from the system. Volyx Lens cannot bypass them.',
       title: 'Choose access.',
-      body: '<p>Grant only the inputs you want to use. Each permission is optional, and you can continue without granting either one.</p><div class="ob-note">Camera access is never requested. Change access later in System Settings.</div>',
+      body: `<p>Grant only the inputs you want to use. Each permission is optional, and you can continue without granting either one.</p><div class="ob-note">Camera access is never requested. ${browserManagedPermissions ? 'Change access later in your browser or operating system settings.' : 'Change access later in System Settings.'}</div>`,
       buttons: [
         { kind: 'microphone', icon: 'mic', label: 'Microphone', detail: 'Your voice while listening is on', action: () => requestPermission('microphone') },
         { kind: 'screen', icon: 'camera', label: 'Screen Recording', detail: 'Screen context and meeting-audio loopback', action: () => requestPermission('screen') }
